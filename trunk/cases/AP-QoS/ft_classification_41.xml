@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, base on service, action deny/log Ethernet interface Test topology Top1 Device Configuration Portal: ssid DeathKnight interface wifi0 ssid DeathKnight qos classifier-profile service service interface eth0 qos-classifier service service udp1 protocol udp port 1 qos classifier-map service udp1 qos 0 qos classifier-map service udp1 action log qos classifier-map service udp1 action deny</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		portal:
+		- Set "_kdebug qos classifi"on CLI
+		- Set "_ff id 1 src-mac sta1's mac"
+		- Set "_kdebug fe basic"
+		- STA1generates traffic,then send to STA2.
+		Expected output
+		- look over kdebug message
+		1970-01-05 00:49:28 debug [fe]: (i) eth0
+		18.18.21.45-&gt;18.18.21.11(41) ttl(64) UDP 1158-&gt;1 46 bytes
+		1970-01-05 00:49:28 debug [fe]: MAC session (id [5])
+		found
+		1970-01-05 00:49:28 info [flow]: service:udp1 18.18.21.45
+		-&gt; 18.18.21.11 proto=17 port=1 qos=0
+		1970-01-05 00:49:28 debug [fe]: pkt(eth0) dropped by
+		classifier qos=0
+		1970-01-05 00:49:28 debug [fe]: (!) eth0
+		18.18.21.45-&gt;18.18.21.11(41) ttl(64) UDP 1158-&gt;1 46 bytes
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				create ssid
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "qos classifier-profile service service"
+				-v "interface eth0 qos-classifier service"
+				-v "service udp1 protocol udp port 1"
+				-v "qos classifier-map service udp1 qos 2"
+				-v "qos classifier-map service udp1 action log"
+				-v "qos classifier-map service udp1 action deny"
+			</console>
+		</step>
+
+		<include prefix="pre1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="2">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				sta send udp paket
+			</desc>
+			<ssh target="sta1">
+				-v "hping3  -2 -c 3 ${tb.tftp} -p 1"
+			</ssh>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "QoS: pkt forwarded"</log-match>
+			<log-match>-c -i "QoS: pkt queued"</log-match>
+			<log-match>-c -i "\(\!\) wifi0.1 ${sta1.tif.ip}->${tb.tftp}" -i "UDP \d+->1" -re</log-match>
+			<log-match>-c -i  "service:udp1 protocol=17 port:\d+->1" -i "qos=2" -re</log-match>
+            <log-match>-c -i "service:udp1 ${sta1.tif.ip} -> ${tb.tftp} proto=17 port: \d+->1" -re</log-match>
+            <log-match>-c -i "pkt(wifi0.1) dropped by classifier qos=2"</log-match>
+            <log-match>-c -i "\(i\) wifi0.1 ${sta1.tif.ip}->${tb.tftp}" -i "UDP \d+->1" -re</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

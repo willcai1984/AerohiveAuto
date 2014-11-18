@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the location</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config PSK-generation-method to password-only
+		-config the password-generation-method to auto
+
+		Test Procedure:
+		-config location
+		-check result 1
+		-bind group to a ssid
+		-check result 2
+		-bind ssdi to wifi0
+		-check result 3
+		-change the location
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="default.psk" value="aerohive" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "_debug auth info"
+				-v "clear log all"
+			</console>
+		</step>
+		<include prefix="0.1" file="subs/ap_renew_ip.xml" obj-args="ap1" />
+		<step no="0.2" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.3">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config the password-generation-method to auto
+				-Config security-object parameters
+			</desc>
+			<ssh target="ap1">
+				-v "user-group userGroup"
+				-v "user-group userGroup password-generation-method auto"
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key ${default.psk}"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "security-object ppsk security private-psk"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config a user-profile
+				-config a ssid default-attribute 1
+				-bind the group to ssid
+				-bind the ssid to wifi0
+			</desc>
+			<ssh target="ap1">
+				-v "user-profile ttt vlan-id ${tb.vlan1} attribute 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-group userGroup auto-generation index-range 1"
+				-v "user-group userGroup auto-generation location aerohive"
+				-v "no bonjour-gateway enable"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>show log buffer</desc>
+			<log-file>step2.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffer"
+			</ssh>
+			<no-error-check/>
+		</step>
+		<step no="2.1a">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup0001\)" --script "m.group(1)" -s none -g-1
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show user
+			</desc>
+			<log-file>step2.2_show_user.log</log-file>
+			<ssh target="ap1">
+				-v "show user"
+			</ssh>
+			<log-match>-c -i "userGroup0001" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step2.3_show_user_group.log</log-file>
+			<ssh target="ap1">
+				-v "show user-group"
+			</ssh>
+			<log-match>-c -i "userGroup" -p 6 -i "AP" -p 12 -i "aerohive"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				show running-config users
+			</desc>
+			<log-file>step2.4_show_running_config_users.log</log-file>
+			<ssh target="ap1">
+				-v "show running-config users"
+			</ssh>
+			<log-match>-c -i "user-group userGroup auto-generation location aerohive"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step3_show_auth_private_psk.log</log-file>
+			<ssh target="ap1">
+				-v "show auth private-psk"
+			</ssh>
+			<log-match>-c -i "userGroup0001" -i "Yes"</log-match>
+		</step>
+
+		<step no="3.a" delay="10">
+			<desc>Get the pmk value of userGroup0001</desc>
+			<setvar name="pmk.value">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3_show_auth_private_psk.log -p "userGroup0001\s*userGroup\s*(.*)\s*Yes" -t str
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-show ssid xxx user-group
+			</desc>
+			<log-file>step3.1_show_ssid_user_group.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} user-group"
+			</ssh>
+			<log-match>-c -i "userGroup"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				-clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="4.1" delay="5">
+			<desc>
+				-Change the location
+			</desc>
+			<ssh target="ap1">
+				-v "user-group userGroup auto-generation location aerohive123"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				-show logging buffered
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "generated *for *user *(userGroup0001)"</log-match>
+			<log-match>-n -c -i "password *(${ppsk.auto.value}) *generated *for *user *(userGroup0001) "</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show user
+			</desc>
+			<log-file>step6_show_user.log</log-file>
+			<ssh target="ap1">
+				-v "show user"
+			</ssh>
+			<log-match>-c -i "userGroup0001" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step6.1_show_user_group.log</log-file>
+			<ssh target="ap1">
+				-v "show user-group"
+			</ssh>
+			<log-match>-c -i "userGroup" -p 6 -i "AP" -p 12 -i "aerohive123"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				show running-config users
+			</desc>
+			<log-file>step6.2_show_running_config_users.log</log-file>
+			<ssh target="ap1">
+				-v "show running-config users"
+			</ssh>
+			<log-match>-c -i "user-group userGroup auto-generation location aerohive123"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step6.3_show_auth_private_psk.log</log-file>
+			<ssh target="ap1">
+				-v "show auth private-psk"
+			</ssh>
+			<log-match>-c -i "userGroup0001" -i "Yes"</log-match>
+			<log-match>-n -c -i "userGroup0001" -i "Yes" -i "${pmk.value}"</log-match>
+		</step>
+	</stage>
+</testcase>

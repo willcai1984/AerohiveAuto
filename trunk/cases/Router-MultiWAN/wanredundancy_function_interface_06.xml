@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+    <brief>usbnet0 as WAN interface</brief>    
+	<priority>Middle</priority>
+    <automated>yes</automated>
+    <description>        
+		Pre-Condition:1.usb modem is plugged with BR initially 2. There is signal of mobile network available for usb modem
+		Test Procedure:
+		 	          1. Config usbnet0 as WAN and highest priority, result 1 
+					  2. Config track wan group for usbnet0, result 2 
+					  3. Check wan monitor state of usbnet0, result 3 
+					  4. Check default route in main route table, result 4 
+					  5. Run ping internet process on BR to check its accessibility, result 5 
+		Expect Result:
+				      Result 1: usbnet0 is WAN mode, with highest priority 
+					  Result 2: usbnet0 is configured with track wan group 
+					  Result 3: WAN monitor state of usbnet0 is Up 
+					  Result 4: Default route is via usbnet0 
+					  Result 5: Ping successfully on BR
+    </description>
+    <numofbr>1</numofbr>
+    <numofsta>0</numofsta>
+	<br-opt-modem>1</br-opt-modem>
+    <tbtype>linux</tbtype>
+	
+	<property name="usbmodem_name" value="huawei_e220" />
+	<property name="apn_name" value="3gnet" />
+	<property name="usbmodem_mode" value="always-connected" />
+	<property name="dest_ip" value="0.0.0.0" />
+	<property name="google_dns_ip" value="8.8.8.8" />
+	<property name="default_test_ip" value="192.168.10.254" />
+	<property name="track_wan_name" value="use-for-wan-usbnet0" />
+	<property name="inter_num" value="usbnet0" />
+	<property name="defined_priority" value="0" />
+	<property name="temp_priority" value="50" />
+  
+    <stage>
+     	
+    	<step no="6.0.1">
+            <desc>
+				 There is signal of mobile network available for usb modem
+            </desc>
+            <telnet target="${br1.br.wan.ip}">
+				-v "usbmodem modem-id ${usbmodem_name} apn ${apn_name}"
+			</telnet>	
+        </step>
+		
+		<step no="6.0.2" delay="5">
+            <desc>
+				 There is signal of mobile network available for usb modem
+            </desc>
+            <telnet target="${br1.br.wan.ip}">
+				-v "usbmodem mode ${usbmodem_mode}"
+			</telnet>	
+        </step>
+		
+		<step no="6.0.3" delay="5">
+            <desc>
+				 There is signal of mobile network available for usb modem
+            </desc>
+            <telnet target="${br1.br.wan.ip}">
+				-v "usbmodem enable"
+			</telnet>	
+        </step>
+		
+		<step no="6.1.1" delay="30">
+            <desc>
+            	Config usbnet0 as WAN and highest priority 
+            </desc>
+            <telnet target="${br1.br.wan.ip}">
+				-v "interface eth0 mode wan priority ${temp_priority}"
+				-v "interface ${inter_num} mode wan priority ${defined_priority}"
+			</telnet>		
+        </step>
+		
+    	<step no="6.1.2">
+            <desc>
+				 Check usbnet0 is WAN mode 
+            </desc>
+            <log-file>step6.1.2_CheckIntMode.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show interface | include ppp0"
+			</telnet>
+			<log-match>-c -p 1 -i "ppp0" -p 3 -i "wan"</log-match>			
+        </step>
+		
+		<step no="6.1.3">
+            <desc>
+            	Check the highest priority of usbnet0
+            </desc>
+            <log-file>step6.1.3_CheckIntPriority.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show interface ${inter_num} | include priority"
+			</telnet>
+			<log-match>-c -i "Priority=${defined_priority}"</log-match>			
+        </step>	
+		
+		<step no="6.2.1">
+            <desc>
+            	config track wan group for usbnet0
+            </desc>
+            <telnet target="${br1.br.wan.ip}">
+				-v "no track-wan ${track_wan_name}"
+				-v "track-wan ${track_wan_name}"
+				-v "track-wan ${track_wan_name} ip ${google_dns_ip}"
+				-v "track-wan ${track_wan_name} interface usbnet0"
+				-v "track-wan ${track_wan_name} enable"
+			</telnet>
+        </step>
+		
+		<step no="6.2.2">
+            <desc>
+				usbnet0 is configured with track wan group 
+            </desc>
+            <log-file>step6.2.1_CheckCfgTrackwan.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show running-config | include track-wan "
+			</telnet>
+			<log-match>-c -e "track-wan ${track_wan_name}"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name} ip 8.8.8.8"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name} interface ${inter_num}"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name} enable"</log-match>				
+        </step>
+		
+		<step no="6.3.1" delay="30" type="loop-check" loop-max-times="10" loop-interval="10">
+            <desc>
+            	 Check wan monitor state of usbnet0
+            </desc>
+            <log-file>step6.3.1_CheckWanMode.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show track-wan"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b '\[${track_wan_name}\]' -p 'WAN Monitor State: up' -f ${log.dir}/${log.file}				
+			</log-match>
+        </step>
+		
+		<step no="6.4.1">
+            <desc>
+            	Check default route in main route table
+            </desc>
+            <log-file>step6.4.1_CheckDefIpRoute.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show ip route | include ppp0"
+			</telnet>
+			<log-match>-c -p 1 -i "${dest_ip}" -p 5 -i "${defined_priority}" </log-match>
+        </step>		
+		
+		
+		<step no="6.5.1">
+            <desc>
+            	Ping successfully on BR
+            </desc>
+            <log-file>step6.5.1_PingBr.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "ping ${mpc.tif.ip}"
+			</telnet>
+			<log-match>-c -p 1 -i "5" -p 4 -i "5" -p 6 -i "0%" </log-match>
+        </step>	
+		
+
+    </stage>
+
+</testcase>

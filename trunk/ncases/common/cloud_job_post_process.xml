@@ -1,0 +1,107 @@
+<testcase>
+	<brief>cloud tb job pre process</brief>
+	<description>
+		cloud tb job pre process
+	</description>
+	<property name="job_selenium_port" value="${cloud.selenium.port}" />
+	<property name="job_selenium_log" value="/tmp/selenium-${job.id}.log" />
+	<stage>
+		<step no="remove_ssh_hosts">
+			<desc>rm .ssh/known_hosts file in mpc</desc>
+			<script>
+				rm -rf /root/.ssh/known_hosts
+			</script>
+		</step>
+	</stage>
+	
+	<!-- process ap -->
+	<stage no="reset device">
+		
+		<step no="reset.ap">
+			<if>"${realdut.type}" == "ap"</if>
+			<desc>Reset AP to factory default</desc>
+			<console target="ap1" timeout="300">
+				-v "boot-param region fcc"
+				-v ""
+				-v "reset config"
+			</console>
+		</step>
+		<step no="reset.br">
+			<if>"${realdut.type}" == "br"</if>
+			<desc>Reset BR to factory default</desc>
+			<console target="br1" timeout="300">
+				-v ""
+				-v "reset config"
+			</console>
+		</step>
+		<step no="reset.ap">
+			<if>"${realdut.type}" == "sw"</if>
+			<desc>Reset BR to factory default</desc>
+			<console target="sw1" timeout="300">
+				-v ""
+				-v "reset config"
+			</console>
+		</step>
+		
+	</stage>
+	
+	<stage no="remove.device">
+		<include prefix="start_selenium_server1" file="subs/start_selenium_server_${tb.os}.xml" args="${job_selenium_jar}, ${job_selenium_port}, ${job_selenium_log}, ${tb.browser_type},${tb.browser_path}" />
+		<step no="pre.0">
+			<desc>
+				get access addr
+			</desc>
+			<setvar name="access_addr">
+				echo "${tb.http_server}"
+			</setvar>
+		</step>
+		
+		<step no="pre.1">
+			<desc>
+				get login addr
+			</desc>
+			<setvar name="login_addr">
+				echo "${tb.http_server}/login"
+			</setvar>
+		</step>
+		
+		<step no="pre.2">
+			<desc>
+				get random number
+			</desc>
+			<setvar name="random.number">
+				echo $RANDOM
+			</setvar>
+		</step>
+		
+		<step no="1">
+			<desc>
+				access cloud3.0
+			</desc>
+			<log-file>login_cloud.html</log-file>
+			<file>session_id.log</file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/cloud_login_positive.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info --preserve-session --parameters visit.pre_url=${login_addr} visit.url=${access_addr} &gt; ${log.dir}/session_id.log
+			</script>
+		</step>	
+		<step no="2">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log -t str
+			</setvar>
+		</step>
+		
+		<step no="3">
+			<desc>
+				remove device by serial number
+			</desc>
+			<log-file>remove_serial_number.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/remove_device_sn.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --parameters devices.sn_number=${device.sn} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+		<include prefix="stop_selenium_server" file="subs/stop_selenium_server_${tb.os}.xml"  args="${job_selenium_log}"/>
+	</stage>
+</testcase>

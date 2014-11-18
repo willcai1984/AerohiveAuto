@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify MPP use the third DNS server when the first and second can not work.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Default setting.
+
+		Test Procedure:
+		box10#ip domain-name aerohive.com.cn
+		box10#ip dns 10.155.3.249
+		box10#ip dns 10.155.3.3
+		box10#ip dns 10.155.3.253
+		box10#show dns conf
+		dns name : aerohive.com.cn
+		dns ipaddress0 : 10.155.3.249
+		dns ipaddress1 : 10.155.3.3
+		dns ipaddress2 : 10.155.3.253
+		box10#ping host1name box5
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				disable DHCP client
+				config interface mgt0's ip
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${ap1.mgt0.ipset} 255.255.255.0"
+				-v "ip route default gateway ${tb.vlan1.gw}"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				set ap mgt0 ip
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				echo ${ap1.mgt0.ipset}
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				check ap can not ping hostname successfully
+			</desc>
+			<log-file>step2_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${pub.dnstest.name1}"; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ping\s+${pub.dnstest.name1}\.${pub.dns1.domain1}\s+\(${pub.dnstest.ip1}\)\s+" -f ${log.dir}/${log.file} -c 0</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				config dns domain-name
+			</desc>
+			<log-file>show_dns.log</log-file>
+			<telnet target="ap1">
+				-v "dns domain-name ${pub.dns1.domain1}"
+				-v "dns server-ip ${pub.invalid_dns1.ip}"
+				-v "show dns"
+			</telnet>
+			<log-match>-e "Domain name suffix" -i "${pub.dns1.domain1}"</log-match>
+			<log-match>-e "Primary" -i "${pub.invalid_dns1.ip}"</log-match>
+			<log-match>-e "Secondary" -i "0.0.0.0"</log-match>
+			<log-match>-e "Tertiary" -i "0.0.0.0"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				check ap can not ping hostname successfully
+			</desc>
+			<log-file>step4_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${pub.dnstest.name1}"; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ping\s+${pub.dnstest.name1}\.${pub.dns1.domain1}\s+\(${pub.dnstest.ip1}\)\s+" -f ${log.dir}/${log.file} -c 0</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				config dns server to secondary and show dns
+			</desc>
+			<log-file>show_dns_second.log</log-file>
+			<telnet target="ap1">
+				-v "dns server-ip ${pub.invalid_dns2.ip} second"
+				-v "show dns"
+			</telnet>
+			<log-match>-e "Secondary" -i "${pub.invalid_dns2.ip}"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				check ap can not ping hostname successfully
+			</desc>
+			<log-file>step5.1_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${pub.dnstest.name1}"; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ping\s+${pub.dnstest.name1}\.${pub.dns1.domain1}\s+\(${pub.dnstest.ip1}\)\s+" -f ${log.dir}/${log.file} -c 0</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				open debug:
+				"_ff id 1 dst-port 53 bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "_ff id 1 dst-port 53 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>
+				config dns server to Tertiary and show dns config
+			</desc>
+			<log-file>show_dns_third.log</log-file>
+			<telnet target="ap1">
+				-v "dns server-ip ${pub.dns1.ip} third"
+				-v "show dns"
+			</telnet>
+			<log-match>-e "Tertiary" -i "${pub.dns1.ip}"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				ap can ping hostname successfully and check the result
+			</desc>
+			<log-file>step6.1_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${pub.dnstest.name1} count 5" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ping\s+${pub.dnstest.name1}\.${pub.dns1.domain1}\s+\(${pub.dnstest.ip1}\)\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				show log buffer and check log
+			</desc>
+			<log-file>show_log_buffer.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(i\)\s+mgt0\s+${ap1.mgt0.ipset}->${pub.invalid_dns1.ip}\(\d+\)\s+ttl\(64\)\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(u\)\s+mgt0\s+${pub.invalid_dns1.ip}->${ap1.mgt0.ipset}\(\d+\)\s+\S+\s+UDP\s+53->\d+" -f ${log.dir}/${log.file} -c 0</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(i\)\s+mgt0\s+${ap1.mgt0.ipset}->${pub.invalid_dns2.ip}\(\d+\)\s+ttl\(64\)\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(u\)\s+mgt0\s+${pub.invalid_dns2.ip}->${ap1.mgt0.ipset}\(\d+\)\s+\S+\s+UDP\s+53->\d+" -f ${log.dir}/${log.file} -c 0</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(i\)\s+mgt0\s+${ap1.mgt0.ipset}->${pub.dns1.ip}\(\d+\)\s+ttl\(64\)\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(o\)\s+eth0\s+${ap1.mgt0.ipset}->${pub.dns1.ip}\(\d+\)\s+ttl\(64\)\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(u\)\s+mgt0\s+${pub.dns1.ip}->${ap1.mgt0.ipset}\(\d+\)\s+\S+\s+UDP\s+53->\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

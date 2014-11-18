@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>port mgmt CLI check.</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		bug 20017, 20158
+		Topology to use	
+		PC1++++++ Switch   
+
+		Description	when a port change VLAN, MACs on this VLAN and port should be deleted, shutdown command test, update fdb when trunk port change allow list
+		Platform Dependence	Chesapeake
+		Pre-condition	?	PC1 connect to switch port1
+		PC1 is in vlan1
+		Test procedure	Dynamic unicast mac entries
+		1.	PC1 send frames to switch, then stop
+		2.	Check learned MACs
+		3.	change port from vlan1 to vlan2
+		4.  check FDB table, should be null
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<comment>
+		sw1.port1=eth1/5;
+		sw1.port2=eth1/6;
+		sw1.port3=eth1/13;
+		sw1.port4=eth1/14;
+		sw1.port3.ixia_port
+		sw1.port1.ixia_port=1/2/7;
+		sw1.port2.ixia_port=1/2/8;
+		sw1.port1.ixia_port=1/2/9;
+		sw1.port2.ixia_port=1/2/10;
+		sw1.terminal.ip=10.155.32.105;
+		sw1.terminal.port=2054;
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclclient1.ip=10.155.40.10;
+
+		mpc.mif.ip=10.155.32.128;
+		mpc.tif.ip=10.68.136.253;
+		mpc.user=root;
+		mpc.passwd=aerohive;
+		mpc.prompt=".*#";
+		mpc.tif.name=eth1;
+		tb.nvlan=100;
+		tb.vlans=100,200,300;
+		tb.vlan1=100;
+		tb.vlan2=200;
+		tb.vlan3=300;
+	</comment>
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+		<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+		<property name="sw1.port3.ixia_port.mac" value="0000.0000.0013"/>
+		<property name="sfp1_2024" value="eth1/25"/>
+		<property name="sfp1_2048" value="eth1/49"/>
+		<property name="agg" value="10"/>
+		<property name="agg_2" value="11"/>
+		<step no="0">
+			<desc>
+				configure ports 1 in vlan 1, create vlan 2
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "clear mac-address-table all"
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		
+		<step no="0.1">
+			<desc>check bug 19929, down port's attribute should be auto/auto/disable</desc>
+			<telnet target="sw1">
+				-v "sh interface"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "D\s*full" -n</log-match>
+			<log-match>-e "D\s*half" -n</log-match>
+			<log-match>-e "D\s*auto\s*1" -n</log-match>
+		</step>
+		
+		<step no="1.1">
+			<desc>check bug 20017, interface description should can longer than 32 bytes</desc>
+			<telnet target="sw1">
+				-v "interface eth1/1 description aaaaaaaaaabbbbbbbbbbccccccccccdddddd"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "unknown keyword or invalid input" -n</log-match>
+		</step>
+		
+		<step no="2">
+			<desc>
+				check bug 21859, delete port-channel, swd core-dump. 
+				check bug 23191,clear port count
+			</desc>
+			<telnet target="sw1">
+				-v "agg ${agg}"
+				-v "interface ${sw1.port1} agg ${agg}"
+				-v "interface ${sw1.port2} agg ${agg}"
+				-v "interface ${sw1.port3} agg ${agg}"
+				-v "clear interface agg${agg} counters"
+			</telnet>
+		</step>
+		
+		<step no="2.1">
+			<desc>
+				port1 send pkts to let switch learn FDB entries	
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff 
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		
+		<step no="2.2">
+			<desc>agg should have counter</desc>
+			<log-file>port_counter.log</log-file>
+			<telnet target="sw1">
+				-v "sh interface agg${agg} counters"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">
+                -b "InOctets" -ps p0 "agg${agg}\s*0"
+                -e "OutOctets"
+                -f ${log.dir}/${log.file}
+            </log-match>
+		</step>
+		
+		<step no="2.3">
+			<desc>clear agg counter, counter should be 0</desc>
+			<log-file>port_counter1.log</log-file>
+			<telnet target="sw1">
+				-v "clear interface agg${agg} counters"
+				-v "sh interface agg${agg} counters"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">
+                -b "InOctets" -ps p1 "agg${agg}\s*0"
+                -e "OutOctets"
+                -f ${log.dir}/${log.file}
+            </log-match>
+		</step>
+		
+		<step no="2.4">
+			<desc>no agg 10 and should no core-dump</desc>
+			<telnet target="sw1">
+				-v "no agg ${agg}"
+			</telnet>
+			<log-match>-e "mvKernelExt_release" -n</log-match>
+		</step>
+		
+		<step no="3">
+			<desc>bug 21423, when change MTU, agg's MTU should change too</desc>
+			<telnet target="sw1">
+				-v "agg ${agg}"
+				-v "interface mtu 2000"
+				-v "interface mtu 2100"
+				-v "sh interface"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "agg" -i "2100"</log-match>
+		</step>
+		
+		<step no="4">
+			<desc>bug 21905, when agg delete, all related CLI should delete too</desc>
+			<telnet target="sw1">
+				-v "agg ${agg}"
+				-v "interface agg${agg} speed 100"
+				-v "interface agg${agg} duplex full"
+			</telnet>
+		</step>
+		
+		<step no="4.0">
+			<desc>see configure CLIs</desc>
+			<telnet target="sw1">
+				-v "sh ru"
+			</telnet>
+			<log-match>-e "agg ${agg}"</log-match>
+			<log-match>-e "interface agg${agg} speed 100"</log-match>
+			<log-match>-e "interface agg${agg} duplex full"</log-match>
+		</step>
+		
+		<step no="4.1">
+			<desc>delete agg, then check other CLIs</desc>
+			<telnet target="sw1">
+				-v "no agg ${agg}"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		<step no="4.2">
+			<desc>check other CLIs</desc>
+			<telnet target="sw1">
+				-v "sh ru"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "agg ${agg}" -n</log-match>
+			<log-match>-e "interface agg${agg} speed 100" -n</log-match>
+			<log-match>-e "interface agg${agg} duplex full" -n</log-match>
+		</step>
+		
+		<step no="5">
+			<desc>bug 23977, sfp or agg which has sfp should not set speed 100m</desc>
+			<telnet target="sw1">
+				-v "interface ${sw1.port5} speed 100"
+				-v "interface ${sw1.port6} speed 100"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Error: Not support on sfp"</log-match>
+		</step>
+		
+		<step no="5.1">
+			<desc>agg which has sfp should not set speed 100m</desc>
+			<telnet target="sw1">
+				-v "agg ${agg}"
+				-v "agg ${agg_2}"
+				-v "no interface ${sw1.port5} speed"
+				-v "no interface ${sw1.port6} speed"
+				-v "interface ${sw1.port5} agg ${agg}"
+				-v "interface ${sw1.port6} agg ${agg_2}"
+				-v "interface agg${agg} speed 100"
+				-v "interface agg${agg_2} speed 100"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Error: Not support on sfp"</log-match>
+		</step>
+		
+		<step no="6">
+			<desc>bug 20630, should not shutdown/no shutdown port if it is in agg</desc>
+			<telnet target="sw1">
+				-v "interface ${sw1.port5} shutdown"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Error: This port is in agg"</log-match>
+		</step>
+		
+		<step no="7">
+			<desc>bug 20102, Repeat CLI "monitor session wcai source interface port-channel11 ingress" may add port-channel 12 into running-configure</desc>
+			<log-file>monitor_session.log</log-file>
+			<telnet target="sw1">
+				-v "monitor session test"
+				-v "monitor session test source interface agg${agg} ingress"
+				-v "monitor session test source interface agg${agg} ingress"
+				-v "monitor session test source interface agg${agg} ingress"
+				-v "monitor session test source interface agg${agg} ingress"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		<step no="7.1">
+			<desc>check running config</desc>
+			<log-file>monitor_session.log</log-file>
+			<telnet target="sw1">
+				-v "sh ru | in monitor"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "monitor session test source interface agg${agg} ingress"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+                -p "agg"
+                -c 1
+                -f ${log.dir}/${log.file}
+            </log-match>
+		</step>
+		
+		<step no="8">
+			<desc>bug 20173, Fail to add monitor session destination port to port-channel even if remove that monitor session</desc>
+			<telnet target="sw1">
+				-v "no agg ${agg}"
+				-v "agg ${agg}"
+				-v "no monitor session test"
+				-v "monitor session test"
+				-v "monitor session test destination interface ${sw1.port1}"
+				-v "interface ${sw1.port1} agg ${agg}"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "had been added as monitor session destination port"</log-match>
+		</step>
+		
+		<step no="8.1">
+			<desc>delete session, should can set interface into agg</desc>
+			<telnet target="sw1">
+				-v "no monitor session test"
+				-v "interface ${sw1.port1} agg ${agg}"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "had been added as monitor session destination port" -n</log-match>
+		</step>
+		
+		<step no="9">
+			<desc>bug 20697, add sfp to agg whose speed is 100 should fail</desc>
+			<telnet target="sw1">
+				-v "no agg ${agg}"
+				-v "agg ${agg}"
+				-v "interface agg${agg} speed 100"
+				-v "interface ${sw1.port5} agg ${agg}"
+				-v "interface ${sw1.port6} agg ${agg}"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "agg's speed is not auto or 1000M"</log-match>
+		</step>
+		
+		<step no="10">
+			<desc>bug 21392, after config a agg as a monitor src, its member can't config as src</desc>
+			<telnet target="sw1">
+				-v "no agg ${agg}"
+				-v "agg ${agg}"
+				-v "interface ${sw1.port1} agg ${agg}"
+				-v "interface ${sw1.port2} agg ${agg}"
+				-v "monitor session s1"
+				-v "monitor session s2"
+				-v "monitor session s1 source interface agg${agg} ingress"
+				-v "monitor session s2 source interface ${sw1.port1} ingress"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Error: one or more source interfaces had been used by other session as source interface!"</log-match>
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

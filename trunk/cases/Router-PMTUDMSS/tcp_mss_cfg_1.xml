@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>CFG of TCP MSS and PMTUD can be saved</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1. Setup L3VPN in BR and CVG
+		2. Ip tcp-mss-threshold enable in both BR and CVG
+		3. Set the tcp-mss-threshold of l3vpn to 1356
+		4. Set the tcp-mss-threshold to 1460
+		5. Disable ip path-mtu-discovery
+		6. Save cfg and reboot, result 1
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				config CVG act as l3 VPN server
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="3">
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:certs/server_cert.pem"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:certs/server_key.pem"
+				-v "vpn xauth-client-list ${hive.name}_List local"
+				-v "vpn xauth-client-list ${hive.name}_List client-name ${br1.br.name} password aerohive"
+				-v "vpn server-ipsec-tunnel ${hive.name}_Server vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${hive.name}_Server client-list ${hive.name}_List"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel ${hive.name}_Server"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				enable ospf on CVG eth1
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="3">
+				-v "routing protocol ospf advertise eth1"
+				-v "routing protocol ospf router-id ${cvg1.cvg.lan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+				-v "interface eth0 mode wan nat"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				config BR with WAN interface, nat enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "interface mgt0 ip ${br1.br.mgt0.ip}/${cvg1.cvg.wan.netmask}"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Show interface eth0 dhcp client to check if DNS server be obtained
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0 dhcp client"
+			</telnet>
+			<log-match>-i "DNS server" -i "192.168.10.201"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				config BR as l3 VPN client
+			</desc>
+			<console target="br1.br">
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "vpn client-ipsec-tunnel ${br1.br.name}_client_ipsec_1 vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${br1.br.name}_client_ipsec_1 gateway ${cvg1.cvg.mip.ip} client-name ${br1.br.name} password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel ${br1.br.name}_client_ipsec_1 primary"
+				-v "routing route-request enable"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+			</console>
+		</step>
+
+		<step no="3" delay="20" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				check vpn ike sa on BR1 side
+			</desc>
+			<log-file>step3_ike_sa_br_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.mip.ip}\[4500\]"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				check vpn ike sa on CVG side
+			</desc>
+			<log-file>step3.1_ike_sa_cvg_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="3">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "R" -i "${pub.br_fw.ip}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.2">
+			<desc>
+				check gre tunnel on br1 side
+			</desc>
+			<log-file>step3.2_show_gre_tunnel_br.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.mip.ip}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.3">
+			<desc>
+				check gre tunnel on cvg side
+			</desc>
+			<log-file>step3.3_show_gre_tunnel_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="3">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.4">
+			<desc>
+				BR check route
+			</desc>
+			<log-file>step3.4_show_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				cvg1 check route
+			</desc>
+			<log-file>step3.5_show_ip_route.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				Ip tcp-mss-threshold enable in BR
+				Set the tcp-mss-threshold of l3vpn to 1356
+				Set the tcp-mss-threshold to 1460
+				Disable ip path-mtu-discovery
+				Save config
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip tcp-mss-threshold enable"
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1356"
+				-v "ip tcp-mss-threshold threshold-size 1460"
+				-v "no ip path-mtu-discovery enable"
+				-v "save config"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="3.7">
+			<desc>
+				Ip tcp-mss-threshold enable in CVG
+				Set the tcp-mss-threshold of l3vpn to 1356
+				Set the tcp-mss-threshold to 1460
+				Disable ip path-mtu-discovery
+				Save config
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "ip tcp-mss-threshold enable"
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1356"
+				-v "ip tcp-mss-threshold threshold-size 1460"
+				-v "no ip path-mtu-discovery enable"
+				-v "save config"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				reboot br
+			</desc>
+			<console target="br1.br">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				reboot cvg
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "reboot"
+			</telnet>
+		</step>
+
+		<step no="5" delay="60">
+			<desc>
+				The cfg do not lost after reboot
+			</desc>
+			<console target="br1.br">
+				-v "show running-config"
+			</console>
+			<log-match>-c -i "ip tcp-mss-threshold threshold-size 1460"</log-match>
+			<log-match>-c -i "ip tcp-mss-threshold l3-vpn-threshold-size 1356"</log-match>
+			<log-match>-c -i "no ip path-mtu-discovery enable"</log-match>
+		</step>
+
+		<step no="5.1" delay="60">
+			<desc>
+				The cfg do not lost after reboot
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show running-config"
+			</telnet>
+			<log-match>-c -i "ip tcp-mss-threshold threshold-size 1460"</log-match>
+			<log-match>-c -i "ip tcp-mss-threshold l3-vpn-threshold-size 1356"</log-match>
+			<log-match>-c -i "no ip path-mtu-discovery enable"</log-match>
+		</step>
+	</stage>
+</testcase>

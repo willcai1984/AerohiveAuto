@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Session setup for ssh traffic</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-Laptop has been associated with AP1 and
+		assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+
+		1)
+		Config the ip-policy that permit ssh traffic between Laptop and Server
+		"ip-policy FW-0"
+		"ip-policy FW-0 service [ssh] [from/to] &lt;Laptop ip
+		addr&gt; action permit"
+		2) Laptop accesses Server by ssh
+		3) Show the
+		ip-session
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="user_id" value="FW" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Laptop uses user-profile "FW"
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				1) Config the ip-policy that permit ssh traffic between Laptop
+				and Server
+				"ip-policy FW-0"
+				"ip-policy FW-0 service [ssh] [from/to]
+				&lt;Laptop ip addr&gt; action permit"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${sta1.tif.ip} service ssh action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				2) Laptop accesses Server by ssh
+			</desc>
+			<log-file>sta_ssh_server.log</log-file>
+			<ssh target="sta1" prompt=".*#">
+				-v "rm -rf /root/.ssh/known_hosts"
+				-v 'echo "nohup clicfg.pl -i 22 -o 600 -d ${tb.dns} -u ${tb.dns.user} -p ${tb.dns.passwd} -m \".*#\" -n -z sta_ssh_server.log -l /tmp/ -v \"sleep 500\" &gt; null &amp;" > /tmp/tmp.sh'
+				-v "sh /tmp/tmp.sh"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="5">
+			<desc>
+				3) Show the ip-session
+			</desc>
+			<log-file>step5_show_forwarding_engine_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match>-c -i "${tb.dns}/22" -i "${sta1.tif.ip}" -i "Proto 6"
+			</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				check log
+			</desc>
+			<log-file>step6_show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\) TCP \d+-&gt;22" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[${user_id}\] id \[1\] \[permit\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\) TCP \d+-&gt;22" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

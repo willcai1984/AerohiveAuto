@@ -1,0 +1,274 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check if QoS works for lan ports</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Laptop1 connect to BR lan ports eth1
+		Laptop2 connect to BR lan ports eth4
+		Lan ports are in same vlan
+		Lan ports mode is port-based/trunk mode
+		QoS classify selected DSCP
+
+		Test Procedure:
+
+		1. Configure QoS for lan ports eth1, eth4
+		eth1:
+		qos classifier-profile test
+		interface eth1 qos-classifier test
+		qos classifier-profile test diffserv
+		qos classifier-map diffserv 0 5
+		eth4:
+		qos marker-profile test
+		interface eth4 qos-marker test
+		qos marker-profile test diffserv
+		qos marker-map diffserv 5 2
+		2. Laptop1 send a packet to laptop2. Capture packet in laptop2, check DSCP field value.
+		Result1
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>	
+	<stage>
+		<!-- <include prefix="pre.1" file="subs/br_vpc1_setvlan.xml" obj-args="br1" args="vlan1" /> -->
+		<step no="1">
+			<desc>Enable mgt0 dhcp/dns server</desc>
+			<log-file>step1_mgt0_status.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show run | in mgt0"
+			</telnet>
+			<log-match>-i "interface mgt0 ip ${br1.br.mgt0.ip}"</log-match>
+			<log-match>-i "interface mgt0 dhcp-server ip-pool ${br1.br.mgt0.ip_pool_start}"</log-match>
+			<log-match>-i "interface mgt0 dhcp-server enable"</log-match>
+			<log-match>-i "interface mgt0 dns-server enable"</log-match>
+		</step>
+		
+		<include prefix="pre2.1" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="${br1.vpc2.vlan},${br1.vpc2.vlan},access" />
+
+		<step no="1.2">
+			<desc>
+				Laptop1 connect to BR lan ports eth1
+				Laptop2 connect to BR lan ports eth3
+				Lan ports are in same vlan
+				Lan ports mode is port-based/trunk mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+			    -v "no interface m0 dhcp-server enable"
+			    -v "interface m0 dhcp-server enable"				
+				-v "interface eth3 mode bridge-802.1q"
+				-v "interface mgt0 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0 native-vlan ${br1.vpc2.vlan}"				
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vlan2} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				Show lan port-config, check default vlan for eth1/eth4
+			</desc>
+			<log-file>step3_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc2.vlan}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="1.4a">
+			<desc>
+				Laptop1 connect to lan port eth1
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.4b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="1.5a">
+			<desc>
+				AP1 connect to lan port eth3
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0 native-vlan ${br1.vpc2.vlan}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="1.5b">
+			<desc>
+				show AP1 mgt0
+			</desc>
+			<log-file>step1.5b_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.5c">
+			<desc>get ip address of ap1</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step1.5b_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.6" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				4. Laptop2 ping laptop1
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>	
+
+		<step no="2">
+			<desc>
+				1. Configure QoS for lan ports eth1, eth4
+				eth1:
+				qos classifier-profile test
+				interface eth1 qos-classifier test
+				qos classifier-profile test diffserv
+				qos classifier-map diffserv 0 5
+				eth4:
+				qos marker-profile test
+				interface eth4 qos-marker test
+				qos marker-profile test diffserv
+				qos marker-map diffserv 5 2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "qos enable"
+				-v "qos classifier-profile test"
+				-v "interface eth3 qos-classifier test"
+				-v "qos classifier-profile test diffserv"
+				-v "qos classifier-map diffserv 0 5"
+				-v "qos marker-profile test"
+				-v "interface eth1 qos-marker test"
+				-v "qos marker-profile test diffserv"
+				-v "qos marker-map diffserv 5 2"
+			</telnet>
+		</step>
+
+		<step no="3.1a">
+			<desc>
+				packet capture on br1.vpc1
+			</desc>
+			<log-file>step3.1a_vpc1_packet_capture.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "nohup tshark -l -i ${br1.vpc1.tif.name} -V ip proto 1 and src ${br1.ap1.mgt0.ip} &gt; ${job.id}vpc1_ping_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.1b">
+			<desc>
+				get vpc1 tshark process
+			</desc>
+			<setvar name="vpc1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.1a_vpc1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3.1c">
+			<desc>
+				enable debug
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 dst-ip ${br1.vpc1.tif.ip} protocol 1 bi"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+				-v "_kdebug qos mark"
+				-v "clear log buf"
+			</telnet>
+		</step>
+
+		<step no="3.1d" type="loop-check" loop-max-times="20" loop-interval="20">
+			<desc>
+				4. Laptop2 ping laptop1
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "clear arp-cache"
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4.1" delay="10">
+			<desc>
+				check ping packet on vpc1 (BR100, 200: Lan to lan not support QoS)
+			</desc>
+			<log-file>vpc1_check_ping_packet_int.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "kill -9 ${vpc1.tshark.id_1}"
+				-v "cat ${job.id}vpc1_ping_1.log"
+				-v "rm -f ${job.id}vpc1_ping_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "DSCP 0x00: Default; ECN: 0x00" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				check log info on BR
+			</desc>
+			<log-file>step4.2_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buf"
+				-v ""
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</telnet>
+<!--			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Marking DiffServ: qos=2 dscp=0 check" -f ${log.dir}/${log.file}</log-match>
+-->
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Classifier\(eth3:DSCP\) DSCP=0 qos=5" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>	
+
+	</stage>
+	
+	<post-process>
+		<stage>
+			<include prefix="post_br1_eth2_l2swcfg" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="999, ${br1.vlan2}\,${br1.vlan3}" />
+	   </stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+
+	<failed-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					kill tshark process on br1.vpc1
+				</desc>
+				<ssh target="br1.vpc1">
+					-v "kill -9 ${vpc1.tshark.id_1}"
+					-v "rm -f ${job.id}vpc1_ping_1.log"
+				</ssh>
+				<no-error-check />
+			</step>
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+
+</testcase>

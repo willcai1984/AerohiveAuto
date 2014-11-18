@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>ARP delete on mgt0 interface</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Configure ip of mgt0
+
+		Test Procedure:
+
+		- clear arp table on ap
+		- ap sends ARP request to a unknown host result 1
+		- delete ip of mgt0, result 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<stage>
+		<step no="pre1.1">
+			<desc>
+				Configure ip of mgt0
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${ap1.mgt0.ip}/${br.lan.netmask}"
+				-v "ip route default gateway ${tb.vlan1.gw}"
+			</console>
+		</step>
+
+		<step no="pre1.2" delay="10">
+			<desc>
+				-show interface mgt0 on AP1
+			</desc>
+			<log-file>step_pre1.2_show_interface_mgt0_por1.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="pre1.2b">
+			<desc>
+				Get mgt0 mac for AP1
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "MAC addr=([\da-fA-F:]+)*" -f ${log.dir}/step_pre1.2_show_interface_mgt0_por1.log -t str
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				- clear arp table on ap
+			</desc>
+			<log-file>step1_arp_clear.log</log-file>
+			<console target="ap1">				
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+				-v "clear arp-cache"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				- ap sends ARP request to a unknown host result 1
+			</desc>
+			<log-file>step2_ping.log</log-file>
+			<console target="ap1">
+				-v "ping ${tb.unreach.ip1}"
+			</console>
+		</step>
+
+		<step no="2.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				show arp cache on AP
+			</desc>
+			<log-file>step2.1_show_arp_cache_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show arp-cache"
+			</console>
+			<log-match>-c -i "${ap1.mgt0.mac}" -i "${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				check log info on AP1
+			</desc>
+			<log-file>step2.2_show_log_buff.log</log-file>
+			<console target="ap1">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Refresh this arpc entry ${ap1.mgt0.ip} ${ap1.mgt0.mac}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				- delete ip of mgt0, result 2
+			</desc>
+			<log-file>step2_ping.log</log-file>
+			<console target="ap1">
+				-v "no interface mgt0 ip"
+			</console>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				show arp cache on AP, bpc1 mac are add into arp table
+			</desc>
+			<log-file>step3.1_show_arp_cache_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show arp-cache"
+			</console>
+			<log-match>-n -c -i "${ap1.mgt0.mac}" -i "${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				check log info on AP1
+			</desc>
+			<log-file>step3.2_show_log_buff.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show log buff | in fe_arp"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p " kernel: \[fe_arp\]: del mgt IP: ${ap1.mgt0.ip}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+
+</testcase>

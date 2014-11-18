@@ -1,0 +1,395 @@
+<testcase>
+	<brief>Unicast from laptop1 to laptop2 on same ssid.</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Description:
+		Test rate-limit on eth0 of AP	
+		Pre-condition:
+		-laptop1 connect with ssid1 on AP, pass authentication,tb.server1 can ping laptop1
+		-all laptops and PC are in same vlan
+	
+        test step:
+        1.no config cli check the value of iperf of tcp
+        2.enable rate-limit on AP ,use default value , check the value of iperf of tcp
+        3.enable rate-limit on AP ,rate-limit to 1M
+        4.enable rate-limit on AP ,rate-limit to 5M
+		Expect result:
+		Result 1: this unicast will be up to 30M
+		Result 2: this unicast will be up to 30M
+        Result 3: this unicast will be up to 1M
+		Result 4: this unicast will be up to 5M
+	
+	</description>
+
+	<stage>
+
+		<step no="1">
+			<desc>Set SSID for DUT1 via ssh to</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite open"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile fw qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="2.1.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="2.1.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+
+		<step no="3">
+			<desc>
+				open port 65528 for tcp,and station1 as service
+			</desc>
+			<log-file>step3_openport_staion1_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "killall iperf"
+				-v "nohup iperf -s -p 65528 &amp; > /tmp/${log.dir}/step3_openport.log 2>&amp;1 &amp;"
+				
+			</ssh>
+		</step>
+
+		<step no="3.a" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>Reboot server1</desc>
+			<script>
+				${bin.dir}/sshcli.pl -d ${tb.server1} -u ${tb.server1.user} -p ${tb.server1.passwd} -v "reboot" -l ${log.dir}
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="3.b" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check staf ping status</desc>
+			<script>
+				ping ${tb.server1} -c 4
+			</script>
+			<log-match> -c -i "${sta1.tif.ip}" -i "ttl"  </log-match>
+		</step>
+
+		<step no="4" delay="10">
+			<desc>start iperf client in tb.server1</desc>
+			<log-file>win4_iperf_client.log</log-file>
+			<ssh host="${tb.server1}" timeout="120">
+				-v "killall iperf"
+				-v "ping ${sta1.tif.ip} -c 4"
+				-v "iperf -c${sta1.tif.ip} -t 30 -i 4 -p 65528 -P 1 > /tmp/iprtf-${job.id}.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+
+		<step no="4.a" delay="40">
+			<desc>check, no rate-limit cli</desc>
+			<log-file>win4.a_iperf_service.log</log-file>
+			<ssh host="${tb.server1}" timeout="120">
+				-v "cat /tmp/iprtf-${job.id}.log "
+			</ssh>
+
+		</step>
+
+
+
+
+		<step no="4.b">
+			<desc>check ,get aa value, no rate-limit cli </desc>
+			<setvar name="aa">
+				echo $(grep 8.0-12.0 ${log.dir}/win4.a_iperf_service.log | awk '{print $7}')
+			</setvar>
+		</step>
+
+		<step no="4.c">
+			<desc> ratioffest  </desc>
+			<script>
+				echo ${aa} 20 | awk '{
+				if ( $1 &gt; $2 )
+				{exit(0);}
+				else
+				{exit(1);}
+				}'
+			</script>
+		</step>
+
+		<step no="4.d">
+			<desc> ratioffest  </desc>
+			<script>
+				echo ${aa} 100 | awk '{
+				if ( $1 &lt; $2 )
+				{exit(0);}
+				else
+				{exit(1);}
+				}'
+			</script>
+		</step>
+
+
+		<step no="5">
+			<desc>config default value of rate-limit on ap</desc>
+			<ssh target="ap1">
+				-v "interface eth0 rate-limit unicast enable"
+			</ssh>
+		</step>
+
+		<step no="6" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check staf ping status</desc>
+			<script>
+				ping ${tb.server1} -c 4
+			</script>
+			<log-match> -c -i "${sta1.tif.ip}" -i "ttl"  </log-match>
+		</step>
+
+		<step no="7" delay="10">
+			<desc>start iperf client in tb.server1</desc>
+			<log-file>win7_iperf_client.log</log-file>
+			<ssh host="${tb.server1}" timeout="120">
+				-v "killall iperf"
+				-v "ping ${sta1.tif.ip} -c 4"
+				-v "iperf -c${sta1.tif.ip} -t 20 -i 4 -p 65528 -P 1 > /tmp/iprtf-${job.id}.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+
+		<step no="8.a" delay="30">
+			<desc>check</desc>
+			<log-file>win8.a_iperf_service.log</log-file>
+			<ssh host="${tb.server1}" timeout="120">
+				-v "cat /tmp/iprtf-${job.id}.log "
+			</ssh>
+
+		</step>
+
+
+
+
+		<step no="8.b">
+			<desc>check ,get aa value ,rate-limit unicast is enable but use default value. default value is 1G</desc>
+			<setvar name="aa">
+				echo $(grep 8.0-12.0 ${log.dir}/win8.a_iperf_service.log | awk '{print $7}')
+			</setvar>
+		</step>
+
+		<step no="8.c">
+			<desc> ratioffest  </desc>
+			<script>
+				echo ${aa} 20 | awk '{
+				if ( $1 &gt; $2 )
+				{exit(0);}
+				else
+				{exit(1);}
+				}'
+			</script>
+		</step>
+
+		<step no="8.d">
+			<desc> ratioffest  </desc>
+			<script>
+				echo ${aa} 100 | awk '{
+				if ( $1 &lt; $2 )
+				{exit(0);}
+				else
+				{exit(1);}
+				}'
+			</script>
+		</step>
+
+	
+
+		<step no="9">
+			<desc>config 1000Kbps value of rate-limit on ap</desc>
+			<ssh target="ap1">
+				-v "interface eth0 rate-limit unicast 1000"
+			</ssh>
+		</step>
+
+		<step no="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check staf ping status</desc>
+			<script>
+				ping ${tb.server1} -c 4
+			</script>
+			<log-match> -c -i "${sta1.tif.ip}" -i "ttl"  </log-match>
+		</step>
+	</stage>
+	<stage loop-values="1..5" var-name="country_code" loop-passed-break="true">
+		<step no="11" delay="10">
+			<desc>start iperf client in tb.server1</desc>
+			<log-file>win7_iperf_client.log</log-file>
+			<ssh host="${tb.server1}" timeout="120">
+				-v "killall iperf"
+				-v "ping ${sta1.tif.ip} -c 4"
+				-v "iperf -c${sta1.tif.ip} -t 20 -f m -i 4 -p 65528 -P 1 > /tmp/iprtf-${job.id}.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+
+		<step no="11.a" delay="30">
+			<desc>check</desc>
+			<log-file>win11.a_iperf_service.log</log-file>
+			<ssh host="${tb.server1}" timeout="120">
+				-v "cat /tmp/iprtf-${job.id}.log "
+			</ssh>
+
+		</step>
+
+
+
+
+		<step no="11.b">
+			<desc>check ,get aa value,the rate-limit unicast is 1000Kbps </desc>
+			<setvar name="aa">
+				echo $(grep 8.0-12.0 ${log.dir}/win11.a_iperf_service.log | awk '{print $7}')
+			</setvar>
+		</step>
+
+		<step no="11.c">
+			<desc> ratioffest  </desc>
+			<script>
+				echo ${aa} 1 | awk '{
+				if ( $1 &gt; $2 )
+				{exit(0);}
+				else
+				{exit(1);}
+				}'
+			</script>
+		</step>
+
+		<step no="11.d">
+			<desc> ratioffest  </desc>
+			<script>
+				echo ${aa} 1.2 | awk '{
+				if ( $1 &lt; $2 )
+				{exit(0);}
+				else
+				{exit(1);}
+				}'
+			</script>
+		</step>
+	</stage>
+	
+	
+	<stage>
+		<step no="12">
+			<desc>config 5000 Kbps value of rate-limit on ap</desc>
+			<ssh target="ap1">
+				-v "interface eth0 rate-limit unicast 5000"
+			</ssh>
+		</step>
+
+		<step no="13" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check staf ping status</desc>
+			<script>
+				ping ${tb.server1} -c 4
+			</script>
+			<log-match> -c -i "${sta1.tif.ip}" -i "ttl"  </log-match>
+		</step>
+
+		<step no="14" delay="10">
+			<desc>start iperf client in tb.server1</desc>
+			<log-file>win14_iperf_client.log</log-file>
+			<ssh host="${tb.server1}" timeout="120">
+				-v "killall iperf"
+				-v "ping ${sta1.tif.ip} -c 4"
+				-v "iperf -c${sta1.tif.ip} -t 20 -i 4 -p 65528 -P 1 > /tmp/iprtf-${job.id}.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+
+		<step no="14.a" delay="30">
+			<desc>check</desc>
+			<log-file>win14.a_iperf_service.log</log-file>
+			<ssh host="${tb.server1}" timeout="120">
+				-v "cat /tmp/iprtf-${job.id}.log "
+			</ssh>
+
+		</step>
+
+
+
+
+		<step no="14.b">
+			<desc>check ,get aa value, rate-limit unicast 5000</desc>
+			<setvar name="aa">
+				echo $(grep 8.0-12.0 ${log.dir}/win14.a_iperf_service.log |  awk '{print $7}')
+			</setvar>
+		</step>
+
+		<step no="14.c">
+			<desc> ratioffest  </desc>
+			<script>
+				echo ${aa} 4 | awk '{
+				if ( $1 &gt; $2 )
+				{exit(0);}
+				else
+				{exit(1);}
+				}'
+			</script>
+		</step>
+
+		<step no="14.d">
+			<desc> ratioffest  </desc>
+			<script>
+				echo ${aa} 6 | awk '{
+				if ( $1 &lt; $2 )
+				{exit(0);}
+				else
+				{exit(1);}
+				}'
+			</script>
+		</step>
+
+		<step no="15">
+			<desc>kill iperf client</desc>
+			<ssh host="${tb.server1}" timeout="120">
+				-v "killall iperf"
+
+			</ssh>
+		</step>
+		<step no="16">
+			<desc>kill iperf server in cvg.vpc1</desc>
+			<ssh host="${sta1.mif.ip}">
+				-v "killall iperf"
+			</ssh>
+		</step>
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>kill iperf client</desc>
+				<ssh host="${tb.server1}" timeout="120">
+					-v "killall iperf"
+
+				</ssh>
+			</step>
+			<step no="2">
+				<desc>kill iperf server in cvg.vpc1</desc>
+				<ssh host="${sta1.mif.ip}">
+					-v "killall iperf"
+				</ssh>
+			</step>
+
+
+			<step no="3">
+				<desc>Reboot server1</desc>
+				<script>
+					${bin.dir}/sshcli.pl -d ${tb.server1} -u ${tb.server1.user} -p ${tb.server1.passwd} -v "reboot" -l ${log.dir}
+				</script>
+				<no-error-check />
+			</step>
+
+
+		</stage>
+		<include prefix="def_post" file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

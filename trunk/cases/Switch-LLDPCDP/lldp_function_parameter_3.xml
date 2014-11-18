@@ -1,0 +1,514 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+
+	<brief>(IxPort: CoF=3) LLDP timer(the interval of sending lldp packets) test(5-65534).</brief>
+	<priority>low</priority>
+	<automated>yes</automated>
+	<description>
+		Test Produce:
+		Open LLDP debug switch and capture the LLDP packets on AP
+		LLDP timer config can be modifyed correctly
+
+	</description>
+
+	<numofsw>1</numofsw>
+
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+
+	</pre-process>
+
+	<!--parameter set -->
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="tx_port1.phytype" value="${sw1.port1.ixia_port.phytype}" />
+	<property name="tx_port2" value="${sw1.port2.ixia_port}" />
+	<property name="tx_port2.phytype" value="${sw1.port2.ixia_port.phytype}" />
+	<property name="tx_port3" value="${sw1.port3.ixia_port}" />
+	<property name="tx_port3.phytype" value="${sw1.port3.ixia_port.phytype}" />
+	<property name="correct_vlan" value="101" />
+
+	<property name="min" value="5" />
+	<property name="mid" value="200" />
+	<property name="max" value="65534" />
+	<property name="def" value="30" />
+
+	<!--Stage start -->
+	<stage>
+		<step no="1.1">
+			<desc>
+				Enable LLDP on swith
+			</desc>
+			<telnet target="sw1">
+				-v "lldp enable"
+				-v "lldp timer 5"
+				-v "show running-config"
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="1.2">
+			<desc>Check LLDP is enable </desc>
+			<telnet target="sw1">
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Enabled: yes"</log-match>
+		</step>
+
+		<step no="1.2a">
+			<desc>show interface </desc>
+			<log-file>1.2a.log</log-file>
+			<telnet target="sw1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<!--min//////////////////////////////////////////////////////////////////// -->
+
+
+		<step no="1.3">
+			<desc>
+				Set lldp timer to be min on swith
+			</desc>
+			<telnet target="sw1">
+				-v ""
+				-v "lldp timer ${min}"
+				-v "show running-config"
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="1.4">
+			<desc>Check LLDP timer is min </desc>
+			<telnet target="sw1">
+				-v "show lldp"
+				<!-- 
+				Enabled: no 
+				Number of LLDP neighbors: 0
+				Max number of LLDP neighbors: 64 
+				LLDP reinit delay(seconds): 2 
+				Sending LLDP packets interval (seconds): 30 
+				Sending a holdtime value (seconds): 90 
+				LLDP-MED fast-start repeat-count: 3 -->
+
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Sending LLDP packets interval (seconds): ${min}"</log-match>
+		</step>
+
+
+		<!--lldp debug -->
+		<step no="1.5">
+			<desc>
+				Enable lldp packet log
+			</desc>
+			<log-file>step1.5_lldp_packet.log</log-file>
+			<telnet target="sw1">
+				-v "clear log buffered"
+				-v "_debug dcd lldp_adjacency"
+				-v "_debug dcd lldp_error"
+				-v "_debug dcd lldp_packet"
+				-v "_debug dcd info"
+				-v "no lldp enable"
+				-v "lldp enable"
+			</telnet>
+		</step>
+
+
+		<step no="1.6" delay="30" timeout="3600">
+			<desc>
+				LLDP packet can be send correctly
+			</desc>
+			<log-file>check_1.6.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+			</telnet>
+			<log-match>
+				-e "send lldp packet"
+			</log-match>
+			<no-error-check />
+		</step>
+
+		<!--show log -->
+		<step no="2.1">
+			<desc>Check LLDP packet send log</desc>
+			<log-file>check_3.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<!--check timer is correct -->
+		<!-- 
+		[root@hzswtb3-mpc ~]# cat 2.txt 
+		2013-06-17 12:00:34 debug ah_swd: [swd_igmp]: delay leave timeout, 1 times left, send query to port 17. 
+		2013-06-17 12:00:34 debug ah_swd: [swd_igmp]: timerhandler, timerid: 738, timeval 0, func:2732c, param:8de48. 
+		2013-06-17 12:00:33 debug ah_swd: [swd_igmp]: delay leave timeout, 2 times left, send query to port 17. 
+		2013-06-17 12:00:33 debug ah_swd: [swd_igmp]: timerhandler, timerid: 738, timeval 0, func:2732c, param:8de48. 
+		2013-06-17 12:00:33 debug ah_swd: [swd_igmp]: add timer, timerid: 738, func:2732c, param:8de48. 
+		2013-06-17 12:00:33 debug ah_swd: [swd_igmp]: process delay leave, interval: 1, time:2 
+		[root@hzswtb3-mpc ~]# time1=`sed -n -e '/delay leave timeout/'p 2.txt ` 
+		[root@hzswtb3-mpc ~]# echo $time1 
+		2013-06-17 12:00:34 debug ah_swd: [swd_igmp]: delay leave timeout, 1 times left, send query to port 17. 
+		2013-06-17 12:00:33 debug ah_swd: [swd_igmp]: delay leave timeout, 2 times left, send query to port 17. 
+		[root@hzswtb3-mpc ~]# time1=`sed -n -e '/delay leave timeout/'p 2.txt | sed -n 1p` 
+		[root@hzswtb3-mpc ~]# echo $time1 
+		2013-06-17 12:00:34 debug ah_swd: [swd_igmp]: delay leave timeout, 1 times left, send query to port 17. 
+		[root@hzswtb3-mpc ~]# time1=`sed -n -e '/delay leave timeout/'p 2.txt | sed -n 1p| awk '{print $1,$2}'` 
+		[root@hzswtb3-mpc ~]# echo $time1 2013-06-17 12:00:34 
+		[root@hzswtb3-mpc ~]# date -d "${time1}" Mon Jun 17 12:00:34 CST 2013 
+		[root@hzswtb3-mpc ~]# date -d "${time1}" +%s 
+		1371441634 
+		[root@hzswtb3-mpc ~]# expr `date -d "${time1}" +%s` - 1 
+		1371441633 
+		[root@hzswtb3-mpc ~]# 
+		 -->
+		<step no="2.2">
+			<desc>Get the first and second LLDP send time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/send lldp packet from interface p${sw1.port1.hwindex}./'p ${log.dir}/check_3.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/send lldp packet from interface p${sw1.port1.hwindex}./check_3.log | sed -n 2p| awk '{print $1,$2}'`"
+				<!-- time2=2013-09-24 08:32:18 -->
+			</multi-setvar>
+		</step>
+		<step no="2.3">
+			<desc>Check packet send interval is correct</desc>
+			<script>
+				<!--set time -->
+				x=$(expr ${min} - 1 )
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s` - $x )" -ge "0" \
+				-a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s` - $x )" -le "2" ];
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<!--max/////////////////////////////////////////////////////////////////// -->
+
+		<step no="3.1">
+			<desc>
+				Set lldp timer to be max on swith
+			</desc>
+			<telnet target="sw1">
+				-v ""
+				-v "lldp timer ${max}"
+				-v "show running-config"
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="3.2">
+			<desc>Check LLDP timer is max </desc>
+			<telnet target="sw1">
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Sending LLDP packets interval (seconds): ${max}"</log-match>
+		</step>
+
+
+		<!--lldp debug -->
+		<step no="3.3">
+			<desc>
+				Enable lldp packet log
+			</desc>
+			<log-file>step4.3_lldp_packet.log</log-file>
+			<telnet target="sw1">
+				-v "clear log buffered"
+				-v "_debug dcd lldp_adjacency"
+				-v "_debug dcd lldp_error"
+				-v "_debug dcd lldp_packet"
+				-v "_debug dcd info"
+				-v "no lldp enable"
+				-v "lldp enable"
+			</telnet>
+		</step>
+
+		<step no="3.4" delay="600" timeout="3600">
+			<desc>
+				LLDP packet can be send correctly
+			</desc>
+			<log-file>check_3.4.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+			</telnet>
+			<log-match>
+				-e "send lldp packet"
+			</log-match>
+			<no-error-check />
+		</step>
+
+
+
+		<!--show log -->
+		<step no="4.1">
+			<desc>Check LLDP packet send log</desc>
+			<log-file>check_3-2.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+
+		<step no="4.2">
+			<desc>Get the first and second LLDP send time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/send lldp packet from interface p${sw1.port1.hwindex}./'p ${log.dir}/check_3-2.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/send lldp packet from interface p${sw1.port1.hwindex}./'p ${log.dir}/check_3-2.log | sed -n 2p| awk '{print $1,$2}'`"
+				<!-- time2=2013-09-24 08:32:18 -->
+			</multi-setvar>
+		</step>
+		<step no="4.3">
+			<desc>Check packet send interval is correct</desc>
+			<script>
+				<!--set time -->                <!-- if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s` - 20000 )" -ge "0" ]; -->
+				if [ "$(expr `date -d "${time2}" +%s` - `date -d "" +%s`)" -eq "0" ];
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+
+		<!--mid//////////////////////////////////////////////////////////////////// -->
+
+		<step no="5.1">
+			<desc>
+				Set lldp timer to be mid on swith
+			</desc>
+			<telnet target="sw1">
+				-v ""
+				-v "lldp timer ${mid}"
+				-v "show running-config"
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="5.2">
+			<desc>Check LLDP timer is mid </desc>
+			<telnet target="sw1">
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Sending LLDP packets interval (seconds): ${mid}"</log-match>
+		</step>
+
+
+		<!--lldp debug -->
+		<step no="5.3">
+			<desc>
+				Enable lldp packet log
+			</desc>
+			<log-file>step4.3_lldp_packet.log</log-file>
+			<telnet target="sw1">
+				-v "clear log buffered"
+				-v "_debug dcd lldp_adjacency"
+				-v "_debug dcd lldp_error"
+				-v "_debug dcd lldp_packet"
+				-v "_debug dcd info"
+				-v "no lldp enable"
+				-v "lldp enable"
+			</telnet>
+		</step>
+
+		<step no="5.4" delay="600" timeout="3600">
+			<desc>
+				LLDP packet can be send correctly
+			</desc>
+			<log-file>check_5.4.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+			</telnet>
+			<log-match>
+				-e "send lldp packet"
+			</log-match>
+			<no-error-check />
+		</step>
+
+		<!--show log -->
+		<step no="6.1">
+			<desc>Check LLDP packet send log</desc>
+			<log-file>check_3-3.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="6.2">
+			<desc>Get the first and second LLDP send time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/send lldp packet from interface p${sw1.port1.hwindex}./'p ${log.dir}/check_3-3.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/send lldp packet from interface p${sw1.port1.hwindex}./'p ${log.dir}/check_3-3.log | sed -n 2p| awk '{print $1,$2}'`"
+				<!-- time2=2013-09-24 08:32:18 -->
+			</multi-setvar>
+		</step>
+		<step no="6.3">
+			<desc>Check packet send interval is correct</desc>
+			<script>
+				<!--set time -->
+				x=$(expr ${mid} - 1 )
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s` - $x )" -ge "0" \
+				-a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s` - $x )" -le "5" ];
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+
+
+
+
+		<!--def////////////////////////////////////////////////////////////////////// -->
+
+		<step no="7.1">
+			<desc>
+				Set lldp timer to be def on swith
+			</desc>
+			<telnet target="sw1">
+				-v ""
+				-v "no lldp timer "
+				-v "show running-config"
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+		</step>
+
+
+		<!--Get value -->
+		<step no="7.2">
+			<desc>
+				Check LLDP timer is def
+			</desc>
+			<log-file>step10.2.log</log-file>
+			<telnet target="sw1">
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Max number of LLDP neighbors"</log-match>
+		</step>
+		<step no="7.3">
+			<desc>Get def lld timer value </desc>
+			<setvar name="x">
+				<!-- Sending LLDP packets interval (seconds): 30  -->
+				echo $(${bin.dir}/getbyrexp.py -f ${log.dir}/step10.2.log -p 'Sending LLDP packets interval \(seconds\): (\d+)' -t str)
+			</setvar>
+		</step>
+		<!-- Value gotten in ${x} -->
+
+		<step no="7.4">
+			<desc>check the def timer value is correct</desc>
+			<!--0 is success, 1 is fail -->
+			<script>
+				if [ ${x} -eq ${def} ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+
+		<!--lldp debug -->
+		<step no="7.5">
+			<desc>
+				Enable lldp packet log
+			</desc>
+			<log-file>step4.3_lldp_packet.log</log-file>
+			<telnet target="sw1">
+				-v "clear log buffered"
+				-v "_debug dcd lldp_adjacency"
+				-v "_debug dcd lldp_error"
+				-v "_debug dcd lldp_packet"
+				-v "_debug dcd info"
+				-v "no lldp enable"
+				-v "lldp enable"
+			</telnet>
+		</step>
+
+		<step no="7.6" delay="600" timeout="3600">
+			<desc>
+				LLDP packet can be send correctly
+			</desc>
+			<log-file>check_7.6.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+			</telnet>
+			<log-match>
+				-e "send lldp packet"
+			</log-match>
+			<no-error-check />
+		</step>
+
+		<!--show log -->
+		<step no="8.1">
+			<desc>Check LLDP packet send log</desc>
+			<log-file>check_3-4.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+
+		<step no="8.2">
+			<desc>Get the first and second LLDP send time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/send lldp packet from interface p${sw1.port1.hwindex}./'p ${log.dir}/check_3-4.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/send lldp packet from interface p${sw1.port1.hwindex}./'p ${log.dir}/check_3-4.log | sed -n 2p| awk '{print $1,$2}'`"
+				<!-- time2=2013-09-24 08:32:18 -->
+			</multi-setvar>
+		</step>
+		<step no="8.3">
+			<desc>Check packet send interval is correct</desc>
+			<script>
+				<!--set time -->
+				x=$(expr ${def} - 1 )
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s` - $x )" -ge "0" \
+				-a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s` - $x )" -le "5" ];
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+
+
+
+		<!--Stage end -->
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

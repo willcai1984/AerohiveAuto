@@ -1,0 +1,465 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Modify retry of track IP</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP1 IP_addr is IP1, AP2 IP_addr is IP2
+		-Configure AP1
+		"hive tracktest"
+		"interface mgt0 hive tracktest"
+		-Configure AP2
+		"hive tracktest"
+		"interface mgt0 hive tracktest"
+		"track group1 default-gateway"
+		"track group1 action start-mesh-failover"
+
+		Test Procedure:
+		1)Show ip track on AP2
+		" show track group1"
+		2)Show ip track config
+		" show running config"
+		3)Show ip track logs
+		"_debug monitor all"
+		"debug console"
+		4)Trigger action
+		"interface eth0 shutdown"
+		5)Recover
+		"no interface eth0 shutdown"
+		6)Modify the value of retry
+		"track group1 retry 0"
+		7)Repeat step 1-5
+		8)Modify the interval
+		"track group1 retry 1024"
+		9)Repeat step 1-5
+		Expectant result
+		1.Group retry is 2
+		2.Retry config isn't displayed in the running config (default)
+		4.The retry times of the track ip packet is 2 and it is displayed in the
+		logs
+		5.The system can recover
+		7.Retry config can be displayed correctly and the retry times of the
+		track ip packet is 0 and it is displayed in the logs
+		9.Retry config can be displayed correctly and the
+		retry times of the
+		track ip packet is 2(because of interval/timeout is smaller than retry, so
+		the actual standard is interval) is displayed in the logs(the action can be
+		triggered)
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				ap2 as portal, shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Configure AP1
+				"hive tracktest"
+				"interface mgt0 hive tracktest"
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Show ip track logs
+				"_debug monitor all"
+				-Configure AP2
+				"hive tracktest"
+				"interface mgt0 hive tracktest"
+				"track group1 default-gateway"
+				"track group1 action start-mesh-failover"
+			</desc>
+			<telnet target="ap2">
+				-v "_debug monitor all"
+				-v "clear log all"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "track group1 default-gateway"
+				-v "track group1 action start-mesh-failover"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-Show ip track on AP2
+				" show track group1"
+				-Group Retry: 2
+			</desc>
+			<log-file>step3_show_track_group1.log</log-file>
+			<telnet target="ap2">
+				-v "show track group1"
+			</telnet>
+			<log-match>-i "Group Interval: 6 seconds"</log-match>
+			<log-match>-i "Group Retry: *2"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				-Retry config can't be displayed.
+				" show running config"
+			</desc>
+			<log-file>step3_show_running_config.log</log-file>
+			<telnet target="ap2">
+				-v "show running-config"
+			</telnet>
+			<log-match>-n -i "track group1 retry 2"</log-match>
+		</step>
+
+		<step no="3.3" delay="20">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+			</desc>
+			<log-file>step3_show_logging_buffered.log</log-file>
+			<telnet target="ap2">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/1"</log-match>
+			<log-match loop-values="2,3">-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-clear log all
+				"clear log all"
+			</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				-Trigger action
+				"interface eth0 shutdown"
+			</desc>
+			<console target="ap2" timeout="60">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5" delay="20">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+				-The retry times of the track ip packet is 2 and it is displayed in the logs
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match loop-values="2,3">-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				-Recover
+				"no interface eth0 shutdown"
+			</desc>
+			<console target="ap2">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track1_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache1.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="7" delay="20">
+			<desc>
+				-The system can recover
+			</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/1"</log-match>
+			<log-match>-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/3"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-Modify the value of retry
+				“track group1 retry 0”
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "track group1 retry 0"
+			</console>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				-Show ip track on AP2
+				" show track group1"
+				-Group retry: 2
+			</desc>
+			<log-file>step9_show_track_group1.log</log-file>
+			<console target="ap2">
+				-v "show track group1"
+			</console>
+			<log-match>-i "Group Interval: 6 seconds"</log-match>
+			<log-match>-i "Group Retry: *0"</log-match>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				-Timeout config can be displayed.
+				" show running config"
+			</desc>
+			<log-file>step9_show_running_config.log</log-file>
+			<console target="ap2">
+				-v "show running-config"
+			</console>
+			<log-match>-i "track group1 retry 0"</log-match>
+		</step>
+
+		<step no="9.3">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+			</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/1"</log-match>
+			<log-match>-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/3"</log-match>
+		</step>
+
+
+		<step no="test2">
+			<log-file>show_arp_cache2.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+		
+		<step no="10">
+			<desc>
+				-Trigger action
+				"interface eth0 shutdown"
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+		
+		<step no="11" delay="20">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+				-Retry config can be displayed correctly and the retry times of the track ip packet is 0 and it is displayed in the logs
+			</desc>
+			<log-file>step11_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py"> -b "Send action event, turn on action mesh failover" -ps p "detect group\(group1\) is ready for sending packet, number of times: 1\(all_IFs\)\/1\(wire\)" -ps p0 "detect group\(group1\) is ready for sending packet, number of times: 1\(all_IFs\)\/2\(wire\)" -e "backhaul interface eth0 is down now" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				-Recover
+				"no interface eth0 shutdown"
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track3_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache3.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+			</console>
+		</step>
+
+		<step no="13" delay="20">
+			<desc>
+				-The system can recover
+			</desc>
+			<log-file>step13_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/1"</log-match>
+			<log-match>-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/3"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				-Modify the interval
+				“track group1 retry 1024”
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "track group1 retry 1024"
+			</console>
+		</step>
+
+		<step no="15.1">
+			<desc>
+				-Show ip track on AP2
+				" show track group1"
+				-Group retry: 1024
+			</desc>
+			<log-file>step15_show_track_group1.log</log-file>
+			<console target="ap2">
+				-v "show track group1"
+			</console>
+			<log-match>-i "Group Interval: 6 seconds"</log-match>
+			<log-match>-i "Group Retry: *1024"</log-match>
+		</step>
+
+		<step no="15.2">
+			<desc>
+				-Timeout config can be displayed.
+				" show running config"
+			</desc>
+			<log-file>step15_show_running_config.log</log-file>
+			<console target="ap2">
+				-v "show running-config"
+			</console>
+			<log-match>-i "track group1 retry 1024"</log-match>
+		</step>
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track4_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache4.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+			</console>
+		</step>
+
+		<step no="15.3" delay="20">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+			</desc>
+			<log-file>step15_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/1"</log-match>
+			<log-match>-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/3"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				-Trigger action
+				"interface eth0 shutdown"
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="17" delay="120">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+				-Retry config can be displayed correctly and the retry times of the track ip packet is 2
+				(because of interval/timeout is smaller than retry, so the actual standard is interval)
+				is displayed in the logs(the action can be triggered)
+			</desc>
+			<log-file>step17_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match loop-values="1,2,3">-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+
+		<step no="18">
+			<desc>
+				-Recover
+				"no interface eth0 shutdown"
+			</desc>
+			<console target="ap2">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track5_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache5.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="19" delay="20">
+			<desc>
+				-The system can recover
+			</desc>
+			<log-file>step19_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/1"</log-match>
+			<log-match>-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/3"</log-match>
+		</step>
+	</stage>
+</testcase>

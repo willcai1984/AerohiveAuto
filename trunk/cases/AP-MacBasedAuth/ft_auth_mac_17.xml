@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Two ssid with mac auth on the same AP,the two ssid both accept the certain mac,but with different vid and uid</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-create ssid1 on AP1, mac auth enable, use radius server1
+		-create ssid2 on AP2, mac auth enable, use radius server2
+		-the two radius server return different uid for the mac of STA1
+
+		Test Procedure:
+		-STA1 connect to ssid1, result 1
+		-STA1 connects to ssid2, result 2
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="acct1.uid" value="2" />
+	<property name="conn1.ssid" value="${ssid.name}_A" />
+	<property name="conn2.ssid" value="${ssid.name}_B" />
+
+	<stage>
+		<step no="pre.0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="pre.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>pre.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="pre.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/pre.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="pre.3">
+			<desc>
+				-Config ap2's vlan and native-vlan
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="pre.4" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>pre.4_show_interface_mgt0_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="pre.5">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/pre.4_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="pre.6">
+			<desc>ipconfig to show the ip add</desc>
+			<log-file>pre.6_ipconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="pre.7">
+			<desc>Get sta1's mac</desc>
+			<setvar name="sta1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/pre.6_ipconfig.log -i ${sta1.tif.name} -m -uppercase -dash
+			</setvar>
+		</step>
+
+		<include prefix="1" file="subs/ldap_add.xml" args="${sta1.mac}, ${sta1.mac}" obj-args="acct1" />
+
+		<step no="2">
+			<desc>
+				-config a ssid mac1 on AP,mac auth enable
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}_A"
+				-v "security-object ${ssid.name}_A default-user-profile-attr 1"
+				-v "security-object ${ssid.name}_A security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object ${ssid.name}_A security additional-auth-method mac-based-auth"
+				-v "ssid ${ssid.name}_A"
+				-v "ssid ${ssid.name}_A security-object ${ssid.name}_A"
+				-v "interface wifi0 ssid ${ssid.name}_A"
+				-v "user-profile auto qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "aaa mac-format case-sensitivity upper-case"
+				-v "aaa mac-format delimiter dash"
+				-v "aaa mac-format style five-delimiter"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				-config a ssid mac2 on AP,mac auth enable
+			</desc>
+			<ssh target="ap1">
+				-v "user-profile auto qos-policy def-user-qos vlan-id ${tb.vlan2} attribute 2"
+				-v "security-object ${ssid.name}_B"
+				-v "security-object ${ssid.name}_B security aaa radius-server primary ${ap2.mgt0.ip}"
+				-v "security-object ${ssid.name}_B security additional-auth-method mac-based-auth"
+				-v "ssid ${ssid.name}_B"
+				-v "ssid ${ssid.name}_B security-object ${ssid.name}_B"
+				-v "interface wifi0 ssid ${ssid.name}_B"
+				-v "_debug auth all"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="4">
+			<desc>Set radius service for DUT2 </desc>
+			<ssh target="ap2">
+				-v "user-group autotest"
+				-v "user-group autotest vlan-id ${tb.vlan1}"
+				-v "user-group autotest user-attribute 1"
+				-v "user ${sta1.mac}"
+				-v "user ${sta1.mac} password ${sta1.mac}"
+				-v "user ${sta1.mac} group autotest"
+				-v "aaa radius-server local db-type local"
+				-v "aaa radius-server local user-group autotest"
+				-v "aaa radius-server local enable"
+				-v "_debug auth all"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>show running config</desc>
+			<log-file>step4.1_show_running_config.log</log-file>
+			<ssh target="ap1">
+				-v "show running-config"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>show security object of ssidA</desc>
+			<log-file>step5_show_security_object.log</log-file>
+			<ssh target="ap1">
+				-v "show security-object ${ssid.name}_A"
+			</ssh>
+			<log-match>-c -i "MAC-based auth: *Enabled"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>show security object of ssidB</desc>
+			<log-file>step5.1_show_security_object.log</log-file>
+			<ssh target="ap1">
+				-v "show security-object ${ssid.name}_B"
+			</ssh>
+			<log-match>-c -i "MAC-based auth: *Enabled"</log-match>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>
+				-show ssid XXX station
+			</desc>
+			<log-file>step7_show_station_info.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name}_A station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "open" -i "${tb.vlan2} *Yes *2"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-show roaming cache
+			</desc>
+			<log-file>step8_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				-show auth
+			</desc>
+			<log-file>step9_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *2" -i "open"</log-match>
+		</step>
+
+		<include prefix="10" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step10_show_logging_buffered.log" />
+
+		<step no="10.a">
+			<desc>
+				check log info
+			</desc>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<log-match>-c -i "\[auth_basic\]: Got vlan ID ${tb.vlan2} by User Profile ID 2 for station ${sta1.tif.mac}"</log-match>
+			<log-match>-c -i "\[auth_basic\]: event is sent to AMRP: event=join SPA=${sta1.tif.mac}" -i "uid=2 *vlan=${tb.vlan2}"</log-match>
+			<log-match>-c -i "\[auth_info\]:" -i "user-profile-group-ID=2, VLAN-ID=${tb.vlan2}/0" -i "ssid=${ssid.name}_A, mgt IP=${ap1.mgt0.ip}"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) login to SSID(wifi0.1) by user_name="</log-match>
+		</step>
+
+		<include prefix="11" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="11.a">
+			<desc>
+				-clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<include prefix="12" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="13">
+			<desc>
+				-show ssid XXX station
+			</desc>
+			<log-file>step13_show_station_info.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name}_B station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "open" -i "${tb.vlan1} *Yes *1"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				-show roaming cache
+			</desc>
+			<log-file>step14_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="15">
+			<desc>
+				-show auth
+			</desc>
+			<log-file>step15_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "open"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				check log info
+			</desc>
+			<log-file>step16_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "\[auth_basic\]: MAC-based auth: RADIUS server send OK to station ${sta1.tif.mac}, returned UPID (1) VLAN (${tb.vlan1})"</log-match>
+			<log-match>-c -i "\[auth_basic\]: event is sent to AMRP: event=join SPA=${sta1.tif.mac}" -i "uid=1 *vlan=${tb.vlan1}"</log-match>
+			<log-match>-c -i "\[auth_info\]:" -i "user-profile-group-ID=1, VLAN-ID=${tb.vlan1}/${tb.vlan1}" -i "ssid=${ssid.name}_B, mgt IP=${ap1.mgt0.ip}"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) login to SSID(wifi0.2) by user_name="</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="delete.mac.account" file="subs/ldap_delete.xml" args="${sta1.mac}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

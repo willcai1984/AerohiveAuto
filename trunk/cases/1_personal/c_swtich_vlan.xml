@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+<brief>unknow unicase should be broadcase</brief>
+<priority>accept</priority>
+<automated>yes</automated>
+
+<description>
+1. port1 and port is access vlanx
+2. port3 is trunk
+3. a unknow unicase package from port2 should send to port1 and port3
+</description>
+
+<numofsw>1</numofsw>
+<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	
+	<property name="sw1.port1.ixia_port.mac" value="0000.0010.0015"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0010.0016"/>
+	<!-- property name="sw1.port3.ixia_port.mac" value="0000.0010.0017" -->
+	
+	<stage>
+	
+	<step no="1">
+		<desc>configure interface mode and vlan</desc>
+		<log-file>step1_log.log</log-file>
+		<console target="sw1" timeout="60">
+		-v "vlan ${tb.vlan1}"
+		-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+		-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+		-v "show vlan brief"
+		-v "show vlan summary"
+		-v "show vlan id ${tb.vlan1}"
+		-v "interface ${sw1.mgt0.port} shutdown"
+		</console>
+	</step>
+	
+	<property name="stream1.txport1" value="${sw1.port1.ixia_port}" />
+	<property name="stream1.rxport1" value="${sw1.port2.ixia_port}" />
+	<!--property name="stream1.rxport2" value="${sw2.port3.ixia_port}" -->
+	<property name="stream1.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+	<property name="stream1.rxport1.mac" value="${sw1.port2.ixia_port.mac}" />
+	<property name="stream1.etype" value="0x0800" />
+	<property name="stream1.UDFoffset" value="34" />
+	<property name="stream1.patternOffset2" value="34" />
+	
+	<step no="2">
+		<desc>ixia send traffic</desc>
+		<log-file>step2_log.log</log-file>
+		<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+		-v "tclsh8.5"
+		-v "package req ixia"
+		-v "ah_ixia_connect 
+			-chassisIP ${pub.chassis1.ip} 
+			-userName ${job.user}${job.sid} 
+			-tclServerIP ${pub.tclserver1.ip} 
+			-portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port}
+			-phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+		-v ""
+		
+		<!-- disable streams -->
+		-v "stream_maintance -onePort ${stream1.txport1} -streamId all -maintanceOp disable"
+		-v "stream_maintance -onePort ${stream1.rxport1} -streamId all -maintanceOp disable"
+		<!--
+		-v "stream_maintance -onePort ${stream1.rxport2} -streamId all -maintanceOp disable"		
+		-->
+		-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport1}
+			-mac_dst 0000.0001.0001
+			-mac_src ${stream1.txport1.mac}
+			-eth2_protocol ${stream1.etype}
+			-udf_offset ${stream1.UDFoffset}
+			-patternOffset2 ${stream1.patternOffset2}"
+			
+		-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport1}"
+		
+		-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport1}"
+		<!--
+		-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport2}"
+		-->
+		
+		-v "ctrl-c"
+		</ssh>	
+	</step>
+	
+	<step no="3">
+		<desc>check result with ixia</desc>
+		<log-file>step2_log.log</log-file>
+		<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport1} framesSent userDefinedStat2 result is equal"</log-match>
+		<!--
+		<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport2} framesSent userDefinedStat2 result is equal"</log-match>
+		-->
+	</step>
+	
+	<step no="4">
+		<desc>unknown package shoudn't send to other vlan,config</desc>
+		<log-file>step4.log</log-file>
+		<console target="sw1" timeout="60">
+		-v "vlan ${tb.vlan2}"
+		-v "interface ${sw1.port2} switchport access vlan ${tb.vlan2} "
+		-v "show vlan brief"
+		-v "show vlan summary"
+		-v "show vlan id ${tb.vlan1}"
+		</console>
+	</step>
+	
+	<property name="stream2.txport1" value="${sw1.port1.ixia_port}" />
+	<property name="stream2.rxport1" value="${sw1.port2.ixia_port}" />
+	<!--property name="stream1.rxport2" value="${sw2.port3.ixia_port}" -->
+	<property name="stream2.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+	<property name="stream2.rxport1.mac" value="${sw1.port2.ixia_port.mac}" />
+	<property name="stream2.etype" value="0x0800" />
+	<property name="stream2.UDFoffset" value="34" />
+	<property name="stream2.patternOffset2" value="34" />
+	
+	<step no="5">
+		<desc> config stream</desc>
+		<log-file>step5.log</log-file>
+		<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+		-v "tclsh8.5"
+		-v "package req ixia"
+		-v "ah_ixia_connect 
+			-def disable
+			-chassisIP ${pub.chassis1.ip} 
+			-userName ${job.user}${job.sid} 
+			-tclServerIP ${pub.tclserver1.ip} 
+			-portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port}
+			-phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+		-v ""
+		
+		-v "stream_maintance -onePort ${stream1.txport1} -streamId all -maintanceOp disable"
+		-v "stream_maintance -onePort ${stream1.rxport1} -streamId all -maintanceOp disable"
+		
+		-v "traffic_configure_eth2 -portListIn ${stream2.txport1},${stream2.rxport1}
+			-mac_dst 0000.0001.0001
+			-mac_src ${stream2.txport1.mac}
+			-eth2_protocol ${stream2.etype}
+			-udf_offset ${stream2.UDFoffset}
+			-patternOffset2 ${stream2.patternOffset2}"
+			
+		-v "start_trans_getstats -txPortList ${stream2.txport1} -rxPortList ${stream2.rxport1}"
+		
+		-v "check_equal_tx_with_rx -oneTxPort ${stream2.txport1} -oneRxPort ${stream2.rxport1}"
+		
+		-v "ctrl-c"
+		
+		</ssh>
+	</step>
+		
+	<step no="6">
+		<desc> check stream result </desc>
+		<log-file>step5.log</log-file>
+		<log-match>-e "checkEqualTxWithRX ${stream2.txport1} ${stream2.rxport1} framesSent userDefinedStat2 result is block"</log-match>
+	</step>
+		
+	</stage>	
+
+	<post-process>
+		<stage>
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

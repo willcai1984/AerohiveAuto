@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>For wifi access link, ap will forward local ip multicast packet when there is any associated client</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		On portal:
+		Switch connects to portal on eth0
+		Wifi0.1, wifi1.1 are up access interface
+		Local multicast packet: destination ip with 224.0.0.1, destination mac with
+		0100:5e00:0001 in vlan A
+		Open debug
+
+		Test Procedure:
+		1. sending local multicast packet from portal's eth0, check packet forwarding on
+		portal, result 1
+		2. laptop1 associating to portal's wifi0.1, and be authenticated, in vlan A
+		sending local multicast packet from portal's eth0 in vlan A, check packet
+		forwarding on portal, result 2
+		3. laptop2 associating to portal's wifi1.1, and be authenticated, in vlan A
+		sending local multicast packet from portal's eth0 in vlan A, check packet
+		forwarding on portal, result 3
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				On portal:
+				Switch connects to portal on eth0
+				Wifi0.1, wifi1.1 are up access interface
+				Local multicast packet: destination ip with 224.0.0.1, destination mac with
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 mode access"
+				-v "interface wifi1 radio channel 36"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name}_1"
+				-v "interface wifi1 ssid ${ssid.name}_1"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				On portal:
+				config hive
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				0100:5e00:0001 in vlan A
+				Open debug
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_ff protocol 1"
+				-v "_kdebug fe basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-ping 224.0.0.1
+			</desc>
+			<log-file>step2.1_ping_local_multicast_group.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "ping 224.0.0.1 count 50"
+			</telnet>
+		</step>
+
+		<step no="3" delay="10">
+			<desc>
+				1. sending local multicast packet from portal's eth0, check packet forwarding on
+				portal, result 1
+			</desc>
+			<log-file>step3_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-e "(o) wifi0.1 ${ap2.mgt0.ip}-&gt;224.0.0.1" -i "icmp-echo-req"</log-match>
+			<log-match>-e "\[fe\]: flood the packet out wifi0.1"</log-match>
+			<log-match>-e "(o) wifi1.1 ${ap2.mgt0.ip}-&gt;224.0.0.1" -i "icmp-echo-req"</log-match>
+			<log-match>-e "\[fe\]: flood the packet out wifi1.1"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="4" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="4.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="4.2" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<step no="4.3">
+			<desc>Get sta1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta1.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				get sta1's mac with two delimiter style
+			</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				-ping 224.0.0.1
+			</desc>
+			<log-file>step5_ping_local_multicast_group.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "ping 224.0.0.1 count 50"
+			</telnet>
+		</step>
+
+		<step no="5.1" delay="10">
+			<desc>
+				sending local multicast packet from portal's eth0 in vlan A, check packet
+				forwarding on portal, result 2
+			</desc>
+			<log-file>step5.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-e "(o) wifi0.1 ${ap2.mgt0.ip}-&gt;224.0.0.1" -i "icmp-echo-req"</log-match>
+			<log-match>-e "\[fe\]: flood the packet out wifi0.1"</log-match>
+			<log-match>-e "(o) wifi1.1 ${ap2.mgt0.ip}-&gt;224.0.0.1" -i "icmp-echo-req"</log-match>
+			<log-match>-e "\[fe\]: flood the packet out wifi1.1"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/wpa_supplicant_start.xml" args="sta2" />
+
+		<step no="6.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "ifconfig ${sta2.tif.name} up"
+				-v "iwconfig ${sta2.tif.name} channel 36"
+				-v "iwconfig ${sta2.tif.name} commit"
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}_1\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="6.2" file="subs/chk_conn_in_sta.xml" args="sta2" />
+
+		<step no="6.3">
+			<desc>Get sta2's ip</desc>
+			<setvar name="sta2.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta2.log -i ${sta2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="6.4">
+			<desc>
+				get sta2's mac with two delimiter style
+			</desc>
+			<setvar name="sta2.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta2.mif.ip} -u ${sta2.user} -p ${sta2.passwd} -i ${sta2.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="7">
+			<desc>
+				-ping 224.0.0.1
+			</desc>
+			<log-file>step7_ping_local_multicast_group.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "ping 224.0.0.1 count 50"
+			</telnet>
+		</step>
+
+		<step no="7.1" delay="10">
+			<desc>
+				sending local multicast packet from portal's eth0 in vlan A, check packet
+				forwarding on portal, result 3
+			</desc>
+			<log-file>step7.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-e "(o) wifi0.1 ${ap2.mgt0.ip}-&gt;224.0.0.1" -i "icmp-echo-req"</log-match>
+			<log-match>-e "\[fe\]: flood the packet out wifi0.1"</log-match>
+			<log-match>-e "(o) wifi1.1 ${ap2.mgt0.ip}-&gt;224.0.0.1" -i "icmp-echo-req"</log-match>
+			<log-match>-e "\[fe\]: flood the packet out wifi1.1"</log-match>
+		</step>
+	</stage>
+</testcase>

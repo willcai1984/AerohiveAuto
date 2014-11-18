@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Run traffic then change vlan, check the route is correct</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		1. Set a rang route vlan in eth1
+		2. Traffic match the vlan and is send eth1
+		3. Suddenly remove the match vlan from eth1, result 1
+		4. Add the vlan to eth1, result 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+
+		<if>"${ap1.eth1.existed}" == "true"</if>
+
+		<step no="pre.0">
+			<desc>
+				config ssid
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object aero"
+				-v "security-object aero default-user-profile-attr 1"
+				-v "user-profile user attribute 1"
+				-v "user-profile user vlan-id ${tb.vlan1}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object aero"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</console>
+		</step>
+
+		<include prefix="pre.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				"_ff id 1 src-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				1. Set a rang route vlan in eth1
+			</desc>
+			<console target="ap1">
+				-v "forwarding-engine l2-default-route interface eth1 vlan ${tb.vlan1}"
+				-v "clear log all"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+			</console>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				sta ping server
+			</desc>
+			<log-file>sta_start_ping.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ping ${mpc.tif.ip} &gt; /tmp/${job.id}ping.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				get sta ping id
+			</desc>
+			<setvar name="sta.pingid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta_start_ping.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<include prefix="2.3" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step2.3_show_logging_buffered.log" />
+
+		<step no="2.4">
+			<desc>
+				2. Traffic match the vlan and is send eth1
+			</desc>
+			<log-file>step2.3_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(wifi0.1\)" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				Suddenly remove the match vlan from eth1, result 1
+			</desc>
+			<console target="ap1">
+				-v "no forwarding-engine l2-default-route interface eth1 vlan ${tb.vlan1} - ${tb.vlan3}"
+				-v "clear log all"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				3. Pkt from wifi access to backhaul eth, if match the removed cfg vlan, result 1
+			</desc>
+			<log-file>step3.1_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${mpc.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(wifi0.1\)" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4">
+			<desc>
+				Add the vlan to eth1
+			</desc>
+			<console target="ap1">
+				-v "forwarding-engine l2-default-route interface eth1 vlan ${tb.vlan1}"
+				-v "clear log all"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+			</console>
+		</step>
+
+		<include prefix="4.1" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step4.1_show_logging_buffered.log" />
+
+		<step no="4.2">
+			<desc>
+				4. Add the vlan to eth1, result 2
+			</desc>
+			<log-file>step4.1_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(wifi0.1\)" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					kill sta ping process
+				</desc>
+				<ssh target="sta1">
+					-v "kill ${sta.pingid}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+
+	</post-process>
+</testcase>

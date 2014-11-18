@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify schedule still take effect after dcd killed and restart</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Create a SSID and bind it to interface wifi0
+		Create a user-profile
+		Create a schedule s1 which make current time within the duration
+		Create a schedule s2 which make current time without the duration
+		Bind s1 to SSID and user-profile
+
+		Test Procedure:
+		1. Check SSID status and user-profile status
+		2. Kill dcd process in shell, after dcd process restart, check status
+		of SSID and user-profile
+		3. Unbind s1 from SSID and user-profile, bind s2 to SSID and
+		user-profile, check status of SSID and user-profile
+		4. Kill dcd process in shell, after dcd process restart, check status
+		of SSID and user-profile
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="schedule_id_1" value="time-1" />
+	<property name="schedule_id_2" value="time-2" />
+	<property name="user_profile_1" value="FWtest_1" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Create SSID and bind it to interface wifi0
+			</desc>
+			<log-file>step0_int_wifi0_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_profile_1}"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				check system time
+				"show clock"
+			</desc>
+			<log-file>step1_show_clock.log</log-file>
+			<telnet target="ap1">
+				-v "show clock"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				get time to create a recurrent schedule
+			</desc>
+			<setvar name="data_time_1">
+				perl ${case.dir}/bin/get_time_hours_month_day.pl ${log.dir}/step1_show_clock.log -10
+			</setvar>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				get time to create a recurrent schedule
+			</desc>
+			<setvar name="data_time_2">
+				perl ${case.dir}/bin/get_time_hours_month_day.pl ${log.dir}/step1_show_clock.log -5
+			</setvar>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				get time to create a recurrent schedule
+			</desc>
+			<setvar name="data_time_3">
+				perl ${case.dir}/bin/get_time_hours_month_day.pl ${log.dir}/step1_show_clock.log 20
+			</setvar>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				Create a schedule s1 which make current time within the duration
+				Create a schedule s2 which make current time without the duration
+			</desc>
+			<log-file>step1.4_create_schedule.log</log-file>
+			<telnet target="ap1">
+				-v "schedule ${schedule_id_1} recurrent time-range ${data_time_1} to ${data_time_3}"
+				-v "schedule ${schedule_id_2} recurrent time-range ${data_time_1} to ${data_time_2}"
+			</telnet>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				Bind s1 to user-profile
+			</desc>
+			<log-file>step1.5_bind_s1_to_user_profile.log</log-file>
+			<telnet target="ap1">
+				-v "user-profile ${user_profile_1} schedule ${schedule_id_1}"
+				-v "ssid ${ssid.name} schedule ${schedule_id_1}"
+			</telnet>
+		</step>
+
+		<step no="1.6" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				Check SSID status by show ssid-schedule
+			</desc>
+			<log-file>step1.6_show_ssid_schedule_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ssid.name}\s+Yes\s+Active\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="1.7" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Check user-profile status by show user-profile-schedule
+			</desc>
+			<log-file>step1.7_check_user_profile_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user-profile-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${user_profile_1}\s+Yes\s+Active\s+" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				Kill dcd process
+			</desc>
+			<log-file>step2_kill_dcd_process.log</log-file>
+			<telnet target="ap1" prompt="AH.*$|#">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "killall -9 ah_dcd"
+				-v "exit 0"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="2.1" delay="10">
+			<desc>
+				check the error info about kill
+			</desc>
+			<log-file>step2.1_check_dcd.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered level error"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "A process \(ah_dcd\) is not currently active" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="2.2" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				Check SSID status by show ssid-schedule
+			</desc>
+			<log-file>step2.2_show_ssid_schedule_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ssid.name}\s+Yes\s+Active\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="2.3" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Check user-profile status by show user-profile-schedule
+			</desc>
+			<log-file>step2.3_check_user_profile_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user-profile-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${user_profile_1}\s+Yes\s+Active\s+" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				Unbind s1 from SSID and user-profile, bind s2 to SSID and user-profile
+			</desc>
+			<log-file>step3_bind_s2_to_user_profile.log</log-file>
+			<telnet target="ap1">
+				-v "no user-profile ${user_profile_1} schedule ${schedule_id_1}"
+				-v "no ssid ${ssid.name} schedule ${schedule_id_1}"
+				-v "user-profile ${user_profile_1} schedule ${schedule_id_2}"
+				-v "ssid ${ssid.name} schedule ${schedule_id_2}"
+			</telnet>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				Check SSID status by show ssid-schedule
+			</desc>
+			<log-file>step3.1_show_ssid_schedule_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ssid.name}\s+Yes\s+Inactive\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.2" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Check user-profile status by show user-profile-schedule
+			</desc>
+			<log-file>step3.2_check_user_profile_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user-profile-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${user_profile_1}\s+Yes\s+Inactive\s+" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Kill dcd process
+			</desc>
+			<log-file>step4_kill_dcd_process.log</log-file>
+			<telnet target="ap1" prompt="AH.*$|#">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "killall -9 ah_dcd"
+				-v "exit 0"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="4.1" delay="10">
+			<desc>
+				check the error info about kill
+			</desc>
+			<log-file>step4.1_check_dcd.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered level error"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "A process \(ah_dcd\) is not currently active" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.2" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				Check SSID status by show ssid-schedule
+			</desc>
+			<log-file>step4.2_show_ssid_schedule_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ssid.name}\s+Yes\s+Inactive\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.3" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Check user-profile status by show user-profile-schedule
+			</desc>
+			<log-file>step4.3_check_user_profile_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user-profile-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${user_profile_1}\s+Yes\s+Inactive\s+" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

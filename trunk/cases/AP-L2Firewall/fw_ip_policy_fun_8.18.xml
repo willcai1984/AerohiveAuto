@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Send two similar fragments except port different</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Configure a ip-policy and bind it to FW:
+		"ip-policy FW"
+		"ip-policy FW [from/to] &lt;Laptop ip addr&gt; action permit"
+		"user-profile FW security ip-policy [from/to]-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Server sends two fragment packets to Laptop which are the same except the src
+		or dst port
+		"pkt1 (src_ip1, dst_ip1, src_port1, dst_port1)"
+		"pkt2 (src_ip2, dst_ip2, src_port2, dst_port2)"
+		3) Check the the packets on AP1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FW" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config ssid and bind to interface
+				-Laptop uses user-profile "FW"
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug mode and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${tb.ftp} dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-Config ip-policy
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 to ${sta1.tif.ip} action permit"
+				-v "ip-policy ${user_id} id 2 from ${sta1.tif.ip} action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id} to-access ${user_id}"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				- Server sends two fragment packets to Laptop which are the same except the src or dst port
+			</desc>
+			<log-file>step4_server_ping.log</log-file>
+			<ssh host="${tb.ftp}" timeout="300">
+				-v "hping ${sta1.tif.ip} -d 40 -N 5 -g 48 -c 1 -2 -p 54"
+				-v "hping ${sta1.tif.ip} -d 40 -N 5 -g 48 -c 1 -2 -p 55"
+			</ssh>
+		</step>
+
+		<step no="5" delay="5">
+			<desc>
+				show logging buffered an ap1
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "\[fe\]: overlapped frag start 48 end 95, existing frag start 48 end 95, drop pkt"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p1 "\(i\)\s*eth0\s*${tb.ftp}-&gt;${sta1.tif.ip}\(5\)\s*ttl\(\d+\)\s*UDP\s*\d+-&gt;54" p1 "\(i\)\s*eth0\s*${tb.ftp}-&gt;${sta1.tif.ip}\(5\)\s*ttl\(\d+\)\s*UDP\s*\d+-&gt;55" p1 "\(\!\)\s*eth0\s*${tb.ftp}-&gt;${sta1.tif.ip}\(5\)\s*ttl\(\d+\)\s*UDP\s*\d+-&gt;55" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

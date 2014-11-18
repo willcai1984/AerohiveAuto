@@ -1,0 +1,671 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Whenever a connection state change occurs, trap be sent to SNMP server Precondition Enable trap over SNMP by snmp trapinfo oversnmp in AP1 Disable trap over Capwap by no trapinfo overcapwap in AP1 Set trap host by snmp traphost v2c a.b.c.d with default community (a.b.c.d is PC's ip address) in AP1 Create a SSID xxx and bind it to interface wifi0 in AP1 occurs. The connection might be between a HiveAP and its client, or between a HiveAP and a neighboring HiveAP." ::= { ahTrapModule 4} 6.1.2.5. Ft_SNMP_TrapoverSNMP_5</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		1. Use a laptop connect to SSID of AP1, use Wireshark or
+		Ethereal to capture packet , check if trap be sent to SNMP
+		server, check trap format
+		2. Disconnect laptop from AP1, use Wireshark or Ethereal to
+		capture packet , check if trap be sent to SNMP server, check
+		trap format
+		3. Change AP2's hive, use Wireshark or Ethereal to capture
+		packet , check if trap be sent to SNMP server, check trap format
+		4. Change AP2's hive and make AP1and AP2 become neighbor
+		again, use Wireshark or Ethereal to capture packet , check if
+		trap be sent to SNMP server, check trap format
+		5. Change community and do the above operation, check if trap be
+		sent to SNMP server, check trap format
+		6. Change version to v1 with default community, execute CLI
+		"_test trapcase alert connectionchange" to generate trap, check if
+		trap can be sent to SNMP server, check trap format
+		7. Change community, do the same operation as above, check if
+		trap can be sent to SNMP server, check trap format
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="checkfile" value="/tmp/checkfile" />
+
+	<stage>
+		<step no="0">
+			<desc>rm checkfile</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f ${checkfile}"
+			</ssh>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				Enable trap over SNMP by snmp trapinfo oversnmp in AP
+				Disable trap over Capwap by no trapinfo overcapwap in AP
+				Set trap host by snmp traphost v2c a.b.c.d with default community (a.b.c.d is PC’s ip address) in AP
+			</desc>
+			<telnet target="ap1">
+				-v "snmp trap-host v2c ${tb.server1}"
+				-v "snmp trap-info over-snmp"
+				-v "no snmp trap-info over-capwap"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				config ap2
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="0.3">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "ifconfig ${sta1.tif.name} up"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="0.4">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="0.5">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>ap1_info.log</log-file>
+			<console target="ap1" timeout="80">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="0.6">
+			<desc>Get ap1's mac</desc>
+			<setvar name="ap1.wifi0.1.mac">
+				getbyrexp.py -f ${log.dir}/ap1_info.log -p "Wifi0.1\s+(.*?)\s+" -t str
+			</setvar>
+		</step>
+
+		<step no="0.7">
+			<desc>Get ap1's mac</desc>
+			<setvar name="ap1.wifi1.1.mac">
+				getbyrexp.py -f ${log.dir}/ap1_info.log -p "Wifi1.1\s+(.*?)\s+" -t str
+			</setvar>
+		</step>
+
+		<step no="0.8">
+			<desc>show mgt0's ip of ap2</desc>
+			<log-file>ap2_info.log</log-file>
+			<console target="ap2" timeout="80">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="0.9">
+			<desc>Get ap2's mac</desc>
+			<setvar name="ap2.wifi1.1.mac">
+				getbyrexp.py -f ${log.dir}/ap2_info.log -p "Wifi1.1\s+(.*?)\s+" -t str
+			</setvar>
+		</step>
+
+		<step no="0.10">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.11">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<include prefix="1.1" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="1.2">
+			<desc>check log file</desc>
+			<log-file>check_log_file1.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.1.mac} thru SSID ${ssid.name}, AH-TRAP-MIB::ahCode = 5, AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 10, AH-TRAP-MIB::ahObjectType = clientLink, AH-TRAP-MIB::ahRemoteId" -i "AH-TRAP-MIB::ahCurrentState = ahUp, AH-TRAP-MIB::ahSSID = ${ssid.name}, AH-TRAP-MIB::ahCLientIP = , AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = Non, AH-TRAP-MIB::ahClientMACProtocol = ah11ng, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID"</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi0.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI"</log-match>
+		</step>
+
+		<include prefix="1.3" file="subs/release_station_wifi.xml" rargs="sta1" />
+
+		<step no="1.4">
+			<desc>check log file</desc>
+			<log-file>check_log_file1_2.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${sta1.tif.mac} is de-authenticated from ${ap1.wifi0.1.mac} thru SSID ${ssid.name}, AH-TRAP-MIB::ahCode" -i "AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 10, AH-TRAP-MIB::ahObjectType = clientLink, AH-TRAP-MIB::ahRemoteId " -i "AH-TRAP-MIB::ahCurrentState = ahDown, AH-TRAP-MIB::ahSSID = ${ssid.name}, AH-TRAP-MIB::ahCLientIP = ${sta1.tif.ip}, AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = Non, AH-TRAP-MIB::ahClientMACProtocol = ah11ng, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID"</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi0.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI = 0"</log-match>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				Change AP2’s hive
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}_2"
+				-v "interface mgt0 hive ${hive.name}_2"
+			</telnet>
+		</step>
+
+		<step no="1.6" delay="40">
+			<desc>check log file</desc>
+			<log-file>check_log_file1_3.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+		</step>
+
+		<step no="1.7">
+			<desc>
+				Change AP2’s hive
+			</desc>
+			<telnet target="ap2">
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="1.8" delay="40">
+			<desc>check log file</desc>
+			<log-file>check_log_file1_4.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance =" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${ap2.wifi1.1.mac} is authenticated to ${ap1.wifi1.1.mac} thru hive ${hive.name}, AH-TRAP-MIB::ahCode = 5, AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 11, AH-TRAP-MIB::ahObjectType = neighborLink, AH-TRAP-MIB::ahRemoteId" -i "AH-TRAP-MIB::ahCurrentState = ahUp, AH-TRAP-MIB::ahSSID = ${hive.name}, AH-TRAP-MIB::ahCLientIP = , AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = AES, AH-TRAP-MIB::ahClientMACProtocol = ah11na, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID ="</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi1.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI"</log-match>
+		</step>
+
+		<step no="1.9">
+			<desc>check log file</desc>
+			<log-file>check_tshark1.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match>-c -i "version: v2c"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="1.10">
+			<desc>
+				kill tshark
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "kill ${process_id1}"
+			</ssh>
+		</step>
+
+		<step no="1.11">
+			<desc>
+				remove tmpfile
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f /tmp/tshark_log.pcap"
+			</ssh>
+		</step>
+
+		<step no="1.12">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="1.13">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Change community and do the same operation, check if trap be
+				sent to SNMP server, check trap format
+			</desc>
+			<console target="ap1">
+				-v "no snmp trap-host v2c ${tb.server1}"
+				-v "snmp trap-host v2c ${tb.server1} community aerohive"
+			</console>
+		</step>
+
+		<include prefix="2.1" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="2.2">
+			<desc>check log file</desc>
+			<log-file>check_log_file2.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.1.mac} thru SSID ${ssid.name}, AH-TRAP-MIB::ahCode = 5, AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 10, AH-TRAP-MIB::ahObjectType = clientLink, AH-TRAP-MIB::ahRemoteId" -i "AH-TRAP-MIB::ahCurrentState = ahUp, AH-TRAP-MIB::ahSSID = ${ssid.name}, AH-TRAP-MIB::ahCLientIP = ${sta1.tif.ip}, AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = Non, AH-TRAP-MIB::ahClientMACProtocol = ah11ng, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID"</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi0.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI"</log-match>
+		</step>
+
+		<include prefix="2.3" file="subs/release_station_wifi.xml" rargs="sta1" />
+
+		<step no="2.4">
+			<desc>check log file</desc>
+			<log-file>check_log_file2_2.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${sta1.tif.mac} is de-authenticated from ${ap1.wifi0.1.mac} thru SSID ${ssid.name}, AH-TRAP-MIB::ahCode" -i "AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 10, AH-TRAP-MIB::ahObjectType = clientLink, AH-TRAP-MIB::ahRemoteId " -i "AH-TRAP-MIB::ahCurrentState = ahDown, AH-TRAP-MIB::ahSSID = ${ssid.name}, AH-TRAP-MIB::ahCLientIP = ${sta1.tif.ip}, AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = Non, AH-TRAP-MIB::ahClientMACProtocol = ah11ng, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID"</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi0.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI = 0"</log-match>
+		</step>
+
+		<step no="2.5">
+			<desc>
+				Change AP2’s hive
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}_2"
+				-v "interface mgt0 hive ${hive.name}_2"
+			</telnet>
+		</step>
+
+		<step no="2.6" delay="40">
+			<desc>check log file</desc>
+			<log-file>check_log_file2_3.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+		</step>
+
+		<step no="2.7">
+			<desc>
+				Change AP2’s hive
+			</desc>
+			<telnet target="ap2">
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2.8" delay="40">
+			<desc>check log file</desc>
+			<log-file>check_log_file2_4.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance =" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${ap2.wifi1.1.mac} is authenticated to ${ap1.wifi1.1.mac} thru hive ${hive.name}, AH-TRAP-MIB::ahCode = 5, AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 11, AH-TRAP-MIB::ahObjectType = neighborLink, AH-TRAP-MIB::ahRemoteId" -i "AH-TRAP-MIB::ahCurrentState = ahUp, AH-TRAP-MIB::ahSSID = ${hive.name}, AH-TRAP-MIB::ahCLientIP = , AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = AES, AH-TRAP-MIB::ahClientMACProtocol = ah11na, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID ="</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi1.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI"</log-match>
+		</step>
+
+		<step no="2.9">
+			<desc>check log file</desc>
+			<log-file>check_tshark2.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match>-c -i "version: v2c"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="2.10">
+			<desc>
+				kill tshark
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "kill ${process_id2}"
+			</ssh>
+		</step>
+
+		<step no="2.11">
+			<desc>
+				remove tmpfile
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f /tmp/tshark_log.pcap"
+			</ssh>
+		</step>
+
+		<step no="2.12">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="2.13">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id3">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				3. Change version to v1 with default community, use a laptop
+				connect to SSID, after laptop obtain ip address, check if trap
+				can be sent to SNMP server, check trap format
+			</desc>
+			<telnet target="ap1">
+				-v "no snmp trap-host v2c ${tb.server1}"
+				-v "snmp trap-host v1 ${tb.server1}"
+			</telnet>
+		</step>
+
+		<include prefix="3.1" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="3.2">
+			<desc>check log file</desc>
+			<log-file>check_log_file3.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.1.mac} thru SSID ${ssid.name}, AH-TRAP-MIB::ahCode = 5, AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 10, AH-TRAP-MIB::ahObjectType = clientLink, AH-TRAP-MIB::ahRemoteId" -i "AH-TRAP-MIB::ahCurrentState = ahUp, AH-TRAP-MIB::ahSSID = ${ssid.name}, AH-TRAP-MIB::ahCLientIP = , AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = Non, AH-TRAP-MIB::ahClientMACProtocol = ah11ng, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID"</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi0.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI"</log-match>
+		</step>
+
+		<include prefix="3.3" file="subs/release_station_wifi.xml" rargs="sta1" />
+
+		<step no="3.4">
+			<desc>check log file</desc>
+			<log-file>check_log_file3_2.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${sta1.tif.mac} is de-authenticated from ${ap1.wifi0.1.mac} thru SSID ${ssid.name}, AH-TRAP-MIB::ahCode" -i "AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 10, AH-TRAP-MIB::ahObjectType = clientLink, AH-TRAP-MIB::ahRemoteId " -i "AH-TRAP-MIB::ahCurrentState = ahDown, AH-TRAP-MIB::ahSSID = ${ssid.name}, AH-TRAP-MIB::ahCLientIP = ${sta1.tif.ip}, AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = Non, AH-TRAP-MIB::ahClientMACProtocol = ah11ng, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID"</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi0.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI = 0"</log-match>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				Change AP2’s hive
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}_2"
+				-v "interface mgt0 hive ${hive.name}_2"
+			</telnet>
+		</step>
+
+		<step no="3.6" delay="40">
+			<desc>check log file</desc>
+			<log-file>check_log_file1_3.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+		</step>
+
+		<step no="3.7">
+			<desc>
+				Change AP2’s hive
+			</desc>
+			<telnet target="ap2">
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="3.8" delay="40">
+			<desc>check log file</desc>
+			<log-file>check_log_file3_4.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance =" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${ap2.wifi1.1.mac} is authenticated to ${ap1.wifi1.1.mac} thru hive ${hive.name}, AH-TRAP-MIB::ahCode = 5, AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 11, AH-TRAP-MIB::ahObjectType = neighborLink, AH-TRAP-MIB::ahRemoteId" -i "AH-TRAP-MIB::ahCurrentState = ahUp, AH-TRAP-MIB::ahSSID = ${hive.name}, AH-TRAP-MIB::ahCLientIP = , AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = AES, AH-TRAP-MIB::ahClientMACProtocol = ah11na, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID ="</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi1.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI"</log-match>
+		</step>
+
+		<step no="3.9">
+			<desc>check log file</desc>
+			<log-file>check_tshark3.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match>-c -i "version: version-1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.10">
+			<desc>
+				kill tshark
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "kill ${process_id3}"
+			</ssh>
+		</step>
+
+		<step no="3.11">
+			<desc>
+				remove tmpfile
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f /tmp/tshark_log.pcap"
+			</ssh>
+		</step>
+
+		<step no="3.12">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.13">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id4">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				4. Change community, do the same operation as above, check if
+				trap can be sent to SNMP server, check trap format
+			</desc>
+			<telnet target="ap1">
+				-v "no snmp trap-host v1 ${tb.server1}"
+				-v "snmp trap-host v1 ${tb.server1} community aerohive"
+			</telnet>
+		</step>
+
+		<include prefix="4.1" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="4.2">
+			<desc>check log file</desc>
+			<log-file>check_log_file4.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.1.mac} thru SSID ${ssid.name}, AH-TRAP-MIB::ahCode = 5, AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 10, AH-TRAP-MIB::ahObjectType = clientLink, AH-TRAP-MIB::ahRemoteId" -i "AH-TRAP-MIB::ahCurrentState = ahUp, AH-TRAP-MIB::ahSSID = ${ssid.name}, AH-TRAP-MIB::ahCLientIP = , AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = Non, AH-TRAP-MIB::ahClientMACProtocol = ah11ng, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID"</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi0.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI"</log-match>
+		</step>
+
+		<include prefix="4.3" file="subs/release_station_wifi.xml" rargs="sta1" />
+
+		<step no="4.4">
+			<desc>check log file</desc>
+			<log-file>check_log_file4_2.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${sta1.tif.mac} is de-authenticated from ${ap1.wifi0.1.mac} thru SSID ${ssid.name}, AH-TRAP-MIB::ahCode" -i "AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 10, AH-TRAP-MIB::ahObjectType = clientLink, AH-TRAP-MIB::ahRemoteId " -i "AH-TRAP-MIB::ahCurrentState = ahDown, AH-TRAP-MIB::ahSSID = ${ssid.name}, AH-TRAP-MIB::ahCLientIP = ${sta1.tif.ip}, AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = Non, AH-TRAP-MIB::ahClientMACProtocol = ah11ng, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID"</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi0.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI = 0"</log-match>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				Change AP2’s hive
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}_2"
+				-v "interface mgt0 hive ${hive.name}_2"
+			</telnet>
+		</step>
+
+		<step no="4.6" delay="40">
+			<desc>check log file</desc>
+			<log-file>check_log_file4_3.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+		</step>
+
+		<step no="4.7">
+			<desc>
+				Change AP2’s hive
+			</desc>
+			<telnet target="ap2">
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="4.8" delay="40">
+			<desc>check log file</desc>
+			<log-file>check_log_file4_4.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance =" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahConnectionChangeEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName" -i "AH-TRAP-MIB::ahTrapDesc = Station ${ap2.wifi1.1.mac} is authenticated to ${ap1.wifi1.1.mac} thru hive ${hive.name}, AH-TRAP-MIB::ahCode = 5, AH-TRAP-MIB::ahObjectName = AUTH, AH-TRAP-MIB::ahIfIndex = 11, AH-TRAP-MIB::ahObjectType = neighborLink, AH-TRAP-MIB::ahRemoteId" -i "AH-TRAP-MIB::ahCurrentState = ahUp, AH-TRAP-MIB::ahSSID = ${hive.name}, AH-TRAP-MIB::ahCLientIP = , AH-TRAP-MIB::ahClientHostName = , AH-TRAP-MIB::ahClientUserName = , AH-TRAP-MIB::ahClientAuthMethod = open, AH-TRAP-MIB::ahClientEncryptionMethod = AES, AH-TRAP-MIB::ahClientMACProtocol = ah11na, AH-TRAP-MIB::ahClientVLAN = 1, AH-TRAP-MIB::ahClientUserProfId = 0, AH-TRAP-MIB::ahClientChannel" -i "AH-TRAP-MIB::ahClientCWPUsed = 2, AH-TRAP-MIB::ahBSSID ="</log-match>
+			<log-match>-c -i "AH-TRAP-MIB::ahAssociationTime" -i "AH-TRAP-MIB::ahIfName = \\\&quot;wifi1.1\\\&quot;, AH-TRAP-MIB::ahIDPRSSI"</log-match>
+		</step>
+
+		<step no="4.9">
+			<desc>check log file</desc>
+			<log-file>check_tshark4.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match>-c -i "version: version-1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.10">
+			<desc>
+				kill tshark
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "kill ${process_id4}"
+			</ssh>
+		</step>
+
+		<step no="4.11">
+			<desc>
+				remove tmpfile
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f /tmp/tshark_log.pcap"
+			</ssh>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					remove tmpfile
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "rm -f /tmp/tshark_log.pcap"
+				</ssh>
+			</step>
+
+			<step no="1">
+				<desc>
+					kill tshark
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "kill ${process_id1}"
+				</ssh>
+			</step>
+
+			<step no="2">
+				<desc>
+					kill tshark
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "kill ${process_id2}"
+				</ssh>
+			</step>
+
+			<step no="3">
+				<desc>
+					kill tshark
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "kill ${process_id3}"
+				</ssh>
+			</step>
+
+			<step no="4">
+				<desc>
+					kill tshark
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "kill ${process_id4}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

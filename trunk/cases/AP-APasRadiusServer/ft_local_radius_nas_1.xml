@@ -1,0 +1,166 @@
+<testcase>
+	<brief>Config a nas on radius server, auto gen shared-secret disable</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Topology to use
+		Client -----AP1-------AP2(local radius)
+		|
+		AP3-----------|
+		Description
+		Config a nas on radius server, auto gen shared-secret disable
+		Pre-condition
+		-config a nas with local radius server,we should try the different nas format like ip,subnet,url,config a shared-secret
+		-disable auto share-secret on radius server
+		-config the same shared-secret on the auth AP1 side
+		-AP3 use auto gen shared-secret
+		-config a ssid with 802.1x both on AP1 and AP3
+		-the three APs are in the same hive
+		Test procedure -client connect to AP1
+		-client connect to AP3
+		-check the debug info on auth side
+		Expect result
+		1. Auth will accept the packet from the server side on AP1
+		2. radius server will drop the access-request from AP3 since auto share secret is disabled
+		3. Client will pass auth successfully on AP1,sh auth,sh roa ca,sh ssid xxx to make sure
+		4. Ping 5 min to check the connection
+	</description>
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.hive">
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "user-profile aaa"
+				-v "user-profile aaa attribute 1"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security aaa radius primary ${ap2.mgt0.ip} shared-secret aerohive"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-auto-8021x" />
+
+		<include prefix="4" file="subs/ssid_and_so_create.xml" args="ap2, wpa-auto-8021x, , ${ssid.name}-autonas" />
+
+		<step no="ex.hive.ap2">
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "user-profile aaa"
+				-v "user-profile aaa attribute 1"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>Set SSID for DUT2 auto gen shared secrect</desc>
+			<telnet target="ap2">
+				-v "security-object autoap security aaa radius primary ${ap2.mgt0.ip}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/ssid_bind_and_check.xml" args="ap2, wpa-auto-8021x, ${ssid.name}-autonas" />
+
+		<step no="ex.user-cfg-ap2">
+			<desc>Set radius service on DUT2 via telnet</desc>
+			<telnet target="ap2">
+				-v "user-group autotest"
+				-v "user auto"
+				-v "user auto password aerohive"
+				-v "user auto group autotest"
+				-v "aaa radius-server local db-type local"
+				-v "aaa radius-server local user-group autotest"
+				-v "no aaa radius-server local shared-secret-auto-gen"
+				-v "aaa radius-server local nas ${ap1.mgt0.ip}/24 shared-key aerohive"
+				-v "aaa radius-server local enable"
+				-v "save config"
+				-v "save config users"
+			</telnet>
+		</step>
+
+		<step no="ex.aaa-check-ap2">
+			<desc>show status of the radius server</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap2">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-e "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-e "Enabled" -i "local database:" -p 3</log-match>
+			<log-match>-e "Auto shared-secret:" -c -n</log-match>
+		</step>
+
+		<include prefix="7" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="8">
+			<desc>config the laptop to apply the ssid profile,then start to associate</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-f ft_local_radius_nas_1_pc.cfg
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+		<include prefix="9" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<step no="ex.opendebug-ap2">
+			<desc>enable radius debug on AP2</desc>
+			<telnet target="ap2">
+				-v "_debug radiusd excessive"
+			</telnet>
+		</step>
+
+		<include prefix="11" file="subs/wpa_supplicant_start.xml" args="sta2" />
+
+		<step no="12">
+			<desc>config the laptop to apply the ssid profile,then start to associate</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}-autonas\""
+				-f ft_local_radius_nas_1_pc.cfg
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+		<step no="13" delay="60">
+			<desc>show the connection status</desc>
+			<log-file>stat_ap2.log</log-file>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED" -n</log-match>
+		</step>
+
+		<step no="14">
+			<desc>save debug on AP2</desc>
+			<log-file>show_debug.log</log-file>
+			<telnet target="ap2">
+				-v "show logging buffered level err"
+			</telnet>
+			<log-match> -e "Received packet from ${ap2.mgt0.ip} with invalid Message-Authenticator!"</log-match>
+		</step>
+
+		<include prefix="15" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+	</stage>
+</testcase>

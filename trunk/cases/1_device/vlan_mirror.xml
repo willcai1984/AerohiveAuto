@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>VLAN configuration mgmt test</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use
+		Switch
+
+		Pre-condition:
+		Reset config of switch to factory default
+
+		Test procedure:
+		1. create monitor session dd, destination interface port1, show interface port1 switchport,
+		show vlan-entry chip, result1;
+		2. no monitor session dd, show interface port1 switchport, show vlan-entry chip, result2(bug 22342);
+		3. port1 mode wan, and set port1 monitor session dd destination port, result3(bug 23732);
+
+		Expect result:
+		result1: port-mirror enable, port1 pvid is 4095;
+		result2: port-mirror disble, port1 pvid is 1;
+		result3: wan port can't be set as monitor session destination port;
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<comment>
+		sw1.port1=eth1/5;
+		sw1.port1.phytype=copper;
+		sw1.port2=eth1/6;
+		sw1.port2.phytype=copper;
+		sw1.port3=eth1/7;
+		sw1.port3.phytype=copper;
+		sw1.port4=eth1/8;
+		sw1.port4.phytype=copper;
+		sw1.mgt0.port=eth1/1;
+		sw1.mgt0.vlan=121;
+		sw1.port1.ixia_port=1/1/5;
+		sw1.port2.ixia_port=1/1/6;
+		sw1.port3.ixia_port=1/1/3;
+		sw1.port4.ixia_port=1/1/4;
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclclient1.ip=10.155.40.10;
+		pub.tclserver1.ip=10.155.30.178;
+		tb.conserver.ip=10.155.32.228;
+		tb.conserver.user=root;
+		tb.conserver.passwd=aerohive;
+		sw1.cons_name=tb1-SR2024-3;
+		sw1.user=admin;
+		sw1.passwd=aerohive;
+		sw1.prompt="AH-[a-z0-9A-Z_]*#";
+		mpc.mif.ip=10.155.32.228;
+		mpc.tif.ip=10.68.136.252;
+		mpc.user=root;
+		mpc.passwd=aerohive;
+		mpc.prompt=".*#";
+		mpc.tif.name=eth1;
+		tb.nvlan=100;
+		tb.vlans=100,200,300;
+		tb.vlan1=100;
+		tb.vlan2=200;
+		tb.vlan3=300;
+	</comment>
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0015" />
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0016" />
+	<property name="sw1.port3.ixia_port.mac" value="0000.0000.0017" />
+	<property name="stream1.txport1" value="${sw1.port1.ixia_port}" />
+	<property name="stream1.rxport1" value="${sw1.port2.ixia_port}" />
+	<property name="stream1.rxport2" value="${sw1.port3.ixia_port}" />
+	<property name="stream1.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+	<property name="stream1.rxport1.mac" value="ffff.ffff.ffff" />
+	<property name="stream1.etype" value="0x0800" />
+	<property name="stream1.UDFoffset" value="34" />
+	<property name="stream1.patternOffset1" value="38" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				configure switch, port3 is trunk, port1, port2 is access
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port3} switchport mode trunk"
+				-v "no interface ${sw1.port3} switchport trunk allow vlan all"
+				-v "interface ${sw1.port3} switchport trunk native vlan ${tb.vlan2}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show vlan id ${tb.vlan2}"
+				-v "show interface ${sw1.port1} switchport"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				configure switch,set port1 monitor session destination, port2 monitor session source
+			</desc>
+			<telnet target="sw1">
+				-v "monitor session dd "
+				-v "monitor session dd destination interface ${sw1.port3}"
+				-v "monitor session dd source interface ${sw1.port2} both"
+				-v "monitor session dd enable"
+				-v "show interface ${sw1.port3} switchport"
+				-v "show vlan-entry chip"
+			</telnet>
+			<log-match>-c -i "Port Mirror:" -i "enable"</log-match>
+			<log-match>-c -i "${sw1.port3}" -i "4095"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>add udf1 to check vlan</desc>
+			<setvar name="stream1.UDFsignature1">
+				echo "8100`printf %04x $(expr 0 + ${tb.vlan1})`"
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				build untagged stream, txport is port1, rxport are port2 and port3, start transmit and get statistics
+			</desc>
+			<log-file>eth2test.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport1},${stream1.rxport2}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+				<!-- -vlan enable -vlan_id ${tb.vlan1} -vlan_dot1p 0 -vlan_cfi 0 -->
+				-eth2_protocol ${stream1.etype}
+				-udf_offset ${stream1.UDFoffset}
+				-patternOffset2 ${stream1.UDFoffset}
+				-pattern1In 0x08000000
+				-patternMask1In 0x00001111
+				-patternOffset1 12
+				-userDefinedStat2Pattern pattern1AndPattern2"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport1},${stream1.rxport2}"
+				-v ""
+				<!-- check the result -->
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport1}"
+				-v ""
+
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport2}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="3.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		<step no="3.4">
+			<desc>
+				analyse statistics on rxport, port2,port3 received untagged pkt
+			</desc>
+			<log-file>eth2test.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport1} framesSent userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport2} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				disable monitor session
+			</desc>
+			<telnet target="sw1">
+				-v "no monitor session dd "
+				-v "show interface ${sw1.port1} switchport"
+				-v "show vlan-entry chip"
+			</telnet>
+			<log-match>-c -i "Port Mirror:" -i "disable"</log-match>
+			<log-match>-c -i "${sw1.port1}" -i "1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5.1">
+			<desc>add udf1 to check vlan</desc>
+			<setvar name="stream1.UDFsignature1">
+				echo "8100`printf %04x $(expr 0 + ${tb.vlan1})`"
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				build untagged stream, txport is port1, rxport are port2 and port3, start transmit and get statistics
+			</desc>
+			<log-file>eth2test.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport1},${stream1.rxport2}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+				<!-- -vlan enable -vlan_id ${tb.vlan1} -vlan_dot1p 0 -vlan_cfi 0 -->
+				-eth2_protocol ${stream1.etype}
+				-udf_offset ${stream1.UDFoffset}
+				-patternOffset2 ${stream1.UDFoffset}
+				-pattern1In 0x08000000
+				-patternMask1In 0x00001111
+				-patternOffset1 12
+				-userDefinedStat2Pattern pattern1AndPattern2"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport1},${stream1.rxport2}"
+				-v ""
+				<!-- check the result -->
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport1}"
+				-v ""
+
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport2}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="5.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		<step no="5.4">
+			<desc>
+				analyse statistics on rxport, port2 received untagged pkt, port3 can't received packet
+			</desc>
+			<log-file>eth2test.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport1} framesSent userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport2} framesSent userDefinedStat2 result is block"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				port1 configured as wan port
+			</desc>
+			<telnet target="sw1">
+				-v "interface ${sw1.port1} mode wan"
+				-v "show interface ${sw1.port1} switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode: wan"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				wan port can't be configured as monitor session des-port
+			</desc>
+			<telnet target="sw1">
+				-v "monitor session dd"
+				-v "monitor session dd destination interface ${sw1.port1}"
+				-v "show monitor session"
+			</telnet>
+			<log-match>-c -i "Error: interface ${sw1.port1} is a wan port, can't configure it as a monitor destination port!"</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

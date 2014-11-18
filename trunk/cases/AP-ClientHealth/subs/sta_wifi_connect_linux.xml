@@ -1,0 +1,62 @@
+<include obj-arg-names="__CONN__, __STA__, __AP__" arg-names="debug_level">
+
+	<comment>
+		properties belong to conn:
+		__CONN__.proto # open, wep-shared, wpa-tkip-psk, wpa-aes-psk, wpa2-tkip-psk,
+		wpa2-aes-psk, wpa-tkip-8021x, wpa-aes-8021x, wpa2-tkip-8021x, wpa2-aes-8021x,
+		wep-40-8021x,wep-1-4-8021x,
+		__CONN__.ssid
+		__CONN__.psk
+		__CONN__.keyid
+		__CONN__.eap_type # PEAP, TLS, LEAP, TTLS
+		__CONN__.inner_auth # PAP, CHAP, MSCHAPV2
+		__CONN__.username
+		__CONN__.passwd
+		__CONN__.auth_negative_test
+		__CONN__.channel
+		__CONN__.pif physical interface
+		__CONN__.lif logical interface properties
+		belong to sta:
+		__STA__.tif.mac
+		__STA__.tif.ip
+		properties belong to ap
+	</comment>
+
+	<step no="connect_wifi">
+		<log-file>connect_wifi_${include.prefix}.log</log-file>
+		<ssh target="__STA__" timeout="3600">
+			-v "/usr/local/auto/bin/connect_wifi.pl
+				'{
+				\"target\"      : \"__STA__\",
+				\"ifname\"      : \"${__STA__.tif.name}\",
+				\"bind\"        : \"${ssid_bind_interface}\",
+				\"ssid\"        : \"${__CONN__.ssid}\",
+				\"proto\"       : \"${__CONN__.proto}\",
+				\"psk_keytype\" : \"${__CONN__.psk.keytype}\",
+				\"keyidx\"      : \"${__CONN__.keyidx}\",
+				\"psk\"         : \"${__CONN__.psk}\",
+				\"username\"    : \"${__CONN__.username}\",
+				\"password\"    : \"${__CONN__.passwd}\",
+				\"eap_type\"    : \"${__CONN__.eap_type}\"
+				}'"
+		</ssh>
+		<log-match>-e "&gt;&gt;&gt;&gt; Pass &lt;&lt;&lt;&lt;"</log-match>
+	</step>
+	<step no="get_sta_ip_mac">
+		<desc>parse station IP and MAC from connect wifi log file</desc>
+		<multi-setvar>
+			grep "^&lt;&lt;&lt;&lt;" ${log.dir}/connect_wifi_${include.prefix}.log | \
+			sed -e 's/^&lt;&lt;&lt;&lt;//g'
+		</multi-setvar>
+	</step>
+
+	<step no="9" type="loop-check" loop-max-times="3" loop-interval="5">
+		<desc>ping from AP to station</desc>
+		<if> "${__CONN__.auth_negative_test}" != "true" &amp;&amp; "${__CONN__.dhcp_negative_test}" != "true"</if>
+		<log-file>ping_${include.prefix}_from_ap_to__STA___${__STA__.tif.ip}_${loop_check.idx}.log</log-file>
+		<console target="__AP__">
+			-v "ping ${__STA__.tif.ip} count 10"
+		</console>
+		<log-match>-c -i " from " -i " ttl="</log-match>
+	</step>
+</include>

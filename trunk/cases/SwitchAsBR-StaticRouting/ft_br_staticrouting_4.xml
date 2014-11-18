@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check static route should not in tunnel-all route, and static route won't take effect</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		BR:
+		Mgt0.x : 10.2.3.1/24
+		Enable dhcp server on mgt0.x
+		Ssid xx, bind security-object xx, bind user-profile xx
+		User-profile xx tunnel-policy xx
+		User-profile xx l3-tunnel-action all
+		L3sw(connecting to br of vpn client):
+		Ip: 10.2.3.11/24, gateway: 10.2.3.1/24
+		Network2: 192.168.20.0/25 Network3: 192.168.20.129/25
+
+		Test Procedure:
+		1. Connect a laptop to ssid xx on br, ensure it is authenticated and obtained
+		ip
+		2. Laptop ping cvg to verify, and check log of pkt out interface
+		Set debug: _ff id 1 src-ip laptop.ip protocol 1 bidirectional
+		_ff id 2 protocol 47 bidirectional
+		_ff id 3 protocol 50 bidirectional
+		3. Set static route to network2 on br
+		CLI: ip route net 192.168.20.0 255.255.255.0 gateway 10.2.3.11
+		4. Check 4 tunnel route table
+		5. Laptop ping network2 to verify, and check log of pkt out interface
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>
+
+	<property name="route.netmask" value="255.255.255.0" />
+
+	<stage>
+		<include prefix="0" file="subs/vpn_setup_one_sw.xml" obj-args="cvg1, br1" />
+
+		<step no="1">
+			<desc>
+				config br1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask ${route.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				config br1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+				-v "interface ${br1.br.lan.int4} switchport mode access"
+				-v "interface ${br1.br.lan.int4} switchport access vlan ${br1.vpc1.vlan}"
+				-v "interface ${br1.br.lan.int1} switchport user-profile-attribute 1"
+				-v "interface ${br1.br.lan.int4} switchport user-profile-attribute 1"
+			</telnet>
+		</step>
+
+		<step no="1.1" delay="5">
+			<desc>
+				-set interface down,then up
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step1.2_ifconfig_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.2a">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				-set interface down,then up
+			</desc>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ifconfig ${br1.vpc4.tif.name} down"
+				-v "ifconfig ${br1.vpc4.tif.name} up"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step2.1_ifconfig_vpc4.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.1a">
+			<desc>set br1.vpc4.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				config br1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "routing match-map ma user-profile lan1 to any"
+				-v "routing route-map ra via encrypted"
+				-v "routing policy pa id 1 match-map ma route-map ra"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				Open debug mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 2 protocol 47 bidirectional"
+				-v "_ff id 3 protocol 50 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5" delay="30">
+			<desc>
+				vpc1 ping cvg
+			</desc>
+			<log-file>step5_pc1_ping_cvg.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ping ${cvg1.cvg.lan.ip} -c 10"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.cvg.lan.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.1" delay="20">
+			<desc>
+				check log of pkt out interface
+			</desc>
+			<log-file>step5.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) tunnel0 ${cvg1.cvg.mgt0.ip}-&gt;${br1.br.mgt0.ip}"</log-match>
+			<log-match>-c -i "(i) ${br1.br.wan.kport1} ${cvg1.cvg.wan.ip}-&gt;${br1.br.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(o) mux0 ${cvg1.cvg.lan.ip}-&gt;${br1.vpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(i) tunnel0 ${cvg1.cvg.lan.ip}-&gt;${br1.vpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(i) vlan${br1.vpc1.vlan} ${cvg1.cvg.lan.ip}-&gt;${br1.vpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(o) tunnel0 ${br1.vpc1.tif.ip}-&gt;${cvg1.cvg.lan.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(u) vlan${br1.vpc1.vlan} ${br1.vpc1.tif.ip}-&gt;${cvg1.cvg.lan.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) ${br1.br.lan.kport1} ${br1.vpc1.tif.ip}-&gt;${cvg1.cvg.lan.ip}" -i "icmp-echo-req"</log-match>
+		</step>
+
+		<step no="6">
+			<multi-setvar>
+				echo "br1.vpc4.trip.net=$(echo ${br1.vpc4.trip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				BR Set static routing to net on network 2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip route net ${br1.vpc4.trip.net} 255.255.255.0 gateway ${br1.vpc4.tif.ip}"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="6.2" delay="20">
+			<desc>
+				Check static route
+			</desc>
+			<log-file>step6.2_check_static_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip policy-route l3-tunnel-all"
+			</telnet>
+			<log-match>-n -c -i "${br1.vpc4.trip.net} *${br1.vpc4.tif.ip} *255.255.255.0"</log-match>
+		</step>
+
+		<step no="7" delay="30">
+			<desc>
+				vpc1 ping network 2
+			</desc>
+			<log-file>step7_pc1_ping_pc2.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ping ${br1.vpc4.trip} -c 10"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.vpc4.trip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7.1" delay="20">
+			<desc>
+				-check log result
+			</desc>
+			<log-file>step7.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(u) vlan${br1.vpc1.vlan} ${br1.vpc1.tif.ip}-&gt;${br1.vpc4.trip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) ${br1.br.lan.kport1} ${br1.vpc1.tif.ip}-&gt;${br1.vpc4.trip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -c -i "(o) mux0 ${br1.vpc1.tif.ip}-&gt;${br1.vpc4.trip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -c -i "${br1.vpc4.trip}-&gt;${br1.vpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "create routing cache:${cvg1.cvg.lan.ip}\s*-&gt;\s*${br1.vpc1.tif.ip } fwmark \d+ dev mgt0.1" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "create routing cache:${br1.vpc1.tif.ip }\s*-&gt;\s*${cvg1.cvg.lan.ip} fwmark \d+ dev mgt0.1" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

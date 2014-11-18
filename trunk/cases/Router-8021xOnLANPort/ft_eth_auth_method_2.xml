@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Laptop auth successfully when authentication mode is CWP+802.1X</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+
+
+		Test Procedure:
+
+		1. Set one security-object with CWP + 802.1X
+		2. Set one user-profile and define the attribute x and vlan y
+		3. Set eth1 mode as access and bind the attribute x to it
+		4. Bind the security-object to the port.
+		5. Connect on laptops to the port, result 1
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<include prefix="start_selenium_server" file="subs/start_selenium_server.xml" args="${br1.sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<step no="pre_step">
+			<desc>configure mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vlan1}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				1: Configure one of type CWP (passthrough/e-cwp) on ap
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object lan1"
+				-v "security-object lan1 security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object lan1 security additional-auth-method captive-web-portal external-server primary login-page https://${pub.radius1.ip}/weblogin.php/7"
+				-v "security-object lan1 walled-garden ip-address ${pub.radius1.ip}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Set one user-profile and define the attribute x and vlan y
+				3. Set eth1 mode as access and bind the attribute x to it
+				4. Bind the security-object to the port.
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vlan1} attribute ${br1.vlan1}"
+				-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vlan1}"
+				-v "int eth1 mac-learning enable"
+				-v "interface eth1 security-object lan1"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				5. Connect one laptop to the eth1 port
+			</desc>
+			<log-file>step3_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="60">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="3.1a">
+			<desc>get raw mac of vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step3_ifconfig_vpc1_.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.1b">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<step no="3.1c">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.tmp.mac">
+				echo $(echo ${br1.vpc1.tif.mac1} | tr : - )
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				enable auth log buff
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_debug auth all"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				5. Connect one laptops to the port, result 1
+			</desc>
+			<log-file>step4_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4.1b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping pub.dns1.ip
+			</desc>
+			<log-file>step4_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				access public HM
+			</desc>
+			<log-file>access_hm_log_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_to_url.py -d ${auto.root.dir}/webui/scripts/cwp/cwp_to_url_login.json -r http://${br1.sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${pub.radius1.username} -t ie -f ${log.dir}/${log.file} -l info --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				access public HM after roaming
+			</desc>
+			<log-file>step6_after_roaming_first_log_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_negative_amigoopod.py -r http://${br1.sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} visit.login_page_exist=true login.failed_page=false redirect.page_name=amigopod -t ie -f ${log.dir}/${log.file} -l info --session-id ${session.id} --preserve-session
+			</script>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step6.1_show_roam_cache.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show roam cache" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "${sta1.tif.mac}" -i "YNNN"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				access public HM directly
+			</desc>
+			<log-file>step7_access_hm2.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_to_url.py -r http://${br1.sta1.mif.ip}:4444/wd/hub -t ie -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+
+		<step no="8">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step8_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface eth1"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Protocol-suite=open;[\t ]+CWP is enabled:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}.*open" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				Show route
+			</desc>
+			<log-file>step9_check_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show route"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}.*eth1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				show auth log buff
+			</desc>
+			<log-file>step9.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buf"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>
+				do log out operate
+			</desc>
+			<log-file>step10_after_roaming_second_log_out.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${br1.sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ie -f ${log.dir}/${log.file} -l info --session-id ${session.id}
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${br1.sta1.mif.ip}, ${job_selenium_workload}" />
+
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

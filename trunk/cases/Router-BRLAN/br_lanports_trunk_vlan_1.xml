@@ -1,0 +1,170 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Lan ports work with trunk mode, check lan ports native-vlan</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Laptop1 connect to lan port eth1
+		Lan ports work with trunk mode
+
+		Test Procedure:
+
+		1. Enable mgt0 dhcp/dns server
+		2. Lan port works with trunk mode, check lan ports mode, vlan ID.
+		Result1
+		3. Check allowed vlan list, vlan-id-check flag. Result2
+		4. Laptop1 connect to eth1, check HW ARL table (mac-table). Result3
+		5. Check laptop ip . Result4
+		6. Configure mgt0 native-vlan as 10
+		7. Check lan ports native-vlan Result5
+		9. Configure mgt0.1 vlan 10, enable dhcp, dns server, configure ip
+		address, ip-pool
+		mgt0.1 ip as 10.10.10.1
+		mgt0.1 vlan as 10
+		ip-pool as 10.10.10.10-10.10.10.99
+		8. Laptop1 connect to eth1, check laptop1 ip address Result6
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>check mgt0 default status</desc>
+			<log-file>step1_mgt0_status.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show run | in mgt0"
+				-v "show interface mgt0"
+			</telnet>
+			<log-match>-c -i "Vlan id=1" -i "Native vlan id=1"</log-match>
+		</step>
+		<step no="2">
+			<desc>check lan ports default status</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+		<step no="3">
+			<desc>config lan ports eth1 with access mode, eth2 with trunk mode, check lan ports mode, native-vlan-id and vlan-check-id</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth2 mode bridge-802.1q"
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "1" -p 6 -i "No"</log-match>
+		</step>
+		<step no="4">
+			<desc>
+				check allowed vlan list with default
+			</desc>
+			<log-file>step4_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth2[\t ]+eth3[\t ]+eth4[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="5">
+			<desc>br1.vpc1 connect to lan ports eth1, dhclient retrieve ip address</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "dhclient ${br1.vpc1.tif.name}"
+			</ssh>
+		</step>
+		<step no="5.1">
+			<desc>br1.vpc1 show ip address got from mgt0 dhcp client</desc>
+			<log-file>step5.1_ifconfig_br1_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		<step no="5.2">
+			<desc>get br1.vpc1 mac address</desc>
+
+			<setvar name="br1.vpc1.tif.mac.tmp">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step5.1_ifconfig_br1_vpc1.log -t str
+			</setvar>
+		</step>
+		<step no="5.3">
+			<desc>change format of br1.vpc1 mac</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo $(echo ${br1.vpc1.tif.mac.tmp} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac.tmp} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac.tmp} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac.tmp} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>
+		</step>
+		<step no="5.4">
+			<desc>check lan mac-table</desc>
+			<log-file>step5.4_show_mactable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan mac-table"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 2 -i "${br1.vpc1.tif.mac}"</log-match>
+		</step>
+		<step no="6">
+			<desc>Configure mgt0 native-vlan, Configure mgt0.x, vlan same with mgt0 native-vlan</desc>
+			<telnet target="${br1.br.wan.ip}">				
+				-v "interface mgt0.1 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+		<step no="7">
+			<desc>
+				check allowed vlan list with default
+			</desc>
+			<log-file>step7_show_lan_vlantable.log</log-file>
+
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth2[\t ]+eth3[\t ]+eth4[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="8">
+			<desc>br1.vpc2 connect to lan port eth2, dhclient retrieve ip address</desc>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ifconfig ${br1.vpc2.tif.name} up"
+				-v "dhclient ${br1.vpc2.tif.name}"
+			</ssh>
+		</step>
+		<step no="8.1">
+			<desc>br1.vpc2 got from mgt0.1 dhcp server</desc>
+			<log-file>step8.1_ifconfig_br1_vpc2.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		<step no="8.2">
+			<desc>get br1.vpc2 mac address</desc>
+			<setvar name="br1.vpc2.tif.mac.tmp">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step8.1_ifconfig_br1_vpc2.log -t str
+			</setvar>
+		</step>
+		<step no="8.3">
+			<desc>change format of br1.vpc1 mac</desc>
+			<setvar name="br1.vpc2.tif.mac">
+				echo $(echo $(echo $(echo ${br1.vpc2.tif.mac.tmp} | cut -d : -f1)$(echo ${br1.vpc2.tif.mac.tmp} | cut -d : -f2,3)$(echo ${br1.vpc2.tif.mac.tmp} | cut -d : -f4,5)$(echo ${br1.vpc2.tif.mac.tmp} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>
+		</step>
+		<step no="8.4">
+			<desc>check lan mac-table</desc>
+			<log-file>step8.3_show_mactable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan mac-table"
+			</telnet>
+			<log-match>-p 1 -i "eth2" -p 2 -i "${br1.vpc2.tif.mac}"</log-match>
+		</step>
+	</stage>
+
+</testcase>

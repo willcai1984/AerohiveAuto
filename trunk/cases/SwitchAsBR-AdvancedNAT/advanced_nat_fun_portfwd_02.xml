@@ -1,0 +1,196 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Port forwarding for udp (tftp, telnet,RTP/RTSP....)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use	Topo4
+		Description	Port forwarding for udp
+		(tftp, telnet,RTP/RTSP….)
+		Platform Dependence	BR100,BR200,BRAP330,BRAP350
+		Pre-condition	
+		1.	Wan interface eth0 get ip on br
+		2.	Nat enable on wan interface
+		3.	Pc1 connect to br lan interface and get lan subnet ip address and enable tftp server on pc1
+		4.	Pc2 connect to external  network on br and pc2 can reach br wan interface
+		Test procedure	
+		1.	Configure 1 port forwarding  nat policy  for tftp udp on br
+		ip nat-policy tftp type virtual-host inside-host 192.168.1.11 inside-port 69 outside-port 3100 protocol udp
+
+		2.	apply the port forwarding nat policy on wan interface
+		interface eth0 mode wan nat-policy tftp
+
+		3.	pc2 send udp port 3100 connection to eth0 ip address of br, check   result1
+		4.	no the  port forwarding on wan interface eth0 , check        result 2
+		no interface eth0 mode wan nat-policy tftp
+
+		5.	pc2 send udp port 3100 connection to eth0 ip address of br, again, check  result 3
+		Expect result	1.	pc2 connect to pc1 tftp server and can upload  and download file through tftp
+		2.	the tftp connection is disconnected on pc2
+		3.	pc2 can’t connect to pc1 tftp server and can’t upload  and download file through tftp----?pass
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<property name="br.ext_srv.ip" value="${pub.radius1.ip}" />
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+
+		<include prefix="pre1" file="subs/br_close_fw.xml" obj-args="br1" />
+
+		<step no="1.1">
+			<desc>eth0 dhcp</desc>
+			<console target="br1.br" slow="yes">
+				-v "no interface ${br1.br.wan.int1} dhcp client"
+				-v ""
+				-v "interface ${br1.br.wan.int1} dhcp client"
+				-v ""
+			</console>
+		</step>
+		<step no="1.2" delay="5">
+			<desc>show interface eth0 on BR</desc>
+			<log-file>br_wan_ip1.log</log-file>
+			<console target="br1.br">
+				-v "show interface ${br1.br.wan.int1} dhcp client"
+			</console>
+		</step>
+
+		<step no="1.3" delay="30">
+			<desc>get eth0 ip of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "Get IP address (\d+\.\d+\.\d+\.\d+)" -f ${log.dir}/br_wan_ip1.log -t str 
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				configure mgt0.1 with dhcp service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+			        -v "vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}" 
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				set eth1 with access mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile auto1"
+				-v "user-profile auto1 vlan-id ${br1.vlan1} attribute 1"
+				-v "security-object lan1"
+				-v "security-object lan1 default-user-profile-attr 1"
+				-v "interface ${br1.br.lan.int1} switchport mode access "
+				-v "interface ${br1.br.lan.int1} switchport user-profile-attribute 1 "
+			</telnet>
+		</step>
+		<step no="4.1">
+			<desc>
+				PC1 gets ip addr	
+			</desc>
+			<log-file>vpc1_get_ip.log</log-file>
+			<ssh target="${br1.vpc1.mif.ip}" timeout="300">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="4.2">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				1.	Configure 1 port forwarding  nat policy  for tftp udp on br
+			</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "ip nat-policy auto${job.id} type virtual-host inside-host ${br1.vpc1.tif.ip} inside-port 69 outside-port 69 protocol udp"
+				-v "interface ${br1.br.wan.int1} mode wan nat-policy auto${job.id}"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="6">
+			<desc>check the nat policy</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show ip nat-policy auto${job.id}"
+				-v "_ff id 1 dst-ip ${br1.br.wan.ip} dst-port 69 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+		<step no="7">
+			<desc>pc2 send udp port 69 connection to eth0 ip address of br,tftp should be successful</desc>
+			<ssh target="${br.ext_srv.ip}" prompt='root@.*~.*#'>
+				-v "echo \"test tftp\" > auto${job.id}.file"
+				-v "tftp ${br1.br.wan.ip} -c put auto${job.id}.file"
+				-v "rm -f auto${job.id}.file"
+			</ssh>
+			<log-match>-e "Transfer timed out" -n</log-match>
+		</step>
+		<step no="8" delay="10">
+			<desc>show log buf</desc>
+			<log-file>check_buff1.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="9">
+			<desc>check the file on br.vpc1,the file is tftp send to br.vpc1 from  external pc</desc>
+			<ssh target="${br1.vpc1.mif.ip}" prompt='root@.*~.*#'>
+				-v "ls -l /tftpboot"
+				-v "rm -f /tftpboot/auto${job.id}.file"
+			</ssh>
+			<log-match>-e "-rw-rw-rw- 1 nobody nobody.*auto${job.id}.file"</log-match>
+		</step>
+		<step no="10">
+			<desc>no the  port forwarding on wan interface eth0</desc>
+			<telnet target="${br1.br.wan.ip}" >
+				-v "no interface ${br1.br.wan.int1} mode wan nat-policy auto${job.id}"
+				-v "show ip nat-policy auto${job.id}"
+			</telnet>
+		</step>
+
+		<step no="11" delay="10">
+			<desc>show log buf</desc>
+			<log-file>check_buff2.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="12">
+			<desc>pc2 send udp port 69 connection to eth0 ip address of br,tftp should be failed </desc>
+			<ssh target="${br.ext_srv.ip}" prompt='root@.*~.*#'>
+				-v "echo \"test tftp\" > auto${job.id}.file"
+				-v "tftp ${br1.br.wan.ip} -c put auto${job.id}.file"
+				-v "rm -f auto${job.id}.file"
+			</ssh>
+			<log-match>-e "Transfer timed out" </log-match>
+		</step>
+
+		<include prefix="13" file="subs/br_open_fw.xml" obj-args="br1" />
+	</stage>
+	<failed-process>
+		<stage>
+			<include prefix="0.1" file="subs/br_open_fw.xml" obj-args="br1" />
+		</stage>
+		<include file="include/br_default_failed_process.xml" />
+		<include file="include/br_default_failed_process.xml" />
+	</failed-process>
+
+</testcase>

@@ -1,0 +1,120 @@
+<testcase>
+	<brief>a minimal config for AD works,basic function check</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Topology to use
+		Topology 1
+		Description
+		a minimal config for
+		AD works,basic function check
+		Pre-condition
+		-a local radius server must
+		be configed first
+		-AP’s clock should be sync to the AD server via a ntp
+		server
+		-setup a ssid using wpa-auto-802.1x,radius server is local
+		Test
+		procedure
+		-config a fullname of the domain,we should mark it as
+		default,there there
+		must be a default domain,otherwise it could not
+		work
+		-config a server,using url or ip
+		-config a binddn,it should like
+		domain\user or user@fullname,make sure the
+		binddn has the privilege to
+		read the users
+		-config a login user,it must be domain admin user
+		-enable the radius server
+		-client connect to AP use the account in
+		AD,use
+		Expect result
+		1.check the state of the radius server, ‘sh aaa
+		radius-server’ to make sure
+		2.check the net join to the domain is
+		successful,check ‘sh log | in
+		sam’
+		3.client auth should be successful,
+		sh auth,sh ssid xxx st,sh roa ca to make
+		sure
+		4.ping gateway to make
+		sure the connect is setup correctly
+	</description>
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.hive">
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "security-object autoap security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type active-directory primary server ${pub.ad1.ip}"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				-v "aaa radius-server local db-type active-directory primary login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local en"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.aaa-check">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<ssh target="ap1">
+				-v "show aaa radius-server"
+			</ssh>
+			<log-match>-e "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-e "primary active-directory (active)"</log-match>
+		</step>
+
+		<include prefix="4" file="subs/wpa_supplicant_start.xml" args="sta1" />
+		<step no="4.1">
+			<ssh target="ap1">
+				-v "_debug radiusd excessive"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-f ft_ad_singal_domain_1_pc.cfg
+				-v "set_network 0 identity \"${pub.radius1.username}\""
+				-v "set_network 0 anonymous_identity \"${pub.radius1.username}\""
+				-v "set_network 0 password \"${pub.radius1.passwd}\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="6" file="subs/chk_conn_in_sta.xml" args="sta1" />
+		<step no="6.1">
+			<log-file>log_on_ap.log</log-file>
+			<ssh target="ap1" timeout="200">
+				-v "show logging buffered" ;exit 0
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "RADIUS: The RADIUS server accepted user \'${pub.radius1.username}\' through the NAS at ${ap1.forwards.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "bind as ${pub.ad1.binddn} to ${pub.ad1.ip}:389" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Bind was successful" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+	</stage>
+</testcase>

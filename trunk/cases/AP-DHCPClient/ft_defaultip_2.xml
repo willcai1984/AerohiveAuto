@@ -1,0 +1,145 @@
+<testcase>
+	<name>tc_defaultip_2.xml</name>
+<priority>High</priority>
+    <emaildesc>Verify before assign 192.168.1.1 as default IP,DHCP ARP will sent to avoid duplicate IP</emaildesc>
+    <description>
+        TOPO:
+                                  AP1______Switch______DHCP server
+								             |
+											AP2
+		Description:
+        Verify before assign 192.168.1.1 as default IP,DHCP ARP will sent to avoid duplicate IP
+        Pre-condition
+        - DHCP enable, no static IP address.
+		- The traffic from AP to DHCP server is unreachable.
+
+        Test procedure
+		1:  Debug FE, check DHCP ARP will sent out.
+			_ff id 1 src-mac xxxx etype 0x0806 bidirectional
+			_kdebug fe_arp basic
+			Debug console 
+		2: sniffer packet of DHCP ARP
+		3: check debug info ,if no reply received  after a timeout interval (the value 4 seconds ) Check interface mgt0 IP address
+
+        Expect result
+        1: DHCP ARP will sent out.
+		2: DHCP ARP format should be right(sender-ip:0.0.0.0)
+		3: interface mgt0 IP address will be 192.168.1.1
+                            
+    </description>
+    <id>
+        <manual>1234</manual>
+        <auto>3456</auto>
+    </id>
+    <code>
+    </code>
+    <stage>
+		 <step>
+            <name>0</name>
+            <desc>Reset the AP1 to default via console $G_TS_CONSNAME0_0_0</desc>
+            <script>perl $U_COMMONBIN/clicfg.pl  -o 80 -d $G_TS_IP0 -i 782 -e $G_TS_CONSNAME0_0_0 -m $U_AP_PROMPT  -p $G_TS_PWD0  -u $G_TS_USR0   -l $G_CURRENTLOG -v "reset config" </script> 
+            <passed></passed>
+            <failed></failed>
+        </step>
+		<step>
+            <name>1</name>
+            <desc>Reset the AP2 to default through sw menu via console $G_TS_CONSNAME0_1_0</desc>
+            <script>perl $U_COMMONBIN/clicfg.pl  -o 80 -d $G_TS_IP0 -i 782 -e $G_TS_CONSNAME0_1_0 -m $U_AP_PROMPT  -p $G_TS_PWD0 -u $G_TS_USR0 -l $G_CURRENTLOG -v "reset config" </script> 
+            <passed></passed>
+            <failed></failed>
+        </step>
+        <step>
+            <name>2</name>
+            <desc>Remove the current ~/.ssh/known_hosts of Master PC to avoid the denial access to the APs</desc>
+            <script> rm -f ~/.ssh/known_hosts </script>
+            <passed></passed>
+            <failed></failed>
+        </step>
+		<step>
+            <name>3</name>
+            <desc>Show interface mgt0 of AP1 </desc>
+            <script>perl $U_COMMONBIN/clicfg.pl -o 80  -d $G_TS_IP0 -i 782 -e $G_TS_CONSNAME0_0_0 -m $U_AP_PROMPT   -p $G_TS_PWD0  -u $G_TS_USR0 -l $G_CURRENTLOG -v "show interface mgt0" -t show_mgt0 </script> 
+            <passed></passed>
+            <failed></failed>
+        </step>
+		<step>
+            <name>4</name>
+            <desc>Get the mac address of mgt0 </desc>
+            <getenv>echo G_MGT0_MAC=$(perl $U_COMMONBIN/getrmtip.pl -f $G_CURRENTLOG/show_mgt0 -i mgt0  -o aerohive -m -width)</getenv>
+            <passed></passed>
+            <failed></failed>
+        </step>
+		<step>
+            <name>5</name>
+            <desc>Set config to AP1 via console $G_TS_CONSNAME0_0_0 </desc>
+            <script>perl $U_COMMONBIN/clicfg.pl -o 80  -d $G_TS_IP0 -i 782 -e $G_TS_CONSNAME0_0_0 -m $U_AP_PROMPT   -p $G_TS_PWD0  -u $G_TS_USR0 -l $G_CURRENTLOG -f $U_TESTCONF/basic_apsetup.cfg  </script> 
+            <passed></passed>
+            <failed></failed>
+        </step>
+        <step>
+            <name>6</name>
+            <desc>Set filter to check DHCP arp on AP1</desc>
+            <script>perl $U_COMMONBIN/clicfg.pl -o 80  -d $G_TS_IP0 -i 782 -e $G_TS_CONSNAME0_0_0 -m $U_AP_PROMPT   -p $G_TS_PWD0  -u $G_TS_USR0 -l $G_CURRENTLOG -v "console page 0" -v "console timeout 0" -v "no forwarding-engine proxy-arp enable" -v "_ff id 1 src-mac $G_MGT0_MAC etype 0806 bidirectional" -v "clear log all" -v "_kdebug fe basic"  </script> 
+            <passed></passed>
+            <failed></failed>
+        </step>
+        <step>
+            <name>7</name>
+            <desc>Shutdown switch port on Switch</desc>
+            <script>perl $U_COMMONBIN/clicfg.pl -i 23 -d $G_SWITCH_IP0 -u $G_TS_USR0 -p $G_TS_PWD0 -m .*# -v "config" -v "interface ethernet $G_SWITCH_PHY_PORT0_1_0" -v "shutdown" -v "end"</script>
+            <passed></passed>
+            <failed></failed>
+        </step>	
+        <step>
+            <name>8</name>
+            <desc>Enable dhcp client to make AP1 request ip address from DHCP server</desc>
+            <script>perl $U_COMMONBIN/clicfg.pl -o 60  -d $G_TS_IP0 -i 782 -e $G_TS_CONSNAME0_0_0 -m $U_AP_PROMPT   -p $G_TS_PWD0  -u $G_TS_USR0   -l $G_CURRENTLOG -v "no interface mgt0 dhcp client "  -v "interface mgt0 dhcp client"  </script> 
+            <passed></passed>
+            <failed></failed>
+        </step>
+		
+        <step>
+            <name>9</name>
+            <desc>Show logging buffered by CLI on AP1</desc>	  
+            <script>sleep 30; perl $U_COMMONBIN/clicfg.pl -o 60 -d $G_TS_IP0 -i 782 -e $G_TS_CONSNAME0_0_0 -m $U_AP_PROMPT -p $G_TS_PWD0 -u $G_TS_USR0 -l $G_CURRENTLOG -v "show logging buffered" -t show_log_buff </script>
+			<noerrorcheck>1</noerrorcheck> 
+            <passed></passed>
+            <failed></failed>
+        </step>
+        <step>
+            <name>10</name>
+            <desc>DHCP ARP will be sent out</desc>
+            <script>perl $U_COMMONBIN/searchoperation.pl -f $G_CURRENTLOG/show_log_buff -e "(o) eth0 $G_MGT0_MAC->ffff:ffff:ffff arp 0.0.0.0($G_MGT0_MAC)->192.168.1.1(0000:0000:0000) " -c</script>
+            <passed></passed>
+            <failed></failed>
+        </step>
+		<step>
+            <name>11</name>
+            <desc>Show interface mgt0 of AP1 </desc>
+            <script>perl $U_COMMONBIN/clicfg.pl -o 80  -d $G_TS_IP0 -i 782 -e $G_TS_CONSNAME0_0_0 -m $U_AP_PROMPT   -p $G_TS_PWD0  -u $G_TS_USR0 -l $G_CURRENTLOG -v "show interface mgt0" -t interface_mgt0.log </script> 
+            <passed></passed>
+            <failed></failed>
+        </step>
+		<step>
+            <name>12</name>
+            <desc>Get the ip address of mgt0 </desc>
+            <getenv>echo G_MGT0_IP=$(perl $U_COMMONBIN/getrmtip.pl -f $G_CURRENTLOG/interface_mgt0.log -i mgt0  -o aero -nomask)</getenv>
+            <passed></passed>
+            <failed></failed>
+        </step>
+		<step>
+            <name>13</name>
+            <desc>Default ip address 192.168.1.1 be used</desc>
+            <script>perl $U_COMMONBIN/searchoperation.pl -f $G_CURRENTLOG/interface_mgt0.log -e "192.168.1.1" -c</script>
+            <passed></passed>
+            <failed></failed>
+        </step>
+		<step>
+            <name>14</name>
+            <desc>Up switch port on Switch</desc>
+            <script>perl $U_COMMONBIN/clicfg.pl -i 23 -d $G_SWITCH_IP0 -u $G_TS_USR0 -p $G_TS_PWD0 -m .*# -v "config" -v "interface ethernet $G_SWITCH_PHY_PORT0_1_0" -v "no shutdown" -v "end"</script>
+            <passed></passed>
+            <failed></failed>
+        </step>
+    </stage>
+</testcase>

@@ -1,0 +1,277 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>One pair 1:1NAT on tunnel over eth0 Platform  Dependence BR100,BR200,BRAP330,BRAP350</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use	Topo4
+		Description	One pair 
+		1:1NAT on tunnel over eth0
+		Platform Dependence	BR100,BR200,BRAP330,BRAP350
+		Pre-condition	
+		1.	establish vpn tunnel between eth0 of BR and CVG
+		Test procedure	
+		1.	Configure non-routable subnet on  br
+		2.	Configure routable subnet on  br
+		3.	Configure a 1:1 nat policy on br
+		4.	apply the 1:1 nat policy on tunnel over eth0
+		5.	pc connect to the br lan interface
+		6.	pc send traffic to  vpn network, check   result1
+		7.	pc send traffic to internet ,check        result 2
+		8.	no the 1:1 nat policy on tunnel over eth0
+		9.	pc send traffic to  vpn network, check   result3
+		Expect result	
+		1.	traffic to vpn network via tunnel, the traffic are 1:1 nat translation before through VPN tunnel. source ip address is non-routable ip at first, then 1:1 nat translation to routable ip .pc can connect to vpn network
+		2.	traffic to internet via eth0, the traffic are  nat translation before through eth0. source ip address is non-routable ip  at first, then nat translation eth0 interface ip .pc can connect to internet.
+		3.	traffic to vpn network via tunnel, the traffic can’t be any type nat transfer before through VPN tunnel. 
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<property name="vpc1.outside.subnet" value="101.1.1.0" />
+		<property name="vpc4.outside.subnet" value="102.1.1.0" />
+		<property name="br.route.netmask" value="255.255.255.0" />
+
+		
+		
+		<include prefix="1" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+		<step no="2.1">
+			<desc>
+				Enable 2 dhcp server（mgt0.1 mgt0.2） on BR
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth0 mode wan"
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/24"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.2 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/24"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.2 dhcp-server enable"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>
+				-set eth1/eth4's mode and permit mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.mgt0.supermask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.2.ip}/${br.mgt0.supermask}"
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute 2"
+				-v "interface eth4 mode bridge-access user-profile-attribute 2"
+				-v "interface eth4 mac-learning enable"
+			</telnet>
+		</step>
+		
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "br1.br.mgt0.2.route=$(echo ${br1.br.mgt0.2.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns1.route=$(echo ${cvg1.dns1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns2.route=$(echo ${cvg1.dns2.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.vpc1.route=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>check ip routing table on cvg</desc>
+			<log-file>step3_check_route_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${br1.br.mgt0.2.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+			
+		</step>	
+		
+		<step no="4" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>check ip routing table on br,br can get route from cvg</desc>
+			<log-file>4_show_l3_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.dns1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${cvg1.dns2.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+		</step>
+		
+		<step no="5">
+			<desc>
+				1.	Configure 1 port forwarding  nat policy  for ssh tcp on br
+			</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "ip nat-policy auto${job.id} type match-net inside ${br1.br.mgt0.1.ip}/${br.lan.netmask} outside ${vpc1.outside.subnet}/${br.lan.netmask}"
+				-v "vpn ipsec-tunnel ${br1.tunnel.name} nat-policy auto${job.id}"
+				-v "routing internal-sub-network ${vpc1.outside.subnet}/${br.lan.netmask}"
+				-v "show ip nat-policy"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="6">
+			<desc>check the nat policy</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show ip nat-policy auto${job.id}"
+			</telnet>
+		</step>	
+		
+		<step no="6.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>check ip routing table on cvg</desc>
+			<log-file>step6.1_check_route_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${vpc1.outside.subnet}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+			
+		</step>	
+		
+		<step no="7">
+			<desc>
+				vpc1 connect to lan port eth1
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>	
+		
+		
+		<step no="9">
+			<desc>enable debug on BR _ff id 1 protocol 47, _ff id 2 protocol 47, _ff id 1 protocol 1</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "clear log buffered"
+				-v "_ff id 1 protocol 1"
+				-v "_ff id 2 protocol 47 bidirectional"
+				-v "_ff id 3 protocol 50 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+              
+              <step no="10" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				vpc1 send traffic to vpn network cvg1,ping is successful and there are  the 1:1nat
+			</desc>
+			<log-file>step10_br1.vpc1_ping_cvg1.vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="10.1" delay="20">
+			<desc>
+				show logging buffered,ping is ofrwarded on tunnel and there are  the 1:1nat
+			</desc>
+			<log-file>step10.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)GRE-encap packet done =&gt;${br1.br.mgt0.ip}-&gt;${cvg1.cvg.wan.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${vpc1.outside.ip}\(&lt;NULL&gt;\)-&gt;${cvg1.vpc1.tif.ip}\(tunnel0\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth1 ${br1.vpc1.tif.ip}-&gt;${cvg1.vpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+              <step no="11">
+			<desc>
+				vpc1 ping internet,ping is successful and there are not the 1:1nat
+			</desc>
+			<log-file>step11_br1.vpc1_ping_ftp_server.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.ftp1.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.ftp1.ip}" -i "ttl="</log-match>
+		</step>
+		
+		<step no="11.1" delay="20">
+			<desc>
+				show logging buffered,the ping traffic is forwarded on wan interface and not 1:1 nat
+			</desc>
+			<log-file>step11.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(o) eth0 ${br1.br.wan.ip}-&gt;${pub.ftp1.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) eth1 ${br1.vpc1.tif.ip}-&gt;${pub.ftp1.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(o) eth1 ${pub.ftp1.ip}-&gt;${br1.vpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(i) mgt0.1 ${pub.ftp1.ip}-&gt;${br1.vpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="12">
+			<desc>
+				no the 1:1 nat on the tunnel
+			</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "no vpn ipsec-tunnel ${br1.tunnel.name} nat-policy auto${job.id}"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		 
+              <step no="13" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				vpc1 send traffic to vpn network cvg1,ping is forwarded on tunnel but there are not  the  1:1nat
+			</desc>
+			<log-file>step13_br1.vpc1_ping_cvg1.vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="13.1" delay="20">
+			<desc>
+				show logging buffered,ping is forwarded on tunnel and there are  not the 1:1nat
+			</desc>
+			<log-file>step13.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)GRE-encap packet done =&gt;${br1.br.mgt0.ip}-&gt;${cvg1.cvg.wan.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${br1.vpc1.tif.ip}\(&lt;NULL&gt;\)-&gt;${cvg1.vpc1.tif.ip}\(tunnel0\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth1 ${br1.vpc1.tif.ip}-&gt;${cvg1.vpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+		</step>
+               
+               	
+	</stage>
+	<failed-process>
+		<stage>
+		<step no="1">
+			<desc>
+				 show log buffer on br if the case failed 
+			</desc>
+			<log-file>step1_show_gre_tunnel_br.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show log buffer"
+				
+			</telnet>
+			<no-error-check />
+		</step>
+		</stage>
+	</failed-process>
+</testcase>

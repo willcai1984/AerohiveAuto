@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the computer-ou is working</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configed first
+		-AP's clock should be sync to the AD server via a ntp server
+		-setup a ssid using wpa-aes-802.1x,radius server is local
+
+		Test Procedure:
+		-config a minimal AD
+		-config a computer-ou,like 'wireless\HIVE AP'
+		-AP join to domain successful
+		-client connect to AP using the right accout in AD
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.ad1.username}" />
+	<property name="conn1.passwd" value="${pub.ad1.passwd}" />
+
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa2-aes-8021x" />
+
+		<step no="ex.hive">
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "ntp server ${pub.ntp}"
+				-v "security-object autoap security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type active-directory primary server ${pub.ad1.ip}"
+				-v "aaa radius-server local db-type active-directory primary computer-ou \&quot;${pub.ad1.ou}\&quot;"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				-v "aaa radius-server local db-type active-directory primary login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local en"
+				-v "user-profile aaa vlan-id 1 attribute 1"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa2-aes-8021x" />
+
+		<step no="4">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-i "primary active-directory (active)"</log-match>
+		</step>
+
+		<step no="5">
+			<telnet target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<log-file>log_on_ap.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "RADIUS: The RADIUS server accepted user \'${pub.radius1.username}\' through the NAS at ${ap1.forwards.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "bind as ${pub.ad1.binddn} to ${pub.ad1.ip}:389" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Bind was successful" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="8" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+		<step no="9">
+			<log-file>step8_show_aaa.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-i "Computers OU: *\&quot;${pub.ad1.ou}\&quot;"</log-match>
+		</step>
+
+		<step no="10">
+			<log-file>step9_ping_gateway.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${tb.vlan1.gw}"
+			</telnet>
+			<log-match>-c -i " from ${tb.vlan1.gw}" -i " ttl="</log-match>
+		</step>
+	</stage>
+</testcase>

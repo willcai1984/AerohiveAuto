@@ -1,0 +1,397 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>proxy arp process for L3 roaming (to pc)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-construct this topology
+		-ap1 and ap2 in different subnet
+
+		Test Procedure:
+
+		-laptop1 links to ap1 first, then roaming to ap2(change the power or
+		shutdown the interface)
+		-make sure ap1 has the arp entry of pc1, but ap2 doesn't have, then
+		laptop1 ping pc1, result 1
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}_01" />
+	<property name="conn2.ssid" value="${ssid.name}_02" />
+	<property name="conn2.pif" value="wifi1" />
+	<property name="conn2.channel" value="40" />
+
+	<stage>
+
+		<if>"${ap1.wifi1.existed}" =="true" &amp;&amp; "${ap2.wifi1.existed}" =="true" &amp;&amp; "${ap1.eth1.existed}" =="true"</if>
+
+		<step no="pre1.1">
+			<desc>
+				Config AP1
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 77"
+				-v "ssid ${conn1.ssid} security-object FWtest"
+				-v "ssid ${conn2.ssid}"
+				-v "interface wifi1 ssid ${conn2.ssid}"
+				-v "security-object FWtest2"
+				-v "security-object FWtest2 default-user-profile-attr 78"
+				-v "ssid ${conn2.ssid} security-object FWtest2"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ${tb.vlan1}_01 qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy FWtest attribute 77"
+				-v "user-profile ${tb.vlan1}_02 qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 78"
+				-v "interface wifi1 radio channel 40"
+				-v "interface wifi0 radio channel 1"
+				-v "amrp interface eth0 priority 100"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+				-v "interface eth1 mode bridge-access"
+			</console>
+		</step>
+
+		<step no="pre1.2">
+			<desc>
+				Config AP2
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid} shutdown"
+				-v "interface wifi1 radio channel 40"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 77"
+				-v "ssid ${conn1.ssid} security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ${tb.vlan1} qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy FWtest attribute 77"
+				-v "amrp interface eth0 priority 50"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="pre1.3" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				-show interface mgt0 on AP1
+			</desc>
+			<log-file>show_ap1_mgt0_interface.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-i "IP addr=" -i "192.168.${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="pre1.3b">
+			<desc>
+				Get mgt0 ap in ap1
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/show_ap1_mgt0_interface.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.3c">
+			<desc>get mac address of ap1</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "MAC addr=([\da-fA-F:]+)" -f ${log.dir}/show_ap1_mgt0_interface.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.4" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				-show interface mgt0 on AP2
+			</desc>
+			<log-file>show_ap2_mgt0_interface.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-i "IP addr=" -i "192.168.${tb.vlan2}"</log-match>
+		</step>
+
+		<step no="pre1.4b">
+			<desc>
+				Get mgt0 ap in ap2
+			</desc>
+			<setvar name="ap2.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/show_ap2_mgt0_interface.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.4c">
+			<desc>get mac address of ap2</desc>
+			<setvar name="ap2.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "MAC addr=([\da-fA-F:]+)" -f ${log.dir}/show_ap2_mgt0_interface.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre2.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show roaming neighbor on AP1
+			</desc>
+			<log-file>step_pre2.1_show_roaming_neighbor_ap1_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2.mgt0.mac}" -i "${ap2.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="pre2.2" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>
+				show roaming neighbor on AP2
+			</desc>
+			<log-file>step_pre2.2_show_roaming_neighbor_ap2_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-c -i "${ap1.mgt0.mac}" -i "${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="pre2.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show amrp dnxp neighbor on AP1
+			</desc>
+			<log-file>step_pre2.3_show_amrp_dnxp_neighbor_ap1_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2.mgt0.mac}" -i "${ap2.mgt0.ip}/24" -i "L3"</log-match>
+		</step>
+
+		<step no="pre2.4" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>
+				show amrp dnxp neighbor on AP2
+			</desc>
+			<log-file>step_pre2.4_show_amrp_dnxp_neighbor_ap2_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap1.mgt0.mac}" -i "${ap1.mgt0.ip}/24" -i "L3"</log-match>
+		</step>
+		
+		<step no="pre3.1">
+			<desc>show interface</desc>
+			<log-file>step_pre3.1_ip_check.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "ifconfig ${tb.server1.tif.name}"
+			</ssh>
+		</step>
+		
+		<step no="pre3.2">
+			<desc>get raw mac address of server</desc>
+			<setvar name="server.tif.mac1">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step_pre3.1_ip_check.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre3.3">
+			<desc>get mac of server</desc>
+			<setvar name="server.tif.mac">
+				echo $(echo $(echo $(echo ${server.tif.mac1} | cut -d : -f1)$(echo ${server.tif.mac1} | cut -d : -f2,3)$(echo ${server.tif.mac1} | cut -d : -f4,5)$(echo ${serser.tif.mac1} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="translate_mac">
+			<multi-setvar>
+				echo "sta1.tif.mac=$(echo ${sta1.tif.mac} | tr "A-F" "a-f")"
+			</multi-setvar>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				open wifi0 on ap2 for roaming to AP2
+			</desc>
+			<telnet target="ap2">
+				-v "no interface wifi0 ssid ${conn1.ssid} shutdown"
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				On ap1 interface wifi0 ssid shutdown
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${conn1.ssid} shutdown"
+			</telnet>
+		</step>
+
+		<step no="1.4" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check tunnel build succeed
+			</desc>
+			<log-file>step1.4_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap2.mgt0.mac}" -i "wifi0.1" -i "77" -i "LTO"</log-match>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				show tunnel build succeed
+			</desc>
+			<log-file>step1.5_show_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap1.mgt0.mac}" -i "mgt0" -i "77" -i "LTO"</log-match>
+		</step>
+
+		<step no="1.6" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show station on ap2
+			</desc>
+			<log-file>step1.6_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-ensure ap1 has the arp entry of pc1
+			</desc>
+			<telnet target="ap1">
+				-v "ping ${tb.server1}"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				-ensure ap2 doesn’t have the arp entry of pc1
+			</desc>
+			<telnet target="ap2">
+				-v "clear arp-cache"
+			</telnet>
+		</step>
+
+		<step no="2.3" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				make sure AP1 has arp entry for PC1
+			</desc>
+			<log-file>step2.3_show_arp_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${server.tif.mac}" -i "${tb.server1}"</log-match>
+		</step>
+
+		<step no="2.4" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				-make sure ap2 ap2 doesn’t have the arp entry of pc1
+			</desc>
+			<log-file>step2.4_show_arp_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "clear arp-cache"
+				-v ""
+				-v ""
+				-v ""
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-n -c -i "${server.tif.mac}" -i "${tb.server1}"</log-match>
+		</step>
+
+		<step no="2.5a">
+			<desc>
+				enable debug
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 protocol 1"
+				-v "_ff id 2 protocol 47"
+				-v "_ff id 3 etype 0806"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2.5b">
+			<desc>
+				enable debug
+			</desc>
+			<telnet target="ap2">
+				-v "_ff id 1 protocol 1"
+				-v "_ff id 2 protocol 47"
+				-v "_ff id 3 etype 0806"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_ping.xml" args="sta1, ${tb.server1}, 3" />
+
+		<step no="3.1" delay="10">
+			<desc>
+				but ap1 doesn’t do proxy-arp, the arp broadcast packet are flooded to all access interfaces on ap2, the broadcast request packet should be tunneled to ap1, then flood to all up interfaces on ap1, and transmit to pc1 last; the icmp reply packet should be only tunneled to ap2, then transmit to laptop1
+				(can see fe and fe_arp debug )
+			</desc>
+			<log-file>step3.1_show_log_buff.log</log-file>
+			<telnet target="ap2" timeout="300">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) wifi0.\d+ ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${tb.server1}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) wifi0.\d+ ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${tb.server1}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "bypass fe egress procesing and deliver packet to stack on bgd0.\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0 ${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(u\) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${tb.server1}.+ icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0 ${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(r\) mgt0 ${tb.server1}-&gt;${sta1.tif.ip}.+ icmp-echo-reply" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) wifi0.\d+ ${tb.server1}-&gt;${sta1.tif.ip}.+ icmp-echo-reply" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.2" delay="10">
+			<desc>
+				but ap1 doesn’t do proxy-arp, the arp broadcast packet are flooded to all access interfaces on ap2, the broadcast request packet should be tunneled to ap1, then flood to all up interfaces on ap1, and transmit to pc1 last; the icmp reply packet should be only tunneled to ap2, then transmit to laptop1
+				(can see fe and fe_arp debug )
+			</desc>
+			<log-file>step3.2_show_log_buff.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) eth0 ${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(r\) mgt0 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${tb.server1}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) wifi1.\d+ ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${tb.server1}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${tb.server1}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) bgd0.\d+ ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) eth0 ${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(r\) mgt0 ${sta1.tif.ip}-&gt;${tb.server1}.+ icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0 ${sta1.tif.ip}-&gt;${tb.server1}.+ icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) eth0 ${tb.server1}-&gt;${sta1.tif.ip}.+ icmp-echo-reply" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) bgd0.\d+ ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.+ proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+
+</testcase>

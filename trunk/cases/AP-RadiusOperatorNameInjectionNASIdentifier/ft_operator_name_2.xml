@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Access and Accounting request carry the operator name in cli</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>
+	<description>
+		1.	Set one ssid as with radius-server
+		2.	And "inject Operator-name" is set to security-object. Such as: security-object xxx security aaa radius-server inject Operator-Name
+		3.	Bind the ssid to wifi
+		4.	Set the aaa attribute Operator-Name of least char 
+			aaa attribute Operator-Name value apple
+			aaa radius-server inject Operator-Name
+		5.	Connect one laptop to the ssid.
+		6.	AP send Access-request to radius-server, Result 1.
+		7.	AP send Accounting request to radius-server, Result 1.
+		8.	Set the aaa attribute Operator-Name of max char(64) included special char
+		9.	Connect another laptop to the ssid.
+		10.	AP send Access-request to radius-server, Result 2.
+		11.	AP send Accounting request to radius-server, Result 2.
+		12.	Unset the “aaa attribute Operator-Name”
+			Cli: no aaa attribute Operator-Name
+		13.	Connect one laptop to the ssid.
+			CLI: no aaa attribute Operator-Name
+            show interface dhcp client
+            dns server-ip 10.155.3.250 
+			dns domain-name test.com
+		14.	AP send Access-request to radius-server, Result 3.
+		15.	AP send Accounting request to radius-server, Result 3.
+		16.	"inject Operator-name" is unset to security-object. Such as: security-object xxx security aaa radius-server inject Operator-Name
+			Cli: no security-object xxx aaa radius-server inject Operator-Name
+		17.	Connect one laptop to the ssid.
+		18.	AP send Access-request to radius-server, Result 4.
+		19.	AP send Accounting request to radius-server, Result 4.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-config a ssid with 802.1x auth on AP1
+				-config operator-name 
+				'security-object xxx security protocol-suite wpa2-aes-8021x'
+			</desc>
+			<ssh target="ap1" timeout="200">
+			    -v "int mgt0 vlan 1"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile normal"
+				-v "user-profile normal vlan-id 1 attribute 1"
+				-v "interface ${ssid_bind_interface} radio channel 1"
+				-v "security-object autoap security aaa radius-server inject Operator-Name"
+				-v "aaa attribute Operator-Name value apple"
+				-v "aaa radius-server inject Operator-Name"
+				-v "hostname AH-ltwu"
+				-v "_debug auth dump"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>step1.1_show_interface_wifi0_info.log</log-file>
+			<ssh target="ap1" timeout="180">
+				-v "show interface wifi0"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>Get ap1's wifi0‘s mac</desc>
+			<setvar name="ap1.wifi0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_wifi0_info.log -i wifi0 -o aero -m -uppercase -dash
+			</setvar>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="2.1">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -uppercase -dash
+			</setvar>
+		</step>
+		<step no="2.2">
+			<desc>
+				Get AP mgt0's information
+			</desc>
+			<log-file>step2.2_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "sh int mgt0"
+			</console>
+		</step>
+		<step no="2.3">
+			<desc>
+				Get AP mgt0's IP
+			</desc>
+			<setvar name="ap.mgt0.ip">
+				python ${bin.dir}/getbyrexp.py -p "IP addr=([0-9]+.[0-9]+.[0-9]+.[0-9]+)" -f ${log.dir}/step2.2_show_interface_mgt0.log -t str
+			</setvar>
+		</step>
+		<step no="3">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="150" delay="3">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value:" -ps p "Value: \'1apple\'" p "Attribute \d+ \(Operator-Name\)" -e "RADIUS message: code=\d+ \(Access-Request\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value:" -ps p "Value: \'1apple\'" p "Attribute \d+ \(Operator-Name\)"  p "Attribute \d+ \(Called-Station-Id\)" p "Value: \d+" p "Attribute \d+ \(NAS-Port\)" p "Value: \'AH-ltwu\'" p "Attribute \d+ \(NAS-Identifier\)" p "Value: ${ap.mgt0.ip}"  p "Attribute \d+ \(Acct-Session-Id\)" p "RADIUS message: code=\d \(Accounting-Request\)" -e "RADIUS message: code=" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		   <step no="4">
+		   		<desc>
+		   			Access and Accounting request carry the operator name when not set it manually
+		   		</desc>
+		   		<console target="ap1">
+				-v "int mgt0 ip ${ap.mgt0.ip} 255.255.255.0"
+				-v "no int mgt0 dhcp client"
+				-v "dns domain-name test.com"
+				-v "no aaa attribute Operator-Name value"
+				-v "clear log all"
+			    </console>
+		   </step>
+		   <include prefix="4.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+			<step no="4.2">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>show_logging_buffered.log</log-file>
+			<ssh target="ap1"  timeout="150" delay="3">
+				-v "show logging buffered"
+			</ssh> 
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value:" -ps p "Value: \'1test.com\'" p "Attribute \d+ \(Operator-Name\)" p "Value: \'AH-ltwu\'" p "Attribute \d+ \(NAS-Identifier\)" p "Value: ${ap1.forwards.ip}" p "Attribute \d+ \(NAS-IP-Address\)" p "Value: \'${pub.radius1.username}\'" p "Attribute \d+ \(User-Name\)"  p "RADIUS message: code=\d+ \(Access-Request\)" -e "RADIUS message: code=" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value:" -ps p "Value: \'1test.com\'" p "Attribute \d+ \(Operator-Name\)"  p "Attribute \d+ \(Called-Station-Id\)" p "Value: \d+" p "Attribute \d+ \(NAS-Port\)" p "Value: \'AH-ltwu\'" p "Attribute \d+ \(NAS-Identifier\)"  p "Attribute \d+ \(Acct-Session-Id\)" p "RADIUS message: code=\d \(Accounting-Request\)" -e "RADIUS message: code=" -f ${log.dir}/${log.file}</log-match>
+			</step>
+	  	 <step no="5">
+		   		<desc>
+		   			unset the dns domin 
+		   		</desc>
+		   		<ssh target="ap1">
+				-v "no dns domain-name  "
+				-v "_debug auth dump"
+				-v "clear log all"
+			    </ssh>
+		  </step>
+		  <include prefix="5.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+		  <step no="5.2">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="150" delay="3">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value:" -ps p0 "Operator-Name" -e "RADIUS message: code=1 \(Access-Request\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value:" -ps p0 "Operator-Name" -e "RADIUS message: code=4 \(Accounting-Request\)" -f ${log.dir}/${log.file}</log-match>
+		  </step>
+	</stage>
+</testcase>

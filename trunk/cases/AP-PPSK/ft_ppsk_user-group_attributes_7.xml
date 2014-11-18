@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Two group with different attribute bind to same ssid</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config Two user group
+		-they have different vlan-id, reauth-time, user-attribute
+
+		Test Procedure:
+		-one Client connect to AP with PPSK in group 1
+		-another client connect to AP PPSK in group 2
+		-check the result 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-tkip-psk" />
+	<property name="conn1.psk" value="group1user" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.proto" value="wpa-tkip-psk" />
+	<property name="conn2.psk" value="group2user" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-config Two user group
+				-they have different vlan-id, reauth-time, user-attribute
+			</desc>
+			<ssh target="ap1">
+				-v "user-group userGroup1"
+				-v "user-group userGroup1 user-attribute 100"
+				-v "user-group userGroup1 reauth-interval 1500"
+				-v "user-group userGroup1 vlan-id ${tb.vlan1}"
+				-v "user group1_user"
+				-v "user group1_user password group1user"
+				-v "user group1_user group userGroup1"
+				-v "user-group userGroup2"
+				-v "user-group userGroup2 user-attribute 50"
+				-v "user-group userGroup2 reauth-interval 1000"
+				-v "user-group userGroup2 vlan-id ${tb.vlan2}"
+				-v "user group2_user"
+				-v "user group2_user password group2user"
+				-v "user group2_user group userGroup2"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Config ap1
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key aerohive"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "security-object ppsk security private-psk"
+				-v "user-profile ttt vlan-id ${tb.vlan2} attribute 50"
+				-v "user-profile sss vlan-id ${tb.vlan1} attribute 100"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup1"
+				-v "ssid ${ssid.name} user-group userGroup2"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				show user
+			</desc>
+			<log-file>step3_show_user.log</log-file>
+			<ssh target="ap1">
+				-v "show user"
+			</ssh>
+			<log-match>-c -i "group1_user" -i "Yes *userGroup1"</log-match>
+			<log-match>-c -i "group2_user" -i "Yes *userGroup2"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step3.1_show_user_group.log</log-file>
+			<ssh target="ap1">
+				-v "show user-group"
+			</ssh>
+			<log-match>-c -i "userGroup1 *100 *${tb.vlan1} *1500"</log-match>
+			<log-match>-c -i "userGroup2 *50 *${tb.vlan2} *1000"</log-match>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="6">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step6_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${tb.vlan1} *Yes *100"</log-match>
+			<log-match>-c -i "${sta2.tif.mac} *${sta2.tif.ip}" -i "${tb.vlan2} *Yes *50"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				-sh roa ca
+			</desc>
+			<log-file>step7_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "100" -i "YNNN"</log-match>
+			<log-match>-c -i "${sta2.tif.mac}" -p 5 -i "50" -i "YNNN"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-show auth
+			</desc>
+			<log-file>step8_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta2.tif.mac} *50" -i "WPA/TKIP" -i "group2_user"</log-match>
+			<log-match>-c -i "${sta1.tif.mac} *100" -i "WPA/TKIP" -i "group1_user"</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, Incoming pkt base on oui mapping to class 0 Ethernet interface Test topology Top1 Device Configuration Portal: ssid DeathKnight interface wifi0 ssid DeathKnight qos classifier-profile mac mac interface eth0 qos-classifer mac qos classifier-map mac 0016d4 qos 0-7 notice 0016d4 is STA1's oui</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		1. create ssid ${ssid.name}, binding to wifi0
+		2. sta1 connects to ssid and obtained ip
+
+		Test Procedure:
+		1. set qos classifier-profile on mac, and apply it on eth0
+		-v "qos classifier-profile mac mac"
+		-v "interface eth0 qos-classifier mac"
+		-v "qos classifier-map oui ${mpc.tif.oui} qos 0"
+		2. set debug filter
+		3. mpc ping sta1
+		4. show log buff, check ingress ping packet's classification from eth0 side
+		key words:
+		"${mpc.tif.ip}->${sta1.tif.ip}" "icmp-echo-req"
+		"fe" "${mpc.tif.mac}"
+		"qos=0" "fwd(eth0)"
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<property name="mpc.tif.name" value="eth1" />
+		<step no="1">
+			<desc>
+				create ssid, for wireless client connecting
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				create a wpa_supplicant configuration file on Station
+			</desc>
+			<ssh target="sta1">
+				-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+				-v "ifconfig ${sta1.tif.name} down"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				kill the wpa_supplicant on client side
+			</desc>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name} up"
+				-v "killall wpa_supplicant";
+			</ssh>
+		</step>
+
+		<step no="2.3" delay="5">
+			<desc>
+				start the wpa_supplicant on client side
+			</desc>
+			<ssh target="sta1">
+				-v "wpa_supplicant -i ${sta1.tif.name} ${sta1.wpa_flag} -c /tmp/wpa_supplicant.cfg -B"
+			</ssh>
+		</step>
+
+
+		<step no="2.4">
+			<desc>
+				config the laptop to apply the ssid profile,then start to associate
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="2.5" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check if the client was associated successfully
+			</desc>
+			<log-file>wpa_stat_sta1_loop-check.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="2.6">
+			<desc>
+				client gets IP by dhclient
+			</desc>
+			<ssh target="sta1" slow="true">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>get wireless IP from remote linux host sta1</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>ifconfig to display mpc's mac and ip info</desc>
+			<log-file>ifconfig_mpc.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name} > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<!-- (for tb13)as ping packet(from mpc)'s source mac will be altered to tb_vlan1_gw's mac, so set qos classifier on tb_vlan_gw's oui,but for other tbs,ping packet's src mac is mpc's ethx mac, so set a classifier-map on mpc's mac oui also -->
+
+		<step no="3.3">
+			<desc>
+				get mpc_mac's oui
+			</desc>
+			<setvar name="mpc.oui">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_mpc.log -i ${mpc.tif.name} -m | awk 'BEGIN {FIELDWIDTHS="2 1 2 1 2" }{print $1 $2 $3 $4 $5}'
+			</setvar>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				ping tb_vlan1_gw to learn gw's mac
+			</desc>
+			<log-file>mpc_ping_gw.log</log-file>
+			<script>
+				ping ${tb.vlan1.gw} -c 5 > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				show arp table to get tb_vlan1_gw's mac
+			</desc>
+			<log-file>mpc_gw_mac.log</log-file>
+			<script>
+				arp -n > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				get tb_vlan1_gw_mac
+			</desc>
+			<setvar name="mpc.gw.mac">
+				${bin.dir}/getstring.pl -f ${log.dir}/mpc_gw_mac.log -k ${tb.vlan1.gw} -p 3
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				get tb_vlan1_gw_mac's oui
+			</desc>
+			<setvar name="mpc.gw.oui">
+				${bin.dir}/getstring.pl -f ${log.dir}/mpc_gw_mac.log -k ${tb.vlan1.gw} -p 3 | awk 'BEGIN {FIELDWIDTHS="2 1 2 1 2" }{print $1 $2 $3 $4 $5}'
+			</setvar>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Set qos classifier profile on oui and use it on eth0, but not set classifier-map
+			</desc>
+			<log-file>classifier_interface.log</log-file>
+			<telnet target="ap1">
+				-v "qos classifier-profile mac mac"
+				-v "interface eth0 qos-classifier mac"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				set debug
+			</desc>
+			<log-file>qos_kdebug.log</log-file>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${mpc.tif.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				master pc ping sta1
+			</desc>
+			<log-file>mpc_ping_sta1_no_map.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 5 > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="8">
+			<desc>show log buffered </desc>
+			<log-file>class_18_log_buffer_no_map.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-i "${mpc.tif.ip}->${sta1.tif.ip}" -i "icmp-echo-req" -i "(i) eth0"</log-match>
+			<log-match>-i "fwd(eth0)" -i "qos=2"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="9.1">
+			<desc>
+				Set qos classifier map on oui, map specific oui to 0
+			</desc>
+			<log-file>classifier_map.log</log-file>
+			<telnet target="ap1">
+				-v "qos classifier-map oui ${mpc.gw.oui} qos 0"
+				-v "qos classifier-map oui ${mpc.oui} qos 0"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				show interface eth0 qos-classifer
+			</desc>
+			<log-file>show_eth0_class.log</log-file>
+			<telnet target="ap1">
+				-v "show interface eth0 qos-classifier"
+			</telnet>
+			<log-match>-i "mac" -i "eth0"</log-match>
+		</step>
+
+		<step no="9.3">
+			<desc>
+				show qos classifier-map oui
+			</desc>
+			<log-file>show_class_diff.log</log-file>
+			<telnet target="ap1">
+				-v "show qos classifier-map oui "
+			</telnet>
+			<log-match>-i "${mpc.gw.oui}" -p 3 -i "0" -c</log-match>
+			<log-match>-i "${mpc.oui}" -p 3 -i "0" -c</log-match>			
+		</step>
+
+		<step no="10.1">
+			<desc>
+				master pc ping sta1
+			</desc>
+			<log-file>mpc_ping_sta1_oui_map.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 5 > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="10.2">
+			<desc>show log buffered </desc>
+			<log-file>class_18_log_buffer_oui_map.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-i "${mpc.tif.ip}->${sta1.tif.ip}" -i "icmp-echo-req" -i "(i) eth0"</log-match>
+			<log-match>-i "fwd(eth0)" -i "qos=0"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

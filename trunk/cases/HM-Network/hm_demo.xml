@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>NTP/CAPWAP/...</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Just for Demo
+		Test NTP related configure
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="selenium_path" value="/root/selenium-server-standalone-2.42.2.jar" />
+	<property name="policy_name" value="ap_wcai" />
+	<property name="ntp1" value="192.168.20.201" />
+	<property name="ntp2" value="192.168.20.202" />
+	<property name="ntp3" value="192.168.20.203" />
+	<property name="ntp4" value="192.168.20.204" />
+	<property name="update_mode" value="delta" />
+	<stage>
+		<step no="0.1">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "export DISPLAY=:1"
+				-v "nohup java -jar ${selenium_path} 1>logfile.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "printenv"
+			</ssh>
+		</step>
+
+		<step no="1">
+			<desc>
+				AP connect with HM
+				AP with default setting in HM
+				Create a WLAN Policy in HM and with default setting
+				Execute the following command in AP:
+				capwap client server name 192.168.20.200
+				capwap client dtls hm-defined-passphrase *** key-id 1
+				capwap client vhm-name home
+				no capwap client dtls negotiation enable
+			</desc>
+			<ssh target="ap1">
+				-v "capwap client server name ${pub.hm1.ip}"
+				-v "capwap client enable"
+				-v "ssid ${ssid.name}"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>config ap2</desc>
+			<ssh target="ap2">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite open"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile up qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="1.2.1" delay="30">
+			<desc>Just for delay</desc>
+		</step>
+
+		<step no="1.2.2" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				check the capwap client state
+			</desc>
+			<log-file>122_show_capwap.log</log-file>
+			<ssh target="ap1">
+				-v "show capwap client"
+			</ssh>
+			<log-match>-c -i "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap2" />
+
+		<step no="2.3">
+			<desc>
+				show config to confirm no target config yet
+			</desc>
+			<log-file>23_show_config_to_confirm.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-e "ntp server ${ntp1}" -n</log-match>
+			<log-match>-e "ntp server ${ntp2} second" -n</log-match>
+			<log-match>-e "ntp server ${ntp3} third" -n</log-match>
+			<log-match>-e "ntp server ${ntp4} fourth" -n</log-match>
+		</step>
+
+
+		<step no="3">
+			<desc>
+				upload complete config
+			</desc>
+			<log-file>upload_complete_config.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/AerohiveGUI/scripts/hm/hm_update.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters policy.name=${policy_name} visit.url=http://${pub.hm1.ip} device.mac=${ap1.mgt0.mac} update.mode=${update_mode} -t ff -l info -f ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="4.1" delay="30">
+			<desc>Just for delay</desc>
+		</step>
+
+		<step no="4.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show config
+			</desc>
+			<log-file>show_config_to_confirm_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-e "ntp server ${ntp1}"</log-match>
+			<log-match>-e "ntp server ${ntp2} second"</log-match>
+			<log-match>-e "ntp server ${ntp3} third"</log-match>
+			<log-match>-e "ntp server ${ntp4} fourth"</log-match>
+		</step>
+
+	</stage>
+</testcase>

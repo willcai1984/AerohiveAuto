@@ -1,0 +1,150 @@
+<testcase>
+	<brief>Mac auth should work with open,basic function check</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<description>
+		Topology to use
+		Description
+		Mac auth should work with open,basic function check
+		Pre-condition
+		-config a ssid,mac auth enable
+		-config a user on radius server,like 001122334455,passwd is the same
+		Test procedure
+		-client connect to ssid with the right mac
+		-client reconnect to ssid
+		Expect result
+		1.Client successfully connected to ssid
+		2.Check the ‘_de auth all’ info
+		3.‘show auth’ to check the auth state
+		4.‘sh ssid xxx st’ to check the ip,uid,vid,auth flag,auth method
+		5.‘sh roa cache [mac xxxxxxxx]’ to check the uid,vid,mac auth flag,hop,IP,etc.
+	</description>
+
+	<stage>
+		<step no="0.1">
+			<setvar name="sta1.auth_mac">
+				echo "${sta1.tif.smac}" | tr '[A-Z]' '[a-z]'
+			</setvar>
+		</step>
+		<include prefix="0.2" file="subs/ldap_add.xml" args="${sta1.auth_mac}, ${sta1.auth_mac}" />
+
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, open" />
+
+		<step no="ex.hive">
+			<desc>hive configuration</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<ssh target="ap1">
+				-v "security-object autoap security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security additional-auth-method mac-based-auth"
+				-v "save config"
+			</ssh>
+		</step>
+		<step no="ex.mac-auth-chk">
+			<log-file>show_security_object.log</log-file>
+			<ssh target="ap1">
+				-v "show security- autoap"
+			</ssh>
+			<log-match>-e "Enabled" -i "MAC-based auth" -p 3</log-match>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, open" />
+
+		<include prefix="4" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="5">
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="6" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, open, x, open, none" />
+
+		<include prefix="8" file="subs/wpa_supplicant_start.xml" args="sta2" />
+
+		<step no="ex.debug">
+			<desc>enable auth debug on AP</desc>
+			<ssh target="ap1">
+				-v "_debug auth all"
+				-v "clear log buff"
+			</ssh>
+		</step>
+
+		<step no="9">
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="10" delay="10">
+			<desc>show the connection status</desc>
+			<log-file>stat_ap2.log</log-file>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED" -n</log-match>
+		</step>
+
+		<include prefix="ex.aplog" file="subs/save_ap_log.xml" args="show logging buffered, ap1, auth_debug.log" />
+
+		<step no="ex.sta2-mac">
+			<setvar name="sta2.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta2.mif.ip} -u ${sta2.user} -p ${sta2.passwd} -i ${sta2.tif.name} -m -width 2
+			</setvar>
+		</step>
+
+		<step no="11">
+			<desc>check log buffer</desc>
+			<log-file>auth_debug.log</log-file>
+			<log-match>-e "MAC-based auth: RADIUS server send reject to station ${sta2.tif.mac}" -c</log-match>
+			<log-match>-e "MAC-based auth: ban ${sta2.tif.mac}" -c</log-match>
+		</step>
+
+		<step no="ex.sta2-mac-chk">
+			<desc>show roaming cache on AP1 </desc>
+			<log-file>show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-e "${sta2.tif.mac}" -c -n</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="0.2" file="subs/ldap_delete.xml" args="${sta1.auth_mac}" />
+		</stage>
+
+		<include prefix="def_post" file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

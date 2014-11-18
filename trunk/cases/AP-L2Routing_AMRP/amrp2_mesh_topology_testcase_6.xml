@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>1 Portal, 2 MP full mesh ,check route table, make sure MP selecting right portal based on wifi-link cost(for this case: ap1 is portal, ap2 is mp1, ap3 is mp2)</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+			-configure three APs in the same subnet and same hive
+			-MP 1 and MP 2 are mesh point
+			-Create a SSID on wifi0 and client associate AP, pass authentication
+		Test Procedure:
+			1. When AP boot up, show amrp interface eth0 ,show amrp ethlink in Portal1.
+			2. Show route, check route table in Portal1.(default route , interface route/node, route/client route )
+			3. Show route, check route table in MP1, (default route , interface route/node, route/client route )
+			4. Show route, check route table in MP2(default route , interface route/node, route/client route )
+			5. When client associate to MP2,check route table, data traffic.
+				a. Client ping wired pc
+				b. Client ping ap1,ap2,ap3
+	</description>
+	
+	<numofap>3</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+
+		<step no="0.1_1">
+			<desc>
+				-Check eth1 status on ap1 and shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.1_2">
+			<desc>
+				-Check eth1 status on ap2 and shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.1_3">
+			<desc>
+				-Check eth1 status on ap3 and shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap3">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.2_1">
+			<desc>
+				-Configure AP1
+			</desc>
+			<console target="ap1" timeout="50">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+
+
+		<step no="0.2_2">
+			<desc>
+				-Configure AP2
+			</desc>
+			<console target="ap2" timeout="50">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+
+		<step no="0.2_3">
+			<desc>
+				-Configure AP3
+			</desc>
+			<console target="ap3" timeout="50">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+
+		<include prefix="0.3_1" file="subs/get_ap_ip_mac.xml" rargs="ap1" />
+
+		<include prefix="0.3_2" file="subs/get_ap_ip_mac.xml" rargs="ap2" />
+
+		<include prefix="0.3_3" file="subs/get_ap_ip_mac.xml" rargs="ap3" />
+
+		<include prefix="0.4_1" file="subs/ap_mesh_set.xml" obj-args="ap1, ap2" />
+
+		<step no="0.4_2">
+			<desc>
+				-Configure AP2
+			</desc>
+			<console target="ap2" timeout="50">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<include prefix="0.4_3" file="subs/ap_mesh_set.xml" obj-args="ap1, ap3" />
+
+		<step no="0.4_4">
+			<desc>
+				-Configure AP3
+			</desc>
+			<console target="ap3" timeout="50">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+		<step no="0.5">
+			<desc>
+				-Configure AP3
+			</desc>
+			<console target="ap3" timeout="50">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+				
+		<step no="0.6_1">
+			<desc>
+				Configure sta connect parameters
+			</desc>
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="0.6_2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+		
+		<step no="1.0">
+			<desc>
+				1. When AP boot up, show amrp interface eth0 ,show amrp ethlink in Portal1.
+				1. DA should be Portal self.
+			</desc>
+			<log-file>step1.0_show_amrp_status_portal.log</log-file>
+			<console target="ap1" timeout="50">
+				-v "show amrp interface eth0"
+				-v "show amrp Ethlink"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "DA.*${ap1.mgt0.ip} .* ${ap1.mgt0.mac}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.mgt0.mac} ${ap1.mgt0.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="2.0">
+			<desc>
+				2. Show route, check route table in Portal1.(default route , interface route/node route/client route )
+				2. Default route should be eth0, should have MP1, MP2’s route(outgoing interface is wifi1.1).
+			</desc>
+			<log-file>step2.0_show_route_portal.log</log-file>
+			<console target="ap1" timeout="50">
+				-v "show route"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000 .* eth0" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap3.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.0">
+			<desc>
+				3. Show route, check route table in MP1, (default route , interface route/node route/client route )
+				3. Default route should be wifi1.1, MP1 selecting portal1 as portal(based on metric cost )
+			</desc>
+			<log-file>step3.0_show_route_mp1.log</log-file>
+			<console target="ap2" timeout="50">
+				-v "show route"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000 .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap3.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.0">
+			<desc>
+				4. Show route, check route table in MP2(default route , interface route/node route/client route )
+				4. Default route should be wifi1.1, MP2 selecting portal1 as portal(based on metric cost )
+			</desc>
+			<log-file>step4.0_show_route_mp2.log</log-file>
+			<console target="ap3" timeout="50">
+				-v "show route"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000 .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>			
+		</step>
+		
+		<step no="4.1">
+			<desc>
+				check route
+			</desc>
+			<log-file>step4.0_show_route_mp2.log</log-file>
+			<if>"${meshpoint}" == "wifi0"</if>
+			<no-error-check />			
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac} .* wifi0.2" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="4.2">
+			<desc>
+				check route
+			</desc>
+			<log-file>step4.0_show_route_mp2.log</log-file>
+			<if>"${meshpoint}" == "wifi1"</if>
+			<no-error-check />			
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac} .* wifi0.1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				5. When client associate to MP2(ap3),check route table, data traffic.
+				a. Client ping wired pc
+				b. Client ping ap1,ap2,ap3
+				5. Route table should include client’s route ,how long Portal1 will update route table (base on how long portal received the SIU packet),interface route/node route/client route should be right and traffic should successfully
+			</desc>
+			<console target="ap3" timeout="50">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear forwarding-engine mac-sessions "
+				-v "clear forwarding-engine ip-session"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				5. When client associate to MP2(ap3),check route table, data traffic.
+				a. Client ping wired pc
+				b. Client ping ap1,ap2,ap3
+			</desc>
+			<log-file>step5.2_sta1_ping.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${mpc.tif.ip} -c 3"
+				-v "ping ${ap1.mgt0.ip} -c 3"
+				-v "ping ${ap2.mgt0.ip} -c 3"
+				-v "ping ${ap3.mgt0.ip} -c 3"
+			</ssh>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${mpc.tif.ip}: icmp_seq=\d+ ttl=\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${ap1.mgt0.ip}: icmp_seq=\d+ ttl=\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${ap2.mgt0.ip}: icmp_seq=\d+ ttl=\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${ap3.mgt0.ip}: icmp_seq=\d+ ttl=\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="5.3" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step5.3_show_logging_buffered.log" />
+
+		<step no="5.4">
+			<desc>
+				Check log (5. Route table should include client’s route ,how long Portal1 will update route table (base on how long portal received the SIU packet),interface route/node route/client route should be right and traffic should successfully)
+			</desc>
+			<log-file>step5.3_show_logging_buffered.log</log-file>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) ${meshpoint}.1 ${sta1.tif.ip}->${mpc.tif.ip}.* icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) ${meshpoint}.1 ${sta1.tif.ip}->${ap1.mgt0.ip}.* icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) ${meshpoint}.1 ${sta1.tif.ip}->${ap2.mgt0.ip}.* icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(u\) mgt0 ${sta1.tif.ip}->${ap3.mgt0.ip}.* icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+
+	</stage>
+
+</testcase>

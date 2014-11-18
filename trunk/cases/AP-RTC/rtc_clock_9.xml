@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Under syc up with NTP server, check if clock change after enable/disable DST</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		1) AP is powered up and works well
+		2) No special config for AP
+		3) NTP enabled
+		ntp en
+		ntp server 10.155.31.201
+
+		Test Procedure:
+		1) Show the existing time and date
+		show clock
+		2) Set daylight-saving-time which is out of current time
+		clo time-zone daylight-saving-time 01-01 00:00:00 12-31 23:59:59
+		3) Show the time and date after DST
+		show clock
+		4) Disable DST
+		no clo time-zone daylight-saving-time
+		5) Show the time and date after disable DST
+		show clock
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				3) NTP enabled
+				ntp en
+				ntp server 10.155.31.201
+			</desc>
+			<console target="ap1">
+				-v "ntp enable"
+				-v "ntp server ${pub.ntp.ip}"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				1) Show the existing time and date
+				show clock
+			</desc>
+			<log-file>step2_show_clock.log</log-file>
+			<console target="ap1">
+				-v "show clock"
+			</console>
+		</step>
+
+		<step no="2.1">
+			<desc>get date</desc>
+			<setvar name="date">
+				${bin.dir}/getbyrexp.py -p "(\d+-\d+-\d+)\s+\d+:\d+:\d+\s+\w+" -f ${log.dir}/step2_show_clock.log -t str
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>get hour</desc>
+			<setvar name="hour">
+				${bin.dir}/getbyrexp.py -p "\d+-\d+-\d+\s+(\d+):\d+:\d+\s+\w+" -f ${log.dir}/step2_show_clock.log -t str
+			</setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				get start time
+			</desc>
+			<setvar name="get.clock.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_clock.log -p "(\d+-\d+-\d+\s*\d+:\d+:\d+)\s*\w+" -t str
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				get start time
+			</desc>
+			<setvar name="start.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_clock.log -p "\d+-(\d+-\d+\s*\d+:\d+:\d+)\s*\w+" --script "(datetime.strptime(m.group(1),'%m-%d %H:%M:%S')-timedelta(days=50)).strftime('%m-%d %H:%M:%S')"
+			</setvar>
+		</step>
+
+		<step no="2.5">
+			<desc>
+				get end time
+			</desc>
+			<setvar name="end.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_clock.log -p "\d+-(\d+\d+-\d+\s*\d+:\d+:\d+)\s*\w+" --script "(datetime.strptime(m.group(1),'%m-%d %H:%M:%S')-timedelta(days=5)).strftime('%m-%d %H:%M:%S')"
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				2) Set daylight-saving-time which is out of current time
+				clo time-zone daylight-saving-time 01-01 00:00:00 12-31 23:59:59
+			</desc>
+			<console target="ap1">
+				-v "clock time-zone daylight-saving-time ${start.time} ${end.time}"
+			</console>
+		</step>
+
+		<step no="4" delay="60">
+			<desc>
+				3) Show the time and date after DST
+				show clock
+			</desc>
+			<log-file>step4_show_clock.log</log-file>
+			<console target="ap1">
+				-v "show clock"
+			</console>
+			<log-match>-c -i "${date}"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get start time
+			</desc>
+			<setvar name="get.clock.time1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4_show_clock.log -p "(\d+-\d+-\d+\s*\d+:\d+:\d+)\s*\w+" -t str
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				check if the interval is between 0 to 20min.
+			</desc>
+			<log-file>step4.2_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${get.clock.time1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${get.clock.time}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt;= 0.0 and (mktime(datetime.strptime('${get.clock.time1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${get.clock.time}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt;= 1200.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				4) Disable DST
+				no clo time-zone daylight-saving-time
+			</desc>
+			<console target="ap1">
+				-v "no clock time-zone daylight-saving-time"
+			</console>
+		</step>
+
+		<step no="6" delay="50" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				5) Show the time and date after disable DST
+				show clock
+			</desc>
+			<log-file>step6_show_clock_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show clock"
+			</console>
+			<log-match>-c -i "${date}"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				show clock
+			</desc>
+			<log-file>step6.1_show_clock.log</log-file>
+			<console target="ap1">
+				-v "show clock"
+			</console>
+		</step>
+
+		<step no="7">
+			<desc>
+				get start time
+			</desc>
+			<setvar name="get.clock.time2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6.1_show_clock.log -p "(\d+-\d+-\d+\s*\d+:\d+:\d+)\s*\w+" -t str
+			</setvar>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				check if the interval is between 0 to 40min.
+			</desc>
+			<log-file>step7.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${get.clock.time2}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${get.clock.time}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt;= 0.0 and (mktime(datetime.strptime('${get.clock.time2}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${get.clock.time}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt;= 2400.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+	</stage>
+</testcase>

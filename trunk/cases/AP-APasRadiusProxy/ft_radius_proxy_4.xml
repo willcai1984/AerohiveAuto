@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Proxy server fail over in the same realm</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Setup a IAS radius server, accounting supported
+
+		Test Procedure:
+		-create two radius server, 'aaa radius-server dark server 10.155.32.218 shared-
+		secret ********', one server is unreachable
+		-bind the above radius servers to a proxy realm, the primary server is unreachable
+		-enable local radius service, 'aaa radius-server local enable'
+		-create a ssid with wpa-aes-802.1x auth method, use the local AP as radius server
+		-STA1 connects to ssid with correct credential in realm
+		-check the debug log on AP, '_debug radius excessive'
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.ad1.username}@${pub.ad1.realm}" />
+	<property name="conn1.passwd" value="${pub.ad1.passwd}" />
+
+	<stage>
+		<step no="0.1">
+			<desc>set vlan for mgt0</desc>
+			<console target="ap1" timeout="10">	
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+			</console>
+		</step>
+		<step no="0.2">
+			<desc>set vlan for mgt0</desc>
+			<console target="ap2" timeout="10">	
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+			</console>
+		</step>
+		<step no="0.3" delay="5">
+			<desc>show mgt0's ip of AP1</desc>
+			<log-file>AP1_int_info.log</log-file>
+			<ssh target="ap1">
+				-v "show interface ${ap1.forward.int}"
+			</ssh>
+		</step>
+		<step no="0.4">
+			 <desc>get IP of mgt0 on AP1</desc>
+       <setvar name="ap1.forward.ip">
+				 ${bin.dir}/getrmtip.pl -f ${log.dir}/AP1_int_info.log -i ${ap1.forward.int} -o aero -nomask
+       </setvar>
+		</step>
+		<step no="0.5">
+			<desc>show mgt0's ip of AP2</desc>
+			<log-file>AP2_int_info.log</log-file>
+			<console target="ap2">
+				-v "show interface ${ap2.forward.int}"
+			</console>
+		</step>
+		<step no="0.6">
+			 <desc>get IP of mgt0 on AP2</desc>
+       <setvar name="ap2.forward.ip">
+				 ${bin.dir}/getrmtip.pl -f ${log.dir}/AP2_int_info.log -i ${ap2.forward.int} -o aero -nomask
+       </setvar>
+		</step>
+		
+		<step no="1">
+			<desc>
+				-Set SSID for ap1
+				-set security-object parameters
+			</desc>
+			<ssh target="ap1" timeout="10">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object autoap"
+				-v "user-profile aaa qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "ssid ${ssid.name}"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius-server primary ${ap2.forward.ip} shared-secret aerohive"
+				-v "security-object autoap security aaa radius-server accounting primary ${ap2.forward.ip} shared-secret aerohive"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Set SSID for ap2
+				-set security-object parameters
+			</desc>
+			<ssh target="ap2" timeout="10">
+				-v "user-profile aaa qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object autoap"
+				-v "ssid ${ssid.name}-ap2"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius-server primary ${ap2.forward.ip} shared-secret aerohive"
+				-v "security-object autoap security aaa radius-server accounting primary ${ap2.forward.ip} shared-secret aerohive"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ssid.name}-ap2 security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}-ap2"
+				-v "interface wifi0 radio channel 1"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>Set radius service for ap2</desc>
+			<ssh target="ap2" timeout="10">
+				-v "aaa radius-server name server1 server 1.1.1.1 shared-secret ${pub.radius1.sharesecret}"
+				-v "aaa radius-server name server2 server ${pub.radius2.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "aaa radius-server proxy realm ${pub.ad1.realm} primary server1"
+				-v "aaa radius-server proxy realm ${pub.ad1.realm} backup server2"
+				-v "aaa radius-server local enable"
+				-v "aaa radius-server local nas ${ap1.forward.ip} shared-key aerohive"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="4">
+			<desc>show running config on AP1</desc>
+			<log-file>show_run_ap1.log</log-file>
+			<ssh target="ap1" timeout="10">
+				-v "show run"
+			</ssh>
+			<log-match>-i "security-object autoap security protocol-suite wpa2-aes-8021x"</log-match>
+			<log-match>-i "security-object autoap security aaa radius-server primary ${ap2.forward.ip}"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>show running config on AP2</desc>
+			<log-file>show_run_ap2.log</log-file>
+			<ssh target="ap2" timeout="10">
+				-v "show run"
+			</ssh>
+			<log-match>-i "aaa radius-server proxy realm ${pub.ad1.realm} primary server1"</log-match>
+			<log-match>-i "aaa radius-server local enable"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>show radius proxy config on AP2</desc>
+			<log-file>show_radius_proxy_ap2.log</log-file>
+			<telnet target="ap2" timeout="10">
+				-v "show aaa radius-server proxy"
+			</telnet>
+			<log-match>-i "Realm format" -i "NAI" -i "user@real"</log-match>
+			<log-match>-c -i "strip realm: *yes"</log-match>
+			<log-match>-i "Status" -i "Enabled"</log-match>
+			<log-match>-i "1st realm" -i "${pub.ad1.realm}"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>set log filter</desc>
+			<telnet target="ap2">
+				-v "_debug radius excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+		<step no="6.1">
+			<desc>this is for test</desc>
+			<telnet target="ap2">
+				-v "sh int mgt0"
+			</telnet>
+		</step>
+		<include prefix="7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="8">
+			<desc>show logging buffered</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<ssh target="ap2" timeout="500">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-i "proxy: allocating destination 1.1.1.1 port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "Sending Accounting-Request" -i "to 1.1.1.1 port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "proxy: allocating destination" -i "1.1.1.1" -i "port ${pub.radius2.authport}" </log-match>
+			<log-match>-i "Sending Access-Request" -i "to 1.1.1.1" -i "port ${pub.radius2.authport}" </log-match>
+			<log-match>-i "Marking home server 1.1.1.1 port ${pub.radius2.authport} as zombie (it looks like it is dead)"</log-match>
+			<log-match>-i "rad_recv: Access-Challenge packet" -i "from host ${pub.radius2.ip}" -i "port ${pub.radius2.authport}" </log-match>
+			<log-match>-i "proxy: allocating destination" -i "${pub.radius2.ip}" -i "port ${pub.radius2.authport}" </log-match>
+			<log-match>-i "Sending Access-Request" -i "to ${pub.radius2.ip}" -i "port ${pub.radius2.authport}" </log-match>
+			<log-match>-i "rad_recv: Access-Challenge packet" -i "from host ${pub.radius2.ip}" -i "port ${pub.radius2.authport}" </log-match>
+			<log-match>-i "Looking up realm" -i "${pub.ad1.realm}" -i "for User-Name" -i "${pub.ad1.username}@${pub.ad1.realm}" </log-match>
+			<log-match>-i "Adding Stripped-User-Name" -i "${pub.ad1.username}" </log-match>
+			<log-match>-i "Proxying request from user" -i "${pub.ad1.username}" -i "to realm ${pub.ad1.realm}" </log-match>
+		</step>
+		<step no="9" delay="120">
+			<desc>show logging buffered</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<ssh target="ap2" timeout="500">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-i "rad_recv: Accounting-Response packet from host ${pub.radius2.ip} port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "proxy: allocating destination" -i "1.1.1.1" -i "port ${pub.radius2.authport}" </log-match>
+		</step>
+	</stage>
+</testcase>

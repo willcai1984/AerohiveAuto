@@ -1,0 +1,570 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Modify timeout of track IP</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP1 IP_addr is IP1, AP2 IP_addr is IP2
+		-Configure AP1
+		"hive tracktest"
+		"interface mgt0 hive tracktest"
+		-Configure AP2
+		"hive tracktest"
+		"interface mgt0 hive tracktest"
+		"track group1 default-gateway"
+		"track group1 action start-mesh-failover"
+
+		Test Procedure:
+		1)Show ip track on AP2
+		" show track group1"
+		2)Show ip track config
+		" show running config"
+		3)Show ip track logs
+		"_debug monitor all"
+		"debug console"
+		4)Trigger action
+		"interface eth0 shutdown"
+		5)Recover
+		"no interface eth0 shutdown"
+		6)Modify the value of retry
+		"track group1 timeout 1"
+		7)Repeat step 1-5
+		8)Modify the interval
+		"track group1 timeout 180"
+		9)Repeat step 1-5
+		Expectant result
+		1.Group timeout is 2s
+		2.Timeout config isn't displayed in the running config (default)
+		4.The timeout is 2 and it is displayed in the logs
+		5.The system can recover
+		7.Timeout config can be displayed correctly and the timeout is 1 and it
+		is displayed in the logs
+		9.Timeout config can be displayed correctly and the retry times of the
+		track ip packet is
+		2(because of interval is smaller than timeout, when
+		the action is triggered, the timeout is set to default) is displayed in the
+		logs(the action can be triggered)
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				ap2 as portal, shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Configure AP1
+				"hive tracktest"
+				"interface mgt0 hive tracktest"
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Show ip track logs
+				"_debug monitor all"
+				-Configure AP2
+				"hive tracktest"
+				"interface mgt0 hive tracktest"
+				"track group1 default-gateway"
+				"track group1 action start-mesh-failover"
+			</desc>
+			<telnet target="ap2">
+				-v "_debug monitor all"
+				-v "clear log all"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "track group1 default-gateway"
+				-v "track group1 action start-mesh-failover"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-Show ip track on AP2
+				" show track group1"
+				-Group Timeout: 2 seconds
+			</desc>
+			<log-file>step3_show_track_group1.log</log-file>
+			<telnet target="ap2">
+				-v "show track group1"
+			</telnet>
+			<log-match>-i "Group Interval: 6 seconds"</log-match>
+	
+		</step>
+
+		<step no="3.2">
+			<desc>
+				-Timeout config can't be displayed.
+				" show running config"
+			</desc>
+			<log-file>step3_show_running_config.log</log-file>
+			<telnet target="ap2">
+				-v "show running-config"
+			</telnet>
+			<log-match>-n -i "track group1 timeout 2"</log-match>
+		</step>
+
+		<step no="3.3" delay="20">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+			</desc>
+			<log-file>step3_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1"</log-match>
+			<log-match loop-values="2,3">-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: ${loop.v}"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-clear log all
+				"clear log all"
+			</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				-Trigger action
+				"interface eth0 shutdown"
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5.1" delay="20">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+				-The timeout is 2 and it is displayed in the logs
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="500">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match loop-values="1,2,3">-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times3">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 1(all_IFs)/3" -t str -g-1
+			</setvar>
+		</step>
+
+		<step no="5.3">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_show_logging_buffered.log -b "group\(group1\) is ready for sending packet, number of times: 1(all_IFs)/3" -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 2" -t str -g-1
+			</setvar>
+		</step>
+
+		<step no="5.4">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_show_logging_buffered.log -b "group\(group1\) is ready for sending packet, number of times: 1(all_IFs)/3" -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 1" -t str -g-1
+			</setvar>
+		</step>
+
+		<step no="5.5.1">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times3_t">
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.number.times3}', '%Y-%m-%d %H:%M:%S').timetuple()))"
+			</setvar>
+		</step>
+
+		<step no="5.5.2">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times2_t">
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple()))"
+			</setvar>
+		</step>
+
+		<step no="5.5.3">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times1_t">
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple()))"
+			</setvar>
+		</step>
+
+		<step no="5.5.4">
+			<desc>
+				check if the timeout is 2s.
+			</desc>
+			<script>
+				${bin.dir}/pyeval.py "(${first.number.times3_t} - ${first.number.times2_t}) == 2.0" --amode
+			</script>
+		</step>
+
+		<step no="5.5.5">
+			<desc>
+				check if the timeout is 2s.
+			</desc>
+			<script>
+				${bin.dir}/pyeval.py "(${first.number.times2_t} - ${first.number.times1_t}) == 2.0" --amode
+			</script>
+		</step>
+
+		<step no="6">
+			<desc>
+				-Recover
+				"no interface eth0 shutdown"
+			</desc>
+			<console target="ap2">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="test1.1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track1_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2.1">
+			<log-file>show_arp_cache1.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="7" delay="20">
+			<desc>
+				-The system can recover
+			</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1"</log-match>
+			<log-match loop-values="2,3">-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-Modify the value of retry
+				"track group1 timeout 1"
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "track group1 timeout 1"
+			</console>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				-Show ip track on AP2
+				" show track group1"
+				-Group Timeout: 1 seconds
+			</desc>
+			<log-file>step9_show_track_group1.log</log-file>
+			<console target="ap2">
+				-v "show track group1"
+			</console>
+			<log-match>-i "Group Timeout: *1 seconds"</log-match>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				-Timeout config can be displayed.
+				" show running config"
+			</desc>
+			<log-file>step9_show_running_config.log</log-file>
+			<console target="ap2">
+				-v "show running-config"
+			</console>
+			<log-match>-i "track group1 timeout 1"</log-match>
+		</step>
+
+		<step no="9.3" delay="20">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+			</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/1"</log-match>
+			<log-match loop-values="2,3">-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				-clear log all
+				"clear log all"
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				-Trigger action
+				"interface eth0 shutdown"
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="11.1" delay="20">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+				-The timeout is 1 and it is displayed in the logs
+			</desc>
+			<log-file>step11_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match loop-values="1,2,3">-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+
+		<step no="11.2">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times3">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step11_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 1(all_IFs)/3" -t str -g-1
+			</setvar>
+		</step>
+
+		<step no="11.3">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step11_show_logging_buffered.log -b "group\(group1\) is ready for sending packet, number of times: 1(all_IFs)/3" -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 1(all_IFs)/2" -t str -g-1
+			</setvar>
+		</step>
+
+		<step no="11.4">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step11_show_logging_buffered.log -b "group\(group1\) is ready for sending packet, number of times: 1(all_IFs)/3" -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 1(all_IFs)/1" -t str -g-1
+			</setvar>
+		</step>
+
+		<step no="11.5.1">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times3_t">
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.number.times3}', '%Y-%m-%d %H:%M:%S').timetuple()))"
+			</setvar>
+		</step>
+
+		<step no="11.5.2">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times2_t">
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple()))"
+			</setvar>
+		</step>
+
+		<step no="11.5.3">
+			<desc>Get the second number of times</desc>
+			<setvar name="first.number.times1_t">
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple()))"
+			</setvar>
+		</step>
+
+		<step no="11.5.4">
+			<desc>
+				check if the timeout is 1s.
+			</desc>
+			<script>
+				${bin.dir}/pyeval.py "(${first.number.times3_t} - ${first.number.times2_t}) == 1.0" --amode
+			</script>
+		</step>
+
+		<step no="11.5.5">
+			<desc>
+				check if the timeout is 1s.
+			</desc>
+			<script>
+				${bin.dir}/pyeval.py "(${first.number.times2_t} - ${first.number.times1_t}) == 1.0" --amode
+			</script>
+		</step>
+
+		<step no="12">
+			<desc>
+				-Recover
+				"no interface eth0 shutdown"
+			</desc>
+			<console target="ap2">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="test1.2" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track2_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2.2">
+			<log-file>show_arp_cache2.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="13" delay="20">
+			<desc>
+				-The system can recover
+			</desc>
+			<log-file>step13_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/1"</log-match>
+			<log-match loop-values="2,3">-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				-Modify the interval
+				"track group1 timeout 180"
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "track group1 timeout 180"
+			</console>
+		</step>
+
+		<step no="15.1">
+			<desc>
+				-Show ip track on AP2
+				" show track group1"
+				-Group Timeout: 180 seconds
+			</desc>
+			<log-file>step15_show_track_group1.log</log-file>
+			<console target="ap2">
+				-v "show track group1"
+			</console>
+			<log-match>-i "Group Interval: 6 seconds"</log-match>
+			<log-match>-i "Group Timeout: *180 seconds"</log-match>
+		</step>
+
+		<step no="15.2">
+			<desc>
+				-Timeout config can be displayed.
+				" show running config"
+			</desc>
+			<log-file>step15_show_running_config.log</log-file>
+			<console target="ap2">
+				-v "show running-config"
+			</console>
+			<log-match>-i "track group1 timeout 180"</log-match>
+		</step>
+
+		<step no="15.3" delay="20">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+			</desc>
+			<log-file>step15_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="240">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1"</log-match>
+			<log-match loop-values="2,3">-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				-shutdown eth0
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="test1.3" delay="10" type="loop-check" loop-max-times="20" loop-interval="20">
+			<log-file>show_track3_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Unreachable"</log-match>
+		</step>
+
+		<step no="test2.3">
+			<log-file>show_arp_cache3.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="17" delay="200">
+			<desc>
+				-Show logging buffered
+				"show logging buffered"
+				-Timeout config can be displayed correctly and the retry times of the
+				track ip packet is 0(because of interval is smaller than timeout, when
+				the action is triggered, the timeout is set to interval, there is no retry times.)
+				is displayed in the logs(the action can't be triggered)
+			</desc>
+			<log-file>step17_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="240">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1"</log-match>
+			<log-match loop-values="2,3">-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+
+		<step no="18">
+			<desc>
+				-Recover
+				"no interface eth0 shutdown"
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="19" delay="20">
+			<desc>
+				-The system can recover
+			</desc>
+			<log-file>step19_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1"</log-match>
+			<log-match loop-values="2,3">-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/${loop.v}"</log-match>
+		</step>
+	</stage>
+</testcase>

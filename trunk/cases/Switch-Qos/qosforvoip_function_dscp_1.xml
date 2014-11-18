@@ -1,0 +1,341 @@
+<testcase>
+	<brief>fiber_or_copper,port count:2</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		QOSFORVOIP_Function_dscp_1
+		Test classification base on dscp through one by one
+	</description>
+	<comment>
+		sw1.port1=eth1/21;
+		sw1.port1.phytype=copper;
+		sw1.port5=eth1/25;
+		sw1.port1.ixia_port=1/2/1;
+		sw1.port1.ixia_port.phytype=copper;
+		sw1.terminal.port=2016;
+		tb.conserver.ip=localhost
+		ap1.cons_name=tb1-SR2024-2
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclserver1.ip=10.155.30.164;
+		pub.tclclient1.ip=10.155.40.10;
+		sw1.tclclient.ip=10.155.32.228;
+		sw1.mgmtport=eth1/1;
+		sw1.mgmtvlan=121;
+		tb.conserver.ip=10.155.32.228;
+		tb.conserver.user=root;
+		tb.conserver.passwd=aerohive;
+		sw1.cons_name=tb1-SR2024-2;
+		sw1.user=admin;
+		sw1.passwd=aerohive;
+		sw1.prompt="AH-[a-z0-9A-Z_]*#";
+	</comment>
+	<property name="correct_vlan" value="101" />
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="tx_port1.phytype" value="${sw1.port1.ixia_port.phytype}" />
+	<property name="rx_port1" value="${sw1.port2.ixia_port}" />
+	<property name="rx_port1.phytype" value="${sw1.port2.ixia_port.phytype}" />
+	<property name="qos_name" value="qos" />
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include prefix="pre" file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				Set qos class profile to port1, qos marker profile to port2, enable qos
+			</desc>
+			<telnet target="sw1">
+				-v 'vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} switchport mode trunk'
+				-v 'interface ${sw1.port1} switchport trunk allow vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port2} shutdown'
+				-v 'interface ${sw1.port2} switchport mode trunk'
+				-v 'interface ${sw1.port2} switchport trunk allow vlan ${correct_vlan}'
+				-v 'qos classifier-profile ${qos_name} diffserv'
+				-v 'qos marker-profile ${qos_name} diffserv'
+				-v 'interface ${sw1.port1} qos-classifier ${qos_name}'
+				-v 'interface ${sw1.port2} qos-marker ${qos_name}'
+				-v 'qos enable'
+				-v 'show running-config'
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				Set qos marker map normal ordered
+			</desc>
+			<telnet target="sw1">
+				-v 'qos marker-map diffserv 0 0'
+				-v 'qos marker-map diffserv 1 8'
+				-v 'qos marker-map diffserv 2 16'
+				-v 'qos marker-map diffserv 3 24'
+				-v 'qos marker-map diffserv 4 32'
+				-v 'qos marker-map diffserv 5 40'
+				-v 'qos marker-map diffserv 6 48'
+				-v 'qos marker-map diffserv 7 56'
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				show marker map table to check
+			</desc>
+			<log-file>step1.3_show_marker_map.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos marker-map diffserv'
+			</telnet>
+			<log-match>-e '^\d\s+0\s+0' -re</log-match>
+			<log-match>-e '^\d\s+1\s+8' -re</log-match>
+			<log-match>-e '^\d\s+2\s+16' -re</log-match>
+			<log-match>-e '^\d\s+3\s+24' -re</log-match>
+			<log-match>-e '^\d\s+4\s+32' -re</log-match>
+			<log-match>-e '^\d\s+5\s+40' -re</log-match>
+			<log-match>-e '^\d\s+6\s+48' -re</log-match>
+			<log-match>-e '^\d\s+7\s+56' -re</log-match>
+		</step>
+
+		<step no="2.0">
+			<desc>
+				kill exist screen process ${job.user}-${job.sid}-1
+			</desc>
+			<log-file>step2.0_kill_exist_screen_process.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "python ${bin.dir}/remove_screen.py -p '${job.user}-${job.sid}-1'"
+			</ssh>
+		</step>
+
+		<!--Enter to IXIA -->
+		<step no="2.1">
+			<desc>
+				connect to ixia firstly
+			</desc>
+			<log-file>step2.1_connect_to_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				<!-- new a screen -->
+				-v "screen -S ${job.user}-${job.sid}-1"
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${rx_port1} -phyList ${tx_port1.phytype},${rx_port1.phytype}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-vlan enable
+				-vlan_id ${correct_vlan}
+				-rate_pps 1"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1}
+				-mac_dst 0000.0000.0016
+				-mac_src 0000.0000.0015"
+				-v ""
+				-v "ctrl-a+d"
+			</ssh>
+		</step>
+
+	</stage>
+
+
+	<!--Start loop -->
+	<stage
+		loop-values="0:0,0:1,0:2,0:3,0:4,0:5,0:6,0:7,
+					1:0,1:1,1:2,1:3,1:4,1:5,1:6,1:7,
+					2:0,2:1,2:2,2:3,2:4,2:5,2:6,2:7,
+					3:0,3:1,3:2,3:3,3:4,3:5,3:6,3:7,
+					4:0,4:1,4:2,4:3,4:4,4:5,4:6,4:7,
+					5:0,5:1,5:2,5:3,5:4,5:5,5:6,5:7,
+					6:0,6:1,6:2,6:3,6:4,6:5,6:6,6:7,
+					7:0,7:1,7:2,7:3,7:4,7:5,7:6,7:7,
+					8:0,8:1,8:2,8:3,8:4,8:5,8:6,8:7,
+					9:0,9:1,9:2,9:3,9:4,9:5,9:6,9:7,
+					10:0,10:1,10:2,10:3,10:4,10:5,10:6,10:7,
+					11:0,11:1,11:2,11:3,11:4,11:5,11:6,11:7,
+					12:0,12:1,12:2,12:3,12:4,12:5,12:6,12:7,
+					13:0,13:1,13:2,13:3,13:4,13:5,13:6,13:7,
+					14:0,14:1,14:2,14:3,14:4,14:5,14:6,14:7,
+					15:0,15:1,15:2,15:3,15:4,15:5,15:6,15:7,
+					16:0,16:1,16:2,16:3,16:4,16:5,16:6,16:7,
+					17:0,17:1,17:2,17:3,17:4,17:5,17:6,17:7,
+					18:0,18:1,18:2,18:3,18:4,18:5,18:6,18:7,
+					19:0,19:1,19:2,19:3,19:4,19:5,19:6,19:7,
+					20:0,20:1,20:2,20:3,20:4,20:5,20:6,20:7,
+					21:0,21:1,21:2,21:3,21:4,21:5,21:6,21:7,
+					22:0,22:1,22:2,22:3,22:4,22:5,22:6,22:7,
+					23:0,23:1,23:2,23:3,23:4,23:5,23:6,23:7,
+					24:0,24:1,24:2,24:3,24:4,24:5,24:6,24:7,
+					25:0,25:1,25:2,25:3,25:4,25:5,25:6,25:7,
+					26:0,26:1,26:2,26:3,26:4,26:5,26:6,26:7,
+					27:0,27:1,27:2,27:3,27:4,27:5,27:6,27:7,
+					28:0,28:1,28:2,28:3,28:4,28:5,28:6,28:7,
+					29:0,29:1,29:2,29:3,29:4,29:5,29:6,29:7,
+					30:0,30:1,30:2,30:3,30:4,30:5,30:6,30:7,
+					31:0,31:1,31:2,31:3,31:4,31:5,31:6,31:7,
+					32:0,32:1,32:2,32:3,32:4,32:5,32:6,32:7,
+					33:0,33:1,33:2,33:3,33:4,33:5,33:6,33:7,
+					34:0,34:1,34:2,34:3,34:4,34:5,34:6,34:7,
+					35:0,35:1,35:2,35:3,35:4,35:5,35:6,35:7,
+					36:0,36:1,36:2,36:3,36:4,36:5,36:6,36:7,
+					37:0,37:1,37:2,37:3,37:4,37:5,37:6,37:7,
+					38:0,38:1,38:2,38:3,38:4,38:5,38:6,38:7,
+					39:0,39:1,39:2,39:3,39:4,39:5,39:6,39:7,
+					40:0,40:1,40:2,40:3,40:4,40:5,40:6,40:7,
+					41:0,41:1,41:2,41:3,41:4,41:5,41:6,41:7,
+					42:0,42:1,42:2,42:3,42:4,42:5,42:6,42:7,
+					43:0,43:1,43:2,43:3,43:4,43:5,43:6,43:7,
+					44:0,44:1,44:2,44:3,44:4,44:5,44:6,44:7,
+					45:0,45:1,45:2,45:3,45:4,45:5,45:6,45:7,
+					46:0,46:1,46:2,46:3,46:4,46:5,46:6,46:7,
+					47:0,47:1,47:2,47:3,47:4,47:5,47:6,47:7,
+					48:0,48:1,48:2,48:3,48:4,48:5,48:6,48:7,
+					49:0,49:1,49:2,49:3,49:4,49:5,49:6,49:7,
+					50:0,50:1,50:2,50:3,50:4,50:5,50:6,50:7,
+					51:0,51:1,51:2,51:3,51:4,51:5,51:6,51:7,
+					52:0,52:1,52:2,52:3,52:4,52:5,52:6,52:7,
+					53:0,53:1,53:2,53:3,53:4,53:5,53:6,53:7,
+					54:0,54:1,54:2,54:3,54:4,54:5,54:6,54:7,
+					55:0,55:1,55:2,55:3,55:4,55:5,55:6,55:7,
+					56:0,56:1,56:2,56:3,56:4,56:5,56:6,56:7,
+					57:0,57:1,57:2,57:3,57:4,57:5,57:6,57:7,
+					58:0,58:1,58:2,58:3,58:4,58:5,58:6,58:7,
+					59:0,59:1,59:2,59:3,59:4,59:5,59:6,59:7,
+					60:0,60:1,60:2,60:3,60:4,60:5,60:6,60:7,
+					61:0,61:1,61:2,61:3,61:4,61:5,61:6,61:7,
+					62:0,62:1,62:2,62:3,62:4,62:5,62:6,62:7,
+					63:0,63:1,63:2,63:3,63:4,63:5,63:6,63:7"
+		var-name="dscp_class">
+
+		<step no="${dscp_class}.1">
+			<desc>
+				${dscp_class},Get dscp value
+			</desc>
+			<setvar name="dscp">
+				python ${bin.dir}/get_loop_value.py -s '${dscp_class}' -p 1
+			</setvar>
+		</step>
+
+		<step no="${dscp_class}.2">
+			<desc>
+				${dscp_class},Get class value
+			</desc>
+			<setvar name="class">
+				python ${bin.dir}/get_loop_value.py -s '${dscp_class}' -p 2
+			</setvar>
+		</step>
+
+		<step no="${dscp_class}.3">
+			<desc>
+				${dscp_class},Get ixia pattern
+			</desc>
+			<setvar name="ixia_pattern">
+				python ${bin.dir}/get_loop_value.py -s '${dscp_class}' -p 2 -o '*' -v '2' -hex -c 'upper'
+			</setvar>
+		</step>
+
+		<step no="${dscp_class}.4.1">
+			<desc>
+				${dscp_class}, set classifier-map, dscp ${dscp}, class ${class}
+			</desc>
+			<log-file>step4.1_${dscp}_${class}.log</log-file>
+			<telnet target="sw1">
+				-v "qos classifier-map diffserv ${dscp} ${class}"
+			</telnet>
+		</step>
+
+		<step no="${dscp_class}.4.2">
+			<desc>
+				${dscp_class}, show classifier map table to confirm; expect dscp is ${dscp} class is ${class}
+			</desc>
+			<log-file>step4.2_${dscp}_${class}.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos classifier-map diffserv'
+			</telnet>
+			<!--remove 28 blanks for log format may influence the differv's shown -->
+			<!-- <log-match>-e '^\d\s+.*${dscp}.*\s*${class}' -re</log-match> -->
+		</step>
+
+		<step no="${dscp_class}.4.3">
+			<desc>
+				${dscp_class}, ixia send dscp ${dscp} pkts(should get the session firstly);
+			</desc>
+			<log-file>step4.3_${dscp}_${class}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				<!-- get the screen -->
+				-v ""
+				-v "screen -r ${job.user}-${job.sid}-1"
+				-v ""
+				<!-- set the dscp value -->
+				-v "stream_ipv4_header_set -portList ${tx_port1} -streamId 1 -dscpValue ${dscp}"
+				-v ""
+				<!-- start transmit -->
+				-v "stop_transmit -portList ${tx_port1},${rx_port1}"
+				-v ""
+				<!-- start port1 capture -->
+				-v "clear_statistic -portList ${tx_port1},${rx_port1}"
+				-v ""
+				-v "start_capture -portList ${rx_port1}"
+				-v ""
+				-v "start_transmit -portList ${tx_port1} -firstTryFlag false"
+				-v "wait_time -second 1"
+				-v ""
+				-v "stop_transmit -portList ${tx_port1}"
+				-v ""
+				<!-- stop port1 capture -->
+				-v "stop_capture -portList ${rx_port1}"
+				-v ""
+				<!-- save port1 capture -->
+				-v "save_capture -onePort ${rx_port1} -fileName ${job.id}_${dscp}_${class}_p2.txt"
+				-v ""
+				-v "ctrl-a+d"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="${dscp_class}.4.4">
+			<desc>
+				${dscp_class}, ixia send dscp ${dscp}, transfer to ${class} class(via classifier map), transfer to ${class} dscp(via marker map), transfer to ${ixia_pattern}0(ixia)
+			</desc>
+			<log-file>step4.4_${dscp}_${class}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "cat ${job.id}_${dscp}_${class}_p2.txt"
+			</ssh>
+			<log-match>-e '00 00 00 00 00 15.*81 00\s+(\d\d\s+){5}${ixia_pattern}0' -re -c</log-match>
+		</step>
+
+		<step no="${dscp_class}.4.5">
+			<desc>
+				rm the capture files
+			</desc>
+			<log-file>step4.5_${dscp}_${class}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="root@.*#|rm:.*\?" timeout="200">
+				-v "rm ${job.id}_${dscp}_${class}_p2.txt -f"
+			</ssh>
+		</step>
+	</stage>
+	<!-- end loop -->
+
+
+	<post-process>
+		<stage>
+			<step no="post1">
+				<desc>
+					kill_screen_process
+				</desc>
+				<log-file>kill_screen_process.log</log-file>
+				<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+					-v "python ${bin.dir}/remove_screen.py -p '${job.user}-${job.sid}-1'"
+				</ssh>
+			</step>
+		</stage>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include prefix="post" file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

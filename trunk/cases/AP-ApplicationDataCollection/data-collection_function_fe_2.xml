@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>In certain time ,will record byte counters and session counters per IGMP protocol</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Enable data collection
+		Data-collection collect interval 5 min
+		Open _debug dcm all
+
+		Test Procedure:
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Enable data collection
+				Data-collection collect interval 5 min
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name} multicast conversion-to-unicast auto"
+				-v "data-collection enable"
+				-v "data-collection collect interval 5 minutes"
+				-v "_ff id 1 dst-ip ${pub.mtcast1.group1.ip} bidirectional"
+				-v "_ff id 2 src-ip ${pub.mtcast1.group1.ip} bidirectional"
+				-v "_kdebug fe all"
+				-v "_debug dcm all"
+				-v "exec data-collection clear"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>use mrecv to join IGMP on sta1</desc>
+			<log-file>step1_IGMP.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "nohup ./mrecv -d ${pub.mtcast1.group1.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				get capture packet's id
+			</desc>
+			<setvar name="igmp.id">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step1_IGMP.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="2.1">
+			<desc>ifconfig to show the sta1's mac</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name} up"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				Set filter on AP "_ff id 1 src-mac xxxx:yyyy:zzzz protocol 2 bidirectional"(xxxx:yyyy:zzzz
+				is client's mac)
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 3 src-mac ${sta1.tif.mac} protocol 2 bidirectional"
+				-v "_kdebug fe all"
+			</telnet>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="test">
+			<telnet target="ap1">
+				-v "show interface wifi0 multicast"
+			</telnet>
+		</step>
+
+		<step no="5" delay="300">
+			<desc>
+				kill capture bootp packet on DHCP server
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "kill ${igmp.id}"
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>show logging buffered | in update</desc>
+			<log-file>show_logbuf_update.log</log-file>
+			<telnet target="ap1" timeout="120">
+				-v "show logging buffered | in counters"
+			</telnet>
+		</step>
+
+		<step no="6.2">
+			<desc>show data-collection protocol</desc>
+			<log-file>show_igmp.log</log-file>
+			<telnet target="ap1">
+				-v "show data-collection protocol"
+			</telnet>
+		</step>
+
+		<step no="6.3">
+			<desc>get from-access counters</desc>
+			<setvar name="igmp.from.access">
+				perl ${bin.dir}/getbyrexp.py -f ${log.dir}/show_igmp.log -p "igmp *: 0 *(\d+) *0 *\d+" -t int
+			</setvar>
+		</step>
+
+		<step no="6.4">
+			<desc>get to-access counters</desc>
+			<setvar name="igmp.to.access">
+				perl ${bin.dir}/getbyrexp.py -f ${log.dir}/show_igmp.log -p "igmp *: 0 *\d+ *0 *(\d+)" -t int
+			</setvar>
+		</step>
+
+		<step no="7.1">
+			<desc>check to-access sum</desc>
+			<if>"${igmp.to.access}" == "0"</if>
+			<script>
+				exit 1
+			</script>
+		</step>
+
+		<step no="7.2">
+			<desc>check from-access sum</desc>
+			<if>"${igmp.from.access}" == "0"</if>
+			<script>
+				exit 1
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="8">
+				<desc>
+					kill capture bootp packet on sta
+				</desc>
+				<ssh target="sta1" prompt=">|.*#">
+					-v "kill ${igmp.id}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

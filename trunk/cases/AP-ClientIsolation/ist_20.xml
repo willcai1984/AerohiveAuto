@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Broadcast through mesh.</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+	<description>
+		Description
+		Broadcast through mesh.
+
+		Pre-condition
+		-laptop1 connect with ssid1 on AP1;
+		-laptop2 connect with ssid2 on AP2;
+		-AP1 and AP2 are in the same hive;
+		-all laptops and PC are in same vlan
+		-inter-station-traffic is disabled on ssid1.
+		no forwarding-engine proxy-arp enable
+		Laptop1(001d:e02a:be91) Laptop2(0014:a5b1:0e9c)
+
+		Test procedure
+		-disable IST on AP
+		AP1#no ssid ssid1 inter-station-traffic
+		-laptop1 sends broadcast. R1
+
+		Expect result
+		this broadcast flood to backhaul interfaces on AP1.
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-1" />
+	<property name="conn2.ssid" value="${job.sid}-2" />
+	<property name="user_id" value="FWtest" />
+
+	<stage>
+		<if>"${ap.wifi1.existed}" =="true"</if>
+
+		<step no="1">
+			<desc>
+				Configure AP1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface wifi1 radio channel 36"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Configure AP1
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object ${conn2.ssid}"
+				-v "security-object ${conn2.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn2.ssid}"
+				-v "ssid ${conn2.ssid} security-object ${conn2.ssid}"
+				-v "interface wifi0 ssid ${conn2.ssid}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface wifi1 radio channel 36"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				check wifi1
+			</desc>
+			<log-file>step1.2_check_wifi1.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				Get wifi1 mac
+			</desc>
+			<setvar name="ap2_wifi1_mac">
+				${bin.dir}/getbyrexp.py -p "MAC addr=(\S+);" -f ${log.dir}/step1.2_check_wifi1.log -t str
+			</setvar>
+		</step>
+
+		<step no="2" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check amrp neighbor
+			</desc>
+			<log-file>step2_check_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2_wifi1_mac}" -i "${ap2.mgt0.ip}" -i "TWO-WAY"</log-match>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap2" />
+
+		<step no="5">
+			<desc>
+				Inter-station-traffic is disabled on ssid1.
+				- no forwarding-engine proxy-arp enable
+			</desc>
+			<telnet target="ap1">
+				-v "clear forwarding-engine mac-sessions"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "no ssid ${conn1.ssid} inter-station-traffic"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Set the ff and clear log all on AP
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="set.unexist.ip.address">
+			<multi-setvar>
+				echo "sta.unexist.ip=$(echo ${sta1.tif.ip} | cut -d. -f1,2,3).220"
+			</multi-setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				laptop1 sends broadcast.
+			</desc>
+			<log-file>step6_sta1_ping_unexist_ip.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${sta.unexist.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${sta.unexist.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="6.1" delay="20">
+			<desc>
+				Check log buffered
+			</desc>
+			<log-file>step6.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match>-c -i "flood the packet out eth0"</log-match>
+			<log-match>-c -i "flood the packet out wifi1.1"</log-match>
+			<log-match>-c -i "traffic is from station, inter-station traffic is disabled, don't flood on wifi0.1"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

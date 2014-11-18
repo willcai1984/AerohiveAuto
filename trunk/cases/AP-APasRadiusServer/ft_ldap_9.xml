@@ -1,0 +1,92 @@
+<testcase>
+	<brief>check the ldaps is working</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<description>
+		Topology to use
+		Topology 1
+		Description
+		-check the ldaps is working
+		Pre-condition
+		- a local local radius server must be configed first
+		- setup a ssid using wpa-auto-802.1x,radius server is local
+		- config a minimal ldap
+		-enable cache
+		Test procedure
+		-config the ldaps mode and select the port(default Is 636)
+		-all of the server-verify mode should work
+		-client connect to ssid
+		Expect result
+		1.check the config is cocrrect,sh aaa radius-server,sh aaa radius-server-key,sh run to make sure
+		2.check the debug info to see if tls negotiation is success
+		3.client do auth successful,check the attribute got from ldap server
+		4.check the cache
+	</description>
+
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.hive">
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security protocol-suite wpa-auto-8021x"
+				-v "security-object autoap security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type ldap-server primary server ${pub.ldap1.ip}"
+				-v "aaa radius-server local db-type ldap-server primary basedn ${pub.ldap1.basedn}"
+				-v "aaa radius-server local db-type ldap-server primary binddn ${pub.ldap1.binddn} pass ${pub.ldap1.bindpwd}"
+				-v "save radius-server-key ldap-client tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "aaa radius-server local ldap-auth primary type tls ca-cert cacert.pem verify-server never"
+				-v "aaa radius-server local db-type ldap-server primary protocol ldaps"
+				-v "aaa radius-server local en"
+				-v "save config"
+				-v "save server-files"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.aaa-chk">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-e "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-e "LDAPS" -i "Protocol" -p 2</log-match>
+			<log-match>-e "primary LDAP server (active)"</log-match>
+		</step>
+
+		<include prefix="4" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="5">
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-f ft_ldap_9_pc.cfg
+				-v "set_network 0 identity \"${pub.radius1.username}\""
+				-v "set_network 0 anonymous_identity \"${pub.radius1.username}\""
+				-v "set_network 0 password \"${pub.radius1.passwd}\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="6" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+	</stage>
+</testcase>

@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>In certain time ,will record byte counters and session counters
+		by TFTP protocol with UPD port 69
+	</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Enable data collection
+		Data-collection
+		collect interval 5 min
+		Alg tftp enable
+		Set filter on AP "_ff id 1
+		src-mac xxxx:yyyy:zzzz dst-port 69 bi"(xxxx:yyyy:zzzz is client's mac)
+		_kdebug fe basic
+		_kdebug fe detail
+		Exec data-collection clear
+		Clear log all
+		Start tftp server on PC
+		Open tftp client service on client
+
+		Test Procedure:
+
+		1. Get or put more than 4 G file or less then 4 G file from
+		client to PC, check byte counters by captured packet and check by debug
+		2. Check byte counters by show data-collection pro,
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="true" value="1" />
+	<property name="false" value="0" />
+	<property name="a" value="0" />
+	<property name="is_dc_upd_ok" value="0" />
+	<property name="tx_byte" value="0" />
+	<property name="rx_byte" value="0" />
+
+	<stage>
+		<step no="1.1">
+			<desc>create ssid and enable data-collection</desc>
+			<log-file>config_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${tb.name}"
+				-v "security-object ${tb.name} security protocol-suite open"
+				-v "ssid ${ssid.name} security-object ${tb.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "data-collection enable"
+				-v "data-collection collect interval 5 minutes"
+				-v "alg tftp enable"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>show running-config</desc>
+			<log-file>show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="2.1">
+			<desc>client associate to ssid on AP1</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="2.2" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the connection of client</desc>
+			<log-file>wpa_stat_${staid}_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "status"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>client gets IP by dhclient</desc>
+			<ssh target="sta1" slow="true">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.4">
+			<desc>get mac from client</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width 2
+			</setvar>
+		</step>
+
+		<step no="2.5">
+			<desc>check the connection by CLI:show ssid ${ssid.name} station </desc>
+			<log-file>show_log_ssid_${ssid.name}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-e "open" -i "${sta1.tif.mac}" -p 7 -c</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>enable fe debug on ap and clear log buffer</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} protocol 17 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "exec data-collection clear"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>create a test file on client</desc>
+			<log-file>create_test_file.log</log-file>
+			<ssh target="sta1" slow="true">
+				-v "dd if=/dev/zero of=/root/test bs=10 count=1000"
+			</ssh>
+		</step>
+
+		<step no="4.2" delay="30">
+			<desc>transfer test file to tftp server</desc>
+			<log-file>show_log_tftp.log</log-file>
+			<ssh target="sta1" slow="true">
+				-v "cd /root"
+				-v "pwd"
+				-v "nohup curl --connect-timeout 900 -T test tftp://${pub.tftp1.tip}/test > sta_tftp_stdout.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.3" delay="60">
+			<desc>remove test file from client</desc>
+			<ssh target="sta1" slow="true">
+				-v "rm -f /root/test"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>show logging buffered | in update</desc>
+			<log-file>show_logbuf_update.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered | in update"
+			</telnet>
+		</step>
+
+		<step no="5.2">
+			<desc>show forwarding-engine counters _data-collection | in udp</desc>
+			<log-file>show_forward_dc.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine counters _data-collection"
+			</telnet>
+		</step>
+
+		<step no="5.3" delay="180">
+			<desc>show data-collection protocol | in udp</desc>
+			<log-file>show_dc_udp.log</log-file>
+			<telnet target="ap1">
+				-v "show data-collection protocol"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>get tx_byte</desc>
+			<log-file>get_tx.log</log-file>
+			<setvar name="tx_byte">
+				cat ${log.dir}/show_logbuf_update.log | awk '/to-access/ {a+=$(NF-1)} END {print a}'
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>get rx_byte</desc>
+			<log-file>get_rx.log</log-file>
+			<setvar name="rx_byte">
+				cat ${log.dir}/show_logbuf_update.log | awk '/from-access/ {a+=$(NF-1)} END {print a}'
+			</setvar>
+		</step>
+
+		<step no="6.3">
+			<desc>search tx_byte and rx_byte in show_dc_udp.log</desc>
+			<log-file>search_dc.log</log-file>
+			<setvar name="is_dc_upd_ok">
+				cat ${log.dir}/show_dc_udp.log | awk '$1=="udp" &amp;&amp; $4!="0" {print ${true}; exit}'
+			</setvar>
+		</step>
+
+		<step no="6.4">
+			<desc>check for packet corrective in show_dc_udp.log</desc>
+			<log-file>check_dc_udp.log</log-file>
+			<script>
+				if [ ${is_dc_upd_ok} != ${true} ]; then exit 1;fi
+			</script>
+		</step>
+
+		<step no="6.5">
+			<desc>check for tx_byte</desc>
+			<log-file>compare_tx_byte.log</log-file>
+			<script>
+				if [ ${tx_byte} == "0" ]; then exit 1;fi
+			</script>
+		</step>
+
+		<step no="6.6">
+			<desc>check for packet corrective in show_dc_udp.log</desc>
+			<log-file>check_dc_udp.log</log-file>
+			<script>
+				if [ ${rx_byte} == "0" ]; then exit 1;fi
+			</script>
+		</step>
+
+	</stage>
+</testcase>

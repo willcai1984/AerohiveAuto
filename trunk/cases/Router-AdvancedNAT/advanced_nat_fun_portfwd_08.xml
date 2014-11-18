@@ -1,0 +1,289 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>
+		Port forwarding for tcp
+		(ssh, ftp, web server, remote desktop ….)
+	</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use	Topo4
+		Description	Port forwarding for tcp
+		(ssh, ftp, web server, remote desktop ….)
+		Platform Dependence	BR100,BR200,BRAP330,BRAP350
+		Pre-condition	
+		1.	Wan interface eth0 get ip on br
+		2.	Nat enable on wan interface
+		3.	Pc1 connect to br lan interface and get lan subnet ip address
+		4.	BR100 connect to br lan interface and get lan subnet ip address
+		5.	Pc2 connect to external  network on br and pc2 can reach br wan interface
+		Test procedure	
+		1.	Configure 1 port forwarding  nat policy  for ssh tcp on br
+		ip nat-policy ssh type virtual-host inside-host 192.168.1.10 inside-port 22 outside-port 2002 protocol tcp
+
+		2.	apply the port forwarding nat policy on wan interface
+		interface eth0 mode wan nat-policy ssh
+
+		3.	pc2 send tcp port 2002 connection to eth0 ip address of br, check   result1
+		4.	no the  port forwarding on wan interface eth0 , check        result 2
+		no interface eth0 mode wan nat-policy ssh
+
+		5.	pc2 send tcp port 2002 connection to eth0 ip address of br, again, check  result 3
+		Expect result	
+		1.	pc2 connect to br100 ssh server and can manage the br100 through ssh
+		2.	the ssh connection is disconnected on pc2
+		3.	pc2 can’t connect to br100 ssh server and can’t manage the br100 through ssh
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<property name="br.ext_srv.ip" value="${pub.radius1.ip}" />
+	<!--<property name="pppoe.Remote.ip" value="192.168.10.22" />-->
+
+	<stage>
+
+		<include prefix="pre1" file="subs/br_close_fw.xml" obj-args="br1" />
+
+		<step no="1.1">
+			<desc>
+				eth0 pppoe get ip 
+			</desc>
+			<console target="br1.br" timeout="180">
+				-v "interface eth0 pppoe username ${pub.pppoe1.username} password ${pub.pppoe1.passwd}"
+				-v "interface eth0 pppoe enable"
+			</console>
+		</step>
+		<step no="1.2" delay="10" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show interface eth0 pppoe ,pppoe get the ip address
+			</desc>
+			<log-file>step1.2_show_interface_eth0_pppoe.log</log-file>
+			<console target="br1.br" timeout="300">
+				-v "show interface eth0 pppoe"
+			</console>
+			<log-match>-c -i "Remote IP: ${pub.pppoe2.localip}"</log-match>
+			<log-match>-c -i "PPPoE status: enabled"</log-match>
+			<log-match>-c -i "Username: ${pub.pppoe1.username}"</log-match>
+			<log-match>-c -i "Connection status: connected"</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>get eth0 ip of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "Local IP: (\d+\.\d+\.\d+\.\d+)" -f ${log.dir}/step1.2_show_interface_eth0_pppoe.log -t str 
+			</setvar>
+		</step>
+		
+		<step no="1.4">
+			<desc>config static route to br pppoe ip on mpc</desc>
+			<script>
+		   		route add -host ${br1.br.wan.ip}  gw ${pub.pppoe2.localip}
+		   		ping  ${br1.br.wan.ip} -c 5
+			</script>
+		</step>
+
+		<step no="2">
+			<desc>
+				configure mgt0.1 with dhcp service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "interface mgt0.1 vlan ${br1.vlan1}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				set eth1 with access mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile auto1"
+				-v "user-profile auto1 vlan-id ${br1.vlan1} attribute 1"
+				-v "security-object lan1"
+				-v "security-object lan1 default-user-profile-attr 1"
+				-v "interface ${br1.br.lan.int1} mode bridge-access user-profile-attribute 1"
+				-v "interface ${br1.br.lan.int1} security-object lan1"
+				-v "int ${br1.br.lan.int1} mac-learning enable"
+			</telnet>
+		</step>
+		<step no="4.1">
+			<desc>
+				br1.vpc1 gets ip addr	
+			</desc>
+			<log-file>vpc1_get_ip.log</log-file>
+			<ssh target="${br1.vpc1.mif.ip}" timeout="300">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="4.2">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				1.	Configure 1 port forwarding  nat policy  for ssh tcp on br
+			</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "ip nat-policy auto${job.id} type virtual-host inside-host ${br1.vpc1.tif.ip} inside-port 22 outside-port 65534 protocol tcp"
+				-v "interface ${br1.br.wan.int1} mode wan nat-policy auto${job.id}"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="6">
+			<desc>check the nat policy and open debug on br</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show ip nat-policy auto${job.id}"
+				-v "show ip iptables nat"
+				-v "_ff id 1 dst-ip ${br.ext_srv.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+		<step no="7">
+			<desc>external PC2 ssh to PC1,ssh should be successful</desc>
+			<ssh target="${br.ext_srv.ip}" prompt='root@.*~.*#'>
+				-v "route add -host ${br1.br.wan.ip}  gw ${pub.pppoe2.localip}"
+				-v "rm -rf /root/.ssh/known_hosts"
+				-v "ssh.py -o 60 -d ${br1.br.wan.ip} -i 65534 -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -m root@.*~.*# -v \"w -h\""
+				-v ""
+			</ssh>
+			<log-match> -re -e "(SSH successfully|Last login:)"</log-match>
+		</step>
+		<step no="8" delay="10">
+			<desc>show log buf</desc>
+			<log-file>check_buff1.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		<step no="9">
+			<desc>
+				no the port forwarding on wan interface eth0	
+			</desc>
+			<console target="br1.br" timeout="180">
+				-v "no interface ${br1.br.wan.int1} mode wan nat-policy auto${job.id}"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="10">
+			<desc>
+				external PC2 ssh to PC1,ssh should be failed when  there are not the port-forwarding nat-policy on the wan interface
+			</desc>
+			<ssh target="${br.ext_srv.ip}" prompt='root@.*~.*#'>
+				-v "ssh.py -o 60 -d ${br1.br.wan.ip} -i 65534 -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -m root@.*~.*# -v \"w -h\""
+				-v ""
+			</ssh>
+			<log-match> -i  "ssh: connect to host ${br1.br.wan.ip} port 65534: Connection refused"</log-match>
+		</step>
+		<step no="11" delay="10">
+			<desc>show log buf</desc>
+			<log-file>check_buff2.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		<step no="12">
+			<desc>
+				bind the nat-policy on eth0 ,again.there are the port-forawrding on iptables
+			</desc>
+			<console target="br1.br" timeout="180">
+				-v "interface ${br1.br.wan.int1} mode wan nat-policy auto${job.id}"
+				-v ""
+				-v "show ip iptables nat"
+			</console>
+		</step>
+		
+		<step no="13">
+			<desc>
+				disable eth0 pppoe get ip ,there are not the port-forwarding on iptables
+			</desc>
+			<console target="br1.br" timeout="180">
+				-v "no interface eth0 pppoe enable"
+				-v ""
+				-v "show ip iptables nat"
+				-v "no interface ${br1.br.wan.int1} mode wan nat-policy auto${job.id}"
+				-v ""
+				-v "show ip iptables nat"
+			</console>
+		</step>
+		
+		<step no="14">
+			<desc>
+				enable eth0 pppoe get ip ,but not bind the nat-policy on eth0,there are not the port-forwarding on iptables
+			</desc>
+			<console target="br1.br" timeout="180">
+				-v "interface eth0 pppoe enable"
+				-v ""
+				-v ""
+				-v "show ip iptables nat"
+			</console>
+		</step>
+		
+		<step no="14.1">
+			<desc>
+				external PC2 ssh to PC1,ssh should be failed when  there are not the port-forwarding nat-policy on the wan interface
+			</desc>
+			<ssh target="${br.ext_srv.ip}" prompt='root@.*~.*#'>
+				-v "ssh.py -o 60 -d ${br1.br.wan.ip} -i 65534 -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -m root@.*~.*# -v \"w -h\""
+				-v ""
+			</ssh>
+			<log-match> -re -e "(ssh: connect to host ${br1.br.wan.ip} port 65534: Connection refused|ssh login failed|SSH failed)"</log-match>
+		</step>
+		
+		<step no="15">
+			<desc>delete static route to br pppoe ip on mpc</desc>
+			<script>
+		   		route delete -host ${br1.br.wan.ip}
+			</script>
+		</step>
+		
+		<step no="15.1">
+			<desc>delete static route to br pppoe ip on external PC2 </desc>
+			<ssh target="${br.ext_srv.ip}" prompt='root@.*~.*#'>
+				-v "route delete -host ${br1.br.wan.ip}"	
+			</ssh>
+		</step>
+
+		<include prefix="16" file="subs/br_open_fw.xml" obj-args="br1" />
+	</stage>
+	<failed-process>
+		<stage>
+			<include prefix="0.1" file="subs/br_open_fw.xml" obj-args="br1" />
+			
+		<step no="1">
+			<desc>delete static route to br pppoe ip on mpc</desc>
+			<script>
+		   		route delete -host ${br1.br.wan.ip}
+			</script>
+		</step>
+		
+		<step no="1.1">
+			<desc>delete static route to br pppoe ip on external PC2 </desc>
+			<ssh target="${br.ext_srv.ip}" prompt='root@.*~.*#'>
+				-v "route delete -host ${br1.br.wan.ip}"	
+			</ssh>
+		</step>
+		</stage>
+		<include file="include/br_default_failed_process.xml" />
+		<include file="include/br_default_failed_process.xml" />
+	</failed-process>
+
+</testcase>

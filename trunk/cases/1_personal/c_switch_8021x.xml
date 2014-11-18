@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+<brief> ixia port pass 8021x auth and send traffic to each other </brief>
+<priority>accept</priority>
+<automated>yes</automated>
+
+<description>
+ixia work as 8021x wired client pass 8021x auth
+ixia send traffic to each other
+</description>
+
+<numofsw>1</numofsw>
+<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+ 
+	<property name="sw1.port1.ixia_port.mac" value="0000.0010.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0010.0012"/>
+	<property name="user1" value="auto${job.sid}-1" />
+	<property name="user2" value="auto${job.sid}-2" />
+	<property name="passwd" value="aerohive" />
+		
+	<property name="acct1.uid" value="${tb.vlan1}" />
+	<include prefix="add_account1" file="subs/ldap_add.xml" args="${user1}, ${passwd}" obj-args="acct1" />
+		
+	<property name="acct2.uid" value="${tb.vlan2}" />
+	<include prefix="add_account2" file="subs/ldap_add.xml" args="${user2}, ${passwd}" obj-args="acct2" />
+	
+	<stage>
+	<step no="1">
+		<desc>configure interface mode and vlan</desc>
+		<log-file>step1_log.log</log-file>
+		<console target="sw1" timeout="60">
+		-v "vlan ${tb.vlan1}"
+		-v "vlan ${tb.vlan2}"
+		-v "user-profile up${tb.vlan1} vlan-id ${tb.vlan1} attribute ${tb.vlan1}"
+		-v "security-object auth"
+		-v "security-object auth security protocol-suite 802.1x"
+		-v "security-object auth security aaa radius-server primary ${pub.radius1.ip} shared-secret aerohive"
+		-v "security-object auth default-user-profile-attr ${tb.vlan1}" 
+		-v "interface ${sw1.port1} security-object auth"
+		-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+		
+		-v "show vlan brief"
+		-v "show vlan summary"
+		-v "show vlan id ${tb.vlan1}"
+		-v "no interface ${sw1.mgt0.port} shutdown"
+		-v "exec aaa radius-test ${pub.radius1.ip} username ${user1} password ${passwd}"
+		-v "exec aaa radius-test ${pub.radius1.ip} username ${pub.radius1.username2} password aerohive"
+		</console>
+	</step>
+	
+	<step no="2">
+		<desc> config ixia for auth</desc>
+		<log-file>step2_log.log</log-file>
+		<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-new="${job.user}-${job.sid}-1">
+		-v "tclsh8.5"
+		-v "package req ixia"
+		-v "ah_ixn_connect -def enable -chassisIP ${pub.chassis1.ip} -ixn_tcl_server ${sw1.ixn_tcl_serve} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port1.phytype}"
+			
+		-v "ixn_emulation_8021x_config -portList ${sw1.port1.ixia_port} \
+			-mac_address ${sw1.port1.ixia_port.mac} \
+			-mac_addr_increment 0.0.0.0.0.1 \
+			-mac_addr_count 1 \
+			-protocol MD5 \
+			-username ${pub.radius1.username2} \
+			-password ${passwd} \
+			-ca_path ${ixn.cert_dir} \
+			-key_path ${ixn.cert_dir}"
+			
+		-v "ixn_allprotocols_control -action start"
+			
+		</ssh>
+		<no-error-check />
+	</step>
+		
+	<step no="3" type="loop-check" loop-max-times="5" loop-interval="3">
+		<desc>config eap protocol and start</desc>
+		<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+			-v "sleep 3"
+			-v "ixn_emulation_8021x_stats -protocol md5"
+		</ssh>
+		<log-match>-re -i "{MD5 Success} 1"</log-match>
+		<no-error-check />
+	</step>	
+	
+	<property name="stream1.txport1" value="${sw1.port1.ixia_port}" />
+	<property name="stream1.rxport1" value="${sw1.port2.ixia_port}" />
+	<!--property name="stream1.rxport2" value="${sw2.port3.ixia_port}" -->
+	<property name="stream1.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+	<property name="stream1.rxport1.mac" value="${sw1.port2.ixia_port.mac}" />
+	<property name="stream1.etype" value="0x0800" />
+	<property name="stream1.UDFoffset" value="34" />
+	<property name="stream1.patternOffset2" value="34" />
+	
+	<step no="4">
+		<desc>config and send stream</desc>
+		<log-file>step4_log.log</log-file>
+		<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+		-v "tclsh8.5"
+		-v "package req ixia"
+		-v "ah_ixia_connect 
+			-chassisIP ${pub.chassis1.ip} 
+			-userName ${job.user}${job.sid} 
+			-tclServerIP ${sw1.ixn_tcl_serve} 
+			-portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port}
+			-phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+		-v ""
+		
+		<!-- disable streams -->
+		-v "stream_maintance -onePort ${stream1.txport1} -streamId all -maintanceOp disable"
+		-v "stream_maintance -onePort ${stream1.rxport1} -streamId all -maintanceOp disable"
+
+		-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport1}
+			-mac_dst 0000.0001.0001
+			-mac_src ${stream1.txport1.mac}
+			-eth2_protocol ${stream1.etype}
+			-udf_offset ${stream1.UDFoffset}
+			-patternOffset2 ${stream1.patternOffset2}"
+			
+		-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport1}"
+		
+		-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport1}"
+		
+		-v "ctrl-c"
+		</ssh>
+	</step>
+	
+	<step no="5">
+		<desc>check stream result</desc>
+		<log-file>step4_log.log</log-file>
+		<log-match> -e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport1} framesSent userDefinedStat2 result is equal" </log-match>
+	</step>
+	
+	</stage>
+	
+	<post-process>
+	<stage>
+		<include prefix="delete.mac.account1" file="subs/ldap_delete.xml" args="${user1}" />
+		<include prefix="delete.mac.account2" file="subs/ldap_delete.xml" args="${user2}" />
+		
+		<step no="post">
+		<ssh timeout="180" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+			-v ""
+			-v "ixn_allprotocols_control -action stop"
+		</ssh>
+		</step>
+	</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>	
+		
+	
+	
+
+		
+		

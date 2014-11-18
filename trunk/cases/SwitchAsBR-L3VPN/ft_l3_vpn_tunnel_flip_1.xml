@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the DPD(Dead Peer Detection) keepalive interval</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-config a remote CVG, there are several LANs behind it
+		-there are some services in CVG's LANs
+		-BR setup VPN connection with CVG
+		-setup all wifi radio and eth interfaces as access mode
+		-BR have several LANs behind it
+		-STA1 connected to BR's LAN
+
+		Test Procedure:
+
+		-after tunnel creation success, check the keepalive message interval by
+		default
+		-change the value of idle-interval, check the keepalive message sending
+		interval
+		-change the value of idle-interval to 0, check the keepalive message
+		sending interval
+	</description>
+	<numofcvg>1</numofcvg>
+	<numofbr>1</numofbr>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-${tb.name}" />
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+		<step no="pre.0.1">
+			<desc>enable wan port nat if FW nonexists</desc>
+			<if>"no" == "${cvg1.cvg.fw_existed}"</if>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "interface eth0 mode wan nat"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/vpn_setup_one_sw.xml" obj-args="cvg1, br1" />
+
+		<step no="2.1">
+			<desc>config mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>config mgt0.2 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "br1.br.mgt0.2.route=$(echo ${br1.br.mgt0.2.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns1.route=$(echo ${cvg1.dns1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns2.route=$(echo ${cvg1.dns2.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.vpc1.route=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="3">
+			<desc>Check route distribution is correct</desc>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>On GW, will add the tunnel routes according to BR's modification </desc>
+			<log-file>3.1.show_route_cvg_.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${br1.br.mgt0.2.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="3.2" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>3.2_show_l3_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.dns1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${cvg1.dns2.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				setup all wifi radio and eth interface as access mode
+				connect STA1 under wifi, connect a STA2 under eth1
+			</desc>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				set all wired interface as access mode
+				eth1 access br1.vpc1.vlan, eth2 trunk with native-vlan br1.vpc2.vlan
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				<!--  -v "security-object lan1"
+				-v "security-object lan1 default-user-profile-attr 1"-->
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+				<!--  -v "interface ${br1.br.lan.int1} security-object lan1"
+				-v "interface ${br1.br.lan.int1} switchport user-profile-attribute 1"-->
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				enable debug
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_debug vpn info"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				-after tunnel creation success, check the keepalive message interval by default
+				8. Keepalive message is enable by default, should be 10 sec, sending from BR to CVG, the peer is responsed correctly
+			</desc>
+		</step>
+
+		<step no="5.1" delay="50">
+			<desc>
+				show log buffer
+			</desc>
+			<log-file>setp5.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v ""
+				-v ""
+				-v "show log buff | in DPD"
+				-v ""
+				-v ""
+				-v "clear log buff"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<include prefix="5.2" file="subs/check_log_interval.xml" args="${log.dir}/setp5.1_show_log_buf.log, to:${cvg1.cvg.mip.ip}|need, 8, 12" />
+
+		<step no="6">
+			<desc>
+				-change the value of idle-interval, check the keepalive message sending interval
+				9. After changing the idle-interval, it should be take effect at once, check it
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vpn ipsec-tunnel ${br1.tunnel.name} dpd idle-interval 5 retry 5 retry-interval 60"
+				-v ""
+				-v ""
+				-v ""
+				-v ""
+				-v ""
+				-v ""
+				-v ""
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</telnet>
+		</step>
+
+		<step no="6.1" delay="50">
+			<desc>
+				show log buffer
+			</desc>
+			<log-file>setp6.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v ""
+				-v ""
+				-v "show log buff | in DPD"
+				-v ""
+				-v ""
+				-v "clear log buff"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<include prefix="6.2" file="subs/check_log_interval.xml" args="${log.dir}/setp6.1_show_log_buf.log, to:${cvg1.cvg.mip.ip}|need, 3, 7" />
+
+		<step no="7">
+			<desc>
+				change the value of idle-interval to 0, check the keepalive message sending interval
+				10. Set idle-interval to 0 is disable keepalive message, no keepalive message send to peer
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vpn ipsec-tunnel ${br1.tunnel.name} dpd idle-interval 0 retry 5 retry-interval 60"
+				-v ""
+				-v ""
+				-v ""
+				-v ""
+				-v ""
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</telnet>
+		</step>
+
+		<step no="7.1" delay="60">
+			<desc>
+				show log buffer
+			</desc>
+			<log-file>setp7.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v ""
+				-v ""
+				-v "show log buff | in IKE"
+				-v ""
+				-v ""
+				-v "clear log buff"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="7.2">
+			<desc>
+				check if no heatbeat was sent.
+			</desc>
+			<script>
+				if [ $(grep "to:${cvg1.cvg.mip.ip}" ${log.dir}/setp7.1_show_log_buf.log | wc -l) -lt 2 ]; then exit 0; else exit 1;fi
+			</script>
+		</step>
+
+	</stage>
+
+</testcase>

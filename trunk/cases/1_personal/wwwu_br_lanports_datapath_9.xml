@@ -1,0 +1,370 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check dhcp pkts forwarding with vlan 1 and check the PC station pkts forwarding</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+Topology to use	 
+             Switch
+				|
+		  PC++++BR++++AP----station
+
+Description:	Check dhcp pkts forwarding with vlan 1 and check the PC station pkts forwarding [add step5/6 for bug29462]
+Pre-condition:
+PC1 connect to switch
+AP connect to lan ports eth2
+BR lan port eth2 works with trunk mode
+Test procedure:
+1.	BR create dhcp server mgt0.x with vlan 10,20,30        
+2.	BR lan port eth2  trunk mode, native-vlan 20, allow all
+3.	AP mgt0 vlan1, native-vlan 30  
+4.	Enable AP mgt0 dhcp client to get ip address                Result1
+5.	Station bind upid with vlan 10, PC connect with BR access port with vlan 10
+6.	Check PC ping station       Result2
+Expect result:
+Result1:  AP mgt0 can get ip address from BR  mgt0 vlan 1
+Result2:  PC ping station successfully.
+
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>	
+
+	<property name="conn1.ssid" value="${job.sid}-${tb.name}" />	
+	
+	<stage>
+		<step no="pre_1">
+			<desc>
+				show BR interface mgt0
+			</desc>
+			<log-file>br_mgt0_ip.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+		
+		<step no="pre_2">
+			<desc>get IP address of BR mgt0</desc>
+			<setvar name="br1.mgt0.ipaddr">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/br_mgt0_ip.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre_3">
+			<desc>
+				get prefix of AP mgt0 ip address
+			</desc>
+			<multi-setvar>
+				echo "br1.mgt0.prefix=$(echo ${br1.mgt0.ipaddr} | cut -d. -f1,2,3)"
+				echo "br1.mg0.1.prefix=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+	
+	
+	
+		<step no="1">
+			<desc>
+				BR create dhcp server mgt0.x for vlan ${br1.vpc1.vlan},${br1.vpc2.vlan},${br1.vpc3.vlan}
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vlan1}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v ""
+				-v "interface mgt0.2 vlan ${br1.vlan2}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+				-v ""
+				-v "interface mgt0.3 vlan ${br1.vlan3}"
+				-v "interface mgt0.3 ip ${br1.br.mgt0.3.ip}/${br.lan.netmask}"
+				-v "interface mgt0.3 dhcp-server ip-pool ${br1.br.mgt0.3.ip_pool_start} ${br1.br.mgt0.3.ip_pool_end}"
+				-v "interface mgt0.3 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.3 dhcp-server options default-gateway ${br1.br.mgt0.3.ip}"
+				-v "interface mgt0.3 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.3 dhcp-server enable"
+				
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				BR lan port eth3 trunk mode , native-vlan is ${br1.vlan3}, allow all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth3 mode bridge-802.1q"
+				-v "interface eth3 native-vlan ${br1.vlan3}"
+				-v "interface eth3 allowed-vlan all"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				port-config table shows native-vlan, vlan-table shows allow-vlan list for eth3 port correctly
+			</desc>
+			<log-file>step2.2_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth3" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "${br1.vlan3}" -p 6 -i "No" </log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="2.3">
+		
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step2.3_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth2[\t ]+eth3[\t ]+eth4[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth3[\t ]+${br1.vlan3}" -f ${log.dir}/${log.file}</log-match>
+		</step>		
+				
+
+		<step no="3">
+			<desc>
+				Configure AP mgt0 vlan is default vlan 1, native-vlan is ${br1.vpc1.vlan}
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan 1"
+				-v ""
+				-v "interface mgt0 native-vlan ${br1.vpc1.vlan}"
+				-v ""
+				-v "save config"
+				-v ""
+			</console>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				eanble mgt0 dhcp client to get ip address
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+		
+		<step no="4.2" delay="20">
+			<desc>
+				show AP interface mgt0
+			</desc>
+			<log-file>step4.2_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="4.3">
+			<desc>get IP address of ap1 mgt0</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step4.2_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				get prefix of AP mgt0 ip address
+			</desc>
+			<multi-setvar>
+				echo "br1.ap1.mgt0.prefix=$(echo ${br1.ap1.mgt0.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				check ap mgt0 retrieve ip address from BR mgt0 dhcp server successfully
+			</desc>
+			<script>
+				if [ "${br1.mgt0.prefix}" == "${br1.ap1.mgt0.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+		
+		<step no="5.1">
+			<desc>
+				BR lan port eth1 access mode ,vlan is ${br1.vlan1}
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 mode bridge-access"
+				-v "user-profile ${br1.vpc1.vlan} vlan ${br1.vpc1.vlan} attribute ${br1.vpc1.vlan}"
+				-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vpc1.vlan}"
+			</telnet>			
+		</step>
+		
+		 <step no="5.2">
+			<desc>
+				PC connect to BR port eth1, and PC get ip address
+			</desc>
+			<log-file>ifconfig_vpc1_ip.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>			
+		 </step>
+
+		<step no="5.3">
+			<desc>get ip address of br1.vpc1 </desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>		
+		</step>	
+
+		<step no="5.4">
+			<desc>
+				get prefix of vpc1/vpc4/ap1.mgt0 ip address
+			</desc>
+			<multi-setvar>
+				echo "br1.vpc1.ip.prefix=$(echo ${br1.vpc1.tif.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+		
+		<step no="5.5">
+			<desc>
+				check if vpc1 retrieve ip address from BR mgt0.1 dhcp server successfully
+			</desc>
+			<script>
+				if [ "${br1.vpc1.ip.prefix}" == "${br1.mg0.1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>	
+		
+		<step no="5.6">
+			<desc> config ssid on AP, the ssid bind upid with vlan ${br1.vpc1.vlan}</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "security-object ap-sta"
+				-v "security-object ap-sta default-user-profile-attr ${br1.vpc1.vlan}"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ap-sta"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface wifi1 ssid ${conn1.ssid}"
+				-v "user-profile ${br1.vpc1.vlan} qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute ${br1.vpc1.vlan}"
+				-v ""
+				-v "show running-config"
+				-v ""
+				-v "show interface"
+			</console>			
+		</step>
+		
+		<step no="5.7">
+			<desc>
+				create config file of wpa_supplicant
+			</desc>
+			<ssh target="br1.sta1">
+				-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+				-v "ifconfig ${br1.sta1.tif.name} down"
+				-v "ifconfig ${br1.sta1.tif.name} up"
+			</ssh>
+		</step>
+
+		<step no="5.8" delay="5">
+			<desc>
+				start wpa_supplicant
+			</desc>
+			<ssh target="br1.sta1">
+				-v "killall wpa_supplicant"
+				-v "wpa_supplicant -i ${br1.sta1.tif.name} -c /tmp/wpa_supplicant.cfg -B"
+			</ssh>
+		</step>
+
+		<step no="5.9">
+			<desc>
+				station connect to br1.ap1
+			</desc>
+			<ssh target="br1.sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${conn1.ssid}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="5.10" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check if the station was associated to br1.ap1 successfully</desc>
+			<log-file>same.vlan.ap.ping.0.4_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="br1.sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="5.11">
+			<desc>station gets IP by dhclient</desc>
+			<ssh target="br1.sta1">
+				-v "dhclient ${br1.sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="5.12" delay="10">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="br1.sta1" timeout="80">
+				-v "ifconfig ${br1.sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="5.13">
+			<desc>Get station's mac</desc>
+			<setvar name="br1.sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${br1.sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="5.14">
+			<desc>Get station's ip</desc>
+			<setvar name="br1.sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${br1.sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="5.15">
+			<desc>
+				show station on AP to check vlan info
+			</desc>
+			<log-file>same.vlan.ap.ping.2_show_sta.log</log-file>
+			<console target="br1.ap1">
+				-v "show station"
+			</console>
+			<log-match>-c -p 1 -i "${br1.sta1.tif.mac}" -p 2 -i "${br1.sta1.tif.ip}" -p 10 -i "${br1.vpc1.vlan}" -p 11 -i "Yes" -p 12 -i "${br1.vpc1.vlan}"</log-match>
+		</step>	
+		 
+		 <step no="6.1">
+			<desc>
+				PC ping AP connected station
+			</desc>
+			<log-file>pc_ping_sta.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.sta1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.sta1.tif.ip}: " -i "ttl="</log-match>			
+		 </step>
+		 
+	</stage>
+
+	
+    <post-process>
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

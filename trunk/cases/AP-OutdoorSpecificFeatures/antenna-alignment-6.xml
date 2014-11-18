@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>exec antenna alignment CLI to check if MP can receive beacon/ACK/response RSSI in wifi0 band</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		MP is far away 3000 meters from portal AP
+		Test Procedure:
+		1) Configure AP/MP with same hive
+		2) Configure AP/MP wifi0 band dual mode
+		3) Exec antenna alignment CLI in MP
+		4) Check if MP will show beacon/ACK/response RSSI in telnet
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${img.prodtype}" == "AP170"</if>
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${img.prodtype}" != "AP120"</if>
+			<telnet target="ap2">
+				-v "no interface eth0 shutdown"
+			</telnet>
+		</step>
+		<step no="1">
+			<desc>
+				Configure portal AP
+			</desc>
+			<log-file>ap_configure_1.log</log-file>
+			<console target="ap1">
+				-v "boot-param region FCC"
+				-v "save config"
+				-v "reboot"
+			</console>
+			</step>
+			
+			<step no="1.1">
+			<desc>
+				Configure portal AP
+			</desc>
+			<log-file>ap_configure_1.1.log</log-file>
+			<console target="ap1">
+				-v "interface wifi0 mode dual"
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi1 ssid ${ssid.name}1"
+				-v "interface wifi0 radio channel 6"
+			    -v "interface wifi1 radio channel 149"
+				-v "hive ${hive.name}1"
+				-v "interface mgt0 hive ${hive.name}1"
+				-v "save config"
+			</console>
+		</step>
+		
+			<step no="2">
+			<desc>
+				Configure MP with same hive
+			</desc>
+			<log-file>ap_configure_2.log</log-file>
+			<console target="ap2">
+				-v "boot-param region FCC"
+				-v "save config"
+				-v "reboot"
+			</console>
+			</step>
+		
+		<step no="2.1">
+			<desc>
+				1) Configure MP with same hive
+			</desc>
+			<log-file>ap_configure_2.1.log</log-file>
+			<console target="ap2">
+				-v "interface wifi0 mode dual"
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "interface wifi0 radio channel 1"
+				-v "interface wifi1 radio channel 149"
+				-v "hive ${hive.name}1"
+				-v "interface mgt0 hive ${hive.name}1"
+				-v "save config"
+				-v "interface eth0 shutdown"
+			</console>
+
+		</step>
+		<step no="3">
+			<desc>show wifi0.1's mac of portal</desc>
+			<log-file>wifi01_mac_portal.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>get wifi0.1 mac of portal</desc>
+			<setvar name="ap1_wifi01_mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/wifi01_mac_portal.log -i wifi0.1 -o aero -m -width
+			</setvar>
+		</step>
+		<step no="5">
+			<desc>show mgt0 ip of portal</desc>
+			<log-file>mgt0_ip_mp.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+				-v ""
+			</console>
+		</step>
+
+		<step no="6" delay="240">
+			<desc>get mp mgt0 ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/mgt0_ip_mp.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		<step no="7">
+			<desc>ping MP</desc>
+			<log-file>ping_mp</log-file>
+			<script>
+				ping ${ap2.mgt0.ip} -c 5 >> ${log.dir}/${log.file}; exit 0
+			</script>
+			<log-match>-n -e "(100\% loss)"</log-match>
+		</step>
+		<step no="7.1" delay="60">
+			<desc>
+				3) show ap2 acsp _neighbor
+			</desc>
+			<log-file>show_acsp_neighbor.log</log-file>
+			<console target="ap2">
+				-v "show acsp _nbr | include ${ap1_wifi01_mac}"
+			</console>
+		</step>
+		<step no="7.2">
+			<desc>
+				3) show hive neighbor
+			</desc>
+			<log-file>ap2_hive_neighbor.log</log-file>
+			<cnosole target="ap2">
+				-v "show hive ${hive.name}1 neighbor"
+			</cnosole>
+		</step>
+		<step no="7.3">
+			<desc>
+				3) show amrp neighbor
+			</desc>
+			<log-file>ap2_amrp_neighbor.log</log-file>
+			<console target="ap2">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>-e "TWO-WAY"</log-match>
+		</step>
+
+		<step no="8" delay="100" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check if antenna-alignment cli set successfully</desc>
+			<log-file>exec_antenna_alignment_cli.log</log-file>
+			<console target="ap2" timeout="100">
+				-v "exec antenna-alignment interface wifi0 peer ${ap1_wifi01_mac}"
+				-v ""; exit 0
+			</console>
+			<log-match>-n -e "unknown keyword or invalid input"</log-match>
+		</step>
+		<step no="9">
+			<desc>
+				parse the log
+			</desc>
+			<log-file>parse_log.log</log-file>
+			<script>
+				${bin.dir}/find_kwds -f ${log.dir}/exec_antenna_alignment_cli.log -i "BBBBBBBBBB" -a 1 -k "AAAAAAAAAA" -a 2 -k "RRRRRRRRRR" -m a > ${log.dir}/${log.file}
+			</script>
+		</step>
+		<step no="10">
+			<desc>check the result</desc>
+			<setvar name="find.result">
+				cat ${log.dir}/parse_log.log |grep 1|wc|awk '{print $1}'
+			</setvar>
+		</step>
+		<step no="11">
+			<desc>Compare the result </desc>
+			<log-file>whether_find_result.log</log-file>
+			<script>
+				echo "find.result=${find.result}"
+				if [ ${find.result} -ne 2 ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+	</stage>
+
+</testcase>

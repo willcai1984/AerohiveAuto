@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>IP-session correlative nat.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop uses user-profile "FW"
+		-Make sure Laptop's ip is different from the subnet of mgt0's
+
+		Test Procedure:
+		1) Config ip-policy which permit Laptop's ip_address, and action is nat to server
+		"ip-policy FW"
+		"ip-policy FW from &lt;Laptop ip addr&gt; to &lt;server ip addr&gt; action nat"
+		"user-profile FW security ip-policy [from/to]-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Laptop accesses Server by tcp or udp (telnet,ftp...)
+		3) Check the ip-session table on AP1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="user_id" value="FW" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="ftp_test_file_local_dir" value="/tmp" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config ssid and bind to interface
+				-Laptop uses user-profile "FW"
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan2} attribute 1"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug mode
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				1) Config ip-policy which permit Laptop's ip_address, and action is nat to server
+				"ip-policy FW"
+				"ip-policy FW from &lt;Laptop ip addr&gt; to &lt;server ip addr&gt; action nat"
+				"user-profile FW security ip-policy [from/to]-access FW"
+				"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${sta1.tif.ip} to ${tb.ftp} action nat"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id}"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				clear local file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f ${ftp_test_file_local_dir}/${tb.ftp.file3_small}"
+			</ssh>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				get file from ftp server
+			</desc>
+			<log-file>step3.2_curl_pid.log</log-file>
+			<ssh target="sta1">
+				-v "nohup curl -u ${tb.ftp.user}:${tb.ftp.passwd} ftp://${tb.ftp}/${tb.ftp.file3_small} -o ${ftp_test_file_local_dir}/${tb.ftp.file3_small} --limit-rate 10k --connect-timeout 100 &amp;"
+			</ssh>
+		</step>
+
+		<include prefix="4" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step4_show_logging_buffered.log" />
+
+		<step no="5" type="loop-check" loop-max-times="10" loop-interval="3">
+			<desc>
+				check "curl get" alive
+			</desc>
+			<log-file>step5_curl_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep curl"
+			</ssh>
+			<log-match>-i "curl" -i "ftp"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				"show forwarding-engine ip-sessions"
+			</desc>
+			<log-file>step5.1_show_forwarding_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+\s*-&gt;.*?${tb.ftp}/21; Proto 6" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.ftp}/21\s*-&gt;.*?${ap1.mgt0.ip}/\d+; Proto 6" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+\s*-&gt;.*?${tb.ftp}/\d+; Proto 6" -c 2 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.ftp}/\d+\s*-&gt;.*?${ap1.mgt0.ip}/\d+; Proto 6" -c 2 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				get pid of "curl get""
+			</desc>
+			<setvar name="ftp.get.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.2_curl_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5.3" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				wait for process end.
+			</desc>
+			<log-file>step5.3_curl_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "ps aux | grep ${ftp.get.pid}"
+			</ssh>
+			<log-match>-n -i "curl"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				local file should exist
+			</desc>
+			<log-file>step6_local_file_chk.log</log-file>
+			<ssh target="sta1">
+				-v "ls ${ftp_test_file_local_dir}"
+			</ssh>
+			<log-match>-i "${tb.ftp.file3_small}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear local file
+				</desc>
+				<ssh target="sta1">
+					-v "killall -q curl"
+					-v "rm -f ${ftp_test_file_local_dir}/${tb.ftp.file3_small}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

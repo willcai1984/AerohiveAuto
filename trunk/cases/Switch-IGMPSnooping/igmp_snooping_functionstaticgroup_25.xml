@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=3) The switch with static multicast group configuration works well when in IGMPv2 network.</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>
+	<description>
+		Test Produce:
+		1. Configure the following “ip igmp snooping static 225.1.1.1 vlan 100 interface g1/3”, and check the multicast entry information on the switch, result 1.
+		2. Host sends IGMPv2 join report message from g1/2 to join group 225.1.1.1, and check the multicast entry information on the switch, result 2.
+		3. Host sends IGMPv2 join report message from g1/3 to join group 225.1.1.2, and check the multicast entry information on the switch, result 3.
+		4. Configure “no ip igmp snooping static 225.1.1.1 vlan 100 interface g1/3”,host sends IGMPv2 join report message from g1/3 to join group 225.1.1.1, and check the multicast entry information on the switch, result 4
+		5.Configure the following “ip igmp snooping static 225.1.1.1 vlan 100 interface g1/3”, change g1/3 to be wan port,result 5
+
+		Expect result:
+		1. Static multicast entry information on the switch for g1/3 is correct and the timeout timer will never aging.
+		2. Dynamic multicast entry information on the switch is “vlan 100/group
+		225.1.1.1/port g1/2” and the timeout timer is aging. Static multicast entry information is “vlan 100/group 225.1.1.1/port g1/3”and the timeout timer will never age.
+		3. Dynamic multicast entry information on the switch is “vlan 100/group 225.1.1.2/port g1/2” and the timeout timer is aging. Static multicast entry information is “vlan 100/group 225.1.1.1/port g1/3”and the timeout timer will never age.
+		4. Dynamic multicast entry information on the switch is “vlan 100/group 225.1.1.1/port g1/3” and the timeout timer is aging. Static multicast entry information is cleared.
+		5. Static multicast entry information is not created.
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="tx_port1.phytype" value="${sw1.port1.ixia_port.phytype}" />
+	<property name="tx_port2" value="${sw1.port2.ixia_port}" />
+	<property name="tx_port2.phytype" value="${sw1.port2.ixia_port.phytype}" />
+	<property name="tx_port3" value="${sw1.port3.ixia_port}" />
+	<property name="tx_port3.phytype" value="${sw1.port3.ixia_port.phytype}" />
+	<property name="correct_vlan" value="101" />
+	<property name="incorrect_vlan" value="102" />
+	<property name="igmp_group_ip1" value="225.1.1.1" />
+	<property name="igmp_group_ip2" value="225.0.0.1" />
+	<stage>
+		<step no="1.1">
+			<desc>
+				config switch, port1/2/3 is in the same vlan, enable igmp
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${correct_vlan}"
+				-v "interface ${sw1.port1} switchport access vlan ${correct_vlan}"
+				-v "interface ${sw1.port2} switchport access vlan ${correct_vlan}"
+				-v "interface ${sw1.port3} switchport access vlan ${correct_vlan}"
+				-v "ip igmp snooping"
+				-v "show running-config"
+				 -v "show interface"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="1.2">
+			<desc>check igmp snooping is enable in vlan</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping vlan ${correct_vlan}"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Snooping: enable"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				config switch, set port3 static igmp group ${igmp_group_ip1}
+			</desc>
+			<telnet target="sw1">
+				-v "ip igmp snooping static ${igmp_group_ip1} vlan ${correct_vlan} interface ${sw1.port3}"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show igmp group to confirm; expect get the static info successfully
+			</desc>
+			<log-file>step2.2_show_igmp_group_info.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${correct_vlan}"
+			</telnet>
+			<log-match>-i '${sw1.port3}' -i 'static'</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				port2 sends IGMPv2 join ${igmp_group_ip1} (port1 send query firstly)
+			</desc>
+			<log-file>step3.1_v2_join.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${tx_port3} -phyList ${tx_port1.phytype},${tx_port2.phytype},${tx_port3.phytype}"
+				-v ""
+				-v "stream_import -onePort ${tx_port1} -fileName ${case.dir}/conf/potr1.str"
+				-v "stream_maintance -onePort ${tx_port1} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${tx_port1} -streamId 2 -maintanceOp enable"
+				-v ""
+				-v "stream_import -onePort ${tx_port2} -fileName ${case.dir}/conf/potr2.str"
+				-v "stream_maintance -onePort ${tx_port2} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${tx_port2} -streamId 7 -maintanceOp enable"
+				-v ""
+				<!-- port1 start transmit , generate mroute firstly -->
+				-v "stop_transmit -portList ${tx_port1}"
+				-v ""
+				-v "start_transmit -portList ${tx_port1} -firstTryFlag false"
+				-v ""
+				-v "wait_time -second 1"
+				-v ""
+				-v "stop_transmit -portList ${tx_port1}"
+				-v ""
+				<!-- port2 start transmit -->
+				-v "stop_transmit -portList ${tx_port2}"
+				-v ""
+				-v "clear_statistic -portList ${tx_port1},${tx_port2}"
+				-v ""
+				-v "start_transmit -portList ${tx_port2} -firstTryFlag false"
+				-v ""
+				-v "wait_time -second 1"
+				-v ""
+				-v "stop_transmit -portList ${tx_port2}"
+				-v ""
+				-v "get_statistic -txPortList ${tx_port2} -rxPortList ${tx_port2}"
+				-v ""
+				-v "exit"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show igmp group to confirm;expect get the static(p3) and dynamic(p2) info successfully
+			</desc>
+			<log-file>step3.2_show_igmp_group_info.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${correct_vlan}"
+			</telnet>
+			<log-match>-i '${sw1.port2}' -i 'dynamic'</log-match>
+			<log-match>-i '${sw1.port3}' -i 'static'</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				port3 sends IGMPv2 join ${igmp_group_ip2}
+			</desc>
+			<log-file>step4.1_v2_join.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${tx_port3} -phyList ${tx_port1.phytype},${tx_port2.phytype},${tx_port3.phytype}"
+				-v ""
+				-v "stream_import -onePort ${tx_port3} -fileName ${case.dir}/conf/potr2.str"
+				-v "stream_maintance -onePort ${tx_port3} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${tx_port3} -streamId 9 -maintanceOp enable"
+				-v ""
+				<!-- port3 start transmit -->
+				-v "stop_transmit -portList ${tx_port3}"
+				-v ""
+				-v "clear_statistic -portList ${tx_port3}"
+				-v ""
+				-v "start_transmit -portList ${tx_port3} -firstTryFlag false"
+				-v ""
+				-v "wait_time -second 1"
+				-v ""
+				-v "stop_transmit -portList ${tx_port3}"
+				-v ""
+				-v "get_statistic -txPortList ${tx_port3} -rxPortList ${tx_port3}"
+				-v ""
+				-v "exit"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="4.2">
+			<desc>
+				show igmp group to confirm;expect get the static(p3) and dynamic(p2/3) info successfully
+			</desc>
+			<log-file>step4.2_show_igmp_group_info.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${correct_vlan}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b 'group ip: ${igmp_group_ip1}' -e '-' -ps p1 '${sw1.port3}.*static' p1 '${sw1.port2}.*dynamic' -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b 'group ip: ${igmp_group_ip2}' -e '-' -ps p1 '${sw1.port3}.*dynamic' -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+
+		<step no="5.1">
+			<desc>
+				config switch, set port3 to default
+			</desc>
+			<telnet target="sw1">
+				-v "no ip igmp snooping static ${igmp_group_ip1} vlan ${correct_vlan} interface ${sw1.port3}"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="5.2">
+			<desc>
+				port3 sends IGMPv2 join ${igmp_group_ip2} (no igmp configure on port3)
+			</desc>
+			<log-file>step5.2_v2_join.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${tx_port3} -phyList ${tx_port1.phytype},${tx_port2.phytype},${tx_port3.phytype}"
+				-v ""
+				-v "stream_import -onePort ${tx_port3} -fileName ${case.dir}/conf/potr2.str"
+				-v "stream_maintance -onePort ${tx_port3} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${tx_port3} -streamId 9 -maintanceOp enable"
+				-v ""
+				<!-- port3 start transmit -->
+				-v "stop_transmit -portList ${tx_port3}"
+				-v ""
+				-v "clear_statistic -portList ${tx_port3}"
+				-v ""
+				-v "start_transmit -portList ${tx_port3} -firstTryFlag false"
+				-v ""
+				-v "wait_time -second 1"
+				-v ""
+				-v "stop_transmit -portList ${tx_port3}"
+				-v ""
+				-v "get_statistic -txPortList ${tx_port3} -rxPortList ${tx_port3}"
+				-v ""
+				-v "exit"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="5.3">
+			<desc>
+				show igmp group to confirm;expect get the dynamic(p2/3), not static(p3) info successfully
+			</desc>
+			<log-file>step5.3_show_igmp_group_info.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${correct_vlan}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b 'group ip: ${igmp_group_ip1}' -e '-' -ps p0 '${sw1.port3}.*static' p1 '${sw1.port2}.*dynamic' -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b 'group ip: ${igmp_group_ip2}' -e '-' -ps p1 '${sw1.port3}.*dynamic' -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				config switch, set port3 to igmp group ${igmp_group_ip1}
+			</desc>
+			<telnet target="sw1">
+				-v "ip igmp snooping static ${igmp_group_ip1} vlan ${correct_vlan} interface ${sw1.port3}"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="6.2">
+			<desc>
+				config switch, set port3 to wan mode; expect error info
+			</desc>
+			<telnet target="sw1">
+				-v "interface ${sw1.port3} mode wan"
+			</telnet>
+			<log-match>-e 'Interface is configured as a static member of igmp group, remove it first' -e "The platform does not support interface wan mode"</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

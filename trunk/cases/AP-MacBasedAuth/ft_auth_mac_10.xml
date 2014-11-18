@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Get both uid and vid at the same time from radius server</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config an account on radius server, username and password are both the mac addr of STA1, it will return vid and uid after radius auth success
+		Test Procedure:
+		-config a ssid with mac auth enable
+		-create a user-profile, assign a valid vlan id to it
+		-bind the above user-profile to be default-user-profile-attr
+		-STA1 connects to ssid, result 1
+		-check the status of STA1 on AP result 2,3
+		-STA1 ping gateway, result 4
+		-STA1 reconnects to ssid, result 5, 6
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="acct1.uid" value="100" />
+	<property name="acct1.vlan" value="1" />
+
+	<stage>
+		<step no="0">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig wlan0"
+			</ssh>
+		</step>
+
+		<step no="0.1">
+			<desc>Get sta1's mac with five delimiter</desc>
+			<setvar name="sta1.mac">
+				python ${bin.dir}/getbyrexp.py -p " HWaddr (\w+:\w+:\w+:\w+:\w+:\w+)" -f ${log.dir}/ifconfig.log -t str
+			</setvar>
+		</step>
+		<step no="0.2">
+			<ssh target="${pub.radius1.ip}" user="root" password="aerohive">
+			  -v 'echo "${sta1.mac} Cleartext-Password := \"${sta1.mac}\"" >> /etc/freeradius/users'
+   			  -v 'echo "       Tunnel-Type:0 = 10," >> /etc/freeradius/users'
+   			  -v 'echo "       Tunnel-Medium-Type:0 = 1," >> /etc/freeradius/users'
+   			  -v 'echo "       Tunnel-Private-Group-ID:0 = ${acct1.uid}," >> /etc/freeradius/users'
+   			  -v 'echo "       Tunnel-Type:1 += 13," >> /etc/freeradius/users'
+   			  -v 'echo "       Tunnel-Medium-Type:1 += 6," >> /etc/freeradius/users'
+   			  -v 'echo "       Tunnel-Private-Group-ID:1 += ${acct1.vlan}," >> /etc/freeradius/users'
+  			</ssh>
+  			<script>
+				
+  			</script>
+		</step>
+		<step no="0.3" type="loop-check" loop-max-times="6" loop-interval="10">
+			<log-file>step0.3.log</log-file>
+			<ssh target="${pub.radius1.ip}" user="root" password="aerohive">
+				-v "/etc/init.d/freeradius restart"
+				-v "sleep 3"
+				-v "ps -aux"
+			</ssh>
+			<log-match>-c -i "/usr/sbin/free"</log-match>
+		</step>
+		<step no="1">
+			<desc>
+				-config an account on radius server, username and password are both
+				-the mac addr of STA1, it will return a vlan id after radius auth success
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object ${ssid.name} security additional-auth-method mac-based-auth"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "user-profile 100 vlan-id 1 attribute 100"
+				-v "aaa mac-format delimiter colon"
+				-v "aaa mac-format style five-delimiter"
+			</ssh>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				- 'sh ssid xxx sta',
+			</desc>
+			<log-file>step4_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " 1 *yes *100"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				-'sh roa ca mac xxx'
+			</desc>
+			<log-file>step5_show_roaming.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache mac ${sta1.mac}"
+			</telnet>
+			<log-match>-i "User Profile ID: 100"</log-match>
+		</step>
+
+		<include prefix="5" file="subs/sta_ping.xml" args="sta1, ${tb.vlan2.gw}, 5" />
+
+		<include prefix="6" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<include prefix="7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="8">
+			<desc>
+				- 'sh ssid xxx sta',
+			</desc>
+			<log-file>step9_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " 1 *yes *100"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="9">
+			<desc>
+				-'sh roa ca mac xxx'
+			</desc>
+			<log-file>step10_show_roaming.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache mac ${sta1.mac}"
+			</telnet>
+			<log-match>-i "User Profile ID: 100"</log-match>
+		</step>
+
+		<include prefix="10" file="subs/sta_ping.xml" args="sta1, ${tb.vlan2.gw}, 5" />
+		<step no="11">
+			<ssh target="${pub.radius1.ip}" user="root" password="aerohive">
+				-v "cd /etc/freeradius/"
+				-v 'sed -i "/${sta1.mac} Cleartext-Password/d"  users'
+				-v 'sed -i "/Tunnel-Type:0 = 10/d"  users'
+				-v 'sed -i "/Tunnel-Medium-Type:0 = 1/d"  users'
+				-v 'sed -i "/Tunnel-Private-Group-ID:0 = ${acct1.uid}/d"  users'
+				-v 'sed -i "/Tunnel-Type:1 += 13/d"  users'
+				-v 'sed -i "/Tunnel-Medium-Type:1 += 6/d"  users'
+				-v 'sed -i "/Tunnel-Private-Group-ID:1 += ${acct1.vlan}/d"  users'
+			</ssh>
+		</step>
+		<step no="12" type="loop-check" loop-max-times="6" loop-interval="10">
+			<log-file>step12.log</log-file>
+			<ssh target="${pub.radius1.ip}" user="root" password="aerohive">
+				-v "/etc/init.d/freeradius restart"
+				-v "sleep 3"
+				-v "ps -aux"
+			</ssh>
+			<log-match>-c -i "/usr/sbin/free"</log-match>
+		</step>
+	</stage>
+</testcase>

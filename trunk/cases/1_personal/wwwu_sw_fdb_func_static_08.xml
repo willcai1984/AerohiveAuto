@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=3) Static entry:  reboot switch static mac entries shouldn’t be deleted(since geneva multicast group mac entry is controled by igmp snooping,this case don't cover it.)</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+Topology to use	:
+                  		  PC3
+                           +
+                           +
+Router++++ Switch(access) ++++PC1
+                           +(access)
+                           +
+                         PC2
+
+Description:	Static entry:  reboot switch static mac entries shouldn’t be deleted
+Platform Dependence:	Chesapeake
+Pre-condition:
+•	FDB table size doesn’t exceed
+•	PC1, PC2,PC3 connect to switch access port1, port2
+•	PC1,PC2 are in vlan10
+•	Switch access ports are with learning/forwarding state
+Test procedure:
+1.	The multicast group already created
+2.	There is a multicast group mac entry exist:
+[0100-5e11-1111, vlan 10, vidx(port1)]
+3.	The unicast mac entry already created manually 
+[0000-2222-2222,vlan10,port2]
+[0000-3333-3333,vlan10,port3]
+4.	Reboot switch, check above mac unicast/multicast entries       Result1
+
+Expect result:
+	Result1:  the static entries shouldn’t be deleted. The static added mac entry shouldn’t age out too.
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011" />
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012" />
+	<property name="sw1.port3.ixia_port.mac" value="0000.0000.0013" />
+	
+	<stage>
+	
+		<step no="1.1">
+			<desc>
+				configure three access ports in same vlans, port1, port2 and port3
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan1}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show mac-address-table all"
+				-v "show interface"
+			</telnet>
+		</step>
+		
+		<step no="1.2">
+			<desc>reset ixia port</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		
+		<step no="1.3">
+			<desc>
+				configure static mac addr on switch
+			</desc>
+			<telnet target="sw1">
+				-v "mac-address-table static ${sw1.port1.ixia_port.mac} vlan ${tb.vlan1} interface ${sw1.port1}"
+				-v "mac-address-table static ${sw1.port2.ixia_port.mac} vlan ${tb.vlan1} interface ${sw1.port2}"
+				-v "show mac-address-table all"
+				-v "save config"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1.ixia_port.mac}\s*${sw1.port1}\s*yes"</log-match>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port2.ixia_port.mac}\s*${sw1.port2}\s*yes"</log-match>
+		</step>
+		
+		<step no="2.1">
+			<desc>Reboot switch, check above mac unicast/multicast entries </desc>
+			<console target="sw1" timeout="180" slow="1">
+				-v "show running-config "
+				-v "reboot"
+			</console>
+			<no-error-check />
+		</step>
+		
+		<step no="2.2">
+			<desc>check the static added unicast entries </desc>
+			<console target="sw1" timeout="60" slow="1">
+				-v "show mac-address-table all"
+			</console>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1.ixia_port.mac}\s*${sw1.port1}\s*yes"</log-match>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port2.ixia_port.mac}\s*${sw1.port2}\s*yes"</log-match>
+		</step>
+		
+		
+		<step no="3.1">
+			<desc>
+				check the static mac entry function: port1 sends pkts with src-mac ${sw1.port2.ixia_port.mac} to dst-mac ${sw1.port1.ixia_port.mac}
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port}
+				-mac_dst ${sw1.port1.ixia_port.mac}
+				-mac_src ${sw1.port2.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port},${sw1.port3.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port1.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port3.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		
+		<step no="3.2">
+			<desc>
+				analyse statistics on rxport, only port1 received pkt from port2, port3 don't receive
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port1.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port3.ixia_port} framesSent userDefinedStat2 result is block"</log-match>
+		</step>
+
+
+
+	</stage>
+	<post-process>
+		<stage></stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

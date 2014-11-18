@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Clean the cache</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configed first
+		-AP's clock should be sync to the AD server via a ntp server
+		-setup a ssid using wpa2-tkip-802.1x,radius server is local
+		-enable the radius cache
+
+		Test Procedure:
+		-several account cached
+		-the cache has machine/user authed records
+		-radius fail-over to cache
+		-clear the cache
+		-client connect to ssid using the account cached before
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-tkip-8021x" />
+	<property name="conn1.username" value="${pub.ad1.username}" />
+	<property name="conn1.passwd" value="${pub.ad1.passwd}" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.proto" value="wpa2-tkip-8021x" />
+	<property name="conn2.username" value="${pub.ad1.username}" />
+	<property name="conn2.passwd" value="${pub.ad1.passwd}" />
+	<property name="conn2.auth_negative_test" value="true" />
+	<property name="conn2.dhcp_negative_test" value="true" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				config security-object parameters,radius server is local AP
+			</desc>
+			<telnet target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security protocol-suite wpa2-tkip-8021x"
+				-v "security-object autoap security aaa radius primary ${ap1.mgt0.ip}"
+				-v "aaa radius-server local db-type active-directory primary server ${pub.ad1.ip}"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				-v "aaa radius-server local db active-directory primary login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-setup a ssid and bind it to interface
+				-open debug and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local cache"
+				-v "aaa radius-server local enable"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-show running-config
+			</desc>
+			<log-file>step3_show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>show cache of radius server on AP1</desc>
+			<log-file>step5_show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server cache"
+			</telnet>
+			<log-match>-n -c -i "${pub.ad1.name}\\\\\${pub.ad1.username}"</log-match>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>check cache log</desc>
+			<log-file>step7_show_radius_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server cache"
+			</telnet>
+			<log-match>-c -i "${pub.ad1.name}\\\\\${pub.ad1.username}"</log-match>
+		</step>
+
+		<include prefix="8" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="9">
+			<desc>shutdown ad server</desc>
+			<telnet target="ap1">
+				-v "ip route host ${pub.ad1.ip} gateway ${tb.unreach.ip1}"
+				-v "clear aaa radius-server cache"
+			</telnet>
+		</step>
+
+		<include prefix="10" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="11">
+			<desc>check cache log</desc>
+			<log-file>step11_show_radius_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server cache"
+			</telnet>
+			<log-match>-n -c -i "${pub.ad1.name}\\\\\${pub.ad1.username}"</log-match>
+		</step>
+	</stage>
+</testcase>

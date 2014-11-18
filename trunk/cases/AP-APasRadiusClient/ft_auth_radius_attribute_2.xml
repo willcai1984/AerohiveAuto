@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Auth can get user-profile attribute from radius-accept</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-config a ssid with 802.1x auth on AP1
+		'security-object xxx security protocol-suite wpa2-aes-8021x'
+		-config a
+		radius server to support eap type
+		'security-object xxx security aaa
+		radius-server primary 10.155.35.60
+		shared-secret ***'
+		-config the return
+		attribute on radius server side:
+		-Tunnel-Type=10
+		-Tunnel-Medium-Type=1
+		-Tunnel-Private-Group-ID=user attribute id
+
+		Test Procedure:
+
+		-STA connects
+		to ssid using 802.1x is successful
+		-check debug info, '_de auth all' to
+		check, result 1
+		-check the vlan and uid is correct, 'sh ssid xxx sta',
+		'sh roa ca mac xxx'
+		to make sure, result 2
+		-check roaming cache on AP2,
+		result 3
+		-client ping gateway is success, result 4
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+		<step no="1">
+			<desc>config vlan on AP1</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.nvlan}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+			</console>
+		</step>
+		<step no="2">
+			<desc>setup ap1 with ssid wpa-aes-802.1x</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 radio channel 6"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "user-profile ${ssid.name}"
+				-v "user-profile ${ssid.name} vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+				-v "security-object ${ssid.name} security protocol-suite wpa-aes-8021x"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "_debug auth all"
+			</ssh>
+		</step>
+		<step no="3">
+			<desc>setup ap2 as a roaming neighbor</desc>
+			<ssh target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 radio channel 6"
+				-v "ssid ${ssid.name}-dummy"
+				-v "interface wifi0 ssid ${ssid.name}-dummy"
+			</ssh>
+		</step>
+		<step no="4" delay="30" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check roaming neighbor on ap1</desc>
+			<log-file>check_roaming_neighor_ap1_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming neighbor"
+			</ssh>
+			<log-match>-i "${ap2.mgt0.ip}" -p 4 -i "D"</log-match>
+		</step>
+		<step no="5" delay="30" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check roaming neighbor on ap2</desc>
+			<log-file>check_roaming_neighor_ap2_${loop_check.idx}.log</log-file>
+			<ssh target="ap2">
+				-v "show roaming neighbor"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip}" -p 4 -i "D"</log-match>
+		</step>
+
+		<property name="conn1.proto" value="wpa-aes-8021x" />
+		<step no="pre6.1">
+			<desc>set username</desc>
+			<setvar name="conn1.username">
+				echo "${pub.radius1.username}_${job.sid}_uid${tb.vlan2}"
+			</setvar>
+		</step>
+
+		<property name="acct1.uid" value="${tb.vlan2}" />
+		<include prefix="pre6.2" file="subs/ldap_add.xml" args="${conn1.username}, aerohive" obj-args="acct1" />
+
+		<step no="pre6.3">
+			<desc>set password</desc>
+			<setvar name="conn1.passwd">
+				echo "${pub.radius1.passwd}"
+			</setvar>
+		</step>
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>save log buffer to file</desc>
+			<log-file>show_buff.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "RADIUS_ATTR_TUNNEL_PRIVATE_GROUP_ID=${tb.vlan2}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Receive message from RADIUS Server: code=2 \(Access-Accept\).*?RADIUS_ATTR_TUNNEL_MEDIUM_TYPE=1 RADIUS_ATTR_TUNNEL_TYPE=10" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)User profile group ID ${tb.vlan2} is specified for station ${sta1.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<step no="8">
+			<desc>check show auth</desc>
+			<log-file>show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-p 7 -i "done" -p 9 -i "WPA/CCMP" -p 10 -i "${conn1.username}" -i "${sta1.tif.mac}" -c</log-match>
+		</step>
+		<step no="9">
+			<desc>check show station</desc>
+			<log-file>show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-p 12 -i "Yes" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 7 -i "wpa-8021x" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 8 -i "aes" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 2 -i "${sta1.tif.ip}" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 13 -i "${tb.vlan2}" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 11 -i "${tb.vlan2}" -i "${sta1.tif.mac}" -c</log-match>
+		</step>
+		<step no="10">
+			<desc>check roaming cache info</desc>
+			<log-file>show_roaming_cache_ap1.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-p 12 -i "YNNN" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 5 -i "${tb.vlan2}" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 11 -i "0" -i "${sta1.tif.mac}" -c</log-match>
+		</step>
+		<step no="11">
+			<desc>check roaming cache detail info</desc>
+			<log-file>show_roaming_cache_detail_ap1.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache mac ${sta1.tif.mac}"
+			</ssh>
+			<log-match>-p 3 -i "${conn1.username}" -i "User name:" -c</log-match>
+			<log-match>-p 4 -i "${tb.vlan2}" -i "User Profile ID:"</log-match>
+		</step>
+		<step no="12">
+			<log-file>ping_sta1_${sta1.tif.ip}_2_mpc.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${mpc.tif.ip} -c 4"
+			</ssh>
+			<log-match>-n -e "(100\% packet loss)"</log-match>
+		</step>
+		<step no="13">
+			<desc>check roaming cache info on neighbor</desc>
+			<log-file>show_roaming_cache_ap2.log</log-file>
+			<ssh target="ap2">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-p 12 -i "YNNN" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 5 -i "${tb.vlan2}" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 11 -i "1" -i "${sta1.tif.mac}" -c</log-match>
+		</step>
+		<step no="14">
+			<desc>check roaming cache detail info on roaming neighbor</desc>
+			<log-file>show_roaming_cache_detail_ap2.log</log-file>
+			<ssh target="ap2">
+				-v "show roaming cache mac ${sta1.tif.mac}"
+			</ssh>
+			<log-match>-p 3 -i "${conn1.username}" -i "User name:" -c</log-match>
+			<log-match>-p 4 -i "${tb.vlan2}" -i "User Profile ID:"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="ldap_post" file="subs/ldap_delete.xml" args="${conn1.username}" />
+		</stage>
+
+		<include prefix="def_post" file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

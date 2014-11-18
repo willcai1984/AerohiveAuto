@@ -1,0 +1,252 @@
+<testcase>
+	<brief>Check ICMP Redirect enable function</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		1. System icmp-redirect enable
+		2. Show system
+		3. Show running configure
+		4. Ping 12.12.1.1
+		5. Enter into shell and execute configure “cat /proc/sys/net/ipv4/conf/mgt0/accept_redirects”
+	</description>
+
+	<stage>
+		<step no="GetAP1.MAC.1">
+			<desc>show interface of Portal1</desc>
+			<log-file>show_portal_interface.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="GetAP1.MAC.2">
+			<desc>get the eth0 mac address of portal</desc>
+			<setvar name="ap1.eth0.w4mac">
+				python ${bin.dir}/getbyrexp.py -p "Eth0\s+(\w+:\w+:\w+)" -f ${log.dir}/show_portal_interface.log -t str
+			</setvar>
+		</step>
+
+		<step no="GetMpc.tif.mac.1">
+			<desc>Get master-PC's route table</desc>
+			<log-file>show_mpc_route.log</log-file>
+			<script>
+				route >> ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<!-- <step no="GetMpc.tif.mac.2"> -->
+		<!-- <desc>Get master-PC's testbed interface</desc> -->
+		<!-- <setvar name="mpc.tif.name"> -->
+		<!-- perl ${bin.dir}/getstring.pl -f ${log.dir}/show_mpc_route.log -k ${tb.vlan1.gw} -p 8 -->
+		<!-- </setvar> -->
+		<!-- </step> -->
+
+		<step no="GetMpc.tif.mac.3">
+			<desc>get master-PC's tif ifconfig</desc>
+			<log-file>show_mpc_ipconfig.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name}>> ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="GetMpc.tif.mac.4">
+			<desc>Get master's tif mac-address</desc>
+			<setvar name="mpc.tif.mac">
+				python ${bin.dir}/getbyrexp.py -p "\s+(\w+:\w+:\w+:\w+:\w+:\w+)\s+" -f ${log.dir}/show_mpc_ipconfig.log -t str
+			</setvar>
+		</step>
+
+		<step no="GetMpc.tif.mac.5">
+			<desc>get 4 width mpc mac</desc>
+			<setvar name="mpc.tif.w4mac">
+				echo ${mpc.tif.mac} | sed 's/://g; s/../&amp;:/g' | awk -F : '{print $1$2":"$3$4":"$5$6}'
+			</setvar>
+		</step>
+
+		<step no="SetServer1.tif.info.1">
+			<desc>Set server1's testbed interface ip</desc>
+			<setvar name="tb.server1.tif.ip">
+				echo ${tb.server1}
+			</setvar>
+		</step>
+
+		<step no="SetServer1.tif.info.2">
+			<desc>Set server1's testbed interface net</desc>
+			<setvar name="server1.tif.net">
+				echo ${tb.vlan1.network} | sed 's/\//./g' | awk -F . '{print $1"."$2"."$3"."$4}'
+			</setvar>
+		</step>
+
+		<step no="GetServer1.tif.info.1">
+			<desc>Get server1's route table</desc>
+			<log-file>show_server1_route.log</log-file>
+			<ssh host="${tb.server1.tif.ip}" prompt=">|.*#">
+				-v "route"
+			</ssh>
+		</step>
+
+		<!-- <step no="GetServer1.tif.info.2"> -->
+		<!-- <desc>Get server1's testbed interface</desc> -->
+		<!-- <setvar name="tb.server1.tif.name"> -->
+		<!-- perl ${bin.dir}/getstring.pl -f ${log.dir}/show_server1_route.log -k ${server1.tif.net} -p 8 -->
+		<!-- </setvar> -->
+		<!-- </step> -->
+
+		<step no="GetServer1.tif.info.3">
+			<desc>get server1's tif ifconfig</desc>
+			<log-file>show_server1_ipconfig.log</log-file>
+			<ssh host="${tb.server1.tif.ip}" prompt=">|.*#">
+				-v "ifconfig ${tb.server1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="GetServer1.tif.info.4">
+			<desc>Get server1's tif mac-address</desc>
+			<setvar name="tb.server1.tif.mac">
+				python ${bin.dir}/getbyrexp.py -p "\s+(\w+:\w+:\w+:\w+:\w+:\w+)\s+" -f ${log.dir}/show_server1_ipconfig.log -t str
+			</setvar>
+		</step>
+
+		<step no="GetServer1.tif.info.5">
+			<desc>get 4 width server1 mac</desc>
+			<setvar name="tb.server1.tif.w4mac">
+				echo ${tb.server1.tif.mac} | sed 's/://g; s/../&amp;:/g' | awk -F : '{print $1$2":"$3$4":"$5$6}'
+			</setvar>
+		</step>
+
+		<step no="SetUpAP1.1">
+			<desc>config ssid for AP1</desc>
+			<log-file>setup1.1_ap1.log</log-file>
+			<console target="ap1">
+				-v "user-profile datapath qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-psk ascii-key aerohive"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="SetUpAP1.2">
+			<desc>config hive/vlan,enable icmp-redirect for AP1</desc>
+			<log-file>setup1.2_ap1.log</log-file>
+			<console target="ap1">
+				-v "interface wifi0 radio channel 11"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "system icmp-redirect enable"
+				-v "save config"
+			</console>
+		</step>
+
+
+		<step no="SetUpAP1.3">
+			<desc>config static ip for AP1</desc>
+			<log-file>setup1.3_ap1_route.log</log-file>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${ap1.mgt0.ip} 255.255.255.0"
+				-v "ip route net 0.0.0.0 0.0.0.0 gateway ${tb.server1.tif.ip}"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="SetUpServer1.1">
+			<desc>set route and ip forwarding on server1</desc>
+			<log-file>set_server1_route.log</log-file>
+			<ssh host="${tb.server1.tif.ip}" prompt=">|.*#">
+				-v "route add -net ${mpc.mif.ip} netmask 255.255.255.255 gateway ${mpc.tif.ip}"
+				-v "echo 1 >/proc/sys/net/ipv4/ip_forward"
+			</ssh>
+		</step>
+
+		<step no="ShowApConfig.1">
+			<desc>show system in ap1</desc>
+			<log-file>show_system_ap1.log</log-file>
+			<telnet target="ap1" timeout="100">
+				-v "show system"
+			</telnet>
+			<log-match>-i "ICMP-redirect enable" -i "Yes" -c</log-match>
+		</step>
+
+		<step no="ShowApConfig.2">
+			<desc>show run in ap1</desc>
+			<log-file>show_run_icmp_ap1.log</log-file>
+			<telnet target="ap1" timeout="100">
+				-v "show running | inc icmp"
+			</telnet>
+			<log-match>-i "system icmp-redirect enable" -c</log-match>
+		</step>
+
+		<step no="AP1PingMpcMif.1">
+			<desc>set _ff and clear log buffer on ap1</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+				-v "show system"
+			</telnet>
+		</step>
+
+		<step no="AP1PingMpcMif.2">
+			<desc>ap1 ping mpc mif</desc>
+			<log-file>ap1_ping_mpc_mif.log</log-file>
+			<telnet target="ap1" timeout="100">
+				-v "ping ${mpc.mif.ip} count 5"
+			</telnet>
+		</step>
+
+		<step no="AP1PingMpcMif.3">
+			<desc>show log buffer that ap1 ping mpc mif</desc>
+			<log-file>show_ap1_ping_mpc_mif.log</log-file>
+			<telnet target="ap1" timeout="100">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}->${mpc.mif.ip}" -i "icmp-echo-req" -c</log-match>
+			<log-match>-i "eth0 Tx ${ap1.eth0.w4mac} -> ${tb.server1.tif.w4mac}" -c</log-match>
+			<log-match>-i "(o) eth0 ${ap1.mgt0.ip}->${mpc.mif.ip}" -i "icmp-echo-req" -c</log-match>
+			<log-match>-i "(i) eth0 ${tb.server1.tif.ip}->${ap1.mgt0.ip}" -i "icmp-redirect" -c</log-match>
+			<log-match>-i "(u) mgt0 ${tb.server1.tif.ip}->${ap1.mgt0.ip}" -i "icmp-redirect" -c</log-match>
+			<log-match>-i "(i) eth0 ${mpc.mif.ip}->${ap1.mgt0.ip}" -i "icmp-echo-reply" -c</log-match>
+			<log-match>-i "eth0 Tx ${ap1.eth0.w4mac} -> ${mpc.tif.w4mac}" -c</log-match>
+		</step>
+
+		<step no="ShowApShellConfig.1">
+			<desc>switch shell mode in ap1</desc>
+			<log-file>switch_shell_mode_ap1.log</log-file>
+			<console target="ap1" prompt="AH.*(#|$)">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "cat /proc/sys/net/ipv4/conf/mgt0/accept_redirects"
+				-v "exit 0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "^1$" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="RestoreServer1.1">
+				<desc>resotre route and ip forwarding on server1</desc>
+				<log-file>restore_server1_route.log</log-file>
+				<ssh host="${tb.server1.tif.ip}" prompt=">|.*#">
+					-v "route delete ${mpc.mif.ip}"
+					-v "echo 0 >/proc/sys/net/ipv4/ip_forward"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

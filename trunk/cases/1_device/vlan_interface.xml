@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>VLAN configuration mgmt test</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use
+		Switch
+
+		Pre-condition:
+		Reset config of switch to factory default
+
+		Test procedure:
+		1. create interface vlan 100, show l3 interface, result1;
+		2. create vlan 100, create interface vlan 100, show l3 interface, result2(bug 19694, 21928);
+		3. change mgt0 vlan to 2; create interface vlan 1, show l3 interface, result3;
+		4. save config, reboot, result4(bug 26559);
+		5. delete vlan 100, show vlan brief, result5(bug 20153);
+
+		Expect result:
+		result1: should create vlan 100 first;
+		result2: interface vlan100 create succeed, mgt0 vlan 1;
+		result3: interface vlan 1 create succeed;
+		result4: interface vlan 1 recover;
+		result5: vlan 100 exist;
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<comment>
+
+	</comment>
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<step no="1">
+			<desc>
+				create interface vlan validation check, create interface vlanx should create vlan x first;
+			</desc>
+			<telnet target="sw1">
+				-v "interface vlan 1000"
+				-v "vlan 1001"
+				-v "interface vlan 1001"
+				-v "show l3 interface"
+			</telnet>
+			<log-match>-c -i "vlan1001"</log-match>
+			<log-match>-c -i "vlan1000" -n</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="2">
+			<desc>
+				create interface vlan 1;
+			</desc>
+			<telnet target="sw1">
+				-v "interface vlan 1"
+				-v "show l3 interface"
+			</telnet>
+			<log-match>-c -i "vlan1"</log-match>
+			<log-match>-c -i "vlan1001"</log-match>
+			<log-match>-c -i "vlan1000" -n</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				no vlan x, should no interface vlan x first;
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "interface vlan ${tb.vlan1}"
+				-v "no vlan ${tb.vlan1}"
+				-v "show l3 interface"
+			</telnet>
+			<log-match>-c -i "Interface vlan${tb.vlan1} exist, can't disable vlan ${tb.vlan1}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4">
+			<desc>
+				Show l3 interface
+			</desc>
+			<log-file>l3_interface_info.log</log-file>
+			<console target="sw1">
+				-v 'show l3 interface'
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="5">
+			<desc>get MAC of vlan1001</desc>
+			<setvar name="vlan1001.mac">
+				${bin.dir}/getstring.pl -f ${log.dir}/l3_interface_info.log -k "vlan1001" -p 5 | sed 's/://g;s/../&amp;:/g;s/.$//'
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				_Show switch fdb dev 0 if 63
+			</desc>
+			<log-file>fdb_table.log</log-file>
+			<console target="sw1">
+				-v '_Show switch fdb dev 0 if 63'
+			</console>
+			<log-match>-c -i "1001" -i ${vlan1001.mac} -i "0/63"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				kill ah_swd
+			</desc>
+			<console target="sw1">
+				-v "show system command \"killall -9 ah_swd\""
+			</console>
+		</step>
+
+		<step no="8" delay="120">
+			<desc>
+				ps
+			</desc>
+			<console target="sw1">
+				-v "show system command \"ps\""
+			</console>
+		</step>
+		
+		<step no="9">
+			<desc>
+				_Show switch fdb dev 0 if 63
+			</desc>
+			<log-file>fdb_table.log</log-file>
+			<console target="sw1">
+				-v '_Show switch fdb dev 0 if 63'
+			</console>
+			<log-match>-c -i "1001" -i ${vlan1001.mac} -i "0/63"</log-match>
+		</step>
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

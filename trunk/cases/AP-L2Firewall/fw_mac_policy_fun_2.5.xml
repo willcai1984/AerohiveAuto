@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Config "from to" simultaneous policy(permit, two Laptops)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop1 has been associated with AP1 and assigned an ip address
+		-Laptop1 uses user-profile "FW"
+
+		Test Procedure:
+		1) Laptop1 and Laptop2 ping each other through AP1
+		2) Configure a L2 policy and bind it to FW:
+		"mac-policy FW"
+		"mac-policy FW from &lt;Laptop1 mac addr&gt; action permit"
+		"mac-policy FW to &lt;Laptop1 mac addr&gt; action permit"
+		"user-profile FW security mac-policy from-access FW to-access FW
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Repeat step 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "cons page 0"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4" />
+
+		<include prefix="5" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step5_show_logging_buffered.log" />
+
+		<step no="6">
+			<desc>
+				Configure a L2 policy and bind it to FW:
+				"mac-policy FW"
+				"mac-policy FW from &lt;Laptop1 mac addr&gt; action permit"
+				"mac-policy FW to &lt;Laptop1 mac addr&gt; action permit"
+				"user-profile FW security mac-policy from-access FW to-access FW
+				"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+			</desc>
+			<telnet target="ap1">
+				-v "mac-policy ${user_id}"
+				-v "mac-policy ${user_id} from ${sta1.tif.mac} action permit"
+				-v "mac-policy ${user_id} to ${sta1.tif.mac} action permit"
+				-v "user-profile ${user_id} security mac-policy from-access ${user_id} to-access ${user_id}"
+				-v "clear log all"
+				-v "clear forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<include prefix="7" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+
+		<step no="7.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step7.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "MAC ACL: matched upid \[1\] dir \[to-air\] group \[${user_id}\] id \[1\] \[permit\] mirror \[no\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "MAC ACL: matched upid \[1\] dir \[from-air\] group \[${user_id}\] id \[1\] \[permit\] mirror \[no\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7.2">
+			<desc>
+				clear forwarding-engine mac-sessions
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "clear forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<include prefix="8" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4" />
+
+		<step no="8.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "MAC ACL: matched upid \[1\] dir \[to-air\] group \[${user_id}\] id \[2\] \[permit\] mirror \[no\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "MAC ACL: matched upid \[1\] dir \[from-air\] group \[${user_id}\] id \[2\] \[permit\] mirror \[no\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

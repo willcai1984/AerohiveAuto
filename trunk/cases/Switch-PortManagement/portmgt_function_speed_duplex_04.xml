@@ -1,0 +1,368 @@
+<testcase>
+	<brief>(IxPort: F=1) Verify Speed and Duplex configured on SFP GE ports.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<description>
+		IXIA enable_1000_full/disable_1000_full; Switch enable_1000_full/disable_1000_full
+	</description>
+	<comment>
+		sw1.port1=eth1/21;
+		sw1.port1.phytype=copper;
+		sw1.port5=eth1/25;
+		sw1.port5.ixia_port=1/2/1;
+		sw1.port5.ixia_port.phytype=copper;
+		sw1.terminal.port=2016;
+		tb.conserver.ip=localhost
+		ap1.cons_name=tb1-SR2024-2
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclserver1.ip=10.155.30.164;
+		pub.tclclient1.ip=10.155.40.10;
+		sw1.tclclient.ip=10.155.32.228;
+		sw1.mgmtport=eth1/1;
+		sw1.mgmtvlan=121;
+		tb.conserver.ip=10.155.32.228;
+		tb.conserver.user=root;
+		tb.conserver.passwd=aerohive;
+		sw1.cons_name=tb1-SR2024-2;
+		sw1.user=admin;
+		sw1.passwd=aerohive;
+		sw1.prompt="AH-[a-z0-9A-Z_]*#";
+	</comment>
+	<property name="correct_vlan" value="101" />
+	<property name="incorrect_vlan" value="102" />
+	<property name="tcl_script_server.ip" value="10.155.39.227" />
+	<property name="tcl_script_server.user" value="root" />
+	<property name="tcl_script_server.passwd" value="aerohive" />
+	<property name="tcl_script_server.path" value="/home/python/tcl/v1" />
+	<stage>
+		<if>"${sw1.platform}" == "SR2024" || "${sw1.platform}" == "SR2024P"</if>
+		
+		<step no="1.0.1">
+			<desc>
+				Show interface mgt0 to get ip address
+			</desc>
+			<log-file>step1.0.1_mgt0_ip_info.log</log-file>
+			<console target="sw1">
+				-v 'show interface mgt0'
+			</console>
+		</step>
+
+		<step no="1.0.2">
+			<desc>
+				Get mgt0's ip address
+			</desc>
+			<setvar name="sw1.ip">
+				python ${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/step1.0.1_mgt0_ip_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia enable_1000_full;
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port5} shutdown'
+				-v 'interface ${sw1.port5} speed auto'
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia enable_1000_full; ixia should be 1000/full/up
+			</desc>
+			<log-file>step1.2_fiber_1000_full_ixia.log</log-file>
+			<!--  
+			<ssh target="${tcl_script_server.ip}" user="${tcl_script_server.user}" password="${tcl_script_server.passwd}" timeout="120">
+				-v "python ${tcl_script_server.path}/ixia_config_status.py
+				-port_list '${sw1.port5.ixia_port}'
+				-username '${job.user}${job.sid}'
+				-op_mode normal
+				-phy_mode ${sw1.port5.ixia_port.phytype}
+				-reset
+				-tcl_server '${pub.tclserver1.ip}'"
+			</ssh>
+			-->
+			
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-new="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port5.ixia_port} -phyList ${sw1.port5.ixia_port.phytype}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="1.2_2">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia enable_1000_full,interface_${sw1.port5}_shutdown no_interface_${sw1.port5}_shutdown
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'interface ${sw1.port5} shutdown'
+				-v 'no interface ${sw1.port5} shutdown'
+			</ssh>
+		</step>
+		<step no="1.2_3">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia enable_1000_full; ixia should be 1000/full/up
+			</desc>
+			<log-file>step1.2_3_fiber_1000_full_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!-- session get -->
+				-v ""
+				-v "after 1000"
+				-v "port_status_get -portList ${sw1.port5.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port5.ixia_port}; Speed:1000; Duplex:full; Link:up"</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia enable_1000_full; sw should be 1000/full/up
+			</desc>
+			<log-file>step1.3_fiber_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port5}" -i "U" -i "1G" -i "full"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				mode:fiber, sw disable_1000_full, ixia enable_1000_full;
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port5} shutdown'
+				-v 'interface ${sw1.port5} speed 1000'
+				-v 'interface ${sw1.port5} duplex full'
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				mode:fiber, sw disable_1000_full, ixia enable_1000_full; ixia should be N/A/N/A/down(not get the auto-neg frames)
+			</desc>
+			<log-file>step2.2_fiber_1000_full_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!-- port set  -->
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port5.ixia_port} -phyList ${sw1.port5.ixia_port.phytype}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="2.2_2">
+			<desc>
+				mode:fiber, sw disable_1000_full, ixia enable_1000_full,interface ${sw1.port5} shutdown,no interface ${sw1.port5} shutdown;
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'interface ${sw1.port5} shutdown'
+				-v 'no interface ${sw1.port5} shutdown'
+			</ssh>
+		</step>
+		<step no="2.2_3">
+			<desc>
+				mode:fiber, sw disable_1000_full, ixia enable_1000_full; ixia should be N/A/N/A/down(not get the auto-neg frames)
+			</desc>
+			<log-file>step2.2_3_fiber_1000_full_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v ""
+				-v "after 1000"
+				-v "port_status_get -portList ${sw1.port5.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port5.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				mode:fiber, sw disable_1000_full, ixia enable_1000_full; sw should be 1000/full/up(sw get the auto-neg frames, so the port should be up)
+			</desc>
+			<log-file>step2.3_fiber_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port5}" -i "U" -i "1G" -i "full"</log-match>
+		</step>
+
+
+		<step no="3.1">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia disable_1000_full;
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port5} shutdown'
+				-v 'interface ${sw1.port5} speed auto'
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia disable_1000_full; ixia should be 1000/full/up(ixia get the auto-neg frames, so the port should be up)
+			</desc>
+			<log-file>step3.2_fiber_1000_full_ixia.log</log-file>
+			<!-- 
+			<ssh target="${tcl_script_server.ip}" user="${tcl_script_server.user}" password="${tcl_script_server.passwd}" timeout="320">
+				-v "python ${tcl_script_server.path}/ixia_config_status.py
+				-port_list '${sw1.port5.ixia_port}'
+				-username '${job.user}${job.sid}'
+				-op_mode normal
+				-phy_mode ${sw1.port5.ixia_port.phytype}
+				-autonegotiation '0'
+				-speed 'ether1000'
+				-duplex 'full'
+				-reset
+				-tcl_server '${pub.tclserver1.ip}'"
+			</ssh>
+			 -->
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!-- port set -->
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port5.ixia_port} -phyList ${sw1.port5.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port5.ixia_port} -phyMode fiber -autonegotiate false -duplexMode full -speed 1000 -10fullIn false -10halfIn false -100fullIn false -100halfIn false -1000fullIn true"
+				-v ""
+			</ssh>
+		</step>
+		<step no="3.2_2">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia disable_1000_full,no interface ${sw1.port5} shutdown,interface ${sw1.port5} shutdown;
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'interface ${sw1.port5} shutdown'
+				-v 'no interface ${sw1.port5} shutdown'
+			</ssh>
+		</step>
+
+		<step no="3.2_3">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia disable_1000_full; ixia should be 1000/full/up(ixia get the auto-neg frames, so the port should be up)
+			</desc>
+			<log-file>step3.2_3_fiber_1000_full_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!-- port set -->
+				-v ""
+				-v "after 1000"
+				-v "port_status_get -portList ${sw1.port5.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port5.ixia_port}; Speed:1000; Duplex:full; Link:up"</log-match>
+		</step>
+		
+		<step no="3.3">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia disable_1000_full; sw should be 1000/full/up(sw not get the auto-neg frames, expect down, but the result is up...maybe aerohive behavior)
+			</desc>
+			<log-file>step3.3_fiber_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port5}" -i "U" -i "1G" -i "full"</log-match>
+		</step>
+
+
+		<step no="4.1">
+			<desc>
+				mode:fiber, sw disable_1000_full, ixia disable_1000_full;
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port5} shutdown'
+				-v 'interface ${sw1.port5} speed 1000'
+				-v 'interface ${sw1.port5} duplex full'
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				mode:fiber, sw disable_1000_full, ixia disable_1000_full; ixia should be 1000/full/up
+			</desc>
+			<log-file>step4.2_fiber_1000_full_ixia.log</log-file>
+			<!-- 
+			<ssh target="${tcl_script_server.ip}" user="${tcl_script_server.user}" password="${tcl_script_server.passwd}" timeout="420">
+				-v "python ${tcl_script_server.path}/ixia_config_status.py
+				-port_list '${sw1.port5.ixia_port}'
+				-username '${job.user}${job.sid}'
+				-op_mode normal
+				-phy_mode ${sw1.port5.ixia_port.phytype}
+				-autonegotiation '0'
+				-speed 'ether1000'
+				-duplex 'full'
+				-reset
+				-tcl_server '${pub.tclserver1.ip}'"
+			</ssh>
+			 -->
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!-- port set -->
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port5.ixia_port} -phyList ${sw1.port5.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port5.ixia_port} -phyMode fiber -autonegotiate false -duplexMode full -speed 1000 -10fullIn false -10halfIn false -100fullIn false -100halfIn false -1000fullIn true"
+				-v ""
+			</ssh>
+			<!-- 
+				<log-match>-e "Port:${sw1.port5.ixia_port}; Speed:1000; Duplex:full; Link:up"</log-match>
+			 -->
+		</step>
+		<step no="4.2_2">
+			<desc>
+				mode:fiber, sw enable_1000_full, ixia disable_1000_full,no interface ${sw1.port5} shutdown,interface ${sw1.port5} shutdown;
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'interface ${sw1.port5} shutdown'
+				-v 'no interface ${sw1.port5} shutdown'
+			</ssh>
+		</step>
+		<step no="4.2_3">
+			<desc>
+				mode:fiber, sw disable_1000_full, ixia disable_1000_full; ixia should be 1000/full/up
+			</desc>
+			<log-file>step4.2_3_fiber_1000_full_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!-- port set -->
+				-v ""
+				-v "after 1000"
+				-v "port_status_get -portList ${sw1.port5.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port5.ixia_port}; Speed:1000; Duplex:full; Link:up"</log-match>
+		</step>
+		<step no="4.3">
+			<desc>
+				mode:fiber, sw disable_1000_full, ixia disable_1000_full; sw should be 1000/full/up
+			</desc>
+			<log-file>step4.3_fiber_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port5}" -i "U" -i "1G" -i "full"</log-match>
+		</step>
+	</stage>
+	
+	<stage>
+		<if>"${sw1.platform}" == "SR2124P" || "${sw1.platform}" == "SR2148P"</if>
+		
+		<step no="5.1">
+			<desc>This case is not supported by current platform ${sw1.platform}</desc>
+			<script>
+				echo "This case is not supported by current platform ${sw1.platform}"
+				exit 1
+			</script>
+		</step>
+	</stage>
+	
+	<post-process>
+		<stage>
+			<step no="4.4.1">
+				<ssh timeout="180" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+					-v ""
+				</ssh>
+			</step>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

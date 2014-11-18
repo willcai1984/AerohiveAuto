@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mac-filter apply to hive to disallow specific OUI to connect, default is permit</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a mac-filter policy, default is permit,
+		'security mac-filter aaa default permit'
+		-config an allowed mac oui for this mac filter,
+		'security mac-filter xxx oui 001977'
+		-bind the mac-filter to hive on AP1
+		'hive xxx security mac-filter aaa'
+		-AP1 and AP2 are in the same hive, they are acsp neighbors
+
+		Test Procedure:
+		-check the mac-filter detail,
+		'sh security mac-filter aaa'
+		-check debug info to make sure the two ap could not become hive neighbor
+		-remove the oui in this mac-filter,check the two APs could become hive neighbor now
+		
+		Expect result:
+		1.	The default action and other items are correct
+		2.	The two APs could not be hive neighbor due to association failure, mac-filter denies AP2
+		3.	After mac-filter policy change the oui, the two APs could assocaite success, ‘sh hive czhong neighbor’ to make sure hive neighbor is setup
+		
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				config AP2'hive and set wifi1's channel to make sure ap1 and ap2 is not hive neighbor at the first.
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}_ap"
+				-v "interface mgt0 hive ${hive.name}_ap"
+				-v "interface wifi1 mode backhaul"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+		
+		<step no="1.1">
+			<desc>
+				show ap2 interface info
+			</desc>
+			<log-file>show_ap2_interface.log</log-file>
+			<telnet target="ap2">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				get wifi1.1's mac address of ap2(format: xxxx:xxxx:xxxx)
+			</desc>
+			<setvar name="ap2_wifi1_mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1\s*(\S{4}):(\S{4}):(\S{4})" -f ${log.dir}/show_ap2_interface.log -t str --script "':'.join(m.groups())"
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				config AP1'hive and set wifi1's channel to make sure ap1 and ap2 is not hive neighbor at the first.
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}_ap"
+				-v "interface mgt0 hive ${hive.name}_ap"
+				-v "interface wifi1 mode backhaul"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				show ap1 interface info
+			</desc>
+			<log-file>show_ap1_interface.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				get wifi1.1's mac address of ap1(format: xxxx:xxxx:xxxx)
+			</desc>
+			<setvar name="ap1_wifi1_mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1\s*(\S{4}):(\S{4}):(\S{4})" -f ${log.dir}/show_ap1_interface.log -t str --script "':'.join(m.groups())"
+			</setvar>
+		</step>
+		
+		<step no="3">
+			<desc>select the small mac</desc>
+			<setvar name="select_ap">
+			 if [ "${ap2_wifi1_mac}" \&lt; "${ap1_wifi1_mac}" ] 
+			 then
+					echo "ap2"
+				else 
+					echo "ap1"
+			 fi
+			</setvar>
+		</step>
+		<step no="3.1">
+   		<desc>get the unselect mac</desc>
+  		<setvar name="unselect_ap_wifi1_mac">
+   		 if [ "${select_ap}" == "ap1" ] 
+   		 then
+					echo "${ap2_wifi1_mac}"
+				else 
+    			echo "${ap1_wifi1_mac}"
+   		 fi
+   </setvar>
+  </step>
+
+		<step no="4">
+			<desc>
+				-config a mac-filter policy, default is permit,
+				'security mac-filter aaa default permit'
+			</desc>
+			<telnet target="${select_ap}">
+				-v "security mac-filter aaa default permit"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				get oui(length:6) from ap2's mac address
+			</desc>
+			<setvar name="oui">
+				${bin.dir}/getbyrexp.py -p "Wifi1.1\s*(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" -f ${log.dir}/show_ap2_interface.log -t str --script "':'.join(m.groups()[:3])"
+			</setvar>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				get OUI(length:12) for ap2's mac address which used by check the result of "show security mac-filter aaa"
+			</desc>
+			<setvar name="OUI">
+				${bin.dir}/getbyrexp.py -p "Wifi1.1\s*(\S{4}):(\S{2})(\S{2}):(\S{2})(\S{2})" -f ${log.dir}/show_ap2_interface.log -t str --script "':'.join(m.groups()[:2])+'00:0000'"
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				get ap2's mac address(format: xx:xx:xx:xx:xx:xx)
+			</desc>
+			<setvar name="ap2_wifi1.1_mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1.1\s*(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" -f ${log.dir}/show_ap2_interface.log -t str --script "':'.join(m.groups())"
+			</setvar>
+		</step>
+		<step no="5.3">
+			<desc>
+				get ap1's mac address(format: xx:xx:xx:xx:xx:xx)
+			</desc>
+			<setvar name="ap1_wifi1.1_mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1.1\s*(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" -f ${log.dir}/show_ap1_interface.log -t str --script "':'.join(m.groups())"
+			</setvar>
+		</step>
+		<step no="5.4">
+  		<desc>the unselect mac</desc>
+   		<setvar name="unselect_ap_wifi1.1_mac">
+    	if [ "${select_ap}" == "ap1" ] 
+   		then
+    		 echo "${ap2_wifi1.1_mac}"
+   		else 
+    		 echo "${ap1_wifi1.1_mac}"
+   		fi
+   </setvar>
+  </step>
+
+		<step no="6">
+			<desc>
+				-config an allowed mac oui for this mac filter,
+				'security mac-filter xxx oui 001977 deny'
+			</desc>
+			<telnet target="${select_ap}">
+				-v "security mac-filter aaa oui ${oui} deny"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				Open debug mode "_kdebug wifi-driver wifi1.1 assoc";
+				"_kdebug wifi-driver wifi1.1 assoc"
+			</desc>
+			<telnet target="${select_ap}">
+				-v "clear log all"
+				-v "_kdebug wifi-driver wifi1.1 awemesh node-leave"
+				-v "_kdebug wifi-driver wifi1.1 assoc"
+			</telnet>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				-bind the mac-filter to hive on AP1
+				'hive xxx security mac-filter aaa'
+			</desc>
+			<telnet target="${select_ap}">
+				-v "hive ${hive.name}_ap security mac-filter aaa"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>
+				set wifi1's channel to make sure ap1 and ap2's backhaul channel are the same.
+			</desc>
+			<telnet target="${select_ap}">
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				shutdown interface wifi1 to trigger acsp bgscan.
+				"interface wifi1 hive test shutdown"
+			</desc>
+			<telnet target="${select_ap}">
+				-v "interface wifi1 hive ${hive.name}_ap shutdown"
+			</telnet>
+		</step>
+
+		<step no="8.2" delay="5">
+			<desc>
+				let interface wifi1 up
+				"no interface wifi1 hive test shutdown"
+			</desc>
+			<telnet target="${select_ap}">
+				-v "no interface wifi1 hive ${hive.name}_ap shutdown"
+			</telnet>
+		</step>
+	
+		<step no="9" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				-check if ap1 and ap2 are acsp neighbor if ap2's wifi1's acsp neighbor list less than 128.
+			</desc>
+			<log-file>step9_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="${select_ap}">
+				-v "show acsp neighbor"
+			</telnet>			
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${unselect_ap_wifi1_mac}\s+Backhaul\s+${hive.name}_ap" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				-check the mac-filter detail,
+				'sh security mac-filter aaa'
+			</desc>
+			<log-file>show_security_macfilter.log</log-file>
+			<telnet target="${select_ap}">
+				-v "show security mac-filter aaa"
+			</telnet>
+			<log-match>-e "Name=aaa;\ default\ action=permit;"</log-match>
+			<log-match>-e "OUI=${OUI};\ action=deny;"</log-match>
+			<log-match>-e "Bind to Hive profiles=\ \ ${hive.name}_ap"</log-match>
+		</step>
+
+		<step no="11" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				-check debug info to make sure the two ap could not become hive neighbor
+			</desc>
+			<log-file>show_no_hive_neighbor_buffer_${loop_check.idx}.log</log-file>
+			<telnet target="${select_ap}">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-e "mesh node assoc leave" -i "deny ${unselect_ap_wifi1.1_mac} request due to ACL filtering"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				-remove the oui in this mac-filter,check the two APs could become hive neighbor now
+			</desc>
+			<telnet target="${select_ap}">
+				-v "clear log all"
+				-v "no security mac-filter aaa oui ${oui}"
+			</telnet>
+		</step>
+
+		<step no="12.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				-check if ap1 and ap2 are acsp neighbor.
+			</desc>
+			<log-file>step12.1_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="${select_ap}">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${unselect_ap_wifi1_mac}\s+Backhaul\s+${hive.name}_ap" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="12.2">
+  		<desc>unselect mgt0 ip</desc>
+   		<setvar name="unselect_ap_mgt0_ip">
+   		 	if [ "${select_ap}" == "ap1" ] 
+    		then
+     			echo "${ap2.mgt0.ip}"
+    		else 
+     			echo "${ap1.mgt0.ip}"
+    		fi
+  	</setvar>
+  	</step>
+		<step no="12.3" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step12.2_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="${select_ap}" timeout="180">
+				-v "show amrp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${unselect_ap_wifi1_mac}\s+${unselect_ap_mgt0_ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				-check debug info to make sure the two APs could become hive
+			</desc>
+			<log-file>show_hive_neighbor_info.log</log-file>
+			<telnet target="${select_ap}">
+				-v "show hive ${hive.name}_ap neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${unselect_ap_wifi1_mac}.*Auth.*${hive.name}_ap" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

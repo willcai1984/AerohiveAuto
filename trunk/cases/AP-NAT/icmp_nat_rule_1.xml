@@ -1,0 +1,324 @@
+<testcase>
+	<brief>ICMP_NAT_Rule_1</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+
+		TOPO:
+		Switch
+		|
+		AP1-----Client
+		Description:
+		Verify that icmp Request ID and sequence is changed to specific value
+		Pre-condition:
+		Nat is set and the icmp can match the nat policy
+		Test procedure:
+		1. Verify that ICMP Request ID and ICMP sequence is changed to one specific value.
+		2. The Response ICMP can match the new ICMP Request ID and ICMP sequence then transform to the old session.
+		3. The icmp session is created by rc-ip/dst-ip/protocol (1)/icmp-echo-request-id+icmp-echo-request-seq as ip-session tuple
+		Expect result:
+		1. The ICMP Request ID and ICMP sequence is changed specifically.
+		2. ICMP Response can match the transformed.
+
+	</description>
+	<property name="ssid.pwd" value="aerohive" />
+	<property name="pub.ntp.tif.name" value="eth7" />
+
+	<stage>
+		<!-- setup config on AP -->
+		<step no="1.1">
+			<desc>set mgt0 vlan 1</desc>
+			<console target="ap1" timeout="80">
+				-v "interface mgt0 vlan 1"
+				-v "interface mgt0 native-vlan 1"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.2" delay="10">
+			<desc>show mgt0</desc>
+			<log-file>show_mgt0.log</log-file>
+			<console target="ap1" timeout="80">
+				-v "show interface mgt0"
+			</console>
+			<log-match> -c -e "IP addr=192.168.${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>Get the mgt0 ip of AP1</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.4">
+			<desc>set nat config in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "security-object nat-test"
+				-v "security-object nat-test security protocol-suite wpa2-tkip-psk ascii-key aerohive"
+				-v "security-object nat-test default-user-profile-attr 1"
+				-v "ip-policy nat-policy"
+				-v "ip-policy nat-policy id 1 service dhcp-server action permit"
+				-v "ip-policy nat-policy id 2 action nat"
+				-v "user-profile nat-profile security ip-policy from-access nat-policy"
+				-v "user-profile nat-profile qos-policy def-user-qos vlan-id 700 attribute 1"
+				-v "interface mgt0.1 vlan 700"
+				-v "interface mgt0.1 ip 192.168.170.1/24"
+				-v "interface mgt0.1 dhcp-server options default-gateway 192.168.170.254 nat-support"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server ip-pool 192.168.170.2 192.168.170.5"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "alg ftp enable"
+				-v "alg tftp enable"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="1.5">
+			<desc>setup ssid for ap1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object nat-test"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<!-- associate station to AP -->
+		<include prefix="1" file="subs/wpa_supplicant_start.xml" args="sta1" />
+		<step no="2.1">
+			<desc>client associate to ssid on AP1</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-PSK"
+				-v "set_network 0 proto RSN"
+				-v "set_network 0 psk \"${ssid.pwd}\""
+				-v "set_network 0 pairwise TKIP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="2.2" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the connection of client</desc>
+			<log-file>wpa_stat_${staid}_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "status"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>client gets IP by dhclient</desc>
+			<ssh target="sta1" slow="true">
+				-v "killall dhclient"
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.4" delay="10">
+			<desc>ifconfig to show the client ip</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.5">
+			<desc>get client mac</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width 2
+			</setvar>
+		</step>
+
+		<step no="2.6">
+			<desc>check the station in ap1</desc>
+			<log-file>show_ssid_${ssid.name}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-e "tkip" -i "${sta1.tif.mac}" -p 8 -c</log-match>
+		</step>
+
+		<!-- get value of parameters -->
+
+		<step no="3.1" delay="10">
+			<desc>check the route table in ap1</desc>
+			<log-file>show_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match> -c -i "${sta1.tif.mac}" -e "L O"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>get client ip</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>get client mac</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width 2
+			</setvar>
+		</step>
+
+		<step no="3.4">
+			<desc>show interface for AP1</desc>
+			<log-file>show_interface_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+				-v "cons page 0"
+			</telnet>
+		</step>
+
+		<step no="3.6">
+			<desc>get mgt0 mac of ap1</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap1.log -k "Mgt0" -p 2
+			</setvar>
+		</step>
+
+		<step no="3.7">
+			<desc>show arp-cache in ap1</desc>
+			<log-file>show_arp.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+		</step>
+
+		<step no="3.8">
+			<desc>get the mac of sta1 gateway</desc>
+			<setvar name="sta1.tif.gw.mac">
+				cat ${log.dir}/show_arp.log | awk '$4=="192.168.170.254" {print $1}'
+			</setvar>
+		</step>
+
+		<!-- ping the different subnet -->
+		<step no="5.0">
+			<desc>setup fe filter</desc>
+			<log-file>setup_fe.log</log-file>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-mac ${sta1.tif.mac} protocol 1 bidirectional"
+				-v "_ff id 2 protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe nat"
+			</telnet>
+		</step>
+
+		<step no="5.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>ping ntp server</desc>
+			<log-file>ping_ntp.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${pub.ntp.ip} -c 1"
+			</ssh>
+			<log-match> -c -e "1 packets transmitted, 1 received,"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>show fe debug</desc>
+			<log-file>show_fe_ping.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="5.3.0">
+			<desc>get the icmp_seq before nat</desc>
+			<setvar name="icmp.seq.before.nat">
+				cat ${log.dir}/show_fe_ping.log | grep -e '(i) wifi[0-9].[0-9] ${sta1.tif.ip}->${pub.ntp.ip}' | awk 'gsub(/[(,),/]/, " ") {print $(NF-2)}'
+			</setvar>
+		</step>
+
+		<step no="5.3.1">
+			<desc>make sure that the value of icmp_seq is not null</desc>
+			<script>
+				if [ ${icmp.seq.before.nat} -le 0 ]; then exit 1; fi
+			</script>
+		</step>
+
+		<step no="5.4.0">
+			<desc>get the icmp_seq after nat</desc>
+			<setvar name="icmp.seq.after.nat">
+				cat ${log.dir}/show_fe_ping.log | grep -e '(o) eth0 ${ap1.mgt0.ip}->${pub.ntp.ip}' | awk 'gsub(/[(,),/]/, " ") {print $(NF-2)}'
+			</setvar>
+		</step>
+
+		<step no="5.4.1">
+			<desc>make sure that the icmp_seq after nat ranged[0xfbff - 0xfffe]</desc>
+			<script>
+				if [ ${icmp.seq.after.nat} -lt 64510 ] &amp;&amp;[ ${icmp.seq.after.nat} -gt 65535 ]; then exit 1; fi
+			</script>
+		</step>
+
+		<step no="5.5.0">
+			<desc>get the ip_id outbound</desc>
+			<setvar name="ip.id.outbound">
+				cat ${log.dir}/show_fe_ping.log | grep -e '(i) wifi[0-9].[0-9] ${sta1.tif.ip}->${pub.ntp.ip}' | awk 'gsub(/[(,),/]/, " ") {print $(NF-7)}'
+			</setvar>
+		</step>
+
+		<step no="5.6.0">
+			<desc>get the ip_id inbound</desc>
+			<setvar name="ip.id.inbound">
+				cat ${log.dir}/show_fe_ping.log | grep -e '(i) eth0 ${pub.ntp.ip}->${ap1.mgt0.ip}'  | grep -e 'icmp-echo' | awk 'gsub(/[(,),/]/, " ") {print $(NF-7)}'
+			</setvar>
+		</step>
+
+		<step no="5.6.1">
+			<desc>make sure that the value of ip_id is not null</desc>
+			<script>
+				if [ ${ip.id.inbound} -le 0 ]; then exit 1; fi
+			</script>
+		</step>
+
+		<step no="5.7.0">
+			<desc>get the icmp_id</desc>
+			<setvar name="icmp.id">
+				cat ${log.dir}/show_fe_ping.log | grep -e '(i) wifi[0-9].[0-9] ${sta1.tif.ip}->${pub.ntp.ip}' | awk 'gsub(/[(,),/]/, " ") {print $(NF-3)}'
+			</setvar>
+		</step>
+
+		<step no="5.7.1">
+			<desc>make sure that the value of icmp id is not null</desc>
+			<script>
+				if [ ${icmp.id} -le 0 ]; then exit 1; fi
+			</script>
+		</step>
+
+		<step no="6.0">
+			<desc>verify</desc>
+			<log-file>show_fe_ping.log</log-file>
+			<log-match>-c -i "(i) wifi" -i "${sta1.tif.ip}->${pub.ntp.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "fflow ${sta1.tif.mac}->${sta1.tif.gw.mac}"</log-match>
+			<log-match>-c -i "(o) eth0 ${ap1.mgt0.ip}->${pub.ntp.ip}" -i "icmp-echo-req" -i "${ip.id.outbound}" -i "${icmp.id}/${icmp.seq.after.nat}"</log-match>
+			<log-match>-c -i "eth0 Tx ${ap1.mgt0.mac} -> ${tb.vlan1.gw.mac} type 0x0800"</log-match>
+
+			<log-match>-c -i "(i) eth0 ${pub.ntp.ip}->${ap1.mgt0.ip}" -i "icmp-echo-reply" -i "${ip.id.inbound}" -i "${icmp.id}/${icmp.seq.after.nat}"</log-match>
+			<log-match>-c -i "fflow ${tb.vlan1.gw.mac}->${ap1.mgt0.mac}"</log-match>
+
+			<log-match>-c -e "reinject packet back into fe after NAT, set SMAC to ${sta1.tif.gw.mac} DMAC to ${sta1.tif.mac}"</log-match>
+			<log-match>-c -i "(r) eth0 ${pub.ntp.ip}->${sta1.tif.ip}" -i "icmp-echo-reply" -i "${ip.id.inbound}" -i "${icmp.id}/${icmp.seq.before.nat}"</log-match>
+			<log-match>-c -i "(o) wifi" -i "${pub.ntp.ip}->${sta1.tif.ip}" -i "${ip.id.inbound}"</log-match>
+			<log-match>-c -i "Tx:wifi" -i "${sta1.tif.gw.mac }->${sta1.tif.mac}"</log-match>
+		</step>
+	</stage>
+</testcase>

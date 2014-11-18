@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+    <brief>Failover to usbnet when usb is on-demand mode</brief>    
+	<priority>Middle</priority>
+    <automated>yes</automated>
+    <description>        
+		Pre-Condition:
+					  1. Eth0 is connected with Switch initially 
+					  2. usb modem is plugged initially 
+					  3. There is signal of mobile network available for usb modem
+		Test Procedure:
+					  1. Get a client associated to BR with open auth, result 1 
+					  2. Config eth1 as wan mode, result 2 
+					  3. Config track wan group for each interface, result 3 
+					  4. Config usb modem as on-demand mode, result 4 
+					  5. Config wan priority as customized sequence (eth0> usbnet> eth1), and check wan state of each interface, result 5 
+					  6. Check default route in main route table, result 6 
+					  7. Check the active DNS config, result 7 
+					  8. Run ping internet process on client to check its accessibility, result 8 
+					  9. Track fail on eth0, and track on eth1 still succeed, check wan monitor state, result 9 
+					  10. Repeat Step 6, result 10 
+					  11. Repeat Step 7, result 11 
+					  12. Maintain ping process on client, result 8 
+					  13. Restore track on eth0, check wan monitor state and default route, result 12 
+		Expect Result: 
+					  Result 1: Client gets association with BR 
+					  Result 2: eth1 is wan mode 
+					  Result 3: Each interface is configured with a track wan group 
+					  Result 4: USB modem is on-demand mode 
+					  Result 5: wan priority is as customized, and eth0 is active wan 
+					  Result 6: Default route is via eth0, and there are non-default routes via eth1/ usbnet with corresponding priority 
+					  Result 7: There is DNS server for eth0 
+					  Result 8: Ping successfully on client 
+					  Result 9: usb modem start to connect mobile network, and wan failover to usbnet after usb modem is connected 
+					  Result 10: Default route is via usbnet, and there are non-default routes via eth0/ eth1 with corresponding priority 
+					  Result 11: There is DNS server for usbnet 
+					  Result 12: Active WAN is eth0, default route is via eth0, DNS is corresponding to eth0, and ping successfully on client 	
+    </description>
+    <numofbr>1</numofbr>
+    <numofsta>0</numofsta>
+	<br-opt-modem>1</br-opt-modem>
+    <tbtype>linux</tbtype>
+	
+	<property name="usbmodem_id" value="huawei_e220" />
+	<property name="apn_name" value="3gnet" />
+	<property name="usbmodem_mode" value=" on-demand" />
+	<property name="dest_ip" value="0.0.0.0" />
+	<property name="unreachable_ip" value="9.9.9.9" />
+	<property name="google_dns_ip" value="8.8.8.8" />
+	<property name="track_wan_name_eth1" value="use-for-wan-eth1" />
+	<property name="track_wan_name_eth0" value="use-for-wan-eth0" />
+	<property name="track_wan_name_usbnet0" value="use-for-wan-usbnet0" />
+	<property name="eth1_custom_priority" value="7" />
+	<property name="eth0_custom_priority" value="5" />
+	<property name="usbnet0_custom_priority" value="6" />
+  
+    <stage>
+	
+		<step no="1.1.1">
+            <desc>
+            	Config eth1 as WAN 
+            </desc>
+            <telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 mode wan "
+			</telnet>		
+        </step>
+     	
+    	<step no="1.1.2">
+            <desc>
+				 Check Eth1 is WAN mode 
+            </desc>
+            <log-file>step1.1.2_CheckIntMode.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show interface | include eth1"
+			</telnet>
+			<log-match>-c -p 1 -i "eth1" -p 3 -i "wan"</log-match>			
+        </step>
+		
+		
+		<step no="1.2.1">
+            <desc>
+               Config track wan default group for each interface
+            </desc>
+            <telnet target="${br1.br.wan.ip}">
+			    -v "no track-wan ${track_wan_name_eth0} "
+				-v "no track-wan ${track_wan_name_usbnet0}"
+				-v "track-wan ${track_wan_name_eth1}"
+				-v "track-wan ${track_wan_name_eth1} ip ${mpc.tif.ip}"
+				-v "track-wan ${track_wan_name_eth1} interface eth1"
+				-v "track-wan ${track_wan_name_eth1} enable"
+				-v "track-wan ${track_wan_name_eth0}"
+				-v "track-wan ${track_wan_name_eth0} ip ${mpc.tif.ip}"
+				-v "track-wan ${track_wan_name_eth0} interface eth0"
+				-v "track-wan ${track_wan_name_eth0} enable "
+				-v "track-wan ${track_wan_name_usbnet0}"
+				-v "track-wan ${track_wan_name_usbnet0} ip ${google_dns_ip}"
+				-v "track-wan ${track_wan_name_usbnet0} interface usbnet0"
+				-v "track-wan ${track_wan_name_usbnet0} enable"
+			</telnet>
+        </step>
+		
+		<step no="1.2.2">
+            <desc>
+				Each interface is configured with a track wan group  
+            </desc>
+            <log-file>step1.2.2_CheckConfigTrackwan.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show running-config | include track-wan "
+			</telnet>
+			<log-match>-c -e "track-wan ${track_wan_name_eth1}"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_eth1} ip ${mpc.tif.ip}"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_eth1} interface eth1"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_eth1} enable"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_eth0}"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_eth0} ip ${mpc.tif.ip}"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_eth0} interface eth0"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_eth0} enable"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_usbnet0}"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_usbnet0} ip ${google_dns_ip}"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_usbnet0} interface usbnet0"</log-match>	
+			<log-match>-c -e "track-wan ${track_wan_name_usbnet0} enable"</log-match>				
+        </step>
+		
+		<step no="1.3.1">
+            <desc>
+				 There is signal of mobile network available for usb modem
+            </desc>
+            <log-file>step1.3.1_CfgUsbmodem.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "usbmodem modem-id ${usbmodem_id} apn ${apn_name}"
+				-v "usbmodem mode ${usbmodem_mode}"
+				-v "usbmodem enable"
+			</telnet>	
+        </step>
+		
+		<step no="1.3.2">
+            <desc>
+				USB modem is on-demand
+            </desc>
+            <log-file>step1.3.2_CheckUsbmodemMode.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show usbmodem modem-id ${usbmodem_id} | include Mode"
+			</telnet>
+			<log-match>-c -e "${usbmodem_mode}"</log-match>	
+        </step>
+		
+		<step no="1.4.1">
+            <desc>
+            	 Config wan priority as customized sequence (eth0> usbnet> eth1)
+            </desc>
+            <log-file>step1.4.1_CfgEthPriority.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "interface eth0 mode wan priority ${eth0_custom_priority}"
+				-v "interface usbnet0 mode wan priority ${usbnet0_custom_priority}"
+				-v "interface eth1 mode wan priority ${eth1_custom_priority}"				
+			</telnet>
+        </step>
+		
+		<step no="1.4.2" delay="50" type="loop-check" loop-max-times="20" loop-interval="10">
+            <desc>
+            	  eth0 is active wan
+            </desc>
+            <log-file>step1.4.2_CheckWanMode.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show wan interface eth0 "
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b 'WAN\s+Interface\s+Status' -e 'WAN\s+Interface\s+DB\s+Status' -p 'is_default_wan:\s+1' -f ${log.dir}/${log.file}				
+			</log-match>
+		</step>
+		
+		<step no="1.4.3" delay="30" type="loop-check" loop-max-times="20" loop-interval="10">
+            <desc>
+            	  Check wan monitor state of each interface
+            </desc>
+            <log-file>step1.4.3_CheckTrackwanStatus.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show track-wan"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b '\[${track_wan_name_eth1}\]' -e '\[${track_wan_name_eth0}\]' -p 'WAN Monitor State: up' -f ${log.dir}/${log.file}				
+			</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b '\[${track_wan_name_eth0}\]' -e '\[${track_wan_name_usbnet0}\]' -p 'WAN Monitor State: up' -f ${log.dir}/${log.file}				
+			</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b '\[${track_wan_name_usbnet0}\]' -ne -p 'WAN Monitor State: unknown' -f ${log.dir}/${log.file}				
+			</log-match>
+        </step>
+		
+		<step no="1.5.1">
+            <desc>
+            	Check default route in main route table
+            </desc>
+            <log-file>step1.5.1_CheckDefIpRoute.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-c -p 1 -i "${dest_ip}" -p 5 -i "${eth0_custom_priority}" -p 8 -i "eth0" </log-match>
+			<log-match>-c -p 1 -i "${dest_ip}" -p 5 -i "${eth1_custom_priority}" -p 8 -i "eth1"</log-match>
+        </step>		
+		
+		
+		<step no="1.6.1">
+            <desc>
+            	Ping successfully on BR
+            </desc>
+            <log-file>step1.6.1_PingBr.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "ping ${mpc.tif.ip}"
+			</telnet>
+			<log-match>-c -p 1 -i "5" -p 4 -i "5" -p 6 -i "0%" </log-match>
+        </step>
+		
+		
+		<step no="1.7.1">
+            <desc>
+            	  Track fail on eth0
+            </desc>
+			<console target="br1.br">
+				-v "track-wan ${track_wan_name_eth0} ip ${unreachable_ip}"
+			</console>
+        </step>	
+		
+		
+		<step no="1.8.1" delay="50" type="loop-check" loop-max-times="20" loop-interval="10">
+            <desc>
+            	  usbnet0 is active wan
+            </desc>
+            <log-file>step1.8.1_CheckWanMode.log</log-file>
+			<console target="br1.br">
+				-v "show wan interface usbnet0 "
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b 'WAN\s+Interface\s+Status' -e 'WAN\s+Interface\s+DB\s+Status' -p 'is_default_wan:\s+1' -f ${log.dir}/${log.file}				
+			</log-match>
+		</step>
+		
+		<step no="1.9.1">
+            <desc>
+            	Check default route in main route table
+            </desc>
+            <log-file>step1.9.1_CheckDefIpRoute.log</log-file>
+			<console target="br1.br">
+				-v "show ip route"
+			</console>
+			<log-match>-c -p 1 -i "${dest_ip}" -p 5 -i "${usbnet0_custom_priority}" -p 8 -i "ppp0"</log-match>
+			<log-match>-c -p 1 -i "${dest_ip}" -p 5 -i "10005" -p 8 -i "eth0" </log-match>
+			<log-match>-c -p 1 -i "${dest_ip}" -p 5 -i "${eth1_custom_priority}" -p 8 -i "eth1"</log-match>
+        </step>	
+		
+		<step no="1.10.1" delay="30" type="loop-check" loop-max-times="20" loop-interval="10">
+            <desc>
+            	  Check wan monitor state of each interface
+            </desc>
+            <log-file>step1.10.1_CheckTrackwanStatus.log</log-file>
+			<console target="br1.br">
+				-v "show track-wan"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b '\[${track_wan_name_eth1}\]' -e '\[${track_wan_name_eth0}\]' -p 'WAN Monitor State: up' -f ${log.dir}/${log.file}				
+			</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b '\[${track_wan_name_eth0}\]' -e '\[${track_wan_name_usbnet0}\]' -p 'WAN Monitor State: down' -f ${log.dir}/${log.file}				
+			</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b '\[${track_wan_name_usbnet0}\]' -ne -p 'WAN Monitor State: up' -f ${log.dir}/${log.file}				
+			</log-match>
+        </step>
+		
+			
+		<step no="1.11.1">
+            <desc>
+            	Check wan failoverstate
+            </desc>
+            <log-file>step1.11.1_CheckFailoverSatus.log</log-file>
+			<console target="br1.br">
+				-v "show wan failover"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-p 'curr_state:\s+FAILOVER' -f ${log.dir}/${log.file}				
+			</log-match>
+        </step>
+		
+		
+		<step no="1.12.1">
+            <desc>
+            	  Restore track fail on eth0
+            </desc>
+            <telnet target="${br1.br.wan.ip}">
+				-v "no track-wan ${track_wan_name_eth0} ip ${unreachable_ip}"
+			</telnet>
+        </step>	
+		
+		
+		<step no="1.12.2" delay="50" type="loop-check" loop-max-times="20" loop-interval="10">
+            <desc>
+            	  eth0 is active wan
+            </desc>
+            <log-file>step1.12.2.CheckWanMode.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show wan interface eth0 "
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b 'WAN\s+Interface\s+Status' -e 'WAN\s+Interface\s+DB\s+Status' -p 'is_default_wan:\s+1' -f ${log.dir}/${log.file}				
+			</log-match>
+		</step>
+		
+		<step no="1.12.3">
+            <desc>
+            	Check default route in main route table
+            </desc>
+            <log-file>step1.12.3.CheckDefIpRoute.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-c -p 1 -i "${dest_ip}" -p 5 -i "${eth0_custom_priority}" -p 8 -i "eth0" </log-match>
+			<log-match>-c -p 1 -i "${dest_ip}" -p 5 -i "${eth1_custom_priority}" -p 8 -i "eth1"</log-match>
+        </step>	
+		
+		<step no="1.12.4" delay="30" type="loop-check" loop-max-times="20" loop-interval="10">
+            <desc>
+            	  Check wan monitor state of each interface
+            </desc>
+            <log-file>step1.12.4_CheckTrackwanStatus.log</log-file>
+            <telnet target="${br1.br.wan.ip}">
+				-v "show track-wan"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b '\[${track_wan_name_eth1}\]' -e '\[${track_wan_name_eth0}\]' -p 'WAN Monitor State: up' -f ${log.dir}/${log.file}				
+			</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b '\[${track_wan_name_eth0}\]' -e '\[${track_wan_name_usbnet0}\]' -p 'WAN Monitor State: up' -f ${log.dir}/${log.file}				
+			</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b '\[${track_wan_name_usbnet0}\]' -ne -p 'WAN Monitor State: unknown' -f ${log.dir}/${log.file}				
+			</log-match>
+        </step>
+		
+		
+	</stage>
+	
+
+</testcase>

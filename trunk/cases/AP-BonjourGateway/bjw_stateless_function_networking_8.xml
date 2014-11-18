@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Ping bonjour vlan’s ip can not succeed</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		pre-condition:
+		CVG connect to trunk port which permits VLAN 51, 52, 53
+		VLAN Probe range 1-4094
+
+		test procedure:
+		1. Startup CVG
+		2. ping bonjour vlan’s ip from external device(switch, mpc,…)
+		
+		expect result:
+		Result1, CVG is BDD, bonjour vlans are created in CVG
+		Result2, fail
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+		<step no="1">
+    		<desc>
+       			config ap1
+    		</desc>
+    		<log-file>ap1_config.log</log-file>
+    		<console target="ap1">
+       			-v "interface mgt0 vlan ${tb.vlan1}"
+       			-v "interface mgt0 native-vlan ${tb.vlan1}"
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}"
+       			-v "interface mgt0 hive ${hive.name}"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan1} ${tb.vlan3}"
+    		</console>
+		</step>
+				
+		<step no="1.1" delay="10">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step1.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>	
+					
+		<step no="2" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>check bonjour-gateway status on ap1</desc>
+			<log-file>show_bon_sta1.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+					
+		<step no="3" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the bonjour-gateway vlan</desc>
+			<log-file>show_bonjour_vlan.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway vlan"
+			</ssh>
+			<log-match>-p 1 -i "${tb.vlan1}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan2}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan3}"</log-match>
+		</step>
+		
+		<step no="3.1">
+			<desc>get ${tb.vlan2}'s ip</desc>
+			<setvar name="tb.vlan2.ip">
+				python ${bin.dir}/getbyrexp.py -p "${tb.vlan2}\s*(((?:(?:25[0-5]|2[0-4]\d|((1\d{2})|([1-9]?\d)))\.){3}(?:25[0-5]|2[0-4]\d|((1\d{2})|([1-9]?\d)))))" -f ${log.dir}/show_bonjour_vlan.log -t str
+			</setvar>
+		</step>
+		
+		<step no="3.2">
+			<desc>get ${tb.vlan3}'s ip</desc>
+			<setvar name="tb.vlan3.ip">
+				python ${bin.dir}/getbyrexp.py -p "${tb.vlan3}\s*(((?:(?:25[0-5]|2[0-4]\d|((1\d{2})|([1-9]?\d)))\.){3}(?:25[0-5]|2[0-4]\d|((1\d{2})|([1-9]?\d)))))" -f ${log.dir}/show_bonjour_vlan.log -t str
+			</setvar>
+		</step>
+		
+		<step no="4">
+			<desc>ping bonjour vlan's ip</desc>
+			<log-file>ping_vlan2.log</log-file>
+			<script>
+				ping ${tb.vlan2.ip} -c 5 &gt; ${log.dir}/${log.file};exit 0	
+			</script>
+			<log-match>-n -e "from ${tb.vlan2.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-e "100% packet loss" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="5">
+			<desc>ping bonjour vlan's ip</desc>
+			<log-file>ping_vlan3.log</log-file>
+			<script>
+				<!--${bin.dir}/ping.pl -l ${log.dir} -d ${tb.vlan3.ip};exit 0-->
+				ping ${tb.vlan3.ip} -c 5 &gt; ${log.dir}/${log.file};exit 0
+			</script>
+			<log-match>-n -e "from ${tb.vlan3.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-e "100% packet loss" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>		
+	</stage>
+</testcase>

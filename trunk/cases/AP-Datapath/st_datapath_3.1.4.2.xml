@@ -1,0 +1,141 @@
+<testcase>
+	<brief> DHCP pkt process for laptop which connects to portal</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Topology to use
+		Laptop1-----Portal------Switch------DHCP server
+		Objective
+		DHCP pkt process for laptop which connects to portal
+		Pre-condition
+		Laptop1 and DHCP server are in same vlan
+		Make sure wifi0 and wifi1 are up on portal AP(You can bind a ssid to wifi0 and make a neighbor via wifi1)
+		Test procedure
+		-laptop connects to portal
+		-laptop will send dhcp discovery pkt to get ip address
+		check the FE debug to see.
+		Meet result 1,2,3,
+		- after get ip address, execute “inter mgt0 dhcp client” again.
+		Should meet result 4.
+		Expect result
+		1:Laptop can get ip address
+		2:Portal will do special handle for DHCP discovery/request pkt:
+		will send this pkt to eth0 and mgt0 interfaces, pls make sure not send to wifi0 or wifi1.
+		3.Dhcp offer/ack pkt should be sent to specifical wifi0.x only and not other wifi interfaces
+		4. ap refreshes ip successfully
+	</description>
+	<stage>
+		<step no="1.0">
+			<desc>Set up interface through sw menu</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<include prefix="1.1" file="subs/ap_renew_ip.xml" obj-args="ap1" />
+
+		<step no="1.2">
+			<desc>Set up interface through sw menu</desc>
+			<ssh target="ap1">
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name} "
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "save config"
+			</ssh>
+		</step>
+
+
+		<step no="5">
+			<desc>add _ff to AP</desc>
+			<console target="ap1">
+				-v "_ff dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="6.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="6.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="8">
+			<desc>show mgt0's ip of ap1</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>log_pc_dhcp.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered";exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "DHCP bcast set" -i "client mac ${sta1.tif.mac}"</log-match>
+			<log-match>-c -i "(o) eth0 0.0.0.0->255.255.255.255" -i "UDP 68->67 DHCP Request "</log-match>
+			<log-match> -c -i "(i) wifi0.1 0.0.0.0->255.255.255.255" -i "68->67 DHCP Request"</log-match>
+			<log-match>-c -i "(i) eth0 ${tb.vlan1.gw}->${sta1.tid.ip}" -i "UDP 67->68 DHCP Ack"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${tb.vlan1.gw}->${sta1.tid.ip}" -i "UDP 67->68 DHCP Ack"</log-match>
+			<log-match> -n -i "(i) wifi1.1" -i "68->67 DHCP Request"</log-match>
+			<log-match> -n -i "(i) wifi1.1" -i "UDP 67->68 DHCP Ack"</log-match>
+			<log-match>-i "special handling for DHCP request pkts, tx on eth0"</log-match>
+		</step>
+
+		<step no="8_0">
+			<desc>show mgt0's ip of ap1</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>log_pc_dhcp.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered";exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "DHCP bcast set" -i "client mac ${sta1.tif.mac}"</log-match>
+			<log-match>-c -i "(o) eth0 0.0.0.0->255.255.255.255" -i "UDP 68->67 DHCP Request "</log-match>
+			<log-match> -c -i "(i) wifi0.2 0.0.0.0->255.255.255.255" -i "68->67 DHCP Request"</log-match>
+			<log-match>-c -i "(i) eth0 ${tb.vlan1.gw}->${sta1.tid.ip}" -i "UDP 67->68 DHCP Ack"</log-match>
+			<log-match>-c -i "(o) wifi0.2 ${tb.vlan1.gw}->${sta1.tid.ip}" -i "UDP 67->68 DHCP Ack"</log-match>
+			<log-match> -n -i "(i) wifi0.1" -i "68->67 DHCP Request"</log-match>
+			<log-match> -n -i "(i) wifi0.1" -i "UDP 67->68 DHCP Ack"</log-match>
+			<log-match>-i "special handling for DHCP request pkts, tx on eth0"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>clear log buff</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="10">
+			<desc>portal get ip again</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="11">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>log_ap_dhcp.log</log-file>
+			<console target="ap1" timeout="100">
+				-v "show logging buffered";exit 0
+			</console>
+			<log-match>-i "send renew_requested requested_ip ${ap1.mgt0.ip} to"</log-match>
+			<log-match>-i "DHCPC: set Ip address ${ap1.mgt0.ip}"</log-match>
+			<log-match>-i "(o) eth0 ${ap1.mgt0.ip}->${pub.dhcp.ip}" -i "DHCP Request"</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+</testcase>

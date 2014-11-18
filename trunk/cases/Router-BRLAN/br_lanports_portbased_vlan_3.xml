@@ -1,0 +1,455 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Lan port works with port based mode, designate vlan for lan ports, check lan to wan/wifi/AP forwarding [L3 route forwarding]</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		PC1 connect to switch
+		Laptop1 connect to lan port eth1
+		S1,S2 connect to AP via wifi
+		S1 with vlan 1
+		Laptop1 and S2 with same vlan 10
+		BR lan port works with port based mode
+
+		Test Procedure:
+
+		1. Configure mgt0.1 vlan 10, enable dhcp, dns server, configure ip address, ip-pool
+		Configure mgt0.1,
+		mgt0.1 ip as 10.10.10.1
+		mgt0.1 vlan as 10
+		ip-pool as 10.10.10.10-10.10.10.99
+		Configure lan ports vlan as 10
+		2. Check lan port's mode, vlan id info. Result1
+		3. Laptop1 connect to eth1, check mac-table. Result2
+		4. Check laptop1's ip address. Result3
+		Laptop1 and S2 with same vlan 10
+		5. Laptop1 send a packet to S2. Laptop1 ping S2. Result4
+		Laptop1, PC1, S1 are in different subnet
+		6. Laptop1 send a packet to PC1/S1/mgt0.1 without vlan tag. (ping) Result5
+		7. Laptop1 send a packet to PC1/S1/mgt0.1 with a vlan tag same with lan port's vlan id.
+		Result6
+		8. Laptop1 send a packet to PC1/S1/mgt0.1 with a vlan tag not same with lan port's vlan id.
+		Result7
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-${tb.name}" />
+	<property name="conn2.ssid" value="${job.sid}-${tb.name}-02" />
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+
+		<include prefix="pre.1_1" file="subs/br_close_fw.xml" obj-args="br1" />
+
+		<step no="pre1.2">
+			<desc>eth0 dhcp</desc>
+			<console target="br1.br" slow="yes">
+				-v "no interface eth0 dhcp client"
+				-v ""
+				-v "interface eth0 dhcp client"
+				-v "no interface eth0 mode wan nat"
+				-v ""
+			</console>
+		</step>
+
+		<step no="pre1.2a" delay="5" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check traffic through wan on BR</desc>
+			<log-file>pre1.2a_ping.log</log-file>
+			<console target="br1.br">
+				-v "ping ${pub.dns1.ip}"
+			</console>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="pre1.2b">
+			<desc>show interface eth0 on BR</desc>
+			<log-file>show_br1.br_eth0_2.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+		</step>
+
+		<step no="pre1.2c">
+			<desc>get eth0 ip of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_br1.br_eth0_2.log -t str
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				1. set mgt0.1 vlan as 10, enable mgt0.1 dhcp/dns server, Configure lan ports vlan as br1.vlan2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vlan2}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vlan2} attribute 2"
+				-v "interface eth3 mode bridge-access user-profile-attribute 2"
+				-v "interface eth1 mode bridge-access user-profile-attribute 2"
+				-v "int eth3 mac-learning enable"
+				-v "int eth1 mac-learning enable"
+			</telnet>
+		</step>		
+
+		<step no="2.1" delay="20">
+			<desc>
+				2. Check lan port’s mode, vlan id info.
+			</desc>
+			<log-file>step2.1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "${br1.vlan2}"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "port-based" -p 5 -i "${br1.vlan2}"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step2.2_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+${br1.vlan2}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth2[\t ]+eth4[\t ]+1" -f ${log.dir}/${log.file}</log-match>			
+		</step>
+
+		<step no="2.3">
+			<desc>
+				show interface
+			</desc>
+			<log-file>step2.3_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface"
+			</telnet>
+			<log-match>-p 1 -i "Eth1" -p 3 -i "access" -p 5 -i "-"</log-match>
+			<log-match>-p 1 -i "Eth2" -p 3 -i "access" -p 5 -i "-"</log-match>
+			<log-match>-p 1 -i "Eth3" -p 3 -i "access" -p 5 -i "-"</log-match>
+			<log-match>-p 1 -i "Eth4" -p 3 -i "access" -p 5 -i "-"</log-match>			
+		</step>
+		
+		<step no="3.1a">
+			<desc>
+				Laptop1 connect to lan port eth2
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.1b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+		
+		<step no="3.1c">
+			<desc>set br1.vpc1.tif.mac var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -m -w
+			</setvar>
+		</step>
+
+		<step no="3.2a">
+			<desc>
+				3. Laptop1 (AP1) connect to eth3, check mac-table.
+			</desc>
+			<log-file>step3.2a_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		
+		<step no="3.2b">
+			<desc>
+				get br1.ap1 mgt0 mac address
+			</desc>
+			<setvar name="br1.ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "MAC addr=([\da-fA-F:]+)" -f ${log.dir}/step3.2a_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+		
+		<step no="3.2c">
+			<desc>
+				add fe debug for mgt0 dhcp process 
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "_ff id 1 dhcp-client ${br1.ap1.mgt0.mac}"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe vlan"
+			</console>
+		</step>
+			
+		<step no="3.3a">
+			<desc>
+				AP1 as Laptop1 connect to lan port eth3
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vlan2}"
+				-v "interface mgt0 native-vlan ${br1.vlan2}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+			</console>
+		</step>
+
+		<step no="3.3a_1">
+			<desc>	
+				show log buffer to check mgt0 dhcp process
+			</desc>
+			<log-file>step3.3a_1_show_logbuff.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show logging buffered"
+			</console>
+		</step>
+		
+		<step no="3.3b" delay="20">
+			<desc>
+				show AP1 mgt0
+			</desc>
+			<log-file>step3.3b_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="3.3c">
+			<desc>get ip address of ap1</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step3.3b_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.3d">
+		<if>"${br.platform}" == "br100"</if>
+			<desc>
+				check lan mac-table.
+			</desc>
+			<log-file>step3.3d_show_lan_mactable.log</log-file>			 
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan mac-table"
+			</telnet>
+			<log-match>-c -i "eth3\s*${br1.ap1.mgt0.mac}"</log-match>
+			<log-match>-c -i "eth1\s*${br1.vpc1.tif.mac}"</log-match>			
+		</step>
+		
+		<step no="3.3e">
+		<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				check lan mac-table.
+			</desc>
+			<log-file>step3.3e_show_lan_mactable.log</log-file>			
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan mac-table"
+			</telnet>
+			<log-match>-c -i "eth3\s*${br1.ap1.mgt0.mac}\s*${br1.vlan2}"</log-match>
+			<log-match>-c -i "eth1\s*${br1.vpc1.tif.mac}\s*${br1.vlan2}"</log-match>			
+		</step>		
+
+		<step no="get_prefix">
+			<multi-setvar>
+				echo "br1.mgt0.1.prefix=$(echo ${br1.br.mgt0.1.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.mgt0.prefix=$(echo ${br1.br.mgt0.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.ap1.prefix=$(echo ${br1.ap1.mgt0.ip} | cut -d. -f1,2,3)"
+				echo "br1.vpc1.prefix=$(echo ${br1.vpc1.tif.ip} | cut -d. -f1,2,3)"				
+			</multi-setvar>
+		</step>
+
+		<step no="4.1a">
+			<desc>
+				4. Check laptop1’s ip address.
+			</desc>
+			<script>
+				if [ "${br1.ap1.prefix}" == "${br1.mgt0.1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>		
+
+		<step no="4.1b">
+			<desc>
+				add route for mpc to the subnet inside BR
+			</desc>
+			<log-file>step4.1d_ip_prefix.log</log-file>
+			<script>
+				route add -net ${br1.mgt0.1.prefix}.0 netmask ${br.route.netmask} gw ${br1.br.wan.ip} dev ${mpc.tif.name} ; \
+				route add -net ${br1.mgt0.prefix}.0 netmask ${br.route.netmask} gw ${br1.br.wan.ip} dev ${mpc.tif.name} > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="5">
+			<desc>
+				5. Laptop1 send a packet to PC1/S1/mgt0.1 without vlan tag. (ping) Result5
+			</desc>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-laptop1 ping pc1 without vlan tag successfully, pc1 can receive the packet without vlan tag.
+			</desc>
+			<log-file>step5.1_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${mpc.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${mpc.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				---Laptop1 ping mgt0.1 successfully, mgt0.1 can receive the packet without vlan tag
+			</desc>
+			<log-file>step6.3_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.br.mgt0.1.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="5.3">
+			<desc>
+				---Laptop1 ping vpc1 successfully, vpc1 can receive the packet without vlan tag
+			</desc>
+			<log-file>step5.3_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				8. Laptop1 send a packet to PC1/S1/mgt0.1 with a vlan tag not same with lan port’s vlan id. Result7
+				BR will drop the packet by switch chip, since the packet vlan tag is not same with port’s vlan
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "no int mgt0 native-vlan"
+				-v "int mgt0 native-vlan ${br1.vlan3}"
+			</console>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				laptop1 ping PC, BR will drop the packet by switch chip
+			</desc>
+			<log-file>step6.1_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${mpc.tif.ip}"
+			</console>
+			<log-match>-n -c -i "from ${mpc.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				laptop1 ping br1.br.mgt0.1, BR will drop the packet by switch chip
+			</desc>
+			<log-file>step6.2_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.br.mgt0.1.ip}"
+			</console>
+			<log-match>-n -c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="6.3">
+			<desc>
+				---Laptop1 ping vpc1 unsuccessfully, vpc1 can't receive the packet without vlan tag
+			</desc>
+			<log-file>step6.3_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-n -c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>	
+
+		<step no="7">
+			<desc>
+				7. Laptop1 send a packet to PC1/S1/mgt0.1 with a vlan tag same with lan port’s vlan id. Result6
+				PC1 can receive the packet without vlan tag successfully
+				Mgt0.1 can receive the packet without vlan tag successfully
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "int mgt0 native-vlan ${br1.vlan2}"
+			</console>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				br1.ap1 send packet to PC with vlan tag same with lan port's vlan id
+			</desc>
+			<log-file>step7.1_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${mpc.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${mpc.tif.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="7.2">
+			<desc>
+				br1.ap1 send packet to br1.mgt0.1 with vlan tag same with lan port's vlan id
+			</desc>
+			<log-file>step7.2_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.br.mgt0.1.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="7.3">
+			<desc>
+				---Laptop1 ping vpc1 successfully, vpc1 can receive the packet without vlan tag
+			</desc>
+			<log-file>step7.3_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>	
+
+		<include prefix="8" file="subs/br_open_fw.xml" obj-args="br1" />
+
+		<step no="9">
+			<desc>
+				del route for mpc to the subnet inside BR
+			</desc>
+			<script>
+				route del -net ${br1.mgt0.1.prefix}.0 netmask ${br.route.netmask} gw ${br1.br.wan.ip} dev ${mpc.tif.name}
+				route del -net ${br1.mgt0.prefix}.0 netmask ${br.route.netmask} gw ${br1.br.wan.ip} dev ${mpc.tif.name}
+			</script>
+		</step>
+	</stage>
+
+	<failed-process>
+		<stage>
+			<include prefix="0.1" file="subs/br_open_fw.xml" obj-args="br1" />
+			<step no="0.2">
+				<desc>
+					del route for mpc to the subnet inside BR
+				</desc>
+				<script>
+					route del -net ${br1.mgt0.1.prefix}.0 netmask ${br.route.netmask} gw ${br1.br.wan.ip} dev ${mpc.tif.name}
+					route del -net ${br1.mgt0.prefix}.0 netmask ${br.route.netmask} gw ${br1.br.wan.ip} dev ${mpc.tif.name}
+				</script>
+			</step>
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+
+</testcase>

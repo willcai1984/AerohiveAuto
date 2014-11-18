@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check static route set on super-net (HOS only)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		BR:
+		Mgt0.x : 10.2.3.1/24
+		Network1: 192.168.40.0/24
+		L3sw(connecting to br of vpn client):
+		Ip: 10.2.3.11/24, gateway: 10.2.3.1/24
+		Network2: 192.168.20.0/25 Network3: 192.168.20.129/25
+
+		Test Procedure:
+		1. Network1 ping network2 to verify
+		2. Network1 ping network3 to verify
+		3. Set static routing to super-net of network2 and network3
+		CLI: ip route net 192.168.20.0 255.255.255.0 gateway 10.2.3.11
+		4. Network1 ping network2 to verify
+		5. Network1 ping network3 to verify
+		6. Delete static route on br and then network1 ping network2 to verify
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+	
+
+	<property name="route.netmask" value="255.255.255.0" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				config br1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask ${route.netmask}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.4 vlan ${br1.vpc4.vlan}"
+				-v "interface mgt0.4 ip ${br1.br.mgt0.4.ip}/${br.lan.netmask}"
+				-v "interface mgt0.4 dhcp-server ip-pool ${br1.br.mgt0.4.ip_pool_start} ${br1.br.mgt0.4.ip_pool_end}"
+				-v "interface mgt0.4 dhcp-server options netmask ${route.netmask}"
+				-v "interface mgt0.4 dhcp-server options default-gateway ${br1.br.mgt0.4.ip}"
+				-v "interface mgt0.4 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.4 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				config br1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "user-profile lan4 qos-policy def-user-qos vlan-id ${br1.vpc4.vlan} attribute 4"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "interface eth4 mode bridge-access user-profile-attribute 4"
+				-v "interface eth4 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="1.1" delay="5">
+			<desc>
+				-set interface down,then up
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step1.2_ifconfig_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+			        -v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.2a">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				-set interface down,then up
+			</desc>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ifconfig ${br1.vpc4.tif.name} down"
+				-v "ifconfig ${br1.vpc4.tif.name} up"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step2.1_ifconfig_vpc4.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+			        -v "dhclient ${br1.vpc4.tif.name} -r"
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.1a">
+			<desc>set br1.vpc4.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				Open debug switch
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 2 src-ip ${br1.vpc1.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 3 protocol 47 bidirectional"
+				-v "_ff id 4 protocol 50 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				vpc1 ping vpc4,ping is failed
+			</desc>
+			<log-file>step5_pc1_ping_pc4.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ping ${br1.vpc4.trip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.vpc4.trip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="6" delay="20">
+			<desc>
+				ping pkt will be out from wan interface
+			</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "(u) mgt0.1 ${br1.vpc1.tif.ip}->${br1.vpc4.trip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) eth1 ${br1.vpc1.tif.ip}->${br1.vpc4.trip}" -i "icmp-echo-req"</log-match>
+			<no-error-check />
+			<failed>next</failed>
+		</step>
+
+		<step no="7">
+			<multi-setvar>
+				echo "br1.vpc4.trip.net=$(echo ${br1.vpc4.trip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				add  static route to sup-network of vpc4
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+				-v "ip route net ${br1.vpc4.trip.net} 255.255.0.0 gateway ${br1.vpc4.tif.ip}"
+			</telnet>
+		</step>
+
+		<step no="8" delay="10" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				vpc1 ping vpc4,ping is sceessful
+			</desc>
+			<log-file>step8_pc1_ping_pc4_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ping ${br1.vpc4.trip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc4.trip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="8.1" delay="20">
+			<desc>
+				ping pkt will be sent to mgt0.x and then out from ethx interface connected to AP
+			</desc>
+			<log-file>step8.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "(o) eth4 ${br1.vpc1.tif.ip}->${br1.vpc4.trip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) mgt0.4 ${br1.vpc1.tif.ip}->${br1.vpc4.trip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) eth1 ${br1.vpc1.tif.ip}->${br1.vpc4.trip}" -i "icmp-echo-req"</log-match>
+			<no-error-check />
+			<failed>next</failed>
+		</step>
+
+		<step no="9">
+			<desc>
+				Delete static route on BR
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no ip route net ${br1.vpc4.trip.net} 255.255.0.0 gateway ${br1.vpc4.tif.ip}"
+			</telnet>
+		</step>
+
+		<step no="9.1" delay="30" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				vpc1 ping vpc4,ping is failed
+			</desc>
+			<log-file>step9.1_pc1_ping_pc4_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ping ${br1.vpc4.trip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.vpc4.trip}: " -i "ttl="</log-match>
+		</step>
+	</stage>
+</testcase>

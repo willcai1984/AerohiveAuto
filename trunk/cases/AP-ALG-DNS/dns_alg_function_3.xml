@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>The dns packets can get to DNS alg(IP-policy permit)</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+		-Configure on AP
+		“security-object cw-330-1”
+		“security-object cw-330-1 security protocol-suite wpa-auto-psk ascii-key 12345678”
+		“security-object cw-330-1 default-user-profile-attr 1”
+		“ssid cw-330-1”
+		“ssid cw-330-1 security-object cw-330-1”
+		“interface wifi0 ssid cw-330-1”
+		“interface wifi1 ssid cw-330-1”
+		“user-profile cw-330-1 qos-policy def-user-qos vlan-id 1 attribute 1”
+		“ip-policy fw”
+		“ip-policy fw id 1 service dns action permit”
+		“user-profile cw-330-1 security ip-policy from-access fw to-access fw”
+		“alg dns enable”
+
+		Test Procedure:
+		1.Open debug switch
+		“_debug fed alg_dns_pkt”
+		2.Laptop send a dns packet(such as ping www.baidu.com)
+		3.Remove all ip-policy
+		“no user-profile cw-330-1 security ip-policy from-access”
+		“no user-profile cw-330-1 security ip-policy to-access”
+		“no ip-policy fw”
+		4.Laptop send a dns packet(such as ping www.baidu.com)
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Configure AP1 via console
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "alg dns enable"
+				-v "save config"
+			</console>
+		</step>
+
+
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="2.3">
+			<desc>
+				-Check nameserver
+			</desc>
+			<log-file>step2.3_nameserver.log</log-file>
+			<ssh target="sta1">
+				-v "cat /etc/resolv.conf"
+				-v "route -n"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				-Open alg debug switch and clear log buffer
+			</desc>
+			<ssh target="ap1">
+				-v "_ff id 1 dst-port 53 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_debug fed alg_dns_info"
+				-v "_debug fed alg_dns_error"
+				-v "_debug fed alg_dns_pkt"
+				-v "clear log buffered"
+			</ssh>
+		</step>
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${pub.dnstest.name1}, 5" />
+
+		<step no="5">
+			<desc>
+				-Check log if the DNS packets get to ALG
+			</desc>
+			<log-file>step5_station_ping_hztb_ip1_AP_log.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p ".*\[fed_alg_dns_pkt\]: Received packet.*src ip:${sta1.tif.ip}.*dst ip:${sta1.dns.ip}.*dst port:53, protocol:17" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+	</stage>
+
+</testcase>
+	

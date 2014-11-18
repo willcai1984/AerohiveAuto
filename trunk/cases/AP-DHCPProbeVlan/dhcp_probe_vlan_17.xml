@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>While DHCP probe is doing, set DHCP probe again, ensure suggest error message</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		No
+
+		Test Procedure:
+		1. Login AP1 or AP2
+		2. Run interface mgt0 dhcp probe
+		3. Login AP1 or AP2 in new window via telnet or ssh
+		4. While doing dhcp probe, run another dhcp probe
+		5. Check if suggest error
+		Expectant result
+		Will suggest "There is another dhcp-probe on-going.
+		Waiting...
+		ERROR: Invalid parameter(s)"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<property name="vlan1" value="1" />
+	<property name="vlan2" value="20" />
+	<property name="vlan3" value="30" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				check mgt0 ip
+			</desc>
+			<log-file>step1_check_mgt0_ip.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				get mgt0 ip
+			</desc>
+			<setvar name="ap1_ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step1_check_mgt0_ip.log -t str
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				Run interface mgt0 dhcp probe
+			</desc>
+			<log-file>step3_dhcp_probe.log</log-file>
+			<console target="ap1" slow="yes">
+				-v "interface mgt0 dhcp-probe vlan-range ${vlan1} ${vlan3}"
+			</console>
+			<log-match>-c -e "DHCP server probing"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				set ap mgt0 ip
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				echo ${ap1_ip}
+			</setvar>
+		</step>
+
+		<step no="5" delay="30">
+			<desc>
+				Check if suggest error
+				Expectant result
+			</desc>
+			<log-file>step5_dhcp_probe.log</log-file>
+			<telnet target="ap1">
+				-v "interface mgt0 dhcp-probe vlan-range ${vlan1} ${vlan2}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Error:\s+There\s+is\s+another\s+dhcp-probe\s+VLAN\s+\[${vlan1}\s+-\s+${vlan3}\]\s+on-going.\s+Waiting..." -f ${log.dir}/${log.file}</log-match>
+			<log-match>-c -e "ERROR: Invalid parameter(s)"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6" delay="60" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Check dhcp probe results
+			</desc>
+			<log-file>step6_check_dhcp_probe_results_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0 dhcp-probe results-summary"
+			</console>
+			<log-match>-c -e "Status: complete"</log-match>
+			<log-match>-c -e "Failed for VLANs:"</log-match>
+		</step>
+	</stage>
+</testcase>

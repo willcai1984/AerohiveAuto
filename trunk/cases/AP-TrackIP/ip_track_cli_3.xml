@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Normal user configure ip track parameters</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP1 IP_addr is IP1, AP2 IP_addr is IP2
+		-Configure AP2
+		"track group1 default-gateway"
+		"track group1 action start-mesh-failover"
+		"track group1 interval 20"
+		"track group1 timeout 5"
+		"track group1 retry 3"
+		"track group1 multi-dst-logic and"
+
+		Test Procedure:
+		1)show ip track state on AP2
+		" show track group1"
+		2)show ip track config
+		"show running-config"
+		3)show ip track logs(eth0 eth1 shutdown)
+		"interface eth0 shutdown"
+		"interface eth1 shutdown"
+		"_debug monitor all"
+		"debug console"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Configure AP1
+				"track group1 default-gateway"
+				"track group1 action start-mesh-failover"
+				"track group1 interval 20"
+				"track group1 timeout 5"
+				"track group1 retry 3"
+				"track group1 multi-dst-logic and"
+			</desc>
+			<ssh target="ap1">
+				-v "hive test"
+				-v "interface mgt0 hive test"
+				-v "track group1 default-gateway"
+				-v "track group1 action start-mesh-failover"
+				-v "track group1 interval 20"
+				-v "track group1 timeout 5"
+				-v "track group1 retry 3"
+				-v "track group1 multi-dst-logic and"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				1)show ip track state on AP2
+				" show track group1"
+			</desc>
+			<log-file>step2_show_track.log</log-file>
+			<ssh target="ap1">
+				-v "show track group1"
+			</ssh>
+			<log-match>-e "Track Group Name: *group1"</log-match>
+			<log-match>-e "Multi-group-logic: *AND"</log-match>
+			<log-match>-e "Destination Address: Default-Gateway"</log-match>
+			<log-match>-e "Group Interval: 20 seconds"</log-match>
+			<!-- <log-match>-e "Group Timeout: *5 seconds"</log-match> -->
+			<log-match>-e "Group Retry: *3"</log-match>
+			<log-match>-e "Group Action: start-mesh-failover "</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				2)show ip track config
+				"show running-config"
+			</desc>
+			<log-file>step3_show_running_config.log</log-file>
+			<ssh target="ap1">
+				-v "show running-config"
+			</ssh>
+			<log-match>-e "track group1 default-gateway"</log-match>
+			<log-match>-e "track group1 interval 20"</log-match>
+			<!-- <log-match>-e "track group1 timeout 5"</log-match> -->
+			<log-match>-e "track group1 retry 3"</log-match>
+			<log-match>-e "track group1 action start-mesh-failover"</log-match>
+			<log-match>-e "track group1 multi-dst-logic and"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				open debug and clear log all
+				"_debug monitor all"
+				"debug console"
+			</desc>
+			<ssh target="ap1">
+				-v "_debug monitor all"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				3)show ip track logs(eth0 eth1 shutdown)
+				"interface eth0 shutdown"
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				3)show ip track logs(eth0 eth1 shutdown)
+				"interface eth1 shutdown"
+			</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="6" delay="60">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="500">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/3(wire)"</log-match>
+			<log-match>-e "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/2(wire)"</log-match>
+			<log-match>-e "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1(all_IFs)/1(wire)"</log-match>
+			<!-- <log-match>-e "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 4"</log-match> -->
+			<!-- <log-match loop-values="1,2,3,4">-e "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: ${loop.v}"</log-match> -->
+		</step>
+
+		<step no="6.1">
+			<desc>Get the second number of times</desc>
+			<setvar name="second.number.times1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 1" -t str -g-1
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>Get the first number of times</desc>
+			<setvar name="first.number.times1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 1" -t str -g-2
+			</setvar>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				check if the interval is 20s.
+			</desc>
+			<log-file>step6.3_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${second.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple())) == 20.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -e "true"</log-match>
+		</step>
+
+		<!-- <step no="7"> -->
+		<!-- <desc>Get the second number of times</desc> -->
+		<!-- <setvar name="first.number.times4"> -->
+		<!-- ${bin.dir}/getbyrexp.py -f ${log.dir}/step6_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 4" -t str -g-1 -->
+		<!-- </setvar> -->
+		<!-- </step> -->
+
+		<!-- <step no="7.1"> -->
+		<!-- <desc>Get the second number of times</desc> -->
+		<!-- <setvar name="first.number.times3"> -->
+		<!-- ${bin.dir}/getbyrexp.py -f ${log.dir}/step6_show_logging_buffered.log -b "group\(group1\) is ready for sending packet, number of times: 4" -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 3" -t str -g-1 -->
+		<!-- </setvar> -->
+		<!-- </step> -->
+
+		<!-- <step no="7.2"> -->
+		<!-- <desc>Get the second number of times</desc> -->
+		<!-- <setvar name="first.number.times2"> -->
+		<!-- ${bin.dir}/getbyrexp.py -f ${log.dir}/step6_show_logging_buffered.log -b "group\(group1\) is ready for sending packet, number of times: 4" -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 2" -t str -g-1 -->
+		<!-- </setvar> -->
+		<!-- </step> -->
+
+		<!-- <step no="7.3"> -->
+		<!-- <desc>Get the second number of times</desc> -->
+		<!-- <setvar name="first.number.times1.second"> -->
+		<!-- ${bin.dir}/getbyrexp.py -f ${log.dir}/step6_show_logging_buffered.log -b "group\(group1\) is ready for sending packet, number of times: 4" -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*group\(group1\) is ready for sending packet, number of times: 1" -t str -g-1 -->
+		<!-- </setvar> -->
+		<!-- </step> -->
+
+		<!-- <step no="8"> -->
+		<!-- <desc> -->
+		<!-- check if the timeout is 5s. -->
+		<!-- </desc> -->
+		<!-- <log-file>step8_check_result.log</log-file> -->
+		<!-- <script> -->
+		<!-- ${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.number.times4}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.number.times3}', '%Y-%m-%d %H:%M:%S').timetuple())) == 5.0" &gt; ${log.dir}/${log.file} -->
+		<!-- </script> -->
+		<!-- <log-match>-c -e "true"</log-match> -->
+		<!-- </step> -->
+
+		<!-- <step no="8.1"> -->
+		<!-- <desc> -->
+		<!-- check if the timeout is 5s. -->
+		<!-- </desc> -->
+		<!-- <log-file>step8.1_check_result.log</log-file> -->
+		<!-- <script> -->
+		<!-- ${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.number.times3}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple())) == 5.0" &gt; ${log.dir}/${log.file} -->
+		<!-- </script> -->
+		<!-- <log-match>-c -e "true"</log-match> -->
+		<!-- </step> -->
+
+		<!-- <step no="8.2"> -->
+		<!-- <desc> -->
+		<!-- check if the timeout is 5s. -->
+		<!-- </desc> -->
+		<!-- <log-file>step8.2_check_result.log</log-file> -->
+		<!-- <script> -->
+		<!-- ${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.number.times1.second}', '%Y-%m-%d %H:%M:%S').timetuple())) == 5.0" &gt; ${log.dir}/${log.file} -->
+		<!-- </script> -->
+		<!-- <log-match>-c -e "true"</log-match> -->
+		<!-- </step> -->
+	</stage>
+</testcase>

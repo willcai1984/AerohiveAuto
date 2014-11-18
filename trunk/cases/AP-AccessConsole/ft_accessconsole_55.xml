@@ -1,0 +1,115 @@
+<testcase>
+	<brief>The fifty-five test case of Access Console</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition
+		DHCP server is disabled(In this case, for other poople need use DHCP server, so could not disable DHCP server, I only shutdown port that AP connect to Switch)
+		After reset config, AP with default factory setting and cann’t obtain ip address from DHCP server, access console is enabled and with running state
+		Test procedure
+		Set a static ip address to interface mgt0, verify access console state
+		Expect result
+		Access console recover and with monitoring state
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap1.eth1.existed}" == "true"</if>
+
+		<include prefix="modify.eth1.vlan" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth1.swport}, ${tb.vlan7}, ${tb.vlan7}" />
+
+	</stage>
+
+	<stage>
+
+		<include prefix="modify.eth0.vlan" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth0.swport}, ${tb.vlan7}, ${tb.vlan7}" />
+
+		<step no="0" delay="30">
+			<desc>Reset config of AP1</desc>
+			<console target="ap1" timeout="80">
+				-v "reset config"
+			</console>
+		</step>
+
+    <include prefix="clear.ap1" file="subs/ap_clear_cli.xml" obj-args="ap1" />
+
+		<step no="1">
+			<desc>Remove the current ~/.ssh/known_hosts of Master PC to avoid the denial access to the APs</desc>
+			<script>
+				rm -f ~/.ssh/known_hosts
+			</script>
+		</step>
+
+		<step no="2" delay="30">
+			<desc>Check running-config on AP1</desc>
+			<log-file>step2_show_running-config.log</log-file>
+			<console target="ap1" timeout="80">
+				-v "show running-config"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>Show interface mgt0 dhcp client on AP1</desc>
+			<log-file>step3_show_interface.log</log-file>
+			<console target="ap1" timeout="80">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-i "Get IP address 0.0.0.0 from the server"</log-match>
+			<log-match>-c -i "DHCP client: *Enabled"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>Check access console state on AP1</desc>
+			<log-file>step4_show_access_console.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show access-console _"
+			</console>
+			<log-match>-c -i "Current state: *running"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>Get access console SSID of AP1</desc>
+			<setvar name="conn1.ssid">
+				cat ${log.dir}/step4_show_access_console.log | awk -F ':' '/Selected SSID/{split($2,a," "); print a[1]}'
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>Show interface wifi0.1 on AP1</desc>
+			<log-file>step6_show_interface.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi0.1"
+			</console>
+			<log-match>-c -i "SSID=\\\&quot;${conn1.ssid}\\\&quot;"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>Set a static ip address to AP1</desc>
+			<console target="ap1" timeout="80">
+				-v "interface mgt0 ip ${ap1.mgt0.ip}/32"
+			</console>
+		</step>
+
+		<step no="8" delay="60">
+			<desc>Check access console state on AP1</desc>
+			<log-file>step8_show_access_console.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show access-console _"
+			</console>
+			<log-match>-c -i "Current state: *monitoring"</log-match>
+		</step>
+	</stage> 
+
+	<post-process>
+	 <stage>
+	  <if>"${ap1.eth1.existed}" == "true"</if>
+	 	<include prefix="recover.eth1.vlan" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth1.swport}, ${tb.nvlan}, ${tb.vlans}" />
+	 </stage>	
+	 <stage>
+		<include prefix="recover.eth0.vlan" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth0.swport}, ${tb.nvlan}, ${tb.vlans}" />
+   </stage>	
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

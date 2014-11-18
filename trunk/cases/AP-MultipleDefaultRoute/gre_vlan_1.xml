@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Egressing pkt match the vlan (user-profile vlan) in eth1 in GRE Terminator then it is send to eth1</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		1. Set user-profile vlan in eth1
+		2. Egressing pkt match the vlan(user-profile vlan) in eth1 in GRE
+		Terminator then it is send to eth1 result 1
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="ssid.pwd" value="aerohive" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-aes-psk" />
+	<property name="conn1.psk" value="aerohive" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Configure ap1 and ap2 in the different subnet but same hive
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				close dhcp client
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				open dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.3" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step1.3_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.4">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.3_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Configure ap2 as MP, configure them in the same hive and same ssid
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="2.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step2.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="2.2">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step2.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-Configure mobility-policy INXP gre-tunnel to Portal2 in MP
+			</desc>
+			<telnet target="ap2">
+				-v "security-object fwtest"
+				-v "security-object fwtest default-user-profile-attr 2"
+				-v "security-object fwtest security protocol-suite wpa-auto-psk ascii-key aerohive"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object fwtest"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "mobility-policy ttt inxp gre-tunnel to ${ap1.mgt0.ip} password 123"
+				-v "user-profile fw qos-policy def-user-qos vlan-id ${tb.vlan3} mobility-policy ttt attribute 2"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				-Configure mobility-policy INXP gre-tunnel from MP in Portal2
+			</desc>
+			<telnet target="ap1">
+				-v "security-object fwtest"
+				-v "security-object fwtest default-user-profile-attr 2"
+				-v "security-object fwtest security protocol-suite wpa-auto-psk ascii-key aerohive"
+				-v "ssid ${ssid.name}_1"
+				-v "ssid ${ssid.name}_1 security-object fwtest"
+				-v "interface wifi0 ssid ${ssid.name}_1"
+				-v "mobility-policy ttt inxp gre-tunnel from ${ap2.mgt0.ip}/32 password 123"
+				-v "user-profile fw qos-policy def-user-qos vlan-id ${tb.vlan3} mobility-policy ttt attribute 2"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<include prefix="connect_wifi" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap2" />
+
+		<step no="4.1">
+			<desc>
+				-check tunnel state in MP
+			</desc>
+			<log-file>show_amrp_tunnel_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show amrp tunnel"
+			</telnet>
+			<log-match>-c "${ap1.mgt0.ip}" -i "IA"</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				-check route state in MP
+			</desc>
+			<log-file>show_route_tunnel_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-i "LTO"</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				-check tunnel state in portal2
+			</desc>
+			<log-file>show_amrp_tunnel_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp tunnel"
+			</telnet>
+			<log-match>-c "${ap2.mgt0.ip}" -i "IB"</log-match>
+		</step>
+
+		<step no="open.debug" delay="60">
+			<desc>
+				"_ff id 1 src-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log all"
+			</desc>
+			<telnet target="ap2">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug wifi-driver wifi0.1 extend vlan"
+				-v "clear log all"
+				-v "interface eth1 manage all"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				1. Set user-profile vlan in eth1
+			</desc>
+			<telnet target="ap2">
+				-v "forwarding-engine l2-default-route interface eth1 vlan ${tb.vlan1}"
+			</telnet>
+		</step>
+
+		<include prefix="ping" file="subs/sta_ping.xml" args="sta1, ${tb.vlan2.gw}, 5" />
+
+		<step no="6">
+			<desc>
+				Egressing pkt match the vlan(user-profile vlan) in eth1 in GRE
+				Terminator then it is send to eth1 result 1
+			</desc>
+			<log-file>sta_ping_gw.log</log-file>
+			<telnet target="ap2" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-n -i "eth0 ${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "QoS: pkt forwarded \(eth1\)" -ps p "\(o\) eth1 ${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

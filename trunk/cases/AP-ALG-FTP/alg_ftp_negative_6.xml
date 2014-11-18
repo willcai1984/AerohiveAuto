@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Process FED is killed when the data is transmitting</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP and assigned an ip address
+		- Configure ip-policy and bind it to the userprofile of the laptop on AP
+		"ip-policy fw"
+		"ip-policy fw from &lt;LaptopIPaddr&gt; service ftp action permit"
+		"ip-policy fw service dhcp-server action permit"
+		"ip-policy fw service dhcp-client action permit"
+		"user-profile &lt;AP-profile&gt; security ip-policy from-acces fw to-access fw"
+
+		Test Procedure:
+		1.Enable ALG-FTP
+		"alg ftp enable"
+		2.Laptop connect to server and download files(PORT/PASV/EPRT/EPSV)
+		3.Look up ip-sessions
+		"show forwarding-engine ip-sessions"
+		4. Enter shell mode and kill the process FED
+		"_shell"
+		"ps"(to show the FED's ID)
+		"kill &lt;process FED's ID&gt;"
+		5. Look up ip-sessions and download state
+		"show forwarding-engine ip-sessions"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="ftp_test_file_local_dir" value="/tmp" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Laptop has been associated with AP and assigned an ip address
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${ap.def.passwd}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "ip-policy fw"
+				-v "ip-policy fw service ftp action permit"
+				-v "ip-policy fw service dhcp-server action permit"
+				-v "ip-policy fw service dhcp-client action permit"
+				-v "user-profile ${ssid.name} security ip-policy from-access fw to-access fw"
+				-v "alg ftp enable"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi1"
+			</multi-setvar>
+		</step>
+
+		<include prefix="1.3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				open debug
+			</desc>
+			<ssh target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</ssh>
+		</step>
+
+
+		<step no="4.1">
+			<desc>
+				-Enter shell mode and kill the process FED
+				"_shell"
+				"ps"(to show the FED's ID)
+				"kill &lt;process FED's ID&gt;"
+			</desc>
+			<log-file>step4.1_check_shell.log</log-file>
+			<ssh target="ap1" prompt="AH.*#|$" slow="true" timeout="240">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v ""
+				-v ""
+				-v "ps"
+				-v "killall fed"
+				-v "ps"
+				-v "exit"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p1 "fed" -ne -e "killall fed" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-nb -b "killall fed" -ps p0 "fed" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.2" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				fed check
+			</desc>
+			<log-file>step4.2_fed_chk_${loop_check.idx}.log</log-file>
+			<ssh target="ap1" prompt="AH.*#|$" slow="true" timeout="240">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v ""
+				-v "ps"
+				-v ""
+				-v "exit"
+			</ssh>
+			<log-match>-e "/opt/ah/bin/fed"</log-match>
+		</step>
+
+
+		<step no="5">
+			<desc>
+				"clear forwarding-engine ip-sessions"
+			</desc>
+			<ssh target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+			</ssh>
+		</step>
+
+		<step no="6">
+			<desc>
+				-Get file from ftp server
+			</desc>
+			<log-file>step6_curl_pid.log</log-file>
+			<ssh target="sta1">
+				-v "nohup curl -u ${tb.ftp.user}:${tb.ftp.passwd} ftp://${tb.ftp}/${tb.ftp.file3_small} -o ${ftp_test_file_local_dir}/${tb.ftp.file3_small} --limit-rate 10k --connect-timeout 200 &gt; ${ftp_test_file_local_dir}/step6_stdout.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="6.0">
+			<desc>
+				-Get pid of "curl get""
+			</desc>
+			<setvar name="alg.curl.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_curl_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				-Check "curl get" alive
+			</desc>
+			<log-file>step6.1_curl_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep curl"
+			</ssh>
+			<log-match>-i "ftp"</log-match>
+		</step>
+
+		<step no="7" delay="5">
+			<desc>
+				"show forwarding-engine ip-sessions"
+			</desc>
+			<log-file>step7_show_forwarding_ip_sessions.log</log-file>
+			<ssh target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</ssh>
+			<!-- Bug 33562 -->
+			<!-- <log-match bin="${bin.dir}/searchblocks.py">-ps p1 "${sta1.tif.ip}/\d+ -> ${tb.ftp}/21;" -f ${log.dir}/${log.file}</log-match> -->
+			<!-- <log-match bin="${bin.dir}/searchblocks.py">-ps p1 "${tb.ftp}/21 -> ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match> -->
+			<!-- <log-match bin="${bin.dir}/searchblocks.py">-ps p2 "${sta1.tif.ip}/\d+ -> ${tb.ftp}/\d+" -f ${log.dir}/${log.file}</log-match> -->
+			<!-- <log-match bin="${bin.dir}/searchblocks.py">-ps p2 "${tb.ftp}/\d+ -> ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match> -->
+		</step>
+
+		<step no="9">
+			<desc>
+				-Look up ip-sessions and download state
+				"show forwarding-engine ip-sessions"
+			</desc>
+			<log-file>step9_show_ip_sessions.log</log-file>
+			<ssh target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p1 "${sta1.tif.ip}/\d+ -> ${tb.ftp}/21;" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p1 "${tb.ftp}/21 -> ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p2 "${sta1.tif.ip}/\d+ -> ${tb.ftp}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p2 "${tb.ftp}/\d+ -> ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				show log buf
+			</desc>
+			<ssh target="ap1">
+				-v "show log buffered"
+			</ssh>
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="50" loop-interval="10">
+			<desc>
+				-Wait for process end.
+			</desc>
+			<log-file>step5.1_wait_process_stop_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep ${alg.curl.pid}"
+			</ssh>
+			<log-match>-n -e "curl"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				check "curl get" result
+			</desc>
+			<log-file>step10_check_file.log</log-file>
+			<ssh target="sta1">
+				-v "cat /tmp/step6_stdout.log"
+			</ssh>
+			<log-match>-n -i "curl" -i "Connection time-out"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "100\s+\d+\w\s+100" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				local file should exist
+			</desc>
+			<log-file>step11_local_file_chk.log</log-file>
+			<ssh target="sta1">
+				-v "ll -n ${ftp_test_file_local_dir}"
+			</ssh>
+			<log-match>-i "${tb.ftp.file3_small}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

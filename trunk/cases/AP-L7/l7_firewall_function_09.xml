@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Config FW policy permit custom module as HTTP traffic </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Laptop ping gateway of SW
+		2) Laptop ping Server
+		3) Laptop ping AP1
+		4) Configure a ip-policy and bind it to FW:
+		"application identification  cdp-index 19001 cdp-name http"
+		"application identification  cdp-index 19001 cdp-rule host=${pub.http1.ip} cdp-module http"
+		"service custom_telnet app-id 19001"
+		"ip-policy FW"
+		"ip-policy FW from &lt;service custom_telnet; action permit"
+		"user-profile FW security ip-policy form-access FW to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		5) Repeat step 1-3
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				"_ff id 1 src-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				-v "cons page 0"
+				"clear log buffered"
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.gw}, 4" />
+
+		<include prefix="3" file="subs/sta_ping.xml" args="sta1, ${mpc.tif.ip}, 4" />
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+		<include prefix="5" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step5_show_logging_buffered.log" />
+
+		<step no="6">
+			<desc>
+				Configure a ip-policy and bind it to FW:
+				"application identification  cdp-index 19001 cdp-name http"
+		        "application identification  cdp-index 19001 cdp-rule host=${pub.http1.ip} cdp-module http"
+		        "service custom_telnet app-id 19001"
+		        "ip-policy FW"
+		        "ip-policy FW from &lt;service custom_telnet; action permit"
+		        "user-profile FW security ip-policy form-access FW to-access FW"
+		        "ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+			</desc>
+			<telnet target="ap1">
+			    -v "application reporting auto"
+			    -v "application identification cdp-index 19001 cdp-name http"
+		        -v "application identification cdp-index 19001 cdp-rule host=${pub.http1.ip} cdp-module http"
+		        -v "service custom_telnet app-id 19001"
+		        -v "ip-policy ${user_id}"
+		        -v "ip-policy ${user_id} service custom_telnet action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id} to-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				Laptop accesses Server by http
+			</desc>
+			<log-file>sta_http_server.log</log-file>
+			<ssh target="sta1" prompt=".*#">
+				-v "curl -v http://${pub.http1.ip}"
+			</ssh>
+			<no-error-check />
+		</step>
+	
+		<step no="8" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step7.2_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "(?i)\(o\) eth0 ${sta1.tif.ip}-&gt;${pub.http1.ip}\(\d+\) ttl\(\d+\) TCP \d+-&gt;80" -p "(?i)\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${pub.http1.ip}\(\d+\) ttl\(\d+\) TCP \d+-&gt;80" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>	
+    </stage>
+</testcase>

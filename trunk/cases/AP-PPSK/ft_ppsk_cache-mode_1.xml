@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the cache-mode mandatory works</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config PSK-generation-method to password-only
+		-config the password-generation-method to auto
+		-config a vlan-id
+		-config a start-time, expired time
+		-config a user
+
+		Test Procedure:
+		-set the cache-mode of the user group to mandatory
+		-save config users
+		-check result 1
+		-reboot
+		-check result 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="default.psk" value="aerohive" />
+
+	<stage>
+	
+		<step no="0">
+			<desc>
+				-Config ap1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "interface mgt0 hive ${hive.name}"
+			</console>
+		</step>
+			
+		<step no="1">
+			<desc>
+				-config PSK-generation-method to password-only
+				-config the password-generation-method to auto
+				-config a vlan-id
+				-config a start-time, expired time
+				-config a user
+			</desc>
+			<telnet target="ap1">
+				-v "_debug auth info"
+				-v "clear log all"
+				-v "user-group userGroup"
+				-v "user-group userGroup password-generation-method auto"
+				-v "user-group userGroup psk-generation-method password-only"
+				-v "no user-group userGroup psk-format character-pattern special-characters"
+				-v "user-group userGroup vlan-id ${tb.vlan2}"
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key ${default.psk}"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "no security-object ppsk security private-psk self-reg-enable"
+				-v "security-object ppsk security private-psk"
+				-v "security-object ppsk security private-psk default-psk-disabled"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-set the cache-mode of the user group to mandatory
+				-save config users
+			</desc>
+			<telnet target="ap1">
+				-v "user-profile ttt vlan-id ${tb.vlan2} attribute 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "user-group userGroup cache-mode mandatory"
+				-v "user-group userGroup auto-generation index-range 1"
+				-v "save config"
+				-v "save config users"
+			</telnet>
+		</step>
+
+		<include prefix="2.1" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step2.1_show_logging_buffered.log" />
+
+		<step no="2.1a">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup0001\)" --script "m.group(1)" -s none -g-1
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				show user
+			</desc>
+			<log-file>step3_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup0001 *auto"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step3.1_show_user_group.log</log-file>
+			<telnet target="ap1">
+				-v "show user-group"
+			</telnet>
+			<log-match>-c -i "userGroup" -p 4 -i "${tb.vlan2}" -p 6 -i "AP" -p 7 -i "M"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				-reboot
+			</desc>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="GetAP1.IP.1" delay="15">
+			<desc>show mgt0's ip of mp</desc>
+			<log-file>ap1_mgt_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		<step no="GetAP1.IP.2">
+			<desc>Get mp's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ap1_mgt_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step5_show_user_group.log</log-file>
+			<telnet target="ap1">
+				-v "show user-group"
+			</telnet>
+			<log-match>-c -i "userGroup" -p 4 -i "${tb.vlan2}" -p 6 -i "AP" -p 7 -i "M"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				show user
+			</desc>
+			<log-file>step5.1_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup0001 *auto" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="pre.conn1.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn1.psk" type="special">
+				echo ${ppsk.auto.value}
+			</setvar>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="wpa-tkip-psk" />
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step7_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step7.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step7.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup0001" -i "done"</log-match>
+		</step>
+
+	</stage>
+</testcase>

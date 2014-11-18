@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Delete a config-single "to" policy(deny/permit)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Gateway of SW ping Laptop
+		2) Server ping Laptop
+		3) AP1 ping Laptop
+		4) Configure a ip-policy and bind it to FW:
+		"ip-policy FW"
+		"ip-policy FW to &lt;Laptop ip addr&gt; action [deny/permit]"
+		"user-profile FW security ip-policy to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		5) Delete the config policy
+		"no user-profile FW security ip-policy to-access"
+		"no ip-policy FW id [num]"
+		6) Repeat step 1-3.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				"_ff id 1 dst-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "cons page 0"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				server ping sta
+			</desc>
+			<log-file>step2_server_ping_sta_successfully.log</log-file>
+			<ssh host="${pub.tftp1.tip}">
+				-v "ping ${sta1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				mpc ping sta
+			</desc>
+			<log-file>step3_mpc_ping_sta.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 4 &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				AP1 ping STA
+			</desc>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<include prefix="5" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step5_show_logging_buffered.log" />
+
+		<step no="6">
+			<desc>
+				Configure a ip-policy and bind it to FW:
+				"ip-policy FW"
+				"ip-policy FW to &lt;Laptop ip addr&gt; action deny"
+				"user-profile FW security ip-policy to-access FW"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 to ${sta1.tif.ip} action deny"
+				-v "user-profile ${user_id} security ip-policy to-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				server ping sta
+			</desc>
+			<log-file>step7_server_ping_sta_unsuccessfully.log</log-file>
+			<ssh host="${pub.tftp1.tip}">
+				-v "ping ${sta1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step7.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b"\(\!\) eth0 ${pub.tftp1.tip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] group \[${user_id}\] id \[1\] \[deny\]" -e "\(i\) eth0 ${pub.tftp1.tip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7.2">
+			<desc>
+				clear forwarding-engine ip-sessions
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>
+				mpc ping sta
+			</desc>
+			<log-file>step8_mpc_ping_sta.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 4 &gt; ${log.dir}/${log.file}; exit 0
+			</script>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="8.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b"\(\!\) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] group \[${user_id}\] id \[1\] \[deny\]" -e "\(i\) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8.2">
+			<desc>
+				clear forwarding-engine ip-sessions
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="9">
+			<desc>
+				AP1 ping STA
+			</desc>
+			<log-file>step9_ap1_ping_sta</log-file>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip}"
+			</telnet>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="9.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step9.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b"\(\!\) mgt0 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] group \[${user_id}\] id \[1\] \[deny\]" -e "\(i\) mgt0 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>
+				Delete the config policy
+			</desc>
+			<telnet target="ap1">
+				-v "no user-profile ${user_id} security ip-policy to-access"
+				-v "no ip-policy ${user_id} id 1"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11">
+			<desc>
+				server ping sta
+			</desc>
+			<log-file>step11_server_ping_sta_successfully.log</log-file>
+			<ssh target="${pub.tftp1.tip}">
+				-v "ping ${sta1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				mpc ping sta
+			</desc>
+			<log-file>step12_mpc_ping_sta.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 4 &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				AP1 ping STA
+			</desc>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+	</stage>
+</testcase>

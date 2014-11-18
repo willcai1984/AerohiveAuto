@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unit Test 0106: Verify eth1 works with bridge-access mode</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		After WANAddressing_UnitTest_ConfigCLI_4
+
+		Test Procedure:
+		change eth1 mode to bridge-access, set it to reference security-object test-vlan
+		CLI commands:
+		interface eth1 mode bridge-access
+		interface eth1 security-object test-vlan
+		save config
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				set eth1 mode to access
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0 vlan ${br1.vlan1}"
+				-v "user-profile FW"
+				-v "user-profile FW vlan-id ${br1.vlan1} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				check eth0 with wan mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0"
+			</telnet>
+			<log-match>-c -i "Mode=wan"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				show interface eth0 dhcp client
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0 dhcp client"
+			</telnet>
+			<log-match>-c -i "Get IP address ${br1.br.wan.ip}"</log-match>
+			<log-match>-c -i "Router" -i "${br1.br.fw_lan.gw}"</log-match>
+			<log-match>-c -i "DNS server" -i "${pub.dns1.ip}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				show ip route
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-c -p 2 -i "${br1.br.fw_lan.gw}" -p 4 -i "UG" -p 8 -i "eth0"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				br1.vpc1 show ip address got from mgt0 dhcp client
+			</desc>
+			<log-file>step5_ifconfig_br1_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="6">
+			<multi-setvar>
+				echo "br1.vpc1.prefix=$(echo ${br1.br.mgt0.ip_pool_start} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+
+		<step no="7">
+			<desc>
+				Check PC get correct IP in the ip pool
+			</desc>
+			<log-file>step7_ifconfig_sta_eth1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr:${br1.vpc1.prefix}"</log-match>
+		</step>
+	</stage>
+</testcase>

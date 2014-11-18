@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>If 192.168.1.1 is already in use, verify IP address 192.168.x.y will be chosen, x.y is the last two bytes of MAC address.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition
+		- DHCP enable, no static IP address.
+		- The traffic between AP and DHCP server is unreachable
+
+		Test procedure
+		1: Debug FE, check DHCP ARP will sent out.
+		_ff id 1 src-mac xxxx etype 0x0806 bidirectional
+		_kdebug fe basic
+		Debug console
+		2: After 192.168.1.1 be used by one AP, check ip address of another AP
+
+		Expect result
+		If AP1 use IP 192.168.1.1, it will send a ARP, AP2 will use 192.168.x.y
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				- close dhcp client
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="2" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				1: Check interface mgt0 IP (show interface mgt0 )
+			</desc>
+			<log-file>step2_show_interface_mgt0_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-c -i "IP addr=192.168."</log-match>
+			<log-match>-n -c -i "IP addr=192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				- DHCP enable, no static IP address.
+				- The traffic between AP and DHCP server is unreachable
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 vlan ${tb.vlan6}"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show ap2's interface mgt0 info
+			</desc>
+			<log-file>show_ap2_interface_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				get ap2's mgt0's mac address
+			</desc>
+			<setvar name="ap2.mgt0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_interface_info.log -i mgt0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				get the last two bytes of ap2's mgt0's MAC address ,and change it to ip address
+			</desc>
+			<setvar name="last.mac.change.ip">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/show_ap2_interface_info.log -p "MAC addr=\S{4}:\S{4}:(\S{2})(\S{2});" --script "'%d.%d'%(int (m.group(1),16) , int (m.group(2),16))"
+			</setvar>
+		</step>
+
+		<step no="3.3" delay="10">
+			<desc>
+				- open debug mode and clear log all
+			</desc>
+			<console target="ap2">
+				-v "_ff id 1 src-mac ${ap2.mgt0.mac} etype 0x0806 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe_arp basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="4" delay="10">
+			<desc>
+				- open dhcp client
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="5" delay="30">
+			<desc>
+				1: Check interface mgt0 IP (show interface mgt0 )
+			</desc>
+			<log-file>step5_show_interface_mgt0.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-c -i "IP addr=192.168.${last.mac.change.ip}"</log-match>
+			<log-match>-n -c -i "IP addr=192.168.1.1"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				2: Check interface mgt0 DHCP client (show interface mgt0 dhcp client)
+			</desc>
+			<log-file>step6_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-i "Get IP address 0.0.0.0 from the server"</log-match>
+			<log-match>-c -i "DHCP client: *Enabled"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				show log buffer and check log
+			</desc>
+			<log-file>step7_show_log_buffer.log</log-file>
+			<console target="ap2" timeout="900">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "ip 192.168.1.1/255.255.0.0 used by another host"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap2.mgt0.mac}-&gt;ffff:ffff:ffff arp 0.0.0.0(${ap2.mgt0.mac})-&gt;192.168.1.1(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(r) eth0" -i "-&gt;${ap2.mgt0.mac} arp 192.168.1.1" -i "-&gt;0.0.0.0(${ap2.mgt0.mac})"</log-match>
+			<log-match>-c -i "(u) mgt0" -i "-&gt;${ap2.mgt0.mac} arp 192.168.1.1" -i "-&gt;0.0.0.0(${ap2.mgt0.mac})"</log-match>
+		</step>
+	</stage>
+</testcase>

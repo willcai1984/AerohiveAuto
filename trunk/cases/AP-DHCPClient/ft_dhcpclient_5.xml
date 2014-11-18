@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that lease time got from dhcp server can work.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		- Verify IP pool, Net mask are configured in DHCP server1.
+		- DHCP server 2 is off.
+		- Either Wi-Fi interface or Ethernet interface is fully tested.
+		- Verify the route access testing is successful.
+		- Verify no IP address has been set in MPP1.
+
+		Test Procedure:
+
+		1. Get dhcp involving lease time from dhcp server.
+		2. When the lease time elapse check whether device will
+		send out request for ip address.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				- Config hive info
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				- close dhcp client
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="0.2" delay="5">
+			<desc>
+				- open dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1" delay="60">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step1_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "Get IP address 192.168.${tb.vlan1}.\d+ from the server ${pub.dhcp.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-c -i "Lease time: 600 seconds;"</log-match>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				- show interface mgt0
+			</desc>
+			<log-file>step1.1_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "IP addr=192.168.${tb.vlan1}.\d+;" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				- open debug mode and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "_ff id 1 dst-port 67 bidirectional"
+				-v "_debug dhcpd basic"
+				-v "_debug dhcpc basic"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="4" delay="550">
+			<desc>
+				show log buffer and check log
+			</desc>
+			<log-file>show_log_buffer.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "\[dhcp_basic\]: Sending DHCP renew for ${ap1.mgt0.ip} to ${pub.dhcp.ip} on mgt0"</log-match>
+			<log-match>-c -i "\[dhcp_basic\]: DHCPC state on mgt0 from 'bound' to 'renewing'"</log-match>
+			<log-match>-c -i "\[dhcp_basic\]: Entering renew state"</log-match>
+			<log-match>-c -i "\[dhcp_basic\]: Opening listen socket on 0.0.0.0:68 mgt0"</log-match>
+			<log-match>-c -i "receive a DHCP ACK"</log-match>
+			<log-match>-c -i " DHCPC: Lease of ${ap1.mgt0.ip} obtained, lease time 600"</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,272 @@
+<testcase>
+	<brief>Verify HiveOS image upgrade/downgrade for 20 timesv</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Verify HiveOS image upgrade/downgrade for 20 times
+	</description>
+
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<property name="image1" value="AP121-141-5.1r1.img.S" />
+	<property name="image2" value="ap141-HiveOS-5-1rX-Dakar-Jun-22-2012-011513064057-1209.img" />
+
+	<if>${img.prodtype}=="AP141"</if>
+	<stage>
+		
+		<step no="reset_config">
+			<desc>config the AP</desc>
+			<console target="ap1">
+				-v "reset config"
+			</console>
+		</step>
+		<step no="config_ap">
+			<desc>config the AP</desc>
+			<console target="ap1">
+				-f NandFlashEccEnhancement_Stress.cfg
+			</console>
+		</step>
+
+	</stage>
+	<stage>
+		<step no="show_m0_1">
+			<desc>show interface of mgt0 on AP</desc>
+			<log-file>${loop.v}_show_ap_int_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="get_ip_1">
+			<desc>get IP of mgt0 on AP</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/${loop.v}_show_ap_int_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		<step no="ping_1">
+			<desc>Ping to to check if ap is reachable</desc>
+			<script>
+				${bin.dir}/ping.pl -l ${log.dir} -d ${ap1.mgt0.ip}
+			</script>
+		</step>
+		<include prefix="rm1" file="subs/remove_ap_rsakey.xml" obj-args="ap1" />
+	
+		<step no="upgrade_1">
+			<desc>Upgrade AP1 with new image through console</desc>
+			<log-file>${loop.v}_image_${ap1.cons_name}_1.log</log-file>
+			<console target="ap1" timeout="120">
+				-v "save image tftp://${mpc.tif.ip}:${image1} now"
+			</console>
+			<!-- 
+			<log-match>-n -i "The kernel image currently in flash is the same as the image you are attempting to load"</log-match>
+			<log-match>-n -i "The application image currently in flash is the same as the image you are attempting to load"</log-match>
+			<log-match>-n -i "fetal error"</log-match>
+			<log-match>-n -i "wrong data CRC"</log-match>
+			-->
+			<failed>next</failed>
+			<no-error-check />
+		</step>
+	
+		<step no="check_error_1">
+			<desc>Upgrade AP1 with new image through console</desc>
+			<log-file>${loop.v}_show_log_err_1.log</log-file>
+			<console target="ap1" timeout="120">
+				-v "show logging buffered | in error"
+			</console>
+			<failed>next</failed>
+			<no-error-check />
+		</step>
+		<step no="check_version_1">
+			<desc>Get AP1 version through console</desc>
+			<log-file>${loop.v}_image_version_${ap1.cons_name}_1.log</log-file>
+			<console target="ap1">
+				-v "show version detail"
+				-v "show license" ; exit 0
+			</console>
+			<!-- <log-match>-i "Current version: *HiveOS 5.1r1"</log-match> -->
+			<!-- <log-match>-i "Build time: *Sat *Jan *12 *20:51:36 *UTC *2013"</log-match> -->
+			<!-- <log-match>-i "Build cookie: *011513064057"</log-match>-->
+			<failed>next</failed>
+		</step>
+
+		<step no="check_config_1">
+			<desc>Get AP1 version through console</desc>
+			<log-file>${loop.v}_show_run_${ap1.cons_name}_1.log</log-file>
+			<console target="ap1">
+				-v "show running-config " ; exit 0
+			</console>
+			<log-match>-i "radio profile 11ng phymode 11ng"</log-match>
+			<log-match>-i "radio profile 11ng short-guard-interval"</log-match>
+			<log-match>-i "radio profile 11na"</log-match>
+			<log-match>-i "radio profile 11na phymode 11na"</log-match>
+			<log-match>-i "radio profile 11na short-guard-interval"</log-match>
+			<log-match>-i "ssid test"</log-match>
+			<log-match>-i "interface wifi0 radio profile 11ng"</log-match>
+			<log-match>-i "interface wifi0 radio channel 1"</log-match>
+			<log-match>-i "interface wifi0 radio power 20"</log-match>
+			<log-match>-i "interface wifi1 radio profile 11na"</log-match>
+			<log-match>-i "interface wifi1 radio channel 36"</log-match>
+			<log-match>-i "interface wifi1 radio power 20"</log-match>
+			<log-match>-i "interface wifi0 ssid test"</log-match>
+			<log-match>-i "interface wifi1 ssid test"</log-match>
+			<failed>next</failed>
+		</step>
+	</stage>
+	<stage loop-values="1..20" var-name="ssid_no">
+		<step no="${loop.v}.reboot_ap">
+			<desc>show interface of mgt0 on AP</desc>
+			<log-file>${loop.v}_reboot_2.log</log-file>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+			<log-match>-n -e " fetal error "</log-match>
+			<log0-match>-n -e " wrong data CRC "</log0-match>
+		</step>
+
+		<step no="${loop.v}.check_config_1" delay="100">
+			<desc>Get AP1 version through console</desc>
+			<log-file>${loop.v}_show_run_${ap1.cons_name}_after_boot_1.log</log-file>
+			<console target="ap1">
+				-v "show running-config "
+			</console>
+			<log-match>-i "radio profile 11ng phymode 11ng"</log-match>
+			<log-match>-i "radio profile 11ng short-guard-interval"</log-match>
+			<log-match>-i "radio profile 11na"</log-match>
+			<log-match>-i "radio profile 11na phymode 11na"</log-match>
+			<log-match>-i "radio profile 11na short-guard-interval"</log-match>
+			<log-match>-i "ssid test"</log-match>
+			<log-match>-i "interface wifi0 radio profile 11ng"</log-match>
+			<log-match>-i "interface wifi0 radio channel 1"</log-match>
+			<log-match>-i "interface wifi0 radio power 20"</log-match>
+			<log-match>-i "interface wifi1 radio profile 11na"</log-match>
+			<log-match>-i "interface wifi1 radio channel 36"</log-match>
+			<log-match>-i "interface wifi1 radio power 20"</log-match>
+			<log-match>-i "interface wifi0 ssid test"</log-match>
+			<log-match>-i "interface wifi1 ssid test"</log-match>
+			<failed>next</failed>
+		</step>
+	</stage>
+	<stage>
+		
+		<!-- -start a new image 2 -->
+		<step no="show_m0_2">
+			<desc>show interface of mgt0 on AP</desc>
+			<log-file>show_ap_int_mgt0_2.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="get_ip_2">
+			<desc>get IP of mgt0 on AP</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap_int_mgt0_2.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		<step no="ping_2">
+			<desc>Ping to to check if ap is reachable</desc>
+			<script>
+				${bin.dir}/ping.pl -l ${log.dir} -d ${ap1.mgt0.ip}
+			</script>
+		</step>
+		<!-- remove key file after update official image -->
+		<include prefix="rm2" file="subs/remove_ap_rsakey.xml" obj-args="ap1" />
+	
+		<step no="upgrade_2">
+			<desc>Upgrade AP1 with new image through console</desc>
+			<log-file>image_2.log</log-file>
+			<console target="ap1" timeout="120">
+				-v "save image tftp://${mpc.tif.ip}:${image2} now"
+			</console>
+			<log-match>-n -i "The kernel image currently in flash is the same as the image you are attempting to load"</log-match>
+			<log-match>-n -i "The application image currently in flash is the same as the image you are attempting to load"</log-match>
+			<log-match>-n -i "fetal error"</log-match>
+			<log-match>-n -i "wrong data CRC"</log-match>
+			<failed>next</failed>
+			<no-error-check />
+		</step>
+		<!-- remove key file after update official image -->
+		<include prefix="ap1.op" file="subs/remove_ap_rsakey.xml" obj-args="ap1" />
+
+
+		<step no="check_error_2">
+			<desc>Upgrade AP1 with new image through console</desc>
+			<log-file>show_log_err_2.log</log-file>
+			<console target="ap1" timeout="120">
+				-v "show logging buffered | in error"
+			</console>
+			<failed>next</failed>
+			<no-error-check />
+		</step>
+		<step no="check_version_2">
+			<desc>Get AP1 version through console</desc>
+			<log-file>image_version_2.log</log-file>
+			<console target="ap1">
+				-v "show version detail"
+				-v "show license"
+			</console>
+			<!-- <log-match>-i "Current version: *HiveOS 5.1r5"</log-match> -->
+			<!-- <log-match>-i "Wed *Dec *26 *17:09:59 *UTC *2012"</log-match> -->
+			<!-- <log-match>-i "Build cookie: *071812234125"</log-match> -->
+			<failed>next</failed>
+		</step>
+
+		<step no="check_config_2">
+			<desc>Get AP1 version through console</desc>
+			<log-file>show_run_${ap1.cons_name}_2.log</log-file>
+			<console target="ap1">
+				-v "show running-config "
+			</console>
+			<log-match>-i "radio profile 11ng phymode 11ng"</log-match>
+			<log-match>-i "radio profile 11ng short-guard-interval"</log-match>
+			<log-match>-i "radio profile 11na"</log-match>
+			<log-match>-i "radio profile 11na phymode 11na"</log-match>
+			<log-match>-i "radio profile 11na short-guard-interval"</log-match>
+			<log-match>-i "ssid test"</log-match>
+			<log-match>-i "interface wifi0 radio profile 11ng"</log-match>
+			<log-match>-i "interface wifi0 radio channel 1"</log-match>
+			<log-match>-i "interface wifi0 radio power 20"</log-match>
+			<log-match>-i "interface wifi1 radio profile 11na"</log-match>
+			<log-match>-i "interface wifi1 radio channel 36"</log-match>
+			<log-match>-i "interface wifi1 radio power 20"</log-match>
+			<log-match>-i "interface wifi0 ssid test"</log-match>
+			<log-match>-i "interface wifi1 ssid test"</log-match>
+			<failed>next</failed>
+		</step>
+	</stage>
+	<stage loop-values="1..20" var-name="ssid_no">
+		<step no="${loop.v}.reboot_ap">
+			<desc>show interface of mgt0 on AP</desc>
+			<log-file>${loop.v}_reboot_2.log</log-file>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+			<log-match>-n -e " fetal error "</log-match>
+			<log0-match>-n -e " wrong data CRC "</log0-match>
+		</step>
+
+		<step no="${loop.v}.check_config_1" delay="100">
+			<desc>Get AP1 version through console</desc>
+			<log-file>${loop.v}_show_run_${ap1.cons_name}_after_boot_2.log</log-file>
+			<console target="ap1">
+				-v "show running-config "
+			</console>
+			<log-match>-i "radio profile 11ng phymode 11ng"</log-match>
+			<log-match>-i "radio profile 11ng short-guard-interval"</log-match>
+			<log-match>-i "radio profile 11na"</log-match>
+			<log-match>-i "radio profile 11na phymode 11na"</log-match>
+			<log-match>-i "radio profile 11na short-guard-interval"</log-match>
+			<log-match>-i "ssid test"</log-match>
+			<log-match>-i "interface wifi0 radio profile 11ng"</log-match>
+			<log-match>-i "interface wifi0 radio channel 1"</log-match>
+			<log-match>-i "interface wifi0 radio power 20"</log-match>
+			<log-match>-i "interface wifi1 radio profile 11na"</log-match>
+			<log-match>-i "interface wifi1 radio channel 36"</log-match>
+			<log-match>-i "interface wifi1 radio power 20"</log-match>
+			<log-match>-i "interface wifi0 ssid test"</log-match>
+			<log-match>-i "interface wifi1 ssid test"</log-match>
+			<failed>next</failed>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Acct-Terminate-Cause, User Request</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a ssid with 802.1x
+		-enable accounting on this ssid
+		-active the ssid
+
+		Test Procedure:
+		-client connects to this ssid
+		-client disconnect from AP,disassociate sends out
+		-check last accounting request
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+	<property name="ftp_test_file_local_dir" value="/tmp" />
+
+	<stage>
+		<step no="1">
+			<desc>Set SSID for ap1</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile normal qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface wif0 radio channel 1"
+				-v "aaa radius-server account-interim-interval 10"
+				-v "alg tftp enable"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3" delay="20" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show logging buffered</desc>
+			<log-file>step3_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i " Sending RADIUS message to accounting server ${pub.radius1.ip}"</log-match>
+			<log-match>-i "RADIUS message" -i "Accounting-Response"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				clear local file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f ${ftp_test_file_local_dir}/${tb.ftp.file3_small}"
+				-v "rm -f ${ftp_test_file_local_dir}/step4_stdout.log"
+			</ssh>
+		</step>
+
+		<step no="4" delay="5">
+			<desc>
+				download files
+			</desc>
+			<log-file>step4_download_file.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "nohup curl -u ${tb.ftp.user}:${tb.ftp.passwd} ftp://${tb.ftp}/${tb.ftp.file3_small} -o ${ftp_test_file_local_dir}/${tb.ftp.file3_small} --limit-rate 100k --connect-timeout 200 &gt; ${ftp_test_file_local_dir}/step4_stdout.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.1" delay="15" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				wait for process end.
+			</desc>
+			<log-file>step4.1_curl_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep curl"
+			</ssh>
+			<log-match>-n -i "curl" -i "ftp"</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				check "curl get" result
+			</desc>
+			<log-file>step4.2_check_file.log</log-file>
+			<ssh target="sta1">
+				-v "cat ${ftp_test_file_local_dir}/step4_stdout.log"
+			</ssh>
+			<log-match>-n -i "curl" -i "Connection time-out"</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				check if files has been download
+			</desc>
+			<log-file>step4.3_cat_file.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "ll -n ${ftp_test_file_local_dir}"
+			</ssh>
+			<log-match>-i "${tb.ftp.file3_small}"</log-match>
+		</step>
+
+		<step no="4.4">
+			<desc>show ssid xxx counter station xxx</desc>
+			<log-file>step4.4_show_ssid_counter.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} counter station ${sta1.tif.mac}"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="4.5">
+			<desc>Get the second number of times in default mode</desc>
+			<setvar name="received.data.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4.4_show_ssid_counter.log -p "(\d+) tx data bytes" -t str
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>realse dhcp</desc>
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>terminate wpa_supplicant on sta1</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v "ter"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="6" delay="20">
+			<desc>show logging buffered</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value: \d+" -ps p1 "Value: 2" p1 "Attribute \d+ \(Acct-Status-Type\)" -e "Attribute \d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value: \d+" -ps p1 "Value: 1" p1 "Attribute \d+ \(Acct-Terminate-Cause\)" -e "Attribute \d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value:" -ps p "Value: 2" p "Attribute \d+ \(Acct-Status-Type\)" p "Value: 1" p "Attribute \d+ \(Acct-Terminate-Cause\)" p "RADIUS message: code=\d+ \(Accounting-Request\)" -e "RADIUS message: code=" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>Get the second number of times in default mode</desc>
+			<setvar name="acct.return.received.data.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_show_logging_buffered.log -b "Attribute 49 \(Acct-Terminate-Cause\)" -p "Value:\s*(\d+)" -e "Attribute 43 \(Acct-Output-Octets\)" -t str -s none -g-1
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				check if the value of (acct.return.received.data.number-received.data.number) is between 1 to 1000.
+			</desc>
+			<log-file>step6.2_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "${acct.return.received.data.number} - ${received.data.number} &gt;= 0 and ${acct.return.received.data.number} - ${received.data.number} &lt;= 1000" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					download files
+				</desc>
+				<ssh target="sta1">
+					-v "rm -f ${ftp_test_file_local_dir}/${tb.ftp.file3_small}"
+					-v "rm -f ${ftp_test_file_local_dir}/step4_stdout.log"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

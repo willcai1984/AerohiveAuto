@@ -1,0 +1,434 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check if "Show ssid XX counter station""show ssid XX counter station XXXX.XXXX.XXXX" "clear ssid XX counter station""clear ssid XX counter station XXXX.XXXX.XXXX" work normal or not</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Initial configuration:
+		Radio profile ng phymode 11ng
+		Radio profile na phymode 11na
+		In wifi0 radio profile ng
+		In wifi1 radio profile na
+		Hive statistics
+		In mgt0 hive statistics
+		Ssid ${ssid.name}-1
+		Ssid ${ssid.name}-2
+		In wifi0 ssid ${ssid.name}-1
+		In wifi1 ssid ${ssid.name}-2
+
+		Test Procedure:
+		1) Push initial configuration to AP
+		2) Connect client to AP ssid ${ssid.name}-1 and run traffic between AP and sta
+		3) Check if ssid counter have been displayed correctly by CLi:
+		"show ssid XX counter station"
+		"show ssid XX counter station XXXX.XXXX.XXXX"
+		And content "rx data frames""tx data frames" should have the value
+		value0.
+		4) Clear interface wifi0.1 counter to check if the above value value0 have
+		been decreased
+		CLI:"clear ssid XX counter station"
+		"Show ssid XX counter station"
+		"clear ssid XX counter station XXXX.XXXX.XXXX"
+		"Show ssid XX counter station
+		XXXX.XXXX.XXXX"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				Initial configuration:
+				radio profile ng phymode 11ng
+				radio profile na phymode 11na
+				in wifi0 radio profile ng
+				in wifi1 radio profile na
+				hive statistics
+				in mgt0 hive statistics
+				ssid ${ssid.name}-1
+				ssid ${ssid.name}-2
+				int wifi0 ssid ${ssid.name}-1
+				int wifi1 ssid ${ssid.name}-2
+			</desc>
+			<telnet target="ap1">
+				-v "radio profile ng phymode 11ng"
+				-v "interface wifi0 radio profile ng"
+				-v "hive statistics"
+				-v "interface mgt0 hive statistics"
+				-v "ssid ${ssid.name}-1"
+				-v "interface wifi0 ssid ${ssid.name}-1"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				Initial configuration:
+				radio profile na phymode 11na and wif1 related configure
+			</desc>
+			<telnet target="ap1">
+				-v "radio profile na phymode 11na"
+				-v "interface wifi1 radio profile na"
+				-v "ssid ${ssid.name}-2"
+				-v "interface wifi1 ssid ${ssid.name}-2"
+			</telnet>
+		</step>
+        
+		
+        <property name="conn1.ssid" value="${ssid.name}-1" />
+		<property name="conn2.ssid" value="${ssid.name}-2" />
+		<property name="conn2.pif" value="wifi1" />
+		
+		<property name="init_counter" value="0" />
+		
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta1, ap1"/>
+		<include prefix="2.1" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 55"/>
+		
+		<step no="3">
+			<desc>
+				check station
+			</desc>
+			<log-file>step3.log</log-file>
+			<console target="ap1">
+				-v "show sta"
+			</console>
+			<no-error-check />
+		</step>	
+		
+		<step no="3.1">
+			<desc>
+				Get station's MAC
+			</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getbyrexp.py -p "(\w{4}:\w{4}:\w{4})" -f ${log.dir}/step3.log -t str
+			</setvar>
+		</step>
+		
+		<step no="3.2">
+			<desc>
+				Get station's ip
+			</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getbyrexp.py -p "(\d{3}\.\d{3}\.\d{3}\.\d{3})" -f ${log.dir}/step3.log -t str
+			</setvar>
+		</step>	
+
+		<step no="3.4">
+			<desc>
+				ping station from AP
+			</desc>
+			<log-file>step3.4.log</log-file>
+			<console target="ap1" timeout="360">
+				-v "ping ${sta1.tif.ip} count 150"
+			</console>
+			<no-error-check />
+		</step>		
+		
+		<step no="4" delay="15">
+			<desc>
+				Check if ssid counter have been displayed correctly by CLi:
+				"show ssid XX counter station"
+				And content "rx data frames" "tx data frames" should have the value
+				value0.
+			</desc>
+			<log-file>step4.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}-1 counter station"
+			</telnet>
+			<log-match>-e "rx data frames"</log-match>
+			<log-match>-e "tx data frames"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="5">
+			<desc>
+				get wifi0 content "rx data frames"
+			</desc>
+			<setvar name="rx_data_frames_1">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+rx data frames" -f ${log.dir}/step4.log -t str
+			</setvar>
+		</step>
+		
+		<step no="5.1">
+			<desc>
+				get wifi0 content "tx data frames"
+			</desc>
+			<setvar name="tx_data_frames_1">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+tx data frames" -f ${log.dir}/step4.log -t str
+			</setvar>
+		</step>		
+		
+		
+		<step no="6">
+			<desc>
+				compare content "tx data frames"
+			</desc>
+			 <script>
+             echo ${init_counter} ${tx_data_frames_1} | awk '{
+             if ($2 &gt; $1)
+                {exit (0);}
+            else
+                {exit (1);}
+            }'
+            </script>
+		</step>
+		
+		<step no="6.1">
+			<desc>
+				compare content "rx data frames"
+			</desc>
+			 <script>
+             echo ${init_counter} ${rx_data_frames_1} | awk '{
+             if ($2 &gt; $1)
+                {exit (0);}
+            else
+                {exit (1);}
+            }'
+            </script>
+		</step>	
+	
+	
+			
+		<step no="7" delay="15">
+			<desc>
+				"show ssid XX counter station XXXX.XXXX.XXXX"
+				And content "rx data frames" "tx data frames" should have the value
+				value0.
+			</desc>
+			<log-file>step7.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}-1 counter station ${sta1.tif.mac}"
+			</telnet>
+			<log-match>-e "rx data frames"</log-match>
+			<log-match>-e "tx data frames"</log-match>
+			<no-error-check />
+		</step>
+				
+		<step no="8">
+			<desc>
+				get wifi0 content "rx data frames"
+			</desc>
+			<setvar name="rx_data_frames_11">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+rx data frames" -f ${log.dir}/step7.log -t str
+			</setvar>
+		</step>
+		
+		<step no="8.1">
+			<desc>
+				get wifi0 content "tx data frames"
+			</desc>
+			<setvar name="tx_data_frames_11">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+tx data frames" -f ${log.dir}/step7.log -t str
+			</setvar>
+		</step>		
+		
+		
+		<step no="9">
+			<desc>
+				compare content "tx data frames"
+			</desc>
+			 <script>
+             echo ${init_counter} ${tx_data_frames_11} | awk '{
+             if ($2 &gt; $1)
+                {exit (0);}
+            else
+                {exit (1);}
+            }'
+            </script>
+		</step>
+		
+		<step no="9.1">
+			<desc>
+				compare content "rx data frames"
+			</desc>
+			 <script>
+             echo ${init_counter} ${rx_data_frames_11} | awk '{
+             if ($2 &gt; $1)
+                {exit (0);}
+            else
+                {exit (1);}
+            }'
+            </script>
+		</step>	
+	
+	
+	    <step no="10" delay="15">
+			<desc>
+				Clear interface wifi0.1 counter to check if the above value value0 have
+				been decreased
+				CLI:"clear ssid XX counter station"
+				"Show ssid XX counter station"
+			</desc>
+			<log-file>step10.log</log-file>
+			<telnet target="ap1">
+				-v "clear ssid ${ssid.name}-1 counter station"
+				-v "show ssid ${ssid.name}-1 counter station"
+			</telnet>
+			<log-match>-e "rx data frames"</log-match>
+			<log-match>-e "tx data frames"</log-match>
+			<no-error-check />
+		</step>
+		
+	
+			<step no="10.1">
+			<desc>
+				get wifi0 content "rx data frames"
+			</desc>
+			<setvar name="rx_data_frames_2">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+rx data frames" -f ${log.dir}/step10.log -t str
+			</setvar>
+		</step>
+		
+		<step no="10.2">
+			<desc>
+				get wifi0 content "tx data frames"
+			</desc>
+			<setvar name="tx_data_frames_2">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+tx data frames" -f ${log.dir}/step10.log -t str
+			</setvar>
+		</step>		
+		
+		<step no="11">
+			<desc>
+				compare content "tx data frames"
+			</desc>
+			 <script>
+             echo ${tx_data_frames_2} ${tx_data_frames_1} | awk '{
+             if ($2 &gt; $1)
+                {exit (0);}
+            else
+                {exit (1);}
+            }'
+            </script>
+		</step>
+		
+		<step no="11.1">
+			<desc>
+				compare content "rx data frames"
+			</desc>
+			 <script>
+             echo ${rx_data_frames_2} ${rx_data_frames_1} | awk '{
+             if ($2 &gt; $1)
+                {exit (0);}
+            else
+                {exit (1);}
+            }'
+            </script>
+		</step>	
+
+		
+	
+	
+
+		<step no="12" delay="5">
+			<desc>
+				"clear ssid XX counter station XXXX.XXXX.XXXX"
+				"Show ssid XX counter station XXXX.XXXX.XXXX"
+			</desc>
+			<log-file>step12.log</log-file>
+			<telnet target="ap1">
+				-v "clear ssid ${ssid.name}-1 counter station ${sta1.tif.mac}"
+				-v "show ssid ${ssid.name}-1 counter station ${sta1.tif.mac}"
+			</telnet>
+			<log-match>-e "rx data frames"</log-match>
+			<log-match>-e "tx data frames"</log-match>
+			<no-error-check />
+		</step>
+
+        <step no="12.1">
+			<desc>
+				get wifi0 content "rx data frames"
+			</desc>
+			<setvar name="rx_data_frames_22">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+rx data frames" -f ${log.dir}/step12.log -t str
+			</setvar>
+		</step>
+		
+		<step no="12.2">
+			<desc>
+				get wifi0 content "tx data frames"
+			</desc>
+			<setvar name="tx_data_frames_22">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+tx data frames" -f ${log.dir}/step12.log -t str
+			</setvar>
+		</step>		
+		
+		<step no="13">
+			<desc>
+				compare content "tx data frames"
+			</desc>
+			 <script>
+             echo ${tx_data_frames_22} ${tx_data_frames_11} | awk '{
+             if ($2 &gt; $1)
+                {exit (0);}
+            else
+                {exit (1);}
+            }'
+            </script>
+		</step>
+		
+		<step no="13.1">
+			<desc>
+				compare content "rx data frames"
+			</desc>
+			 <script>
+             echo ${rx_data_frames_22} ${rx_data_frames_11} | awk '{
+             if ($2 &gt; $1)
+                {exit (0);}
+            else
+                {exit (1);}
+            }'
+            </script>
+		</step>	
+	
+		
+    </stage>
+</testcase>	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	

@@ -1,0 +1,371 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>CVG is wan only, BR is wan nat, only BR behind NAT</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-config CVG with WAN interface,no nat enable
+		-config eth0 port as bridge-access, mac-learning enable
+		-config CVG act as l3 VPN server
+		-one LAN on CVG
+		-config BR with WAN interface, nat enable
+		-config BR as l3 VPN client
+		-one LAN on BR
+		-BR is behind a NAT firewall(NAPT)
+		-traffic from wan of CVG can reach wan of BR, the LANs are unreachable
+		from each other
+
+		Test Procedure:
+
+		-check the status of vpn connection
+		-check Ike sa and sp is correct on both CVG and BR sides
+		-check the l3 tunnel created correctly on both sides
+		-check the ip of mgt0 is added to the peer via tunnel0 in route table
+		-BR will announce LANs under it, check the route table on CVG
+		-CVG will push the LANs under it to BR, check the route table on BR
+		-after vpn connection was setup, check the traffic forward via vpn from
+		BR side based on route table
+		-STA1 under BR ping a remote server in cloud
+		-STA1 under BR ping a remote server behind CVG
+		-BR ping a server in cloud
+		-BR ping a server behind CVG
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>no</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<property name="vpn.client.list" value="clientList1" />
+	<property name="vpn.server.name" value="vpnServer1" />
+	<property name="user_id" value="l3vpntest" />
+	<stage>
+
+		<step no="CVG.cvg.tunnel.ip.gen">
+			<setvar name="cvg1.cvg.tunnel.ip">
+				if [ "yes" == "${cvg1.cvg.fw_existed}" ]; then
+				echo "${cvg1.cvg.tunnel.ip}"
+				else
+				echo "${cvg1.cvg.wan.ip}"
+				fi
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>config CVG act as l3 VPN server
+				declare supper-net for br1.mgt0, mgt0.1, mgt0.2
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="30">
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:certs/server_cert.pem"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:certs/server_key.pem"
+				-v "vpn xauth-client-list ${vpn.client.list} local"
+				-v "vpn xauth-client-list ${vpn.client.list} client-name ${br1.br.name} password aerohive"
+				-v "vpn server-ipsec-tunnel ${vpn.server.name} vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${vpn.server.name} client-list ${vpn.client.list}"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel ${vpn.server.name}"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v ""
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.mgt0.supermask}"
+				-v ""
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.2.ip}/${br.mgt0.supermask}"
+				-v ""
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>enable ospf on eth0 if it has one arms</desc>
+			<if>"one" == "${cvg1.cvg.arm_type}"</if>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "routing protocol ospf advertise eth0"
+				-v "routing protocol ospf router-id ${cvg1.cvg.wan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>enable ospf on eth1 if it has two arms</desc>
+			<if>"two" == "${cvg1.cvg.arm_type}"</if>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "routing protocol ospf advertise eth1"
+				-v "routing protocol ospf router-id ${cvg1.cvg.lan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>config mgt0.1 vlan br1.vpc1.vlan with DHCP service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>config mgt0.2 vlan ${br1.vpc2.vlan} with DHCP service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.2 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>Config BR as l3 VPN client
+				route-request, and report mgt0, mgt0.1, mgt0.2 network to CVG
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "vpn client-ipsec-tunnel ${br1.br.name}_ipsec_1 vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${br1.br.name}_ipsec_1 gateway ${cvg1.cvg.tunnel.ip} client-name ${br1.br.name} password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel ${br1.br.name}_ipsec_1 primary"
+				-v "routing route-request enable"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.lan.netmask}"
+				-v ""
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v ""
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v ""
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>config BR eth1 port as bridge-access vlan br1.vpc1.vlan,
+				eth2 trunk mode with native-vlan br1.vpc2.vlan, all mac-learning enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile ${user_id}_eth1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute ${br1.vpc1.vlan}"
+				-v "user-profile ${user_id}_eth2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute ${br1.vpc2.vlan}"
+				-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vpc1.vlan}"
+				-v "interface eth2 mode bridge-802.1q"
+				-v "int eth2 native-vlan ${br1.vpc2.vlan}"
+				-v "int eth1 mac-learning enable"
+				-v "int eth2 mac-learning enable"
+				-v "show running-config | in vpn"
+			</telnet>
+		</step>
+
+		<step no="6.1" delay="10" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check vpn ike sa on BR side
+				destination to CVG public address
+			</desc>
+			<log-file>ike_sa_br${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+		</step>
+
+		<step no="6.2" delay="10" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check vpn ike sa on CVG side
+				destination to BR public address
+			</desc>
+			<log-file>ike_sa_cvg$_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "R" -i "${pub.br.nat.ip}"</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>check gre tunnel on br side
+				remote to CVG wan address, local to BR mgt0, Gateway to CVG public address
+			</desc>
+			<log-file>show_gre_tunnel_br.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.tunnel.ip}"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>check gre tunnel on cvg side
+				local to CVG wan address
+			</desc>
+			<log-file>show_gre_tunnel_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>br1.vpc1 get ip addr from dhcp on BR mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-e "inet addr"</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="9.1">
+			<desc>set variable to descript CVG lan route</desc>
+			<setvar name="cvg1.cvg.lan.route">
+				echo $(echo ${cvg1.cvg.lan.ip} | cut -d. -f1,2,3).0
+			</setvar>
+		</step>
+
+		<step no="9.2">
+			<desc>CVG will push its mgt0 ip address to BR</desc>
+			<log-file>show_route_br_01.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.cvg.mgt0.ip}" -p 3 -i "255.255.255.255" -p 8 -i "tunnel0"</log-match>
+			<log-match>-p 1 -i "${cvg1.cvg.lan.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+
+		<step no="10.1">
+			<desc>set variable to descript BR lan route</desc>
+			<setvar name="br1.br.mgt0.route">
+				echo $(echo ${br1.br.mgt0.ip} | cut -d. -f1,2,3).0
+			</setvar>
+		</step>
+
+		<step no="10.2">
+			<desc>BR will push its mgt0 ip address to CVG </desc>
+			<log-file>show_route_cvg_01.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.ip}" -p 3 -i "255.255.255.255" -p 8 -i "tunnel0"</log-match>
+			<log-match>-p 1 -i "${br1.br.mgt0.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<step no="11.1">
+			<desc>enable debug on BR</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 2 dst-ip ${cvg1.vpc1.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 3 protocol 47 bidirectional"
+				-v "_ff id 4 protocol 50 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="11.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>Server hebind CVG ping br1_${loop_check.idx}.vpc1</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v " ping ${br1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="11.3">
+			<desc>show log buf</desc>
+			<log-file>11.3.log_buf_server1_br_vpc1.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+			
+		</step>
+
+
+		<!--STA1 under BR ping a remote server behind CVG -->
+		<include prefix="11.4" file="subs/sta_ping.xml" args="br1.vpc1, ${cvg1.vpc1.tif.ip}, 4" />
+
+		<step no="11.5">
+			<desc>show br log buf</desc>
+			<log-file>11.5.log_buf_br_vpc1_internet.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="11.6">
+			<desc>BR ping a server behind CVG</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${cvg1.vpc1.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="11.7">
+			<desc>show br log buf</desc>
+			<log-file>11.7.log_buf_br_to_cvgvpc1.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="12.1">
+			<desc>enable debug on CVG</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no _ff id 2"
+				-v "_ff id 2 dst-ip ${pub.dns1.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="12.2">
+			<desc>BR ping a server in cloud(internet)</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${pub.dns1.ip}"
+			</telnet>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="12.3">
+			<desc>show br log buf</desc>
+			<log-file>12.3.log_buf_br_to_internet.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<include prefix="12.4" file="subs/sta_ping.xml" args="br1.vpc1, ${pub.dns1.ip}, 4" />
+
+		<step no="12.5">
+			<desc>show br log buf</desc>
+			<log-file>12.5.log_buf_br_vpc1_cvg_vpc1.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+	</stage>
+
+</testcase>

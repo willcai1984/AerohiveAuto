@@ -1,0 +1,203 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unit Test 0506: Verify that default route could be removed, if user chooses to, and that BR and clients will no longer to reach hosts beyond WAN interface.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		After WANAddressing_UnitTest_ConfigCLI_18
+
+		Test Procedure:
+		remove the default route on eth0.
+		CLI commands:
+		no ip route default gateway &lt;GATEWAY_IP&gt;
+		show ip route
+		show running-config
+		save config
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				check eth0 with wan mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show l3 interface"
+			</telnet>
+			<log-match>-c -e "${br1.br.wan.int1}\s*${br1.br.wan.ip}\s*wan"</log-match>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				check route info
+			</desc>
+			<console target="br1.br">
+				-v "ping ${pub.dns1.domain1}"
+			</console>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<include prefix="2" file="subs/br_close_fw.xml" obj-args="br1" />
+
+		<step no="3">
+			<desc>
+				disable eth0 dhcp client
+				enable eth0 dhcp client
+			</desc>
+			<console target="br1.br">
+				-v "no interface ${br1.br.wan.int1} dhcp client"
+				-v "interface ${br1.br.wan.int1} dhcp client"
+			</console>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>show eth0 dhcp</desc>
+			<log-file>step3.1_show_br1_eth0_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "show interface ${br1.br.wan.int1} dhcp client"
+			</console>
+			<log-match>-c -i "Get IP address 0.0.0.0" -n</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				show interface eth0 dhcp client
+			</desc>
+			<log-file>step4_check_interface_eth0.log</log-file>
+			<console target="br1.br">
+				-v "show l3 interface ${br1.br.wan.int1}"
+			</console>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get mgt0 ip
+			</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4_check_interface_eth0.log -p "IP addr=(\S+);" -t str
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				Get br gateway address
+			</desc>
+			<multi-setvar>
+				echo "br1.gateway.ip=$(echo ${br1.br.wan.ip} | cut -d. -f1,2,3).254"
+			</multi-setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				disable eth0 dhcp client
+			</desc>
+			<console target="br1.br">
+				-v "no interface ${br1.br.wan.int1} dhcp client"
+				-v ""
+				-v "interface ${br1.br.wan.int1} ip ${br1.br.wan.ip}/24"
+			</console>
+		</step>
+
+		<step no="7" delay="10">
+			<desc>
+				install a default route with gateway in eth0's subnet
+			</desc>
+			<console target="br1.br">
+				-v "interface ${br1.br.wan.int1} shutdown"
+				-v "no interface ${br1.br.wan.int1} shutdown"
+				-v "show ip route"
+				-v "ip route default gateway ${br1.gateway.ip}"
+			</console>
+		</step>
+
+		<step no="8" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				check route info
+			</desc>
+			<log-file>show_ip_route_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "show ip route"
+			</console>
+			<log-match>-c -i "0.0.0.0" -i "${br1.gateway.ip}" -i "UG" -i "${br1.br.wan.kport1}"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				show running-config
+			</desc>
+			<console target="br1.br">
+				-v "show running-config"
+				-v "dns server-ip ${pub.dns1.ip}"
+			</console>
+			<log-match>-c -i "ip route net 0.0.0.0 0.0.0.0 gateway ${br1.gateway.ip}"</log-match>
+		</step>
+
+		<step no="10" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>
+				check route info
+			</desc>
+			<log-file>ping_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "ping ${pub.dns1.domain1}"
+			</console>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				remove the default route on eth0
+			</desc>
+			<console target="br1.br">
+				-v "no dns server-ip ${pub.dns1.ip}"
+				-v "no ip route default gateway ${br1.gateway.ip}"
+				-v "save config"
+				-v "interface ${br1.br.wan.int1} shutdown"
+				-v "no interface ${br1.br.wan.int1} shutdown"
+			</console>
+		</step>
+
+		<step no="12">
+			<desc>
+				check route info
+			</desc>
+			<console target="br1.br">
+				-v "show ip route"
+			</console>
+			<log-match>-n -c -i "0.0.0.0" -i "${br1.gateway.ip}" -i "UG" -i "${br1.br.wan.kport1}"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				show running-config
+			</desc>
+			<console target="br1.br">
+				-v "show running-config"
+			</console>
+			<log-match>-n -c -i "ip route net 0.0.0.0 0.0.0.0 gateway ${br1.gateway.ip}"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				check route info
+			</desc>
+			<console target="br1.br">
+				-v "ping ${pub.dns1.domain1}"
+			</console>
+			<log-match>-n -c -i "from " -i "ttl="</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="0.1" file="subs/br_open_fw.xml" obj-args="br1" />
+
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+
+	</post-process>
+</testcase>

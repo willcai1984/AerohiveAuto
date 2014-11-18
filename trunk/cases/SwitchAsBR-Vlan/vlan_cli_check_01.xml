@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check create vlan CLI</brief>
+	<priority>Low</priority>
+	<automated>yes</automated>
+
+	<description>
+		Platform Dependence: SR2024
+		Pre-condition:
+		• Reset config of switch to factory default
+		Test procedure:
+		For normal case:
+		1. Create vlan
+		Vlan 300 Result1
+		2. Delete vlan
+		No vlan 300 Result2
+
+		For corner case:
+		3. Create a vlan in reserved vlan list Result3
+		4. Create/delete default vlan 1 Result4
+		5. Create vlan 4094 Result5
+		6. Save config
+		7. Reboot switch, check if the configuration are changed Result6
+		Expect result:
+		Result1: create vlan success
+		Result2: can’t delete vlan
+		Result3: the vlan can’t be created, because the vlan is a reserved vlan
+		AH-66e280#show vlan summary
+		Number of existing VLANs: 7
+		Reserved VLAN range: : 3967 - 4094
+		AH-66e280#vlan 3999
+		VLAN 3999 is reserved VLAN.
+		ERROR: Invalid parameter(s)
+
+		Result4: default vlan 1 can’t be created/deleted
+		AH-66e280#no vlan 1
+		VLAN 1 is default VLAN. Can't be enable/disable.
+		ERROR: Invalid parameter(s)
+		AH-66e280#
+		AH-66e280#vlan 1
+		VLAN 1 is default VLAN. Can't be enable/disable.
+		ERROR: Invalid parameter(s)
+
+		Result5: if vlan 4094 not in reserved vlan list, should
+		create success
+		AH-66e280#show vlan-reserve
+		Reserved VLAN range: : 3967 - 4094
+		AH-66e280#
+		AH-66e280#vlan 4094
+		VLAN 4094 is reserved VLAN.
+		ERROR: Invalid parameter(s)
+		AH-66e280#vlan-reserve 600
+		AH-66e280#show vlan-re
+		AH-66e280#show vlan-reserve
+		Reserved VLAN range: : 600 - 727
+		AH-66e280#vlan 4094
+
+		Result6: all the configurations are saved after reboot.
+
+	</description>
+
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="reserve.vlan.start" value="3967" />
+	<property name="reserve.vlan.end" value="4094" />
+	<property name="reserve.vlan.mid" value="4000" />
+	<property name="change.reserve.vlan.start" value="100" />
+
+
+	<stage>
+
+		<step no="pre_1">
+			<desc>get var change.reserve.vlan.end </desc>
+			<setvar name="change.reserve.vlan.end">
+				echo `expr ${change.reserve.vlan.start} + 127`
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>create a vlan on switch, and check the vlan is created successfully</desc>
+			<log-file>step1_create_vlan.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "vlan ${br1.vpc2.vlan}"
+				-v "show run"
+			</telnet>
+			<log-match>-c -i "vlan ${br1.vpc1.vlan}"</log-match>
+			<log-match>-c -i "vlan ${br1.vpc2.vlan}"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>delete a vlan on switch </desc>
+			<log-file>step2.1_delete_vlan.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no vlan ${br1.vpc1.vlan}"
+				-v "no vlan ${br1.vpc2.vlan}"
+			</telnet>
+		</step>
+		
+		<step no="2.2">
+			<desc>check the vlan is deleted successfully</desc>
+			<log-file>step2.2_delete_vlan.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show run"
+			</telnet>
+			<log-match>-n -c -i "vlan ${br1.vpc1.vlan}"</log-match>
+			<log-match>-n -c -i "vlan ${br1.vpc2.vlan}"</log-match>
+		</step>
+		
+
+		<step no="3.1">
+			<desc>check default reserved vlan range, and create a vlan in reserved vlan list</desc>
+			<log-file>step3.1_reserve_vlan.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vlan summary"
+				-v "vlan ${reserve.vlan.start}"
+				-v "vlan ${reserve.vlan.end}"
+				-v "vlan ${reserve.vlan.mid}"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "Reserved VLAN range: : 3712 - 4094"</log-match>
+			<log-match>-c -i "VLAN ${reserve.vlan.start} is reserved VLAN."</log-match>
+			<log-match>-c -i "VLAN ${reserve.vlan.end} is reserved VLAN."</log-match>
+			<log-match>-c -i "VLAN ${reserve.vlan.mid} is reserved VLAN."</log-match>
+			<log-match>-c -i "ERROR: Invalid parameter(s)"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>change reserved vlan, and check reserv vlan range, then create default reserved vlan</desc>
+			<log-file>step3.2_reserve_vlan.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan-reserve ${change.reserve.vlan.start}"
+				-v "show vlan summary"
+				-v "vlan ${reserve.vlan.start}"
+				-v "vlan ${reserve.vlan.end}"
+				-v "vlan ${reserve.vlan.mid}"
+				-v "save config"
+			</telnet>
+			<log-match>-c -i "Reserved VLAN range: : ${change.reserve.vlan.start} - ${change.reserve.vlan.end}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>check default vlan 1 can't be created</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan 1"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "unknown keyword or invalid input"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>check default vlan 1 can't be deleted</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no vlan 1"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "unknown keyword or invalid input"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>save config and reboot switch</desc>
+			<console target="br1.br" timeout="180" slow="1">
+				-v "show vlan summary"
+				-v "show running-config "
+				-v "save config"
+				-v "reboot"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="6.2">
+			<desc>check vlan and reserved vlan</desc>
+			<log-file>step6.2_vlan_check.log</log-file>
+			<console target="br1.br" timeout="180" slow="1">
+				-v "show vlan summary"
+				-v "show running-config"
+			</console>
+			<log-match>-c -i "Reserved VLAN range: : ${change.reserve.vlan.start} - ${change.reserve.vlan.end}"</log-match>
+			<log-match>-c -i "vlan ${reserve.vlan.start}"</log-match>
+			<log-match> -c -i "vlan ${reserve.vlan.end}"</log-match>
+			<log-match>-c -i "vlan ${reserve.vlan.mid}"	</log-match>
+		</step>
+
+	</stage>
+
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/br_default_process.xml" />
+	</post-process>
+
+
+</testcase>

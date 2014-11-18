@@ -1,0 +1,439 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that the default tx rate in 11n.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test Procedure:
+
+		1. Verify the 11n rate in beacon, probe response, association response.
+		Result 1
+		2. Verify that the 11n client can connect to the ssid and traffic is ok, Result
+		2
+		3. Verify that the broadcast pkt rate is mandatory rate, Result 3
+		4. 11b Client can associate to the ssid which includes its mandatory rate,
+		Result 4
+		5. 11g Client can associate to the ssid which includes its mandatory rate,
+		Result 4
+		6. 11a Client can associate to the ssid which includes its mandatory rate,
+		Result 4
+		7. The 11n rate are shown in "show ssid xxx", Result 5
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+	<stage>
+		<step no="1">
+			<desc>Set config for AP1 via telnet  </desc>
+			<log-file>ap_config.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "interface wifi0 radio channel 1"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="1.a">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>Set config for AP1 via telnet  </desc>
+			<log-file>ap_config.log</log-file>
+			<telnet target="ap1">
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "interface wifi1 radio channel 36"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>Show interface wifi0.1 of AP1 </desc>
+			<log-file>show_interface_wifi01.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>Get_mac of wifi0.1 on AP1 </desc>
+			<setvar name="wifi01.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi01.log -i wifi0.1 -o aero -m
+			</setvar>
+		</step>
+		<step no="4">
+			<desc>set filter</desc>
+			<log-file>show_filter.log</log-file>
+			<telnet target="ap1">
+				-v "filter 1 l2 mgmt subtype 8"
+				-v "show filter"
+			</telnet>
+			<log-match>-e "filter 1"</log-match>
+		</step>
+		<step no="5">
+			<desc>show filter</desc>
+			<log-file>show_filter_result.log</log-file>
+			<script>
+				${bin.dir}/searchbyrexp.py -p "show filter.*filter.*filter" -f ${log.dir}/show_filter.log >> ${log.dir}/${log.file} ; exit 0;
+			</script>
+			<log-match>-e "fail"</log-match>
+		</step>
+		<step no="6">
+			<desc>set filter</desc>
+			<log-file>set_default_capture_file.log</log-file>
+			<telnet target="ap1">
+				-v "capture save interface wifi0 wifi0.dmp"
+			</telnet>
+		</step>
+		<step no="7">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "capture interface wifi0 count 100"
+			</telnet>
+		</step>
+		<step no="8" delay="30">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1" timeout="90">
+				-v "save capture local wifi0.dmp tftp://${mpc.tif.ip}:/wifi0.dmp"
+			</telnet>
+		</step>
+		<step no="9" delay="100">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>wifi0_log.log</log-file>
+			<script>
+				tshark -r /tftpboot/wifi0.dmp -V > ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+		</step>
+		<step no="10">
+			<desc>Get 11n rates</desc>
+			<if>"${img.prodtype}" == "AP350"</if>
+			<setvar name="result.wifi0">
+				${bin.dir}/parse_pcap.pl -f ${log.dir}/wifi0_log.log -k ${wifi01.mac} -k "Rx Bitmask Bits 16-23: 0x000000ff" -o "Tx and Rx MCS Set: Equal"
+			</setvar>
+		</step>
+		<step no="11">
+			<desc>Get 11n rates</desc>
+			<if>"${img.prodtype}" != "AP350"</if>
+			<setvar name="result.wifi0">
+				${bin.dir}/parse_pcap.pl -f ${log.dir}/wifi0_log.log -k ${wifi01.mac} -k "Rx Bitmask Bits 8-15: 0x000000ff" -o "Tx and Rx MCS Set: Equal"
+			</setvar>
+		</step>
+		<step no="12">
+			<desc>Compare the result </desc>
+			<log-file>whether_find_result.log</log-file>
+			<script>
+				echo "result.wifi0=${result.wifi0}"
+				if [ "${result.wifi0}" != "Equal" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="13">
+			<desc>Generate wifi_aerohive_test profile for ssid ${ssid.name}1 for laptop1</desc>
+			<script>
+				${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/open.xml -l ${log.dir} -o wifi_aerohive_test.xml -s "${ssid.name}1"
+			</script>
+		</step>
+
+		<step no="14">
+			<desc>Copy a wifi windows profile file to laptop1 </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+		<step no="15">
+			<desc>Bring down the client Wireless of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="16">
+			<desc>Delete current Wireless profile of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan delete profile ${ssid.name}1 "
+			</script>
+		</step>
+
+		<step no="17">
+			<desc>Add new profile for ssid to laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="18" delay="120">
+			<desc>Bring up the client Wireless on laptop1 </desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan connect name=${ssid.name}1 interface=\"${sta1.tif.name}\"" -v " netsh wlan show profiles ${ssid.name}1" -v "netsh wlan show interfaces"
+			</script>
+			<no-error-check />
+		</step>
+		<step no="19" delay="60">
+			<desc>Loop 10 times ipconfig to get ip in laptop1 </desc>
+			<script>
+				bash ${bin.dir}/aerohive/get_laptop_ip.sh ${sta1.mif.ip} ${log.dir} ipconfig1.log
+			</script>
+		</step>
+		<step no="20">
+			<desc>Show ipconfig in laptop1 </desc>
+			<log-file>ipconfig_${sta1.mif.ip}.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+		<step no="21">
+			<desc>Get the mac of laptop1</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -m -width 2
+			</setvar>
+		</step>
+		<step no="22">
+			<desc>Get the ip of laptop1</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+		<step no="23" delay="20">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi0_ssid_station.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|Total station count.*#" timeout="80">
+				-v "show ssid ${ssid.name}1 station"
+				-v ""
+			</telnet>
+
+		</step>
+		<step no="24">
+			<desc>Get laptop1 ip in AP1  </desc>
+			<setvar name="laptop1.ip.in.ap">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi0_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+		<step no="25">
+			<desc>Compare laptop1 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop1.ip.in.ap} != ${sta1.tif.ip}"
+				if [ "${laptop1.ip.in.ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="26">
+			<desc>Ping from remote host ${sta1.mif.ip} to master Server </desc>
+			<log-file>pingmaster_${sta1.mif.ip}.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ping ${mpc.tif.ip}" -l ${log.dir} -o ${log.file}
+			</script>
+			<log-match>-n -e "Lost = 0 (100\%)"</log-match>
+		</step>
+		<step no="27">
+			<desc>Show ssid in AP1  </desc>
+			<if>"${img.prodtype}" == "AP350"</if>
+			<log-file>show_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}1"
+			</telnet>
+			<log-match>-e "mcs0 mcs1 mcs2 mcs3 mcs4 mcs5 mcs6 mcs7 mcs8 mcs9 mcs10 mcs11 mcs12 mcs13 mcs14 mcs15 mcs16 mcs17 mcs18 mcs19 mcs20 mcs21 mcs22 mcs23"</log-match>
+		</step>
+		<step no="28">
+			<desc>Show ssid in AP1  </desc>
+			<if>"${img.prodtype}" != "AP350"</if>
+			<log-file>show_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}1"
+			</telnet>
+			<log-match>-e "mcs0 mcs1 mcs2 mcs3 mcs4 mcs5 mcs6 mcs7 mcs8 mcs9 mcs10 mcs11 mcs12 mcs13 mcs14 mcs15"</log-match>
+		</step>
+	</stage>
+	<stage>
+		<if>"${ap1.wifi1.existed}" == "true"</if>
+		<step no="29">
+			<desc>Show interface wifi1.2 of AP1 </desc>
+			<log-file>show_interface_wifi12.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.2"
+			</telnet>
+		</step>
+
+		<step no="30">
+			<desc>Get_mac of wifi1.2 on AP1 </desc>
+			<setvar name="wifi12.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi12.log -i wifi1.2 -o aero -m
+			</setvar>
+		</step>
+		<step no="31">
+			<desc>set filter</desc>
+			<log-file>show_filter_wifi1.log</log-file>
+			<telnet target="ap1">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8"
+				-v "show filter"
+			</telnet>
+		</step>
+		<step no="32">
+			<desc>set filter</desc>
+			<log-file>set_default_capture_file_wifi1.log</log-file>
+			<telnet target="ap1">
+				-v "capture save interface wifi1 wifi1.dmp"
+			</telnet>
+		</step>
+		<step no="33">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "capture interface wifi1 count 100"
+			</telnet>
+		</step>
+		<step no="34" delay="30">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1" timeout="90">
+				-v "save capture local wifi1.dmp tftp://${mpc.tif.ip}:/wifi1.dmp"
+			</telnet>
+		</step>
+		<step no="35" delay="100">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>wifi1_log.log</log-file>
+			<script>
+				tshark -r /tftpboot/wifi1.dmp -V > ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+		</step>
+		<step no="36">
+			<desc>Get 11n rates</desc>
+			<if>"${img.prodtype}" == "AP350"</if>
+			<setvar name="result.wifi1">
+				${bin.dir}/parse_pcap.pl -f ${log.dir}/wifi1_log.log -k ${wifi12.mac} -k "Rx Bitmask Bits 16-23: 0x000000ff" -o "Tx and Rx MCS Set: Equal"
+			</setvar>
+		</step>
+		<step no="37">
+			<desc>Get 11n rates</desc>
+			<if>"${img.prodtype}" != "AP350"</if>
+			<setvar name="result.wifi1">
+				${bin.dir}/parse_pcap.pl -f ${log.dir}/wifi1_log.log -k ${wifi12.mac} -k "Rx Bitmask Bits 8-15: 0x000000ff" -o "Tx and Rx MCS Set: Equal"
+			</setvar>
+		</step>
+		<step no="38">
+			<desc>Compare the result </desc>
+			<log-file>whether_find_result_wifi1.log</log-file>
+			<script>
+				echo "result.wifi1=${result.wifi1}"
+				if [ "${result.wifi1}" != "Equal" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="40">
+			<desc>Generate wifi_aerohive_test profile for ssid ${ssid.name}2 for laptop1</desc>
+			<script>
+				${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/open.xml -l ${log.dir} -o wifi_aerohive_test.xml -s "${ssid.name}2"
+			</script>
+		</step>
+
+		<step no="41">
+			<desc>Copy a wifi windows profile file to laptop1 </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+		<step no="42">
+			<desc>Bring down the client Wireless of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="43">
+			<desc>Delete current Wireless profile of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan delete profile ${ssid.name}2 "
+			</script>
+		</step>
+
+		<step no="44">
+			<desc>Add new profile for ssid to laptop1
+			</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="45" delay="120">
+			<desc>Bring up the client Wireless on laptop1 </desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan connect name=${ssid.name}2 interface=\"${sta1.tif.name}\"" -v " netsh wlan show profiles ${ssid.name}2" -v "netsh wlan show interfaces"
+			</script>
+			<no-error-check />
+		</step>
+		<step no="46" delay="60">
+			<desc>Loop 10 times ipconfig to get ip in laptop1 </desc>
+			<script>
+				bash ${bin.dir}/aerohive/get_laptop_ip.sh ${sta1.mif.ip} ${log.dir} ipconfig1.log
+			</script>
+		</step>
+		<step no="47">
+			<desc>Show ipconfig in laptop1 </desc>
+			<log-file>ipconfig_${sta1.mif.ip}_wifi1.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+		<step no="48">
+			<desc>Get the ip of laptop1</desc>
+			<setvar name="sta1.tif.ip.wifi1">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}_wifi1.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+		<step no="49" delay="20">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi1_ssid_station.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|Total station count.*#" timeout="80">
+				-v "show ssid ${ssid.name}2 station"
+				-v ""
+			</telnet>
+
+		</step>
+		<step no="50">
+			<desc>Get laptop1 ip in AP1  </desc>
+			<setvar name="laptop1.ip.in.ap.wifi1">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi1_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+		<step no="51">
+			<desc>Compare laptop1 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop1.ip.in.ap.wifi1} != ${sta1.tif.ip.wifi1}"
+				if [ "${laptop1.ip.in.ap.wifi1}" != "${sta1.tif.ip.wifi1}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="52">
+			<desc>Ping from remote host ${sta1.mif.ip} to master Server </desc>
+			<log-file>pingmaster_${sta1.mif.ip}_2.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ping ${mpc.tif.ip}" -l ${log.dir} -o ${log.file}
+			</script>
+			<log-match>-n -e "Lost = 0 (100\%)"</log-match>
+		</step>
+		<step no="53">
+			<desc>Show ssid in AP1  </desc>
+			<if>"${img.prodtype}" == "AP350"</if>
+			<log-file>show_ssid2.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}2"
+			</telnet>
+			<log-match>-e "mcs0 mcs1 mcs2 mcs3 mcs4 mcs5 mcs6 mcs7 mcs8 mcs9 mcs10 mcs11 mcs12 mcs13 mcs14 mcs15 mcs16 mcs17 mcs18 mcs19 mcs20 mcs21 mcs22 mcs23"</log-match>
+		</step>
+		<step no="54">
+			<desc>Show ssid in AP1  </desc>
+			<if>"${img.prodtype}" != "AP350"</if>
+			<log-file>show_ssid2.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}2"
+			</telnet>
+			<log-match>-e "mcs0 mcs1 mcs2 mcs3 mcs4 mcs5 mcs6 mcs7 mcs8 mcs9 mcs10 mcs11 mcs12 mcs13 mcs14 mcs15"</log-match>
+		</step>
+	</stage>
+</testcase>

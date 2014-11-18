@@ -1,0 +1,131 @@
+<include obj-arg-names="__AP__">
+	<step no="1">
+		<desc>access console result</desc>
+		<log-file>__AP___cons_check.log</log-file>
+		<console target="__AP__">
+			-v ""
+			-v "show version"
+			-v ""
+			-v "show hw-info"
+			-v ""; exit 0
+		</console>
+		<no-error-check />
+	</step>
+	<step no="1b">
+		<desc>judge __AP__ console is ok</desc>
+		<setvar name="cons_check_result" scope="local">
+			grep "show version" ${log.dir}/__AP___cons_check.log >/dev/null; echo $?
+		</setvar>
+	</step>
+	<step no="1c">
+		<desc>power cycle the __AP__</desc>
+		<if>"${cons_check_result}" != "0"</if>
+		<log-file>rmpts___AP__.log</log-file>
+		<script>
+			${bin.dir}/rmtps.pl ${tb.rmps.ip} ${tb.rmps.user}:${tb.rmps.passwd} ${__AP__.rmps_port}\pulse >> ${log.dir}/${log.file}
+			echo `date` >> ${log.dir}/${log.file}
+			sleep 45
+		</script>
+		<no-error-check />
+	</step>
+
+	<step no="2">
+		<desc>show run</desc>
+		<log-file>show_run___AP___result.log</log-file>
+		<console target="__AP__">
+			-v ""
+			-v "show run"
+			-v ""
+		</console>
+	</step>
+
+	<step no="2b">
+		<desc>change log file to remove hm auto connect info</desc>
+		<log-file>show_run___AP___result2.log</log-file>
+		<script>
+			/bin/cp ${log.dir}/show_run___AP___result.log ${log.dir}/${log.file}
+			sed -i '/capwap client server name 10.168.45.*/d' ${log.dir}/${log.file}
+			sed -i '/capwap client server port 80/d' ${log.dir}/${log.file}
+		</script>
+	</step>
+
+	<step no="3a">
+		<desc>judge if the show run result is factory default status</desc>
+		<log-file>show_run___AP___result2.log</log-file>
+		<setvar name="env.is_clean_in_reset" scope="local">
+			${bin.dir}/searchblocks.py -b "^AH.*#show run$" -e "^AH.*#$" -ps p0 "." -nb -ne -f ${log.dir}/${log.file}; exit 0
+		</setvar>
+	</step>
+	<step no="3b">
+		<desc>judge if the show run result is automation default status</desc>
+		<log-file>show_run___AP___result2.log</log-file>
+		<setvar name="env.is_clean_in_auto" scope="local">
+			${bin.dir}/searchblocks.py -b "^AH.*#show run$" -e "^AH.*#$" -ps p1 "interface wifi1 hive hive0 shutdown" -nb -ne -f ${log.dir}/${log.file}; exit 0
+		</setvar>
+	</step>
+
+	<step no="debug">
+		<script>
+			echo "env.is_clean_in_reset=${env.is_clean_in_reset}"
+			echo "env.is_clean_in_auto=${env.is_clean_in_auto}"
+		</script>
+	</step>
+
+	<step no="clear.1">
+		<if>"${env.is_clean_in_reset}" != "success" &amp;&amp; "${env.is_clean_in_auto}" != "success"</if>
+		<desc>Reset AP to factory default</desc>
+		<console target="__AP__" timeout="180">
+			-v "boot-param region fcc"
+			-v ""
+			-v "reset config"
+		</console>
+	</step>
+	<step no="clear.2" delay="30">
+		<if>"${env.is_clean_in_reset}" != "success" &amp;&amp; "${env.is_clean_in_auto}" != "success"</if>
+		<console target="__AP__">
+			-v ""
+			-v "show version"
+			-v ""
+		</console>
+		<failed>next</failed>
+	</step>
+	
+	<step no="clear.3">
+		<if>"${env.is_clean_in_auto}" != "success"</if>
+		<if>"${ap.wifi1.existed}" == "true" </if>
+		<desc>Set AP to automation default</desc>
+		<console target="__AP__">
+			-v "interface wifi1 mode dual"
+			-v "interface wifi1 hive hive0 shutdown"
+			-v "save config"
+		</console>
+	</step>
+
+	<step no="4">
+		<desc>show run after __AP__ set or reset</desc>
+		<if>"${env.is_clean_in_auto}" != "success"</if>
+		<if>"${ap.wifi1.existed}" == "true" </if>
+		<log-file>show_run___AP__.log</log-file>
+		<console target="__AP__">
+			-v ""
+			-v "show run"
+			-v ""
+		</console>
+		<log-match bin="${bin.dir}/searchblocks.py">-b "^AH.*#show run$" -e "^AH.*#$" -ps p1 "interface wifi1 hive hive0 shutdown" -nb -ne -f ${log.dir}/${log.file}</log-match>
+	</step>
+
+	<step no="5" type="loop-check" loop-max-times="6" loop-interval="10">
+		<desc>check ap1 eth0,eth1 if status is up</desc>
+		<log-file>show_int___AP___${loop_check.idx}.log</log-file>
+		<console target="__AP__">
+			-v "console page 0"
+			-v ""
+			-v "show int"
+			-v ""
+			-v "console page 22"
+		</console>
+		<log-match>-i "Eth0" -i " U "</log-match>
+		<failed>next</failed>
+	</step>
+
+</include>

@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Use MiNi-HiveUI to set use HTTP and port 80 for AP communications with HM</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-AP can obtain ip address from DHCP server
+		-PC can access AP
+
+		Test Procedure:
+		1.	Login MiNi-HiveUI, config HM, enable HTTP and apply, show capwap client to check if HTTP be used
+		2.	Reset port and transport to default, check result by show running-config
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="selenium_path" value="/root/selenium-server-standalone-2.42.2.jar" />
+	<stage>
+	
+		<step no="0.1">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "export DISPLAY=:1"
+				-v "nohup java -jar ${selenium_path} 1>logfile.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "printenv"
+			</ssh>
+		</step>
+		
+		<step no="1">
+			<desc>
+				clear the capwap info
+			</desc>
+			<log-file>step1_clear_capwap.log</log-file>
+			<telnet target="ap1">
+				-v "no capwap client server"
+				-v "no capwap client transport"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>check the running-config</desc>
+			<log-file>step1.1_running_config.log</log-file>
+				<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+			<log-match>-n -i "capwap client server name"</log-match>
+			<log-match>-n -i "capwap client transport HTTP"</log-match>			 		
+		</step>
+
+		<step no="2">
+			<desc>
+				config ssid
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="3.1">
+            <multi-setvar>
+                echo "conn1.ssid=${ssid.name}"
+                echo "conn1.proto=open"
+                echo "conn1.pif=${ssid_bind_interface}"
+            </multi-setvar>
+        </step>
+        <include prefix="3.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />		
+
+		<step no="4">
+			<desc>
+				open a browser on laptop,login NetConfigUI and config HM settings
+			</desc>
+			<log-file>step4_config_HM.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir};
+				python ${auto.root.dir}/AerohiveGUI/scripts/miniui/miniui_basic.py -r http://${sta1.mif.ip}:4444/wd/hub \
+				--parameters visit.url=https://${ap1.mgt0.ip}/index.php5 config.mode=hm hm.is_proxy=false hm.para_ip=${pub.hm1.ip} \
+				-t ff -l info -f ${log.dir}/${log.file} --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="5">
+			<desc>
+				check running-config
+			</desc>
+			<log-file>show_running_config.log</log-file>
+			<console target="ap1">
+				-v "capwap client enable"
+				-v "show running-config"
+			</console>
+			<log-match>-i "capwap client server name ${pub.hm1.ip}"</log-match>
+			<log-match>-i "capwap client transport HTTP"</log-match>
+		</step>
+
+		<step no="6" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check show capwap client
+			</desc>
+			<log-file>step6_show_int_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show capwap client"
+			</console>
+			<log-match>-i "CAPWAP server IP:\s+${pub.hm1.ip}" -re</log-match>
+			<log-match>-i "Server destination Port: 80"</log-match>
+			<log-match>-i "RUN state: Connected securely to the CAPWAP server "</log-match>
+			<log-match>-i "CAPWAP transport mode:  HTTP on TCP"</log-match>
+		</step>
+		
+		<step no="7">
+			<desc>
+				Reset port and transport to default
+			</desc>
+			<log-file>step7_config_HM.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir};
+				python ${auto.root.dir}/AerohiveGUI/scripts/miniui/miniui_basic.py -r http://${sta1.mif.ip}:4444/wd/hub \
+				--parameters visit.url=https://${ap1.mgt0.ip}/index.php5 config.mode=hm hm.is_para=false hm.is_http=false hm.is_proxy=false \
+				-t ff -l info -f ${log.dir}/${log.file} --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+		
+		<step no="8">
+			<desc>
+				check running-config
+			</desc>
+			<log-file>step8_show_running_config.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-i "capwap client server name ${pub.hm1.ip}"</log-match>
+			<log-match>-n -i "capwap client transport HTTP"</log-match>
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check show capwap client
+			</desc>
+			<log-file>step9_show_int_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show capwap client"
+			</console>
+			<log-match>-i "CAPWAP server IP:\s+${pub.hm1.ip}" -re</log-match>
+			<log-match>-i "Server destination Port: 12222"</log-match>
+			<log-match>-i "RUN state: Connected securely to the CAPWAP server "</log-match>
+			<log-match>-i "CAPWAP transport mode:  UDP"</log-match>
+		</step>		
+	</stage>
+</testcase>

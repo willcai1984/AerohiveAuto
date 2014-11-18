@@ -1,0 +1,157 @@
+<testcase>
+	<brief>Unicast from laptop1 to laptop2 on different ssid. </brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Topology to use
+		Switch——PC
+		|
+		Laptop1---------AP--------laptop2
+		Description
+		Unicast from laptop1 to laptop2 on different ssid.
+		Pre-condition
+		-laptop1 connect with ssid1;
+		-laptop2 connect with ssid2;	
+		-both laptops pass authentication;
+		-PC connect with switch;
+		-all laptops and PC are in same vlan;
+		-inter-station-traffic is disabled on ssid1.
+		Test procedure
+		-disable IST on AP
+		AH-000120#no ssid ssid1 inter-station-traffic
+		-laptop1 sends unicast like ping etc, to laptop2. Result 1
+		-laptop2 sends unicast like ping etc, to laptop1. Result 2
+		-laptop1 sends unicast like ping etc, to PC. Result 3
+		Expect result
+		Result 1,2: This packet should be dropped based on incoming interface.
+		Result 3: This packet should be bypassed.
+		Test result
+		pass
+	</description>
+	<stage>
+
+		<step no="1">
+			<desc>Set SSID for DUT1 via ssh to</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "security-object ${ssid.name}1"
+				-v "security-object ${ssid.name}1 security protocol-suite open"
+				-v "security-object ${ssid.name}1 default-user-profile-attr 1"
+				-v "ssid ${ssid.name}1 security-object ${ssid.name}1"
+				-v "ssid ${ssid.name}2"
+				-v "security-object ${ssid.name}2"
+				-v "security-object ${ssid.name}2 security protocol-suite open"
+				-v "security-object ${ssid.name}2 default-user-profile-attr 1"
+				-v "ssid ${ssid.name}2 security-object ${ssid.name}2"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}1"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}2"
+				-v "user-profile fw qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="2.1.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}1"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="2.1.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+
+		<step no="2.2.1">
+			<multi-setvar>
+				echo "conn2.ssid=${ssid.name}2"
+				echo "conn2.proto=open"
+				echo "conn2.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="2.2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<include prefix="3.1" file="subs/sta_ping.xml" args="sta1,${sta2.tif.ip}, 4" />
+		<include prefix="3.2" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4" />
+
+
+		<step no="get_mpc_ip_info">
+			<desc>Show interface on PC</desc>
+			<log-file>ifconfig.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name} > ${log.dir}/ifconfig.log
+			</script>
+		</step>
+
+		<step no="get_mpc_tif_mac">
+			<desc>Get the PC's MAC address </desc>
+			<setvar name="mpc.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -m -f ${log.dir}/ifconfig.log -i ${mpc.tif.name} -dash
+			</setvar>
+		</step>
+
+
+
+		<step no="4.1">
+			<desc>Set SSID for DUT1 via ssh to</desc>
+			<ssh target="ap1">
+				-v "no ssid ${ssid.name}1 inter-station-traffic"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log buffered"
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>Set ff and clear log all on AP </desc>
+			<ssh target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+				-v "save config"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<include prefix="5" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4, negative" />
+
+		<step no="6">
+			<desc>check_log_buffered</desc>
+			<log-file>logbuffer1.log</log-file>
+			<ssh target="ap1">
+				-v "show logg buf | in \"inter station traffic\""
+			</ssh>
+			<log-match>-i "inter station traffic not allowed on wifi0.1" -i "drop pkt" </log-match>
+		</step>
+
+
+		<step no="7">
+			<desc>Set ff and clear log all on AP </desc>
+			<ssh target="ap1">
+				-v "no _ff id 1"
+				-v "_ff id 1 src-mac ${sta2.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+				-v "save config"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<include prefix="8" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4, negative" />
+
+		<step no="9">
+			<desc>check_log_buffered</desc>
+			<log-file>logbuffer2.log</log-file>
+			<ssh target="ap1">
+				-v "show logg buf | in \"inter station traffic\""
+			</ssh>
+			<log-match>-i "inter station traffic not allowed on wifi0.1" -i "drop pkt"</log-match>
+		</step>
+
+
+		<include prefix="10" file="subs/sta_ping.xml" args="sta1, ${mpc.tif.ip}, 4" />
+
+	</stage>
+</testcase>

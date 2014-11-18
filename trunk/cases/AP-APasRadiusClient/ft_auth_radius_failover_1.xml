@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>ft_auth_radius_failover_1.xml</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition
+		-config a radius server
+		-config a ssid with 802.1x support
+		-config a primary radius server,it is unreachable
+		-config a backup1 radius server on ssid,this server is available
+		-active this ssid
+		Test procedure
+		-client connects to ssid,check the debug
+		Expect result
+		1. We can see the AP sends radius request to primary radius server,but
+		server has no response,after several retries,AP will switches to
+		backup1 server
+		2. Radius auth success with the backup1 server,client will pass auth
+		successfully
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-tkip-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<step no="1">
+			<desc>config AP1</desc>
+			<telnet target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-tkip-8021x"
+				-v "security-object autoap security aaa radius primary 1.1.1.1 shared-secret ${pub.radius1.username}"
+				-v "security-object autoap security aaa radius primary 1.1.1.1 auth-port ${pub.radius1.authport}"
+				-v "security-object autoap security aaa radius backup1 2.2.2.2 shared-secret ${pub.radius1.username}"
+				-v "security-object autoap security aaa radius backup1 2.2.2.2 auth-port ${pub.radius1.authport}"
+				-v "security-object autoap security aaa radius backup2 3.3.3.3 shared-secret ${pub.radius1.username}"
+				-v "security-object autoap security aaa radius backup2 3.3.3.3 auth-port ${pub.radius1.authport}"
+				-v "security-object autoap security aaa radius backup3 ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius backup3 ${pub.radius1.ip} auth-port ${pub.radius1.authport}"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>Set SSID for AP1</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "_debug auth info"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>show running config on AP1</desc>
+			<log-file>show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show run"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>show protocol suit</desc>
+			<log-file>show_proto.log</log-file>
+			<telnet target="ap1">
+				-v "show security-object autoap security protocol-suite"
+			</telnet>
+			<log-match>-i "Method=wpa-tkip-8021x"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>show ssid</desc>
+			<log-file>show_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+			<log-match>-i "autoap"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>show aaa</desc>
+			<log-file>show_aaa.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa"
+			</telnet>
+			<log-match>-c -i "Primary *1.1.1.1 *${pub.radius1.authport}"</log-match>
+			<log-match>-c -i "Backup1 *2.2.2.2 *${pub.radius1.authport}"</log-match>
+			<log-match>-c -i "Backup2 *3.3.3.3 *${pub.radius1.authport}"</log-match>
+			<log-match>-c -i "Backup3 *${pub.radius1.ip} *${pub.radius1.authport}"</log-match>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>save debug on AP1</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Sending RADIUS message to authentication server 1.1.1.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "No response from Authentication server 1.1.1.1:1812 - failover" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Sending RADIUS message to authentication server 2.2.2.2" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "No response from Authentication server 2.2.2.2:1812 - failover" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Sending RADIUS message to authentication server 3.3.3.3" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "No response from Authentication server 3.3.3.3:1812 - failover" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Sending RADIUS message to authentication server ${pub.radius1.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "No response from Authentication server ${pub.radius1.ip}:1812 - failover" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8">
+			<desc>show auth on AP1 </desc>
+			<log-file>show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-p 7 -i "done" -i "${sta.tif.mac}"</log-match>
+			<log-match>-p 9 -i "WPA/TKIP" -i "${sta.tif.mac}"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>show stastion on AP1 </desc>
+			<log-file>show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-p 11 -i "Yes" -i "${sta.tif.mac}"</log-match>
+			<log-match>-p 7 -i "wpa-8021x" -i "${sta.tif.mac}"</log-match>
+			<log-match>-i "${sta1.tif.ip}" -i "${sta1.tif.mac}"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>show roaming cache on AP1 </desc>
+			<log-file>show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-p 12 -i "YNNN" -i "${sta1.tif.mac}"</log-match>
+		</step>
+
+		<include prefix="11" file="subs/sta_ping.xml" args="sta1, ${mpc.tif.ip}, 5" />
+	</stage>
+</testcase>

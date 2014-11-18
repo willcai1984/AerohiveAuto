@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>psk ssid </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		gui automation psk ssid
+	</description>
+	<numofap>1</numofap>
+	<tbtype>winlin</tbtype>
+
+	<property name="policy.name" value="network_policy" />
+	<property name="job_selenium_port" value="${cloud.selenium.port}" />
+	<property name="job_selenium_log" value="/tmp/selenium-${job.id}.log" />
+	<stage>
+		<include prefix="start_selenium_server1" file="subs/start_selenium_server_${tb.os}.xml" args="${job_selenium_jar}, ${job_selenium_port}, ${job_selenium_log}, ${tb.browser_type},${tb.browser_path}" />
+		<step no="debug.0" >
+			<desc>print The environment variable </desc>
+			<script>
+				echo "${ap1.selenium.port}"
+				echo "{$job_selenium_port}"
+			</script>
+		</step>
+		<step no="pre.0">
+			<desc>
+				get access addr
+			</desc>
+			<setvar name="access_addr">
+				echo "${tb.http_server}"
+			</setvar>
+		</step>
+		
+		<step no="pre.1">
+			<desc>
+				get login addr
+			</desc>
+			<setvar name="login_addr">
+				echo "${tb.http_server}/login"
+			</setvar>
+		</step>
+		
+		<step no="pre.2">
+			<desc>
+				get random number
+			</desc>
+			<setvar name="random.number">
+				echo $RANDOM
+			</setvar>
+		</step>
+		<step no="pre.3">
+			<desc>
+				create ssid name
+			</desc>
+			<setvar name="case.ssid.name">
+				echo ${job.sid}-$RANDOM
+			</setvar>
+		</step>
+		
+		<step no="1">
+			<desc>
+				access cloud3.0
+			</desc>
+			<log-file>login_cloud.html</log-file>
+			<file>session_id.log</file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/cloud_login_positive.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info --preserve-session --parameters visit.pre_url=${login_addr} visit.url=${access_addr} &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="2">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log -t str
+			</setvar>
+		</step>
+		
+		<step no="3">
+			<desc>
+				create network policy
+			</desc>
+			<log-file>create_network_policy.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/create_network_policy.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --parameters policy.name=${policy.name}-${random.number} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info  --preserve-session 
+			</script>
+		</step>
+		
+		<step no="4">
+			<desc>
+				Deployed Wireless SSID
+			</desc>
+			<log-file>create_policy_ssid.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/create_deployed_ssid.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub  --parameters ssid.ssid_security=psk ssid.name=${case.ssid.name} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info --preserve-session 
+			</script>
+		</step>
+		
+		<step no="5">
+			<desc>
+				deploy policy
+			</desc>
+			<log-file>deploy_policy.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/deploy_policy.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --parameters deploy_policy.check_mac=${ap1.mgt0.mac} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+		
+		<step no="6" delay="120">
+			<desc>
+				1. show run config
+			</desc>
+			<log-file>check_hiveaps_capwap_state.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+            <log-match>-i "security mac-filter ${case.ssid.name} default permit"</log-match>
+            <log-match>-i "security-object ${case.ssid.name}"</log-match>
+            <log-match>-i "security-object ${case.ssid.name} security protocol-suite wpa2-aes-psk ascii-key"</log-match>
+            <log-match>-i "ssid ${case.ssid.name}"</log-match>
+            <log-match>-i "ssid ${case.ssid.name} security-object ${case.ssid.name}"</log-match>
+            <log-match>-i "ssid ${case.ssid.name} security mac-filter ${case.ssid.name}"</log-match>
+            <log-match>-i "interface wifi0 ssid ${case.ssid.name}"</log-match>
+            <log-match>-i "interface wifi1 ssid ${case.ssid.name}"</log-match>
+		</step>
+		
+	</stage>
+	<post-process>
+		<stage>
+			<include prefix="stop_selenium_server1" file="subs/stop_selenium_server_${tb.os}.xml"  args="${job_selenium_log}"/>
+		</stage>
+	</post-process>
+</testcase>

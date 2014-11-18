@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Basic training</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		First part
+		1.Login ap1 and execute commands "show hw" via console, check the output via log-match
+		Second part
+		1.Login ap1 and Config ssid relate config via console
+		2.Login sta1 and use cli to connect the ssid via existing API
+		3.Login sta1 and ping tb.vlan1.gw
+		Third part
+		1.How to get the host name
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="send_count" value="12000" />
+
+	<stage>
+		<!-- part1 How to execute cmds and check output -->
+		<step no="1">
+			<desc>
+				Show how to login device and how to check
+			</desc>
+			<log-file>step1showhw.log</log-file>
+			<ssh target="ap1">
+				-v "show hw"
+			</ssh>
+			<!-- To check if AP's platform is as expect -->
+			<log-match>-e "Product name:\s+HiveAP" -re</log-match>
+		</step>
+	</stage>
+
+	<stage>
+		<!-- part2 How to use Framework tools: such as if and loop-check -->
+		<!-- If part -->
+		<step no="2.1.1">
+			<if>"${ap.eth1.existed}"=="true" </if>
+			<desc>
+				check if the device has eth1, if yes, shutdown it, if no, do nothing
+			</desc>
+			<ssh target="ap1">
+				-v "interface eth1 shutdown"
+			</ssh>
+		</step>
+
+		<step no="2.1.2">
+			<if>"${img.prodtype}" == "APTBBR100" || "${img.prodtype}" == "APTBBR200"</if>
+			<desc>How to use ||and &amp;&amp; </desc>
+			<multi-setvar>
+				echo "ap.is_aptbbr=true"
+			</multi-setvar>
+		</step>
+
+		<!-- loop-check part -->
+		<step no="2.2.1">
+			<desc>
+				config capwap
+			</desc>
+			<ssh target="ap1">
+				-v "capwap client enable"
+				-v "capwap client server name ${pub.hm1.ip}"
+			</ssh>
+		</step>
+
+		<step no="2.2.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				How to check capwap status
+			</desc>
+			<log-file>check_hiveaps_capwap_state_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show capwap client"
+			</ssh>
+			<log-match>-e "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+
+	</stage>
+
+	<stage loop-values="1,3,5,7" var-name="loop_id">
+		<!-- part3 How to use Framework tools: loop-execute -->
+		<!-- <stage loop-values="1..62" var-name="loop_id"> -->
+		<!-- 1) The ${loop_id} is self defined loop variable name. -->
+		<!-- 2) The ${loop.v} is built-in loop variable name -->
+		<!-- 3) The ${loop.idx} is the built-in loop index -->
+		<step no="3">
+			<desc>
+				Demo how to use loop
+			</desc>
+			<script>
+				echo "loop_id is ${loop_id}"
+				echo "loop.v is ${loop.v}"
+				echo "loop.idx is ${loop.idx}"
+			</script>
+		</step>
+	</stage>
+
+	<stage>
+		<!-- part4 example -->
+		<step no="4.1">
+			<desc>
+				Modify AP vlan to vlan2, only this step use console, others are ssh, due to tty bug
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan2}"
+			</console>
+		</step>
+
+		<!-- due to modify vlan and native vlan, we should renew the ip -->
+		<include prefix="4.2" file="subs/ap_renew_ip.xml" obj-args="ap1" />
+
+		<step no="4.3">
+			<desc>
+				Config AP
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite open"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile fw qos-policy def-user-qos vlan-id ${tb.vlan3} attribute 1"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				Configure sta connect parameters
+			</desc>
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+
+		<include prefix="4.5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4.6" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				-Show ssid station to check
+			</desc>
+			<log-file>show_station_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<include prefix="4.7" file="subs/sta_ping.xml" args="sta1, ${tb.vlan1.gw}, 4" />
+	</stage>
+
+	<stage>
+		<!-- part5 Other skills -->
+
+		<!-- How to get value and set to var -->
+		<step no="5.1.1">
+			<desc>
+				Do something to show the hostname in log file, such as execute "show hw"
+			</desc>
+			<log-file>5.1.1_showhw.log</log-file>
+			<ssh target="ap1">
+				-v "show hw"
+			</ssh>
+		</step>
+
+		<step no="5.1.2">
+			<desc>
+				Get the value you expect and set it to the variable
+			</desc>
+			<setvar name="ap1.hostname">
+				python ${bin.dir}/getbyrexp.py -p "^([a-zA-Z0-9-]+)#show hw" -f ${log.dir}/5.1.1_showhw.log -t str
+			</setvar>
+		</step>
+
+		<!-- How to use special username and passwd parameters -->
+		<step no="5.2">
+			<desc>
+				Use default user admin/aerohive to login AP via SSH
+			</desc>
+			<log-file>step4_show_admin_active.log</log-file>
+			<ssh target="ap1" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show admin active"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<!-- How to get to shell -->
+		<step no="5.3">
+			<desc>
+				Enter to shell mode
+			</desc>
+			<console target="ap1" prompt="AH.*$|#" timeout="600">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "ps"
+				-v "exit"
+				-v ""
+			</console>
+		</step>
+
+		<!-- <include prefix="2.1" file="subs/ap_amrp_neighbor_check.xml" obj-args="ap1,ap2" /> -->
+		<!-- <include prefix="2.2" file="subs/ap_amrp_neighbor_check.xml" obj-args="ap2,ap1" /> -->
+
+	</stage>
+
+
+</testcase>

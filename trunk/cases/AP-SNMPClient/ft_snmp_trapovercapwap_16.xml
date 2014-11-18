@@ -1,0 +1,198 @@
+<testcase>
+	<brief>Whenever a connection state change occurs, trap be sent to HM </brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Description:
+		Whenever a connection state change occurs, trap be sent to HM
+		Pre-condition:
+		AP connect to HM
+		Create a SSID and bind it to interface wifi0 in AP1
+		Test procedure:
+		1. Open _debug capwap trap and debug console to check if trap be generated and sent out
+		2. Use a laptop connect to AP, check if corresponding trap be sent to HM
+		3. Disconnect laptop from AP, check if corresponding trap be sent to HM
+		Expect result:
+		Trap be sent to HM
+	</description>
+	<stage>
+
+		<step no="1">
+			<desc>Set config to AP1 </desc>
+			<ssh target="ap1">
+				-v "capwap client enable"
+				-v "capwap client server name ${pub.hm1.ip}"
+			</ssh>
+		</step>
+
+		<step no="2" delay="180">
+			<desc>Show capwap client by CLI</desc>
+			<log-file>step2_capwap_state.log</log-file>
+			<ssh target="ap1">
+				-v "show capwap client"
+			</ssh>
+			<log-match>-e "RUN state: Connected securely to the CAPWAP server" -c</log-match>
+		</step>
+
+		<step no="3">
+			<desc>Set SSID and bind it to interface wifi0</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="4">
+			<desc>Show interface wifi0.1</desc>
+			<log-file>step4_ap1_wifi0.log</log-file>
+			<ssh target="ap1">
+				-v "show interface wifi0.1"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>Get the MAC of wifi0.1</desc>
+			<setvar name="ap1.wifi0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step4_ap1_wifi0.log -i wifi0.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>Open _debug capwap trap to check trap</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "_debug capwap trap"
+			</ssh>
+		</step>
+
+		<include prefix="7.1" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="7.2">
+			<desc>
+				2: Client links to ap successfully.
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="7.3" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check if the client was associated successfully</desc>
+			<log-file>step7.3_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				Client tries to get ip address from dhcp server
+			</desc>
+			<ssh target="sta1">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="8.1" delay="10">
+			<desc>ifconfig to show the ip adrr</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match> -e "inet addr"</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="8.3">
+			<desc>Get laptop1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="9">
+			<desc>
+				Check station exist in AP1
+			</desc>
+			<log-file>ap1_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-e "${sta1.tif.mac}" -i "${sta1.tif.ip}" -c</log-match>
+		</step>
+
+		<step no="10" delay="120">
+			<desc>Show log buffered to check connection state change trap be generated and be sent to HM in AP1</desc>
+			<log-file>step10_show_buff.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered | in debug"
+			</ssh>
+			<log-match>-e "CAPWAP receive connection change trap!" -c</log-match>
+			<log-match>-e "trap object name:AUTH" -c</log-match>
+			<log-match>-e "trap description:Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.mac} thru SSID ${ssid.name}" -c</log-match>
+			<log-match>-e "Send capwap trap" -c</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="11">
+			<desc>Clear log all</desc>
+			<console target="ap1" timeout="80">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="12">
+			<desc>Station disconnect from AP1</desc>
+			<log-file>step12_wpa_disc.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="13">
+			<desc>
+				Check station not exist in AP1
+			</desc>
+			<log-file>ap1_station2.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-n -e "${sta1.tif.mac}" -i "${sta1.tif.ip}" -c</log-match>
+		</step>
+
+		<step no="14" delay="150">
+			<desc>Show log buffered to check connection state change trap be generated and be sent to HM in AP1</desc>
+			<log-file>step14_show_buff.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered | in debug"
+			</ssh>
+			<log-match>-e "CAPWAP receive connection change trap!" -c</log-match>
+			<log-match>-e "Send capwap trap" -c</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+
+</testcase>

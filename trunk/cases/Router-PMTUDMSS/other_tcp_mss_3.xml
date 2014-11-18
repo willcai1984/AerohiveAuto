@@ -1,0 +1,643 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>TCP MSS of L3VPN can be set separately in CVG and pass through eth0</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1.Setup L3VPN in BR and CVG
+		2.Ip tcp-mss-threshold enable in both BR and CVG
+		3.Set the tcp-mss-threshold of l3vpn to 1356
+		4.Connect one laptop to BR
+		5.Send TCP traffic from eth1 to eth0(wan), result 1.
+		6.Send TCP traffic that go through L3vpn from CVG to BR, result 2
+		7.Set the TCP-MSS-Threshold to 1460
+		8.Send TCP traffic from eth1 to eth0(wan), result 3.
+		9.Send TCP traffic that go through L3vpn from CVG to BR, result 2
+		10.Set the TCP-MSS-Threshold to 64
+		11.Send TCP traffic from eth1 to eth0(wan), result 4.
+		12.Send TCP traffic that go through L3vpn from CVG to BR, result 2
+		13.Set the TCP-MSS-Threshold to 1356
+		14.Send TCP traffic from eth1 to eth0(wan), result 5.
+		15.Send TCP traffic that go through L3vpn from CVG to BR, result 2
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<property name="create.file" value="test_file.log" />
+	<property name="create.file_2" value="test_file_2.log" />
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<!--<property name="tcpmss_log" value="tcpmss_log" />
+	<property name="log_file_dir" value="/tmp" />-->
+
+
+	<stage>
+		<include prefix="1" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+
+		<step no="2">
+			<desc>
+				config mgt0.1 with dhcp service enable,dns service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask ${br.route.netmask}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.vpc1.route=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>step3_show_route_cvg_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>3.1_show_l3_ip_route_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				Create ssid
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object lan1"
+				-v "security-object lan1 default-user-profile-attr 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 security-object lan1"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile fw qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+			</telnet>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				ip tcp-mss-threshold enable in BR
+				Set the tcp-mss-threshold of l3vpn to 1356
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip tcp-mss-threshold enable"
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1356"
+			</telnet>
+		</step>
+
+		<step no="3.7">
+			<desc>
+				ip tcp-mss-threshold enable in CVG
+				Set the tcp-mss-threshold of l3vpn to 1356
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "ip tcp-mss-threshold enable"
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1356"
+			</telnet>
+		</step>
+
+		<step no="3.3">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.3a">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.3b">
+			<desc>get raw mac of vpc2</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/ifconfig_vpc1_.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.3c">
+			<desc>get mac of br1.vpc2</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<step no="3.4" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>BR ping br1.vpc1</desc>
+			<log-file>step3.4_log_br_to_sta1_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${br1.vpc1.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<include prefix="3.4b._ensure" file="subs/cvg_l3sw_check_route.xml" obj-args="cvg1" args="${br1.br.mgt0.1.route}/${br.lan.netmask}, setp3.4b_l3SW_route.log, " />
+
+		
+
+		<step no="3.5">
+			<desc>
+				cvg1.vpc1 ping vpc1
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ping ${br1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				open debug mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "_ff id 2 src-ip ${cvg1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show system command \"ip route flush cache\" "
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				Send TCP traffic from eth1 to eth0(wan)
+			</desc>
+			<log-file>step6.2_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="500">
+				-v "rm -f /tmp/${pub.ftp1.file3_small}"
+				-v "curl -u ${pub.ftp1.username}:${pub.ftp1.passwd} ftp://${pub.ftp1.ip}/${pub.ftp1.file3_small} -o /tmp/${pub.ftp1.file3_small} --connect-timeout 100"
+			</ssh>
+		</step>
+
+		<step no="7" delay="30">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>
+				Check file and delete local files
+			</desc>
+			<log-file>step7.1_check_file.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ll -n /tmp/"
+				-v "rm -f /tmp/${pub.ftp1.file3_small}"
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				Create file
+			</desc>
+			<ssh target="br1.vpc1" timeout="200">
+				-v "dd if=/dev/zero of=${create.file_2} bs=100K count=1"
+				-v "chmod 777 ${create.file_2}"
+				-v "service vsftpd restart"
+			</ssh>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show system command \"ip route flush cache\" "
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8.3">
+			<desc>
+				Send TCP traffic that go through L3vpn from CVG to BR
+			</desc>
+			<log-file>step8.3_download_files.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}" timeout="500">
+				-v "curl -u ${br1.vpc1.user}:${br1.vpc1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2} --connect-timeout 100 "
+			</ssh>
+		</step>
+
+		<step no="9" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${br1.vpc1.tif.ip}:\d+-&gt;${cvg1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1356\),dst_mtu=\d+" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>
+				clear vpc file
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ll -n /tmp/"
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="11">
+			<desc>
+				Set the TCP-MSS-Threshold to 1460
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1460"
+			</telnet>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				Set the TCP-MSS-Threshold to 1460
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1460"
+			</telnet>
+		</step>
+
+		<step no="11.2">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show system command \"ip route flush cache\" "
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="12">
+			<desc>
+				Send TCP traffic from eth1 to eth0(wan)
+			</desc>
+			<log-file>step12_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="500">
+				-v "curl -u ${pub.ftp1.username}:${pub.ftp1.passwd} ftp://${pub.ftp1.ip}/${pub.ftp1.file3_small} -o /tmp/${pub.ftp1.file3_small} --connect-timeout 100"
+			</ssh>
+		</step>
+
+		<step no="13" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step13_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="13.1">
+			<desc>
+				Check file and delete local file
+			</desc>
+			<log-file>step13.1_check_file.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ll -n /tmp/"
+				-v "rm -f /tmp/${pub.ftp1.file3_small}"
+			</ssh>
+		</step>
+
+		<step no="13.2" delay="10">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show system command \"ip route flush cache\" "
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="14">
+			<desc>
+				Send TCP traffic that go through L3vpn from CVG to BR
+			</desc>
+			<log-file>step14_download_files.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}" timeout="500">
+				-v "curl -u ${br1.vpc1.user}:${br1.vpc1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2} --connect-timeout 100"
+			</ssh>
+		</step>
+
+		<step no="15" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step15_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="16.1">
+			<desc>
+				clear vpc file
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ll -n /tmp/"
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="17">
+			<desc>
+				Set the TCP-MSS-Threshold to 64
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 64"
+			</telnet>
+		</step>
+
+		<step no="17.1">
+			<desc>
+				Set the TCP-MSS-Threshold to 64
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 64"
+			</telnet>
+		</step>
+		
+		<step no="17.2">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show system command \"ip route flush cache\" "
+				-v "clear log all"
+			</telnet>
+		</step>
+		<step no="17.3">
+			<desc>
+				-clear route cache
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show system command \"ip route flush cache\" "
+			</telnet>
+		</step>
+		
+	
+	
+		<!--<step no="17.4">
+			<desc>
+				delete tmp files
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "rm -f ${log_file_dir}/${tcpmss_log}"
+			</ssh>
+		</step>
+
+		<step no="17.5">
+			<desc>
+				Config logging host ip address and severity level to syslog server
+			</desc>
+			<telnet target="ap1">
+				-v "logging server ${tb.syslog_server}"
+			</telnet>
+		</step>-->
+		
+		
+		<step no="18">
+			<desc>
+				Send TCP traffic from eth1 to eth0(wan)
+			</desc>
+			<log-file>step18_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="500">
+				-v "curl -u ${pub.ftp1.username}:${pub.ftp1.passwd} ftp://${pub.ftp1.ip}/${pub.ftp1.file3_small} -o /tmp/${pub.ftp1.file3_small} --connect-timeout 100"
+			</ssh>
+		</step>
+
+		<step no="19" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step19_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="19.1">
+			<desc>
+				Check file and delete local file
+			</desc>
+			<log-file>step19.1_check_file.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ll -n /tmp/"
+				-v "rm -f /tmp/${pub.ftp1.file3_small}"
+			</ssh>
+		</step>
+
+		<step no="19.2" delay="10">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show system command \"ip route flush cache\" "
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="20">
+			<desc>
+				Send TCP traffic that go through L3vpn from CVG to BR
+			</desc>
+			<log-file>step20_download_files.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}" timeout="500">
+				-v "curl -u ${br1.vpc1.user}:${br1.vpc1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2} --connect-timeout 100"
+			</ssh>
+		</step>
+		
+		<!--<step no="21">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step21_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${tcpmss_log}"
+				-v "rm -f ${log_file_dir}/${tcpmss_log}"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${br1.vpc1.tif.ip}:\d+-&gt;${cvg1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 64\),dst_mtu=\d+" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>-->
+		<step no="21" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step21_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${br1.vpc1.tif.ip}:\d+-&gt;${cvg1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 64\),dst_mtu=\d+" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="22">
+			<desc>
+				Check file and delete file
+			</desc>
+			<log-file>step22_check_file.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ll -n /tmp/"
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="23">
+			<desc>
+				Set the TCP-MSS-Threshold to 1356
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1356"
+			</telnet>
+		</step>
+
+		<step no="23.1">
+			<desc>
+				Set the TCP-MSS-Threshold to 1356
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1356"
+			</telnet>
+		</step>
+
+		<step no="23.2">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show system command \"ip route flush cache\" "
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="24">
+			<desc>
+				Send TCP traffic from eth1 to eth0(wan)
+			</desc>
+			<log-file>step24_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="500">
+				-v "curl -u ${pub.ftp1.username}:${pub.ftp1.passwd} ftp://${pub.ftp1.ip}/${pub.ftp1.file3_small} -o /tmp/${pub.ftp1.file3_small} --connect-timeout 100"
+			</ssh>
+		</step>
+
+		<step no="25" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step25_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="25.1">
+			<desc>
+				Check file and delete file
+			</desc>
+			<log-file>step25.1_check_file.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ll -n /tmp/"
+				-v "rm -f /tmp/${pub.ftp1.file3_small}"
+			</ssh>
+		</step>
+
+		<step no="25.2" delay="10">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show system command \"ip route flush cache\" "
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="26">
+			<desc>
+				Send TCP traffic that go through L3vpn from CVG to BR
+			</desc>
+			<log-file>step26_download_files.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}" timeout="500">
+				-v "curl -u ${br1.vpc1.user}:${br1.vpc1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2} --connect-timeout 100"
+			</ssh>
+		</step>
+
+		<step no="27" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step27_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${br1.vpc1.tif.ip}:\d+-&gt;${cvg1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1356\),dst_mtu=\d+" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear vpc file
+				</desc>
+				<ssh target="br1.vpc1">
+					-v "rm -f /tmp/${pub.ftp1.file3_small}"
+					-v "rm -f /tmp/${create.file_2}"
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					clear vpc flie
+				</desc>
+				<ssh host="${cvg1.vpc1.mif.ip}">
+					-v "rm -f /tmp/${create.file_2}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

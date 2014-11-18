@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+    <brief>check cwp config function </brief>
+    <priority>High</priority>
+    <automated>yes</automated>
+    <description>
+        check cwp config functions
+    </description>
+    <numofap>1</numofap>
+    <tbtype>winlin</tbtype>
+
+    <property name="tmp_policy_name" value="auto_ap_policy" />
+    <property name="tmp_ssid_name" value="auto_ssid" />
+    <property name="tmp_cwp_name" value="auto_cwp" />
+
+    <property name="job_selenium_port" value="${cloud.selenium.port}" />
+	<property name="job_selenium_log" value="/tmp/selenium-${job.id}.log" />
+    
+    <stage>    
+		<include prefix="start_selenium_server1" file="subs/start_selenium_server_${tb.os}.xml" args="${job_selenium_jar}, ${job_selenium_port}, ${job_selenium_log}, ${tb.browser_type},${tb.browser_path}" />
+        
+        <step no="pre.0">
+            <desc>
+                get access addr
+            </desc>
+            <setvar name="access_addr">
+                echo "${tb.http_server}"
+            </setvar>
+        </step>
+        
+        <step no="pre.1">
+            <desc>
+                get login addr
+            </desc>
+            <setvar name="login_addr">
+                echo "${tb.http_server}/login"
+            </setvar>
+        </step>
+        
+        <step no="pre.2">
+            <desc>
+                get random number
+            </desc>
+            <setvar name="random.number">
+                echo $RANDOM
+            </setvar>
+        </step>
+        
+        <step no="pre.3">
+            <desc>
+                get network policy name
+            </desc>
+            <setvar name="policy_name">
+                echo ${tmp_policy_name}-${random.number}
+            </setvar>
+            
+        </step>  
+        
+         <step no="pre.4">
+            <desc>
+                get network ssid name
+            </desc>
+            <setvar name="ssid_name">
+                echo ${tmp_ssid_name}-${random.number}
+            </setvar>
+            
+        </step>  
+        
+         <step no="pre.5">
+            <desc>
+                get cwp name
+            </desc>
+            <setvar name="cwp_name">
+                echo ${tmp_cwp_name}-${random.number}
+            </setvar>
+            
+        </step>                 
+
+        <step no="1">
+            <desc>
+                access cloud3.0
+            </desc>
+            <log-file>login_cloud.html</log-file>
+            <file>session_id.log</file>
+            <script>
+                export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/cloud_login_positive.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t chrome -f ${log.dir}/${log.file} -l info --preserve-session --parameters visit.pre_url=${login_addr} visit.url=${access_addr} &gt; ${log.dir}/session_id.log
+            </script>
+        </step>
+
+        <step no="2">
+            <desc>
+                get session id
+            </desc>
+            <setvar name="session.id">
+                ${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log -t str
+            </setvar>
+        </step>
+ 
+		<step no="3">
+			<desc>
+				create network policy
+			</desc>
+			<log-file>create_network_policy.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/create_network_policy.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --parameters policy.name=${policy_name} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info  --preserve-session 
+			</script>
+		</step>
+     
+        <step no="4">
+            <desc>
+                create cwp config and then push config
+            </desc>
+            <log-file>create_cwp.html</log-file>
+            <script timeout="600">
+                export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/cwp_config.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --preserve-session --parameters dev_mgt0_mac=${ap1.mgt0.mac} ssid.name=${ssid_name} ssid.cwp_name=${cwp_name} visit.pre_url=${login_addr} visit.url=${access_addr} ssid.security=psk -t chrome -f ${log.dir}/${log.file} -l info --session-id=${session.id}
+            </script>
+        </step>
+        
+		<step no="5">
+			<desc>
+				deploy policy
+			</desc>
+			<log-file>deploy_policy.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/deploy_policy.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --parameters deploy_policy.check_mac=${ap1.mgt0.mac} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+        
+        <step no="6" delay="180">
+			<desc>check the cli in hos</desc>
+			<log-file>step3_hos_cli.log</log-file>
+			<ssh target="ap1">
+				-v "show version"
+				-v "show running-config"
+			</ssh>
+			<log-match>-i "security-object ${ssid_name}"</log-match>
+			<log-match>-i "security-object ${ssid_name} security protocol-suite wpa2-aes-psk ascii-key"</log-match>
+			<log-match>-i "security-object ${ssid_name} security additional-auth-method captive-web-portal reg-user-profile-attr"</log-match>
+			<log-match>-i "security-object ${ssid_name} default-user-profile-attr"</log-match>
+			<log-match>-i "security-object ${ssid_name} security additional-auth-method captive-web-portal default-language english"</log-match>
+			<log-match>-i "security-object ${ssid_name} web-server web-page mandatory-field 0 optional-field 0"</log-match>
+			<log-match>-i "security-object ${ssid_name} web-server index-file eula.html "</log-match>
+			<log-match>-i "security-object ${ssid_name} web-directory ${cwp_name}"</log-match>	
+		</step>
+       
+    </stage>
+    
+	<post-process>
+		<stage>
+			<include prefix="stop_selenium_server1" file="subs/stop_selenium_server_${tb.os}.xml"  args="${job_selenium_log}"/>
+		</stage>
+	</post-process>
+    
+</testcase>

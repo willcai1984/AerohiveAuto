@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unit Test 0504: Verify that after changing eth0 to a different subnet, updating the default route with a new and valid IP address will allow BR and clients to reach hosts outside WAN interface.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		After WANAddressing_UnitTest_ConfigCLI_17
+
+		Test Procedure:
+		install a default route with gateway in eth0's new subnet
+		CLI commands:
+		ip route default gateway &lt;GATEWAY_IP&gt;
+		show ip route
+		show running-config
+		save config
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-1" />
+	<property name="br1.br.eth0.test_addr" value="192.168.10.234" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				check eth0 with wan mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0"
+			</telnet>
+			<log-match>-c -i "Mode=wan"</log-match>
+		</step>
+
+		<include prefix="2" file="subs/br_close_fw.xml" obj-args="br1" />
+
+		<step no="3">
+			<desc>
+				open debug switch
+			</desc>
+			<console target="br1.br">
+				-v "_ff dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="4">
+			<desc>
+				disable eth0 dhcp client
+			</desc>
+			<console target="br1.br">
+				-v "no interface eth0 dhcp client"
+				-v "interface eth0 shutdown"
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				configure static IP on eth0
+			</desc>
+			<console target="br1.br">
+				-v "interface eth0 ip ${br1.br.eth0.test_addr}/24"
+			</console>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				show interface eth0 dhcp client
+			</desc>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+			<log-match>-c -i "IP addr=${br1.br.eth0.test_addr}"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				Get br dst address
+			</desc>
+			<multi-setvar>
+				echo "br1.dst.ip=$(echo ${br1.br.eth0.test_addr} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				check route info
+			</desc>
+			<console target="br1.br">
+				-v "show ip route"
+			</console>
+			<log-match>-c -p 1 -i "${br1.dst.ip}" -p 2 -i "0.0.0.0" -p 4 -i "U" -p 8 -i "eth0"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				show running-config
+			</desc>
+			<console target="br1.br">
+				-v "show running-config"
+			</console>
+			<log-match>-c -i "interface eth0 ip ${br1.br.eth0.test_addr}"</log-match>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				check log
+			</desc>
+			<log-file>step5.3_show_logging_buffered.log</log-file>
+			<console target="br1.br" timeout="600">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="5.4">
+			<desc>
+				check route info
+			</desc>
+			<console target="br1.br">
+				-v "ping ${pub.hm1.ip}"
+			</console>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show interface eth0 dhcp client
+			</desc>
+			<log-file>step6_check_interface_eth0.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				get mgt0 ip
+			</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_check_interface_eth0.log -p "IP addr=(\S+);" -t str
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				Get br dst address
+			</desc>
+			<multi-setvar>
+				echo "br1.gateway.ip=$(echo ${br1.br.wan.ip} | cut -d. -f1,2,3).254"
+			</multi-setvar>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				install a default route with gateway in eth0's subnet
+			</desc>
+			<console target="br1.br">
+				-v "ip route default gateway ${br1.gateway.ip}"
+			</console>
+		</step>
+
+		<step no="7">
+			<desc>
+				check route info
+			</desc>
+			<console target="br1.br">
+				-v "show ip route"
+			</console>
+			<log-match>-c -i "0.0.0.0" -i "${br1.gateway.ip}" -i "UG" -i "eth0"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				show running-config
+			</desc>
+			<console target="br1.br">
+				-v "show running-config"
+			</console>
+			<log-match>-c -i "ip route net 0.0.0.0 0.0.0.0 gateway ${br1.gateway.ip}"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				config mgt0.1 with dhcp service enable
+			</desc>
+			<console target="br1.br">
+				-v "interface mgt0.1 vlan ${br1.vlan1}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</console>
+		</step>
+
+		<step no="10">
+			<desc>
+				Create ssid
+			</desc>
+			<console target="br1.br">
+<!-- 				-v "ssid ${conn1.ssid}"
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "user-profile fw qos-policy def-user-qos vlan-id ${br1.vlan1} attribute 1"
+				-v "interface wifi0 ssid ${conn1.ssid}" -->
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"		
+			    -v "user-profile fw qos-policy def-user-qos vlan-id ${br1.vlan1} attribute 1"
+			    -v "interface eth4 mode bridge-access" 
+                -v "interface eth4 mac-learning enable" 
+                -v "interface eth4 security-object ${conn1.ssid}"
+ 
+			</console>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				set interface down,then up
+			</desc>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ifconfig ${br1.vpc4.tif.name} down"
+				-v "ifconfig ${br1.vpc4.tif.name} up"
+				-v "dhclient ${br1.vpc4.tif.name} -r"
+			</ssh>
+		</step>
+
+		<step no="10.3">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step10.3_ifconfig_vpc1.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				sta ping external server
+			</desc>
+			<log-file>step12_sta_ping_server.log</log-file>
+			<ssh target="br1.vpc4">
+				-v "ping ${pub.dns_server.domain1} -c 4"
+			</ssh>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="0.1" file="subs/br_open_fw.xml" obj-args="br1" />
+
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+
+	</post-process>
+</testcase>

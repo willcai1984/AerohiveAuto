@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Enable OSPF on GW testing</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use	Topo 1
+		Description	Enable OSPF on GW testing
+		Pre-condition	After OSPF enable, GW can establish neighbors with DR/BDR, VPN tunnel establish
+		Test procedure	
+		1. Enable OSPF on GW, result 1
+		2.Enable OSPF advertise on one interface, such as lan, result 2
+		3. Disable OSPF on GW, result 3
+		Expect result	
+		1. OSPF is enabled on GW, but no interface is advertised, no route will be advertised from GW to other routers. GW can establish OSPF neighbor with other routers, and can receive routes from other routers.
+		2. Interface lan can advertise routes to other routers or BR, interface wan can’t advertise routes.
+		3. OSPF is disabled on GW, all routes learned from OSPF will be deleted, and all OSPF neighbors will be lost after timeout.
+	</description>
+
+	<numofcvg>1</numofcvg>
+	<numofbr>1</numofbr>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1" delay="20">
+			<desc>config CVG ${cvg1.cvg.vmname} act as l3 VPN server</desc>
+			<telnet host="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="20">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:certs/server_cert.pem"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:certs/server_key.pem"
+				-v "vpn xauth-client-list list_01 local"
+				-v "vpn xauth-client-list list_01 client-name ${br1.br.name} password aerohive"
+				-v "vpn server-ipsec-tunnel tunnel${job.id} vpn-mode layer-3"
+				-v "vpn ipsec-tunnel tunnel${job.id} client-list list_01"
+				-v "vpn tunnel-policy vpn_policy_01 server ipsec-tunnel tunnel${job.id}"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v ""
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>
+				config ${br1.br.name} as l3 VPN client connet to CVG
+			</desc>
+			<telnet host="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "vpn client-ipsec-tunnel tunnel${job.id} vpn-mode layer-3"
+				-v "vpn ipsec-tunnel tunnel${job.id} gateway ${cvg1.cvg.tunnel.ip} client-name ${br1.br.name} password aerohive"
+				-v "vpn tunnel-policy vpn_policy_01 client ipsec-tunnel tunnel${job.id} primary"
+				-v ""
+				-v "routing route-request enable"
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.lan.netmask}"
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v ""
+			</telnet>
+		</step>
+		<step no="3.1" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check vpn ike sa on BR side
+				destination to CVG public address
+			</desc>
+			<log-file>chk_ike_sa_br${loop_check.idx}.log</log-file>
+			<telnet host="${br1.br.wan.ip}">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+		</step>
+
+		<step no="3.2" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check vpn ike sa on CVG side
+				destionation to BR public address
+			</desc>
+			<log-file>chk_ike_sa_CVG_${loop_check.idx}.log</log-file>
+			<telnet host="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "R" -i "${br1.br.nat.ip}"</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				check gre tunnel on br side
+				remote to CVG wan address, local mgt0 address ,gateway CVG public address
+			</desc>
+			<log-file>chk_gre_tunnel_br.log</log-file>
+			<telnet host="${br1.br.wan.ip}">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "tunnel\d+[\t ]*gre/ipsec[\t ]*${cvg1.cvg.wan.ip}[\t ]*${br1.br.mgt0.ip}[\t ]*\d+[\t ]*${cvg1.cvg.tunnel.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				check gre tunnel on cvg side
+				local to CVG wan address
+			</desc>
+			<log-file>chk_gre_tunnel_CVG.log</log-file>
+			<telnet host="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "tunnel\d+[\t ]*gre/ipsec[\t ]*any[\t ]*${cvg1.cvg.wan.ip}[\t ]*\d+[\t ]*anonymous" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				check OSPF parameters
+			</desc>
+			<telnet host="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "sh ospf interface"
+				-v "sh ospf neighbor"
+				-v "sh ospf database"
+			</telnet>
+			<no-error-check></no-error-check>
+		</step>
+		<step no="4.2">
+			<desc>enable ospf on CVG eth1 if it has two arms, but no interface is advertised</desc>
+			<if>"two" == "${cvg1.cvg.arm_type}"</if>
+			<telnet host="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "routing protocol ospf router-id ${cvg1.cvg.lan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+			</telnet>
+			<log-match>-e "No interfaces enabled for OSPF route advertisement"</log-match>
+			<no-error-check></no-error-check>
+		</step>
+
+		<step no="4.3" delay="20">
+			<desc>
+				check OSPF parameters
+			</desc>
+			<telnet host="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "sh ospf interface"
+				-v "sh ospf neighbor"
+				-v "sh ospf database"
+				-v "sh ospf route"
+			</telnet>
+			<no-error-check></no-error-check>
+		</step>
+		<step no="4.4">
+			<desc>check route on br</desc>
+			<telnet host="${br1.br.wan.ip}">
+				-v "sh ip route"
+				-v ""
+			</telnet>
+		</step>
+		<step no="5.1">
+			<desc>enable advertise on eth1</desc>
+			<if>"two" == "${cvg1.cvg.arm_type}"</if>
+			<telnet host="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "routing protocol ospf advertise eth1"
+			</telnet>
+		</step>
+		<step no="5.2" delay="20">
+			<desc>
+				check OSPF parameters
+			</desc>
+			<telnet host="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "sh ospf interface"
+				-v "sh ospf neighbor"
+				-v "sh ospf database"
+				-v "sh ospf route"
+			</telnet>
+			<no-error-check></no-error-check>
+			<log-match>-e "error: dynamic routing is not enabled"</log-match>
+		</step>
+
+		<step no="6.1" delay="20">
+			<desc>disable ospf on GW</desc>
+			<telnet host="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "no routing protocol enable"
+			</telnet>
+		</step>
+		<step no="6.2" delay="5">
+			<desc>
+				check OSPF parameters
+			</desc>
+			<telnet host="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "sh ospf interface"
+				-v "sh ospf neighbor"
+				-v "sh ospf database"
+				-v "sh ospf route"
+			</telnet>
+			<no-error-check></no-error-check>
+		</step>
+	</stage>
+</testcase>

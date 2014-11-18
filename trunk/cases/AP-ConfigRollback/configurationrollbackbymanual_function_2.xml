@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify can set next-reboot to execute ConfigurationRollback, test default roll back time, about 10mins</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Enable ConfigurationRollback
+		Set trigger mode to next-reboot
+		Shutdown interface eth0 and make it disconnect with HM
+		Save config
+		Test Procedure:
+		1. Check ConfigurationRollback status
+		2. Reboot AP, check ConfigurationRollback status
+		3. Verify if rollback be executed
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+		<step no="0.1">
+			<desc>
+				reset config
+			</desc>
+			<ssh target="ap1">
+				-v "console page 100"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Enable ConfigurationRollback
+				Set trigger mode to next-reboot
+				Shutdown interface eth0 and make it disconnect with HM
+				Save config
+			</desc>
+			<ssh target="ap1">
+				-v "config rollback enable"
+				-v "config rollback next-reboot"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="1.2.1">
+			<desc>
+				Enable ConfigurationRollback
+				Set trigger mode to next-reboot
+				Shutdown interface eth0 and make it disconnect with HM
+				Save config
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="1.2.2">
+			<if>"${ap.eth1.existed}"=="true" </if>
+			<desc>
+				Enable ConfigurationRollback
+				Set trigger mode to next-reboot
+				Shutdown interface eth0 and make it disconnect with HM
+				Save config
+			</desc>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				1. Check ConfigurationRollback status
+			</desc>
+			<log-file>step2_show_config_rollback.log</log-file>
+			<console target="ap1">
+				-v "show config rollback _d"
+			</console>
+			<log-match>-c -i "console page 100"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>get Expiration time</desc>
+			<setvar name="time_before_reboot">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_config_rollback.log -p "Expiration time: (\d+) minute" -t int
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				2. Reboot AP, check ConfigurationRollback status
+			</desc>
+			<console target="ap1">
+				-v "interface eth1/1 description test"
+				-v "save config"
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="3.1" delay="400">
+			<desc>
+				reboot AP, check ConfigurationRollback status, default expiration time is 10min
+			</desc>
+			<log-file>step3.1_show_config_rollback.log</log-file>
+			<console target="ap1">
+				-v "show config rollback _d"
+			</console>
+		</step>
+
+		<step no="3.2">
+			<desc>get Expiration time</desc>
+			<setvar name="time_after_reboot">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.1_show_config_rollback.log -p "Expiration time: (\d+) minute" -t int
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>Expiration time decreasing</desc>
+			<script>
+				if [ "${time_before_reboot}" > "${time_after_reboot}" ]
+				then
+				echo "Expiration time decreasing"
+				else
+				echo "ERROR"
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="10" loop-interval="10" delay="60">
+			<desc>
+				3. Verify if rollback be executed
+			</desc>
+			<log-file>show_running_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-n -c -i "interface eth1/1 description test"</log-match>
+			<log-match>-c -i "console page 100"</log-match>
+		</step>
+
+	</stage>
+</testcase>

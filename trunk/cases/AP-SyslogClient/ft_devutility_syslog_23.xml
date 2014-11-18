@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Config a syslog server by manual, after reboot, check if this syslog server work normally</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		TOPO:
+		AP2______Switch______DHCP server
+		|
+		Syslog server
+		Description:
+		Config a syslog server by manual, after reboot, check if this syslog server work normally
+		Pre-condition
+		Default setting
+
+		Test procedure
+		1.Config a syslog server, check if corresponding log message can be sent to log server
+		2.Save config and reboot, then verify if log server works normal
+
+
+		Expect result
+		1. Corresponding log be sent to log server
+		2. Log server works normal, corresponding log be sent to log server
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="packets_send_result" value="packets_send_result" />
+	<property name="log_file_dir" value="/tmp" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Config logging host ip address and severity level to syslog server
+			</desc>
+			<telnet target="ap1">
+				-v "logging server ${tb.syslog_server} level emergency"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				delete tmp files
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				backup syslog and delete source syslog file ,then touch a new space file.
+			</desc>
+			<log-file>step2_modify_files.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cp /var/log/aerohive /var/log/aerohive1"
+				-v "rm -f /var/log/aerohive"
+				-v "touch /var/log/aerohive"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				stop service syslog-ng,then start it.
+			</desc>
+			<log-file>step2.1_down-up_syslog-service.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "service syslog-ng stop"
+				-v "service syslog-ng start"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step3_start_tshark.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="500">
+				-v "nohup tshark -i eth1 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step3.1_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-i "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="ap1">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3_start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				check the log message file in syslog server.
+			</desc>
+			<log-file>step5_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="500">
+				-v "cat /var/log/aerohive"
+				-v "rm -f /var/log/aerohive"
+				-v "touch /var/log/aerohive"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip}" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				check packets should send to syslog server
+			</desc>
+			<log-file>step6_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="500">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server} Syslog LOCAL6.EMERG:" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				save config and reboot
+			</desc>
+			<console target="ap1">
+				-v "save config"
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="8">
+			<desc>
+				stop service syslog-ng,then start it.
+			</desc>
+			<log-file>step8.1_down-up_syslog-service.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "service syslog-ng stop"
+				-v "service syslog-ng start"
+			</ssh>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step8_start_tshark.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="500">
+				-v "nohup tshark -i eth1 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="8.2" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step8.1_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-i "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="9" delay="30">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<console target="ap1">
+				-v "_test log-case emergency"
+			</console>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="tshark.pid2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step8_start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${tshark.pid2}"
+			</ssh>
+		</step>
+
+		<step no="11">
+			<desc>
+				check the log message file in syslog server.
+			</desc>
+			<log-file>step11_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="500">
+				-v "cat /var/log/aerohive"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip}" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				check packets should send to syslog server
+			</desc>
+			<log-file>step12_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="500">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server} Syslog LOCAL6.EMERG:" -i "log case test: emergency!!!"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					delete tmp files
+					combine the two syslog files
+				</desc>
+				<ssh host="${tb.syslog_server}">
+					-v "rm -f ${log_file_dir}/${packets_send_result}"
+					-v "cat /var/log/aerohive /var/log/aerohive1 > /var/log/aerohive2"
+					-v "rm -f /var/log/aerohive"
+					-v "rm -f /var/log/aerohive1"
+					-v "cp /var/log/aerohive2 /var/log/aerohive"
+					-v "rm -f /var/log/aerohive2"
+					-v "kill ${tshark.pid}"
+					-v "kill ${tshark.pid2}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

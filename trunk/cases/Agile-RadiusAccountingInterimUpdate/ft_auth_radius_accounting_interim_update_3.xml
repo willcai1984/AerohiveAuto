@@ -1,0 +1,158 @@
+<testcase>
+	<brief>radius accounting update</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>Change vlan for the same UPID in the user-profile, AP will send out an accounting update
+	 packet immediately after the station obtains a new IP address from DHCP, and the packet contains the 
+	 new IP.</description>
+	
+	
+	<property name="UPID_X" value="1000" />
+	
+	<property name="VLANID_X" value="${tb.vlan2}" />
+	<property name="VLANID_Y" value="${tb.vlan3}" />
+
+	<stage>
+		<step no="1">
+			<desc>setup ssid and 802.1x on AP1</desc>
+			<telnet target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+		        -v "security-object autoap default-user-profile-attr ${UPID_X} "			
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="2">
+			<desc>config a user-profiles, UPID x binded to vlan x </desc>
+			<telnet target="ap1">
+				-v "user-profile x qos-policy def-user-qos vlan-id ${VLANID_X} attribute ${UPID_X}"
+			</telnet>
+		</step>
+	
+		<step no="3">
+			<desc>show protocol suite</desc>
+			<log-file>show_proto.log</log-file>
+			<telnet target="ap1">
+				-v "show security- autoap security protocol-suite"
+			</telnet>
+			<log-match>-e "Method=wpa2-aes-8021x"</log-match>
+		</step>
+		<step no="4">
+			<desc>show ssid</desc>
+			<log-file>show_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+			<log-match>-e "autoap"</log-match>
+		</step>
+		
+		<property name="conn1.proto" value="wpa2-aes-8021x" />
+		<step no="pre5.1">
+			<desc>set username</desc>
+			<setvar name="conn1.username">
+				echo "${pub.radius1.username}"
+			</setvar>
+		</step>
+		<step no="pre5.2">
+			<desc>set password</desc>
+			<setvar name="conn1.passwd">
+				echo "${pub.radius1.passwd}"
+			</setvar>
+		</step>
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" args="1" />
+		
+		
+		<step no="6">
+			<desc>show station and check the client's UPID and vlanID</desc>
+			<log-file>show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${VLANID_X}" -i "${UPID_X}"</log-match>
+		</step>
+	
+	
+		<!--************************** Change vlan for the same UPID in the user-profile **************************-->
+		
+		
+		
+		<step no="7">
+			<desc>enable auth debug to check accounting process</desc>
+			<telnet target="ap1">
+				-v "no _debug all"
+				-v "_debug auth all"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+		
+		<step no="8">
+			<desc>change the  user-profiles, UPID x binded to vlan Y </desc>
+			<telnet target="ap1">
+				-v "user-profile x qos-policy def-user-qos vlan-id ${VLANID_Y} attribute ${UPID_X}"
+			</telnet>
+		</step>
+		
+		<step no="9">
+			<desc>client renew IP address from DHCP</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "dhclient -r ${sta1.tif.name}" 
+				-v "dhclient ${sta1.tif.name}" 
+			</ssh>
+		</step>
+			
+		<step no="10">
+			<desc>get wireless IP from station</desc>
+			<setvar name="sta1.tif.ip"> ${bin.dir}/getinfo_ip.py -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -v 'ip' </setvar>
+		</step>
+		
+		
+		<step no="11" delay="3">
+			<desc>show station and check the client's IP address, UPID and vlanID</desc>
+			<log-file>show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${VLANID_Y}" -i "${UPID_X}"</log-match>
+		</step>
+		
+		
+		<step no="12" delay="30">
+			<desc>check debug on AP</desc>
+			<log-file>show_buffer.log</log-file>
+			<telnet target="ap1">
+				-v "show logg buff"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		
+		<step no="12.1">
+			<desc>extract a piece of log</desc>
+			<script>
+				tac ${log.dir}/show_buffer.log |sed -n '/receive kevent DHCP ALG data/,/RADIUS message: code=5 \(Accounting-Response\)/I'p > ${log.dir}/accounting_1.log
+			</script>
+		</step>
+		
+		
+		<step no="12.2">
+			<desc>check the accounting update prosecc on AP</desc>
+			<log-file>accounting_1.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)receive kevent KEVT_FE_STA_INFO, station \(${sta1.tif.mac}\) IP \(${sta1.tif.ip}\) hostname" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)sending out accouting interim-update packet" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Sending RADIUS message to accounting server ${pub.radius1.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Attribute 8 \(Framed-IP-Address\) length=6" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Value: ${sta1.tif.ip}" -f ${log.dir}/${log.file}</log-match>	
+		</step>
+		
+	</stage>
+</testcase>
+	

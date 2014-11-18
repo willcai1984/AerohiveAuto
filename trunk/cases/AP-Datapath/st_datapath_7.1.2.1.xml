@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Broadcast/Multicast between mgt0 and other interfaces</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-laptop1 is connected to portal, pass authentication
+		-laptop2 connects with switch, laptop3 connects ap through wired
+		-all laptops are in same vlan
+
+		Test Procedure:
+		-ap sends broadcast like ARP request etc, result 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" =="true"</if>
+
+		<include prefix="0" file="subs/bpc_reboot.xml" obj-args="ap1.bpc" />
+
+		<step no="1">
+			<desc>
+				config hive and bind it to interface
+			</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 mac-learning enable"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id 1 attribute 1"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="2.3" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="ap1.bpc" />
+
+
+		<step no="3">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "_ff id 1 etype 0806 bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				AP ping laptop1
+			</desc>
+			<log-file>step3.1_ping.log</log-file>
+			<ssh target="ap1">
+				-v "ping ${tb.unreach.ip1} count 8"
+			</ssh>
+			<log-match>-n -c -i "from ${tb.unreach.ip1}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.2" delay="5">
+			<desc>
+				- ap will flood this broadcast to all up-interface ( wifi0,wifi1 and ethx interface ).
+			</desc>
+			<log-file>step3.2_show_log_buff.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show logging buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) mgt0 ${ap1.mgt0.mac}-&gt;ffff:ffff:ffff arp ${ap1.mgt0.ip}\(${ap1.mgt0.mac}\)-&gt;${tb.unreach.ip1}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0 ${ap1.mgt0.mac}-&gt;ffff:ffff:ffff arp ${ap1.mgt0.ip}\(${ap1.mgt0.mac}\)-&gt;${tb.unreach.ip1}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) wifi1.\d+ ${ap1.mgt0.mac}-&gt;ffff:ffff:ffff arp ${ap1.mgt0.ip}\(${ap1.mgt0.mac}\)-&gt;${tb.unreach.ip1}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) wifi0.1 ${ap1.mgt0.mac}-&gt;ffff:ffff:ffff arp ${ap1.mgt0.ip}\(${ap1.mgt0.mac}\)-&gt;${tb.unreach.ip1}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth1 ${ap1.mgt0.mac}-&gt;ffff:ffff:ffff arp ${ap1.mgt0.ip}\(${ap1.mgt0.mac}\)-&gt;${tb.unreach.ip1}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

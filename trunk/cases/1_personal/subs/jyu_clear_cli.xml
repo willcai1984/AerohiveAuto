@@ -1,0 +1,137 @@
+<include obj-arg-names="__AP__">
+	<step no="1">
+		<desc>set default cli value</desc>
+		<console target="__AP__" timeout="180">
+			-v "console page 0"
+			-v "console timeout 10"
+			-v "clock time-zone 0"
+			-v "save config"
+		</console>
+	</step>
+
+	<step no="2">
+		<desc>loop to clear CLIs</desc>
+		<file>__AP___disable_all_cli_${include.prefix}_1.txt</file>
+		<file>__AP___disable_all_cli_${include.prefix}_2.txt</file>
+		<log-file>__AP___cli_clear_${include.prefix}_1.log</log-file>
+		<log-file>__AP___cli_clear_${include.prefix}_2.log</log-file>
+		<script>
+			## enter workdir
+			pushd .
+			cd ${log.dir}
+
+			for loop_idx in 1 2 3
+			do
+			<br />
+			echo Round $loop_idx clear begin...
+			date
+			##
+			show_result_file=__AP___show_all_${include.prefix}_$loop_idx.log
+			cli_init_file=__AP___init_${include.prefix}_$loop_idx.txt
+			cli_split1_file=__AP___split1_${include.prefix}_$loop_idx.txt
+			cli_split2_file=__AP___split2_${include.prefix}_$loop_idx.txt
+			cli_tmpfile=__AP___tmpcli_${include.prefix}_$loop_idx.txt
+
+			disable_cli_file=__AP___disable_cli_${include.prefix}_$loop_idx.txt
+
+			## show running config: begin
+			console.py -w 0.5 -o 60 -d ${tb.conserver.ip} -e ${__AP__.cons_name} -z "$show_result_file" -v "show run" -v "show _ff" -v "show run user"
+			if [ $? -ne 0 ]; then
+			echo "console operation failed!"
+			exit 1;
+			fi
+			<br />
+			## get the normal CLI
+			cat $show_result_file |sed -n '/#show run$/,/AH.*#/p' |sed '1d'|sed '$d'|sed "/console page 0/d" > $cli_init_file
+
+			## get the special CLI, show _ff
+			cat $show_result_file |sed -n '/#show _ff$/,/AH.*#/p' |sed '1d'|sed '$d'|sed "s/^/_ff /" >> $cli_init_file
+
+			## get the special CLI, show run user
+			cat $show_result_file |sed -n '/#show run user$/,/AH.*#/p' |sed '1d'|sed '$d' >> $cli_init_file
+
+			if [ ! -s $cli_init_file ]; then
+			echo "No anymore CLIs, clear finished!"
+			date
+			break;
+			fi
+			<br />
+			echo The "$loop_idx"th CLIs are shown below:
+			cat $cli_init_file
+			echo
+			<br />
+			## generate the noCLIs
+			cat $cli_init_file | grep ^no > $cli_split1_file
+
+			## generate the pure cli1
+			cat $cli_init_file | grep -v ^no > $cli_split2_file
+
+			<br />
+			## generate the disable CLIs
+			cat $cli_split1_file | sed 's/^no //' > $disable_cli_file
+
+			if [ $loop_idx -eq 1 ]; then
+			cat $cli_split2_file > $cli_tmpfile
+			fi
+
+			if [ $loop_idx -eq 2 ]; then
+			cat $cli_split2_file | awk '{$NF="";$(NF-1)="";print}' > $cli_tmpfile
+			fi
+
+			if [ $loop_idx -eq 3 ]; then
+			cat $cli_split2_file | awk '{$NF="";$(NF-1)="";$(NF-2)="";$(NF-3)="";print}' > $cli_tmpfile
+			fi
+
+			<br />
+			## generate depth 0 and depth 1 disable CLI file
+			tac $cli_tmpfile |sed 's/^/no /g' >> $disable_cli_file
+			tac $cli_tmpfile |awk '{$NF="";print}'|sed 's/^/no /g' >> $disable_cli_file
+			<br />
+
+			## special process
+			if [ $loop_idx -eq 2 ]; then
+			cat $cli_tmpfile | awk '{print "no "$1" "$2}' >> $disable_cli_file
+			cat $cli_tmpfile | awk '{print "no "$1" "$2" "$3}' >> $disable_cli_file
+			fi
+
+			<br />
+			echo "console page 22" >> $disable_cli_file
+			echo "no _kdebug all" >> $disable_cli_file
+			echo "no _debug all" >> $disable_cli_file
+			echo "save config" >> $disable_cli_file
+			<br />
+
+			console.py -w 0.5 -o 60 -d ${tb.conserver.ip} -e ${__AP__.cons_name} -z "__AP___cli_clear_${include.prefix}_$loop_idx.log" -f $disable_cli_file
+			if [ $? -ne 0 ]; then
+			echo "console operation failed!"
+			exit 1;
+			fi
+
+			#
+			echo Round $loop_idx clear end!
+			date
+			echo
+			done
+			<br />
+
+			## exit dir
+			popd
+		</script>
+		<no-error-check />
+	</step>
+
+	<step no="3">
+		<desc>set default cli value</desc>
+		<console target="__AP__">
+			-v "console page 22"
+			-v "save config"
+			-v "show running-config"
+			-v "show _ff"
+			-v "show run user"
+			-v "_show kdebug info"
+			-v "_show debug info"
+			-v ""
+		</console>
+	</step>
+
+</include>

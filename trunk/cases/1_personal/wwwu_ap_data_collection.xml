@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>device data collection config function </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		check default config of device data collection  and cli generation
+	</description>
+	<numofap>1</numofap>
+	<tbtype>winlin</tbtype>
+
+	<property name="job_selenium_jar" value="${job_selenium_jar}" />
+	<property name="owner.id" value="102" />
+	<property name="access_addr" value="${tb.http_server}" />
+	<property name="login_addr" value="${tb.http_server}/login" />
+	<property name="tmp_policy_name" value="auto_ap_policy" />
+    <property name="job_selenium_port" value="${cloud.selenium.port}" />
+	<property name="job_selenium_log" value="/tmp/selenium-${job.id}.log" />
+	
+	
+	<stage>
+	
+		<step no="debu.0">
+			<script>
+				echo ${tb.browser_type}
+				echo "${tb.browser_path}"
+				echo ${tb.browser_type}
+			</script>
+		</step>
+	
+		<include prefix="start_selenium_server1" file="subs/start_selenium_server_${tb.os}.xml" args="${job_selenium_jar}, ${job_selenium_port}, ${job_selenium_log}, ${tb.browser_type},${tb.browser_path}" />
+		
+		<step no="pre.0">
+			<desc>
+				get access addr
+			</desc>
+			<setvar name="access_addr">
+				echo "${tb.http_server}"
+			</setvar>
+		</step>
+		
+		<step no="pre.1">
+			<desc>
+				get login addr
+			</desc>
+			<setvar name="login_addr">
+				echo "${tb.http_server}/login"
+			</setvar>
+		</step>
+		
+		<step no="pre.2">
+			<desc>
+				get random number
+			</desc>
+			<setvar name="random.number">
+				echo $RANDOM
+			</setvar>
+		</step>
+		
+		<step no="pre.3">
+			<desc>
+				get network policy name
+			</desc>
+			<setvar name="policy_name">
+				echo ${tmp_policy_name}$RANDOM
+			</setvar>
+			
+		</step>	
+
+		<step no="1">
+			<desc>
+				access cloud3.0
+			</desc>
+			<log-file>login_cloud.html</log-file>
+			<file>session_id.log</file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/cloud_login_positive.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info --preserve-session --parameters visit.pre_url=${login_addr} visit.url=${access_addr} &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="2">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log -t str
+			</setvar>
+		</step>	
+		
+		<step no="3">
+			<desc>
+				execute script to create policy and push config
+			</desc>
+			<log-file>step1_data_collection_default.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/data_collect_default_config_check.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t ${tb.browser_type} -f ${log.dir}/${log.file} -l debug  --preserve-session --parameters dev_mgt0_mac=${ap1.mgt0.mac} sw_policy_name=${policy_name} visit.pre_url=${login_addr} visit.url=${access_addr} --session-id=${session.id} 
+			</script>
+		</step>
+		
+		<step no="4">
+			<desc>
+				deploy policy
+			</desc>
+			<log-file>deploy_policy.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/deploy_policy.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --parameters deploy_policy.check_mac=${ap1.mgt0.mac} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l debug 
+			</script>
+		</step>
+
+		<step no="5" delay="180">
+			<desc>
+				show run config to check default cli shouldn't show cli in running config
+			</desc>
+			<log-file>step3_running_config_on_switch.log</log-file>
+			<ssh target="ap1">
+				-v "show version"
+				-v "show running-config"
+				-v "_kddr status"
+				-v "show report statistic"
+			</ssh>
+			<log-match>-n -i "no application identification shutdown"</log-match>
+			<log-match>-n -i "report statistic enable"</log-match>
+			<log-match>-n -i "report statistic period 10"</log-match>
+			<log-match>-n -i "report statistic alarm-threshold interface crc-error-rate 30"</log-match>
+			<log-match>-n -i "report statistic alarm-threshold interface tx-drop-rate 40"</log-match>
+			<log-match>-n -i "report statistic alarm-threshold interface rx-drop-rate 40"</log-match>
+			<log-match>-n -i "report statistic alarm-threshold interface tx-retry-rate 40"</log-match>
+			<log-match>-n -i "report statistic alarm-threshold interface airtime-consumption 50"</log-match>
+			<log-match>-n -i "report statistic alarm-threshold client tx-drop-rate 40"</log-match>
+			<log-match>-n -i "report statistic alarm-threshold client rx-drop-rate 40"</log-match>
+			<log-match>-n -i "report statistic alarm-threshold client tx-retry-rate 40"</log-match>
+			<log-match>-n -i "report statistic alarm-threshold client airtime-consumption 30"</log-match>
+			<log-match>-n -i "no kddr enable"</log-match>	
+			<log-match>-i "kddr disable"</log-match>
+			<log-match>-i "Stats: Enabled"</log-match>
+			<log-match>-i "Period: 10 minute(s)"</log-match>
+			<log-match>-i "WIFI Interfaces Alarm Threshold:"</log-match>
+ 			<log-match>-i "CRC Error Rate: 30%"</log-match>
+  			<log-match>-i "Tx Drop Rate: 40%"</log-match>
+  			<log-match>-i "Rx Drop Rate: 40%"</log-match>
+  			<log-match>-i "Tx Retry Rate: 40%"</log-match>
+  			<log-match>-i "Airtime Consumption: 50%"</log-match>
+			<log-match>-i "Clients Alarm Threshold:"</log-match>
+  			<log-match>-i "Tx Drop Rate: 40%"</log-match>
+  			<log-match>-i "Rx Drop Rate: 40%"</log-match>
+  			<log-match>-i "Tx Retry Rate: 40%"</log-match>
+  			<log-match>-i "Airtime Consumption: 30%"</log-match>
+		</step>
+	</stage>	
+	
+	<post-process>
+		<stage>
+			<include prefix="stop_selenium_server1" file="subs/stop_selenium_server_${tb.os}.xml"  args="${job_selenium_log}"/>
+		</stage>
+	</post-process>
+	
+</testcase>

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mac auth with 802.1x</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+-config a ssid with 802.1x auth,mac auth enable
+-radius send session-timeout when mac auth successes
+-radius send session-timeout when 802.1x auth successes
+		Test Procedure:
+client connect to ssid
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}new" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />	
+
+	<stage>
+
+		<step no="0.1">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -uppercase -dash
+			</setvar>
+		</step>
+		
+		<property name="acct1.uid" value="${tb.vlan1}" />
+		<include prefix="1.a" file="subs/ldap_add.xml" args="${sta1.mac}, ${sta1.mac}" obj-args="acct1" />
+		
+		<property name="acct2.uid" value="${tb.vlan2}" />
+		<include prefix="1.b" file="subs/ldap_add.xml" args="${pub.radius1.username}new, ${pub.radius1.passwd}" obj-args="acct2" />
+		
+		<step no="2">
+			<desc>
+				-config a ssid mac1 on AP, mac auth enable
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object ${ssid.name} security additional-auth-method mac-based-auth"
+				-v "security-object ${ssid.name} security protocol-suite wpa2-aes-8021x"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+				-v "user-profile auto1 qos-policy def-user-qos vlan-id ${tb.vlan1} attribute ${tb.vlan1}"
+				-v "aaa mac-format case-sensitivity upper-case"
+				-v "aaa mac-format delimiter dash"
+				-v "aaa mac-format style five-delimiter"
+			</ssh>
+		</step>
+
+		<step no="4">
+			<desc>show running config</desc>
+			<log-file>step4_show_running_config.log</log-file>
+			<ssh target="ap1">
+				-v "show running-config"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>show security object of ssid</desc>
+			<log-file>step5_show_security_object.log</log-file>
+			<ssh target="ap1">
+				-v "show security-object ${ssid.name}"
+				-v "_debug auth all"
+				-v "clear log all"
+			</ssh>
+			<log-match>-c -i "MAC-based auth: *Enabled"</log-match>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>
+				-show ssid XXX station
+			</desc>
+			<log-file>step7_show_station_info.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "wpa2-8021x" -i "${tb.vlan2} *Yes *${tb.vlan2}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-show roaming cache
+			</desc>
+			<log-file>step8_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YNNN"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				-show auth
+			</desc>
+			<log-file>step9_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${tb.vlan2}" -i "done"</log-match>
+			<log-match>-c -i "${sta1.tif.mac} *${tb.vlan2}" -i "${pub.radius1.username}new"</log-match>
+		</step>
+
+		<include prefix="10" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="11">
+			<desc>show log buf</desc>
+			<log-file>step11.show_logging_buffered.log</log-file>
+			<ssh target="ap1">
+				-v "show log buf"
+			</ssh>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p "Got vlan ID ${tb.vlan2} by User Profile ID ${tb.vlan2} for station ${sta1.tif.mac}" -f ${log.dir}/${log.file}</log-match>			
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p "MAC-based auth: RADIUS server send OK to station ${sta1.tif.mac}, returned UPID \(${tb.vlan1}\)" -f ${log.dir}/${log.file}</log-match>			
+		</step>
+
+		<include prefix="delete.mac.account" file="subs/ldap_delete.xml" args="${sta1.mac}" />
+		<include prefix="delete.radius.account" file="subs/ldap_delete.xml" args="${pub.radius1.username}new" />
+		
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

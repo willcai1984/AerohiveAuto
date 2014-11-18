@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, base on service(protocol=6 port=1-65535) mapping class 0-7 WiFi1 interface Test topology Top1 Device Configuration Portal: ssid DeathKnight interface wifi1 mode access interface wifi1 ssid DeathKnight qos classifier-profile service service ssid DeathKnight qos-classifier service service telent protocol tcp port 23(1-65535) qos classifier-map service telnet qos 0-7</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		portal:
+		- Set "_kdebug qos classifi"on CLI
+		- Set "_ff id 1 src-mac sta2's mac"
+		- Set "_kdebug fe basic"
+		- STA2generates traffic,then send to STA1.
+		- Check backhaul packets(STA1-&gt;STA2)
+		Expected output
+		- look over kdebug message
+		1970-01-05 00:57:13 debug [fe]: (i) wifi1.1
+		18.18.21.11-&gt;10.190.0.9(28809) ttl(128) TCP 1813-&gt;23
+		49 bytes
+		1970-01-05 00:57:13 debug [fe]: MAC session (id [1])
+		found
+		1970-01-05 00:57:13 debug [fe]: QoS: ingress pkt
+		fwd(wifi1.1) profile=0 qos=0-7
+		1970-01-05 00:57:13 debug [fe]: eth0 Tx
+		000f:b59c:8954 -&gt; 0000:0c17:5415 type 0x0800 63 bytes
+		1970-01-05 00:57:13 debug [fe]: (o) eth0
+		18.18.21.11-&gt;10.190.0.9(28809) ttl(128) TCP 1813-&gt;23
+		63 bytes
+		1970-01-05 00:57:13 debug [fe]: QoS: pkt forwarded
+		1970-01-05 00:57:13 debug [fe]: (i) eth0
+		10.190.0.9-&gt;18.18.21.11(33832) ttl(63) TCP 23-&gt;1813 52
+		bytes
+		1970-01-05 00:57:13 debug [fe]: MAC session (id [1])
+		found
+		1970-01-05 00:57:13 debug [fe]: QoS: ingress pkt
+		fwd(eth0) profile=0 qos=0-7
+		1970-01-05 00:57:13 debug [fe]: wifi1.1 Tx
+		0000:0c17:5415 -&gt; 000f:b59c:8954 type 0x0800 66 bytes
+		1970-01-05 00:57:13 debug [fe]: (o) wifi1.1
+		10.190.0.9-&gt;18.18.21.11(33832) ttl(63) TCP 23-&gt;1813 66
+		bytes
+		1970-01-05 00:57:13 debug [fe]: QoS: pkt queued
+		1970-01-05 00:57:13 debug [fe]: Tx:wifi1.1&gt;
+		0000:0c17:5415-&gt;000f:b59c:8954 profile idx=0
+		pkt_len=66 q_len=0 QoS buf=0
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<if>"${ap.wifi1.existed}" == "true"</if>
+
+		<step no="1">
+			<desc>
+				create ssid
+			</desc>
+			<console target="ap1">
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "interface wifi1 radio channel 44"
+				-v "qos classifier-profile service service"
+				-v "ssid ${ssid.name} qos-classifier service"
+				-v "service telnet protocol tcp port 1"
+				-v "qos classifier-map service telnet qos 2"
+			</console>
+		</step>
+
+		<include prefix="pre1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="2">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				2) Laptop accesses Server by telnet
+			</desc>
+			<log-file>sta_telnet_server.log</log-file>
+			<ssh target="sta1" prompt=".*#">
+				-v "rm -rf /root/.ssh/known_hosts"
+				-v 'echo "nohup clicfg.pl -i 23 -o 600 -d ${tb.dns} -u ${tb.dns.user} -p ${tb.dns.passwd} -m \".*#\" -n -z sta_ssh_server.log -l /tmp/ -v \"sleep 500\" &gt; null &amp;" > /tmp/tmp.sh'
+				-v "sh /tmp/tmp.sh"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="4" delay="30">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "QoS: pkt forwarded"</log-match>
+			<log-match>-c -i "QoS: pkt queued"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\) TCP \d+-&gt;23" -ps p "QoS: ingress pkt fwd\(wifi1.1\) profile=\d+ qos=2" -e "\(i\) wifi1.1 ${sta1.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\) TCP \d+-&gt;23" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

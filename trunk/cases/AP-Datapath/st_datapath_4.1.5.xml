@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>
+		VLAN assignment based on the 8021q for Bridge-8021q user, User-profile ID assignment for Bridge-access user
+	</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+		-construct this topology
+		-the native vlan for portal and mp is VLAN m
+		-the port connected to eth0 of mp on sw2 is a trunk port, its native-vlan is m,allow vlan a,b
+		-the port 1 connected to pc3 on sw2 is a access port, access vlan is a
+		-the port 2 connected to pc4 on sw2 is a access port, access vlan is b
+		-m!=a;m!=b;a!=b
+		-user-profile xxx is mapped to UID x
+
+		Test procedure:
+		-set eth0 of mp to bridge-8021q mode via this cmd “inter eth0 mode bridge-8021q user-profile xxx”
+		-enable mac-learning on eth0 via “inter eth0 mac-learning enable”
+		-check the route table result 1
+		-check the mac-learning table via “show inter eth0 mac-learning all” Result 2
+
+		Expect result:
+		Result 1: can see the new entry for pc3 and pc4; the “oif” flag is eth0
+		inteface;the “UID” flag is x
+		Result 2: can see the new entry for pc3 and pc4, make sure VLAN a had been assigned to pc3,VLAN b had been assigned to pc4
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<numofbpc>2</numofbpc>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap1.eth1.existed}" =="true" &amp;&amp; "${ap.wifi1.existed}" =="true"</if>
+
+		<include prefix="pre.1" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="vlan1" />
+
+		<include prefix="pre.2" file="subs/bpc_init.xml" obj-args="bpc2, ap1" args="vlan2" />
+
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				-Config ap2's vlan and native-vlan
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.4" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.4_show_interface_mgt0_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.5">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.4_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config ap1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}_${job.sid}"
+				-v "interface mgt0 hive ${hive.name}_${job.sid}"
+				-v "interface eth1 native-vlan ${tb.vlan3}"
+				-v "user-profile datapath vlan ${tb.vlan2} attribute 2"
+				-v "interface eth1 mode bridge-802.1q user-profile-attribute 2"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config hive, channel info
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}_${job.sid}"
+				-v "interface mgt0 hive ${hive.name}_${job.sid}"
+				-v "interface wifi1 radio channel 153"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				show ap2's interface wifi1 info
+			</desc>
+			<log-file>show_ap2_interface_info.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				get ap2's wifi1's mac address
+			</desc>
+			<setvar name="ap2.wifi1.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_interface_info.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>shutdown interface wifi1 and then up it (it's aimed to clear wifi1's neighbor list)</desc>
+			<telnet target="ap1">
+				-v "interface wifi1 hive ${hive.name}_${job.sid} shutdown"
+				-v "no interface wifi1 hive ${hive.name}_${job.sid} shutdown"
+				-v "interface wifi1 radio channel 153"
+			</telnet>
+		</step>
+
+		<step no="3" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step3_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+Backhaul\s+${hive.name}_${job.sid}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				-shutdown interface eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5" delay="35" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step5_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="6" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<include prefix="7" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc2" />
+
+		<step no="8">
+			<desc>
+				show route table on mp
+			</desc>
+			<log-file>step8_bridge_mp_route.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-c -i "${bpc1.tif.mac}" -i "eth1" -p 5 -i "2"</log-match>
+			<log-match>-c -i "${bpc2.tif.mac}" -i "eth1" -p 5 -i "2"</log-match>
+		</step>
+
+		<step no="8.1" delay="10">
+			<desc>
+				show mac-learning on mp
+			</desc>
+			<log-file>step8.1_bridge_mp_mac_learning.log</log-file>
+			<console target="ap1">
+				-v "show interface eth1 mac-learning all"
+			</console>
+			<log-match>-c -i "${bpc1.tif.mac}" -p 3 -i "${tb.vlan1}"</log-match>
+			<log-match>-c -i "${bpc2.tif.mac}" -p 3 -i "${tb.vlan2}"</log-match>
+		</step>
+	</stage>
+</testcase>

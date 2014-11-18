@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Client could send some type traffic before login (internal cwp authenticate)</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test Procedure:
+		1:Configure internal cwp on ap, and configure one ethernet port bridge
+		mode, enable mac-learning, bind cwp to the bridge ethernet port
+		2:Client links to ap through the bridge ethernet port, result 1
+		3:Client tries to get ip address from external dhcp server, result 2
+		4:Client ping a hostname ,such as www.sohu.com, result 3
+		5:Clinet ping an ip, such as 68.180.206.184 (yahoo), result 4
+		6:Client tries to access internet or other service, result 5
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" == "true"</if>
+		<step no="1">
+			<desc>
+				1:Configure internal cwp on ap, and configure one ethernet port bridge
+				mode, enable mac-learning, bind cwp to the bridge ethernet port
+			</desc>
+			<console target="ap1">
+				-v "security-object in_cwp"
+				-v "security-object in_cwp default-user-profile-attr 1"
+				-v "security-object in_cwp security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal auth-user-profile-attr 1 timer-display"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal timer-display alert 10"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal internal-servers"
+				-v "security-object in_cwp web-server"
+				-v "user-profile auto vlan ${tb.nvlan} attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "security-object in_cwp security protocol-suite open"
+				-v "interface eth1 security-object in_cwp"
+				-v "interface mgt0 vlan ${tb.vlan3}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				close dhcp client
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				open dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step1.3_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.4">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.3_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				2:Client links to ap through the bridge ethernet port, result 1
+				3:Client tries to get ip address from external dhcp server, result 2
+			</desc>
+			<ssh host="${bpc1.mif.ip}" timeout="180">
+				-v "ifconfig ${bpc1.tif.name} up"
+				-v "dhclient ${bpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.1" delay="10">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh host="${bpc1.mif.ip}" timeout="80">
+				-v "ifconfig ${bpc1.tif.name}"
+			</ssh>
+			<log-match>-e "inet addr:"</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>Get laptop1's ip</desc>
+			<setvar name="bpc1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${bpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="bpc1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${bpc1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<include prefix="2.4" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step2.4_show_logging_buffered.log" />
+
+		<step no="2.5">
+			<desc>
+				check logging buffered
+			</desc>
+			<log-file>step2.4_show_logging_buffered.log</log-file>
+			<log-match>-c -e "DHCP: Sent a DHCP ACK message assigning IP address ${bpc1.tif.ip} to client ${bpc1.tif.mac}"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				open debug mode and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff id 1 dst-port 53 bidirectional"
+				-v "_ff id 2 src-mac ${bpc1.tif.mac} bidirectional"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show interface eth1
+			</desc>
+			<log-file>step3.1_show_interface.log</log-file>
+			<telnet target="ap1">
+				-v "show interface eth1"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>Get eth1'S ip</desc>
+			<setvar name="ap.eth1.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step3.1_show_interface.log -i eth1 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				Client ping a hostname
+			</desc>
+			<log-file>step3.1_client_ping_hostname.log</log-file>
+			<ssh host="${bpc1.mif.ip}">
+				-v "ping ${pub.dnstest.name1} -c 10"
+			</ssh>
+			<log-match>-e "from ${ap.eth1.ip}"</log-match>
+			<log-match>-e "ttl="</log-match>
+		</step>
+
+		<include prefix="3.4" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step3.4_show_logging_buffered.log" />
+
+		<step no="3.5">
+			<desc>
+				check logging buffered
+			</desc>
+			<log-file>step3.4_show_logging_buffered.log</log-file>
+			<log-match>-c -e "cwp ${bpc1.tif.mac} not registered: deliver pak to self"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(i\)\s+eth1\s+${bpc1.tif.ip}->${ap.eth1.ip}\(\d+\)\s+ttl\(\d+\)\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(o\)\s+eth1\s+${ap.eth1.ip}->${bpc1.tif.ip}\(\d+\)\s+ttl\(\d+\)\s+UDP\s+53->\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(u\)\s+eth1\s+${bpc1.tif.ip}->${ap.eth1.ip}\(\d+\)\s+\S+\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				5:Clinet ping an ip, such as 68.180.206.184 (yahoo), result 4
+			</desc>
+			<log-file>step4_ping.log</log-file>
+			<ssh host="${bpc1.mif.ip}">
+				-v "ping ${pub.radius1.ip} -c 10"
+			</ssh>
+			<log-match>-n -e "from ${pub.radius1.ip}"</log-match>
+			<log-match>-e "100% packet loss"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step4.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -e "cwp ${bpc1.tif.mac} not registered: deliver pak to self"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(i\)\s+eth1\s+${bpc1.tif.ip}->${ap.eth1.ip}\(\d+\)\s+ttl\(\d+\)\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(o\)\s+eth1\s+${ap.eth1.ip}->${bpc1.tif.ip}\(\d+\)\s+ttl\(\d+\)\s+UDP\s+53->\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(u\)\s+eth1\s+${bpc1.tif.ip}->${ap.eth1.ip}\(\d+\)\s+\S+\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				6:Client tries to access internet or other service, result 5
+			</desc>
+			<log-file>step5_sta_download_file_by_tftp.log</log-file>
+			<ssh host="${bpc1.mif.ip}" timeout="500">
+				-v "tftp ${pub.tftp1.tip} -c get test"
+			</ssh>
+			<log-match>-e "Transfer timed out"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step5.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "cwp: incorrect protocol, drop pak" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "invalid udp port \d+->\d+, drop" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(i\)\s+eth1\s+${bpc1.tif.ip}->${ap.eth1.ip}\(\d+\)\s+ttl\(\d+\)\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(o\)\s+eth1\s+${ap.eth1.ip}->${bpc1.tif.ip}\(\d+\)\s+ttl\(\d+\)\s+UDP\s+53->\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(u\)\s+eth1\s+${bpc1.tif.ip}->${ap.eth1.ip}\(\d+\)\s+\S+\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear client
+				</desc>
+				<ssh host="${bpc1.mif.ip}">
+					-v "dhclient ${bpc1.tif.name} -r"
+					-v "ifconfig ${bpc1.tif.name} down"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

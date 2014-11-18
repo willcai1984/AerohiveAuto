@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>check the VID got from radius server by mac auth</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config an account on radius server, username and password are both
+		the mac addr of STA1, it will return a vlan id after radius auth success
+
+		Test Procedure:
+		-config a ssid with mac auth enable, open ssid is ok
+		-create a user-profile, assign an invalid vlan id to it
+		-bind the above user-profile to be default-user-profile-attr
+		-STA1 connect to ssid, result 1
+		-check the status of STA1 on AP result 2,3
+		-STA1 ping gateway, result 4
+		-STA1 reconnect to ssid, result 5, 6
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="acct1.vlan" value="${tb.vlan2}" />
+
+	<stage>
+		<step no="0">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig wlan0 down"
+				-v "ifconfig wlan0 up"
+				-v "ifconfig"
+			</ssh>
+		</step>
+
+		<step no="0.1">
+			<desc>Get sta1's mac with five delimiter</desc>
+			<setvar name="sta1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -o linux -m -uppercase -dash
+			</setvar>
+		</step>
+
+		<include prefix="1" file="subs/ldap_add.xml" args="${sta1.mac}, ${sta1.mac}" obj-args="acct1" />
+
+		<step no="2">
+			<desc>
+				-config a ssid with mac auth enable, open ssid is ok
+				-create a user-profile, assign an invalid vlan id to it
+				-bind the above user-profile to be default-user-profile-attr
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object ${ssid.name} security additional-auth-method mac-based-auth"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id ${tb.vlan7} attribute 1"
+				-v "aaa mac-format case-sensitivity upper-case"
+				-v "aaa mac-format delimiter dash"
+				-v "aaa mac-format style five-delimiter"
+			</ssh>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>
+				- 'sh ssid xxx sta',
+			</desc>
+			<log-file>step4_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " ${tb.vlan2} *yes *1"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				-'sh roa ca mac xxx'
+			</desc>
+			<log-file>step5_show_roaming.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache mac ${sta1.mac}"
+			</ssh>
+			<log-match>-i "User Profile ID: 1"</log-match>
+			<log-match>-i "VLAN ID: ${tb.vlan2}"</log-match>
+			<log-match>-c -i "MAC based auth flag: set"</log-match>
+		</step>
+
+		<include prefix="6" file="subs/sta_ping.xml" args="sta1, ${tb.vlan2.gw}, 5" />
+
+		<include prefix="7" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<include prefix="8" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="9">
+			<desc>
+				- 'sh ssid xxx sta',
+			</desc>
+			<log-file>step9_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " ${tb.vlan2} *yes *1"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				-'sh roa ca mac xxx'
+			</desc>
+			<log-file>step10_show_roaming.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache mac ${sta1.mac}"
+			</ssh>
+			<log-match>-i "User Profile ID: 1"</log-match>
+			<log-match>-i "VLAN ID: ${tb.vlan2}"</log-match>
+			<log-match>-c -i "MAC based auth flag: set"</log-match>
+		</step>
+
+		<include prefix="11" file="subs/sta_ping.xml" args="sta1, ${tb.vlan2.gw}, 5" />
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="0" file="subs/ldap_delete.xml" args="${sta1.mac}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

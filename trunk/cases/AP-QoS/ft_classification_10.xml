@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, package(class 0-7 80211e) mapping calss 0-7.wifi1is backhaul interface Test topology SW======Portal- - - - - MP- - - STA2 | STA1 Device Configuration Portal: ssid DeathKnight interface wifi0 mode access interface wifi0 ssid DeathKnight qos classifier-profile 80211e 80211e ssid DeathKnight qos-classifier 80211e qos marker-map 80211e 2 0-7</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		MP:
+		- Set "_kdebug qos classifi"on CLI
+		- Set "_ff id 1 dst-port pkt's dst port"
+		- Set "_kdebug fe basic"
+		- STA1generates 80211e(0) traffic,then send to STA2.
+		Expected output
+		- Sniffering the traffic from STA1 incoming interface
+		- Verify the received traffic class from STA2 is (0-6)
+		- look over kdebug message
+
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="pre1">
+			<desc>
+				create ssid, amrp
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<step no="pre2">
+			<desc>
+				- Set qos on portal
+			</desc>
+			<telnet target="ap1" timeout="180">
+				-v "qos classifier-profile 80211e 80211e"
+				-v "ssid ${ssid.name} qos-classifier 80211e"
+				-v "qos classifier-map 80211e 0 7"
+			</telnet>
+		</step>
+
+		<step no="0">
+			<desc>
+				-Check eth1 status on ap1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-shutdown interface eth0 and eth1
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/ap_mesh_set.xml" obj-args="ap1, ap2" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>set debug filter</desc>
+			<console target="ap1" timeout="180">
+				-v "clear log buffered"
+				-v "_ff id 1 protocol 1"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</console>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-server ping station
+			</desc>
+			<log-file>step4.1_server_ping.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="5">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<console target="ap1" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${tb.dns}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(${meshpoint}.1\) profile=0 qos=7" p "Classifier\(${meshpoint}.1:802.11e\) user priority=0 qos=7" -e "\(i\) ${meshpoint}.1 ${tb.dns}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

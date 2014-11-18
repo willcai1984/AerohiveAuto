@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test L7 service classification, package of ICMP mapping aerohive-calss 0</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Test Procedure:
+
+		1. STA1 connects to portal on eth0, and obtain ip; 
+		2. portal and mp are amrp neighber;
+		3. create ssid on mp;
+		4. STA3 connects to mp; 
+		5. STA1 generates ICMP packet(with cos 0);
+		6. check log
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+<!-- 		<property name="mpc.tif.name" value="eth2" />   -->
+		<step no="1">
+			<desc>
+				create ssid, for wireless client connecting
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>create a wpa_supplicant configuration file on Station</desc>
+			<ssh target="sta1">
+				-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+				-v "ifconfig ${sta1.tif.name} down"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>kill the wpa_supplicant on client side</desc>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name} up"
+				-v "killall wpa_supplicant";
+			</ssh>
+		</step>
+
+		<step no="4" delay="5">
+			<desc>start the wpa_supplicant on client side</desc>
+			<ssh target="sta1">
+				-v "wpa_supplicant -i ${sta1.tif.name} ${sta1.wpa_flag} -c /tmp/wpa_supplicant.cfg -B"
+			</ssh>
+		</step>
+
+
+		<step no="5">
+			<desc>config the laptop to apply the ssid profile,then start to associate </desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="6" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check if the client was associated successfully</desc>
+			<log-file>wpa_stat_sta1_loop-check.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>client gets IP by dhclient</desc>
+			<ssh target="sta1" slow="true">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="8" delay="30">
+			<desc>log client station1's ifconfig</desc>
+			<log-file>ifconfig_sta1.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="9">
+			<desc>get mac from station's log file</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta1.log -i ${sta1.tif.name} -m -width 2
+			</setvar>
+		</step>
+
+		<step no="10">
+			<desc>get wireless IP from station's log file</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta1.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="11">
+			<desc>Set qos classifier profile 8021p, and use it on eth0</desc>
+			<log-file>classifier_8021p.log</log-file>
+			<telnet target="ap1">
+				-v "service l7-icmp app-id 285"
+				-v "qos classifier-map service l7-icmp qos 0"
+				-v "qos classifier-profile eth0 service"
+				-v "interface eth0 qos-classifier eth0"
+			</telnet>
+		</step>
+
+		<step no="12" delay="30">
+			<desc>ifconfig on mpc</desc>
+			<log-file>ifconfig_mpc.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name} > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="13">
+			<desc>get wireless IP from mpc's log file</desc>
+			<setvar name="mpc.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_mpc.log -i ${mpc.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="14">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${mpc.tif.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<step no="15">
+			<desc>master PC ping client to check connection,and log to check debug</desc>
+			<log-file>sta1_ping_mpc.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${mpc.tif.ip} -c 5"
+			</ssh>
+		</step>
+
+		<step no="16">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>ft_1_log_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered | in eth0"
+			</telnet>
+			<log-match>-i "icmp-echo-reply" -i "(i) eth0"</log-match>
+			<log-match>-i "qos=0 profile=0" -i "pkt forwarded (eth0)"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

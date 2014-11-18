@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+
+	<brief>(IxPort: CoF=3) LLDP packets type should be 0x88cc.</brief>
+	<priority>low</priority>
+	<automated>yes</automated>
+	<description>
+		Test Produce:
+		L3SW is H3C router
+		-Configure on AP1
+		“lldp”
+		-Configure on AP2
+		“lldp”
+		AP1 and AP2 is in the same vlan
+		1.Open LLDP debug switch on AP1
+		“_debug dcd LLDP_packet”
+		“debug console”
+		2.Capture the LLDP packets on AP1
+
+
+	</description>
+
+	<numofsw>1</numofsw>
+
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+
+	</pre-process>
+
+
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="tx_port1.phytype" value="${sw1.port1.ixia_port.phytype}" />
+	<property name="tx_port2" value="${sw1.port2.ixia_port}" />
+	<property name="tx_port2.phytype" value="${sw1.port2.ixia_port.phytype}" />
+	<property name="tx_port3" value="${sw1.port3.ixia_port}" />
+	<property name="tx_port3.phytype" value="${sw1.port3.ixia_port.phytype}" />
+	<property name="correct_vlan" value="101" />
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				Enable LLDP on swith
+			</desc>
+			<telnet target="sw1">
+				-v "lldp enable"
+				-v "lldp timer 5"
+				-v "show running-config"
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="1.2">
+			<desc>Check LLDP is enable </desc>
+			<telnet target="sw1">
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Enabled: yes"</log-match>
+		</step>
+
+		<!--lldp debug -->
+		<step no="1.3">
+			<desc>
+				Enable lldp packet log
+			</desc>
+			<log-file>step1.3_lldp_packet.log</log-file>
+			<telnet target="sw1">
+				-v "clear log buffered"
+				-v "_debug dcd lldp_adjacency"
+				-v "_debug dcd lldp_error"
+				-v "_debug dcd lldp_packet"
+				-v "_debug dcd info"
+				-v "debug consol"
+			</telnet>
+		</step>
+
+
+
+		<!--Ixia capture packet -->
+		<step no="2.1">
+			<desc>
+				Connect to ixia, capture packets
+			</desc>
+			<log-file>step_ixia_capture_packets.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|.*root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${tx_port3} -phyList ${tx_port1.phytype},${tx_port2.phytype},${tx_port3.phytype}"
+				-v ""
+				-v ""
+				<!-- start transmit -->
+
+				<!-- stop transmit -->
+
+
+				<!-- port1 start capture -->
+				-v "start_capture -portList ${tx_port1}"
+				-v "start_capture -portList ${tx_port2}"
+				-v "start_capture -portList ${tx_port3}"
+				-v ""
+				-v "wait_time -second 30"
+				-v ""
+				<!-- stop port1 capture -->
+				-v "stop_capture -portList ${tx_port1}"
+				-v "stop_capture -portList ${tx_port2}"
+				-v "stop_capture -portList ${tx_port3}"
+				-v ""
+				<!-- save port1 capture -->
+				-v "save_capture -onePort ${tx_port1} -fileName ${job.id}_packet1.enc"
+				-v "save_capture -onePort ${tx_port2} -fileName ${job.id}_packet2.enc"
+				-v "save_capture -onePort ${tx_port3} -fileName ${job.id}_packet3.enc"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="2.2">
+			<desc>Tftp the capture file to MPC</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|.*root@.*#" timeout="900">
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_packet1.enc"
+				-v "rm -f ${job.id}_packet1.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_packet2.enc"
+				-v "rm -f ${job.id}_packet2.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_packet3.enc"
+				-v "rm -f ${job.id}_packet3.enc"
+			</ssh>
+		</step>
+		<step no="2.3">
+			<desc>Move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_packet1.enc ${log.dir}
+				mv /tftpboot/${job.id}_packet2.enc ${log.dir}
+				mv /tftpboot/${job.id}_packet3.enc ${log.dir}
+			</script>
+		</step>
+		<step no="2.4">
+			<desc>Check the captured packet1 for port1 </desc>
+			<!-- 1 fail;0 pass -->
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -R '(eth.type == 0x88cc )' | wc -l`" -lt "5" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="2.5">
+			<desc>Check the captured packet2 for port2 </desc>
+			<!-- 1 fail;0 pass -->
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -R '(eth.type == 0x88cc )' | wc -l`" -lt "5" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="2.6">
+			<desc>Check the captured packet3 for port3 </desc>
+			<!-- 1 fail;0 pass -->
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -R '(eth.type == 0x88cc )' | wc -l`" -lt "5" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+
+		<!--show log -->
+		<step no="4.1">
+			<desc>Check LLDP packet send log</desc>
+			<log-file>4.1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,205 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=2) Configure age time, and check the age time is a global value</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	IXIA port++++++switch+++++IXIA port
+		Description	Configure age time, and check the age time is a global value
+		Platform Dependence	Chesapeake
+		Pre-condition	?	IXIA port connect to switch trunk port g/1/1
+		?	Switch trunk port allow all
+		Test procedure	1.	Create 255 vlans
+		2.	Set age out time as 200 seconds
+		CLI:  mac-address-table idle-timeout 200
+		3.	IXIA send frames to switch with different source mac in different vlans     Result1
+
+		4.	Check FDB table learnt mac entries agetime       Result2
+
+		5.	After age time out(200 seconds), check FDB table again        Result3
+
+		6.	IXIA send a frames, the dst mac is the aged out mac entry mac      Result4
+		Expect result	Result1:   FDB table has mac entries for different vlan in port g/1/1  
+
+		Result2:   the mac entries agetime is 200, it is a global value for all mac entries
+
+		Result3:   all the mac entries learnt in FDB table are delete dynamically after 200-400 seconds
+
+		Result4:   flooding to all port in vlan10
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0011.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0022.0012"/>
+	<!--<property name="vlan_range" value="150-300" /> -->
+	<stage>
+		<step no="1.1">
+			<desc>set vlan range</desc>
+			<setvar name="vlan_range">
+				echo "${tb.vlan2}-`expr ${tb.vlan2} + 252`"
+			</setvar>
+		</step>
+		<step no="1.2">
+			<desc>generate 251 vlans</desc>
+			<log-file>create_vlan.log</log-file>
+			<script>
+				python ${bin.dir}/ssh_execute_cli.py -cli 'vlan (l1)' -list '${vlan_range}' -d ${sw1.mgt0.ip} -debug -l ${log.dir} -z ${log.file}
+			</script>
+		</step>
+		<step no="2">
+			<desc>
+				configure port1 to trunk allow all, FDB age out time is 200s 
+			</desc>
+			<telnet target="sw1">
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port2} switchport mode trunk"
+				-v "interface ${sw1.port3} switchport mode trunk"
+				-v "mac-address-table idle-timeout 200"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "sh mac-address-table idle-timeout"
+				-v "show mac-address-table all"
+				-v "show interface"
+			</telnet>
+			<log-match>-e "Number of existing VLANs: 255"</log-match>
+		</step>
+		<step no="3.1">
+			<desc>
+				port1 send frames of different source mac with vlan 1-4094
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-mac_src_count 10
+				-vlan enable
+				-vlan_id ${tb.vlan2}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-vlan_repeatCount 200
+				-eth2_protocol 0x0800
+				-udf_offset 38
+				-patternOffset2 38"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 20"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="3.2">
+			<desc>check FDB</desc>
+			<log-file>FDB_check1.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table interface ${sw1.port1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sw1.port1}\s*no" -c 200 -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="4.1">
+			<desc>wait for 400sec</desc>
+			<script timeout="420">
+				sleep 420
+				exit 0
+			</script>
+		</step>
+		<step no="4.2" type="loop-check" loop-max-times="5" loop-interval="25">
+			<desc>check mac entry age is time out after 200s</desc>
+			<log-file>FDB_age_timeout${loop_check.idx}.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table interface ${sw1.port1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sw1.port1}\s*no" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				port2 sends a frames, the dst mac is the aged out mac entry mac	
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port2.ixia_port},${sw1.port1.ixia_port},${sw1.port3.ixia_port}
+				-mac_dst ${sw1.port1.ixia_port.mac}
+				-mac_src ${sw1.port2.ixia_port.mac}
+				-mac_dst_count 10
+				-vlan enable
+				-vlan_id ${tb.vlan2}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-vlan_repeatCount 200
+				-eth2_protocol 0x0800
+				-udf_offset 38
+				-patternOffset2 38"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port},${sw1.port3.ixia_port} -duration 20"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port1.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port3.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="5.2">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table interface ${sw1.port2}"
+			</telnet>
+		</step>
+		<step no="5.3">
+			<desc>
+				analyse statistics on rxport, all ports could received frames 
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port1.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port3.ixia_port} framesSent userDefinedStat2 result is equal"</log-match> 
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<step no="1.1">
+				<desc>set vlan range</desc>
+				<setvar name="vlan_range">
+					echo "${tb.vlan2}-`expr ${tb.vlan2} + 251`"
+				</setvar>
+			</step>
+			<step no="1.2">
+				<desc>remove the 255 vlans</desc>
+				<log-file>remove_vlan.log</log-file>
+				<script>
+					python ${bin.dir}/ssh_execute_cli.py -cli 'no vlan (l1)' -list '${vlan_range}' -d ${sw1.mgt0.ip} -debug -l ${log.dir} -z ${log.file}
+				</script>
+			</step>
+		</stage> 
+		<include file="include/sw_default_post_process.xml" />
+	</post-process> 
+</testcase>

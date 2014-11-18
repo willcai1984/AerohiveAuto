@@ -1,0 +1,486 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>
+		Verify that "once" schedule can take effect on user-profiles
+		to associated computer and associating computer.
+	</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Create a SSID and bind it to interface wifi0
+		Create a user-profile and assign it to SSID
+		Create a once schedule s1 which make current time within the duration
+		Use a laptop to connect to SSID
+
+		Test Procedure:
+		1. Check user-profile status by show user-profile-schedule , check
+		traffic between AP and laptop
+		2. Use another laptop to connect to SSID, verify if can obtain ip
+		address
+		3. Modify schedule s1 to make current time without the duration,
+		check user-profile status, check traffic between AP and laptop
+		4. Use another laptop to connect to SSID, verify if can obtain ip
+		address
+		5. Create another schedule once s2 which make current time within
+		the duration, bind s2 to user-profile, check user-profile status
+		6. Use laptop to connect to SSID, verify if can connect successful
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+	<property name="schedule_1" value="test-1" />
+	<property name="schedule_2" value="test-2" />
+	<property name="user_profile" value="FWtest" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Create a SSID and bind it to interface wifi0
+				Create a user-profile and assign it to SSID
+				Create a once schedule s1 which make current time within the duration
+			</desc>
+			<log-file>step1_config_user_profile.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite wpa-auto-psk ascii-key aerohive"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_profile}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "user-profile ${user_profile} qos-policy def-user-qos attribute 1"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Set fixed time to AP
+			</desc>
+			<telnet target="ap1">
+				-v "clock date-time 2012-02-07 10:00:00"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				check system time
+				"show clock"
+			</desc>
+			<log-file>step1.1_show_clock.log</log-file>
+			<telnet target="ap1">
+				-v "show clock"
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				get a time to create one once schedule ${schedule_1}
+			</desc>
+			<setvar name="data_time_1">
+				perl ${case.dir}/bin/get_time_hours_month_day_clock.pl ${log.dir}/step1.1_show_clock.log -10
+			</setvar>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				get a time to create one once schedule ${schedule_1}
+			</desc>
+			<setvar name="data_time_2">
+				perl ${case.dir}/bin/get_time_hours_month_day_clock.pl ${log.dir}/step1.1_show_clock.log -5
+			</setvar>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				get a time to create one once schedule ${schedule_1}
+			</desc>
+			<setvar name="data_time_3">
+				perl ${case.dir}/bin/get_time_hours_month_day_clock.pl ${log.dir}/step1.1_show_clock.log 30
+			</setvar>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				Create one once schedule
+				Bind schedule to suer-profile
+			</desc>
+			<log-file>step1.5_create_schedule.log</log-file>
+			<telnet target="ap1">
+				-v "schedule ${schedule_1} once ${data_time_1} to ${data_time_3}"
+				-v "user-profile ${user_profile} schedule ${schedule_1}"
+			</telnet>
+		</step>
+
+		<step no="1.7" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Check user-profile status by show user-profile-schedule
+			</desc>
+			<log-file>step1.6_check_user_profile.log</log-file>
+			<telnet target="ap1">
+				-v "show user-profile-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${user_profile}\s+Yes\s+Active\s+" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				Use laptop to connect to SSID, verify if can obtain ip address.
+				Generate wifi_aerohive_test profile for ssid ${ssid.name}
+			</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/winprof.xml -o step2_wifi_prof.xml -s "${ssid.name}" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password
+			</desc>
+			<script>
+				staf local fs copy file ${log.dir}/step2_wifi_prof.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				verify profile copied
+			</desc>
+			<log-file>step2.2_cat_profile_sta.log</log-file>
+			<ssh target="sta1">
+				-v "cat /cygdrive/c/staf/wifi_aerohive_test.xml | grep ${ssid.name}"
+			</ssh>
+			<log-match>-e "&lt;name&gt;${ssid.name}&lt;/name&gt;"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				Delete all current Wireless profile of host ${sta1.mif.ip}
+				Bring down the client Wireless ${sta1.mif.ip}
+				Bring up the client Wireless on host ${sta1.mif.ip}
+				Add new profile for ssid ${ssid.name} to host ${sta1.mif.ip}
+				Check profile for ssid ${ssid.name} on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step2.3_wlan_conf_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan delete profile name=* interface=\"${sta1.tif.name}\""
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=DISABLED"
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=ENABLED"
+				-v "netsh wlan add profile filename=\"c:\\staf\\wifi_aerohive_test.xml\" interface=\"${sta1.tif.name}\""
+				-v "netsh wlan show profiles ${ssid.name}"
+			</ssh>
+			<log-match>-e "SSID name" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="2.4" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show wlan network on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step2.4_wlan_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show network | grep SSID"
+			</ssh>
+			<log-match>-e "SSID" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="2.5">
+			<desc>
+				connect to ssid ${ssid.name} on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step2.5_wlan_conn_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan connect ssid=${ssid.name} name=${ssid.name} interface=\"${sta1.tif.name}\""
+			</ssh>
+		</step>
+
+		<step no="2.6" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				wait until ssid ${ssid.name} connected on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step2.6_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-e "State" -i " connected"</log-match>
+		</step>
+
+		<step no="2.7" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				wait until ip assigned on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step2.7_wlan_ip_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+			<log-match>-e "IPv4 Address" -i "192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				Modify schedule ${schedule_1} to make current time without the duration
+			</desc>
+			<log-file>step3_modify_schedule.log</log-file>
+			<telnet target="ap1">
+				-v "schedule ${schedule_1} once ${data_time_1} to ${data_time_2}"
+			</telnet>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Check user-profile status by show user-profile-schedule
+			</desc>
+			<log-file>step3.1_check_user_profile.log</log-file>
+			<telnet target="ap1">
+				-v "show user-profile-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${user_profile}\s+Yes\s+Inactive\s+" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				"_debug dcd chnl"
+				"logging buffered level debug"
+			</desc>
+			<telnet target="ap1">
+				-v "_debug dcd chnl"
+				-v "logging buffered level debug"
+			</telnet>
+		</step>
+
+		<step no="4" delay="60">
+			<desc>
+				check traffic between AP and laptop
+				connect to ssid ${ssid.name} on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step4_wlan_conn_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan connect ssid=${ssid.name} name=${ssid.name} interface=\"${sta1.tif.name}\""
+			</ssh>
+		</step>
+
+		<step no="4.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				wait until ip assigned on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step4.1_wlan_ip_chk_sta.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+			<log-match>-n -e "IPv4 Address" -i "192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				Get station's MAC
+			</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step4.1_wlan_ip_chk_sta.log -i Wireless -o win -m -width
+			</setvar>
+		</step>
+
+		<step no="4.3" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step4.3_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)schedule check,User profile\(attribute=1\)\s+NOT\s+in\s+schedule,STA\(${sta1.tif.mac}\)\s+is\s+de-authenticated\s+by\s+schedule\!" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.4" type="loop-check" loop-max-times="40" loop-interval="5">
+			<desc>
+				wait until ssid ${ssid.name} connected on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step4.4_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-e "State" -i " disconnected"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				Create another schedule once s2 which make current time within
+				the duration, bind s2 to user-profile, check user-profile status
+				"show clock"
+			</desc>
+			<log-file>step5_check_system_time.log</log-file>
+			<telnet target="ap1">
+				-v "show clock"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				get a time to create one once schedule ${schedule_2}
+			</desc>
+			<setvar name="time_1">
+				perl ${case.dir}/bin/get_time_hours_month_day_clock.pl ${log.dir}/step1.1_show_clock.log -5
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				get a time to create one once schedule ${schedule_2}
+			</desc>
+			<setvar name="time_2">
+				perl ${case.dir}/bin/get_time_hours_month_day_clock.pl ${log.dir}/step1.1_show_clock.log 30
+			</setvar>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				Create one once schedule
+			</desc>
+			<log-file>step5.3_create_schedule.log</log-file>
+			<telnet target="ap1">
+				-v "schedule ${schedule_2} once ${time_1} to ${time_2}"
+			</telnet>
+		</step>
+
+		<step no="5.4">
+			<desc>
+				bind schedule to user-profile
+			</desc>
+			<telnet target="ap1">
+				-v "user-profile ${user_profile} schedule ${schedule_2}"
+			</telnet>
+		</step>
+
+		<step no="5.5" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Check user-profile status by show user-profile-schedule
+			</desc>
+			<log-file>step5.5_check_user_profile.log</log-file>
+			<telnet target="ap1">
+				-v "show user-profile-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${user_profile}\s+Yes\s+Active\s+" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				Use laptop to connect to SSID, verify if can connect successful.
+				Generate wifi_aerohive_test profile for ssid ${ssid.name}
+			</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/winprof.xml -o step6_wifi_prof.xml -s "${ssid.name}" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password
+			</desc>
+			<script>
+				staf local fs copy file ${log.dir}/step6_wifi_prof.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				verify profile copied
+			</desc>
+			<log-file>step6.2_cat_profile_sta.log</log-file>
+			<ssh target="sta1">
+				-v "cat /cygdrive/c/staf/wifi_aerohive_test.xml | grep ${ssid.name}"
+			</ssh>
+			<log-match>-e "&lt;name&gt;${ssid.name}&lt;/name&gt;"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				Delete all current Wireless profile of host ${sta1.mif.ip}
+				Bring down the client Wireless ${sta1.mif.ip}
+				Bring up the client Wireless on host ${sta1.mif.ip}
+				Add new profile for ssid ${ssid.name} to host ${sta1.mif.ip}
+				Check profile for ssid ${ssid.name} on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step6.3_wlan_conf_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan delete profile name=* interface=\"${sta1.tif.name}\""
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=DISABLED"
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=ENABLED"
+				-v "netsh wlan add profile filename=\"c:\\staf\\wifi_aerohive_test.xml\" interface=\"${sta1.tif.name}\""
+				-v "netsh wlan show profiles ${ssid.name}"
+			</ssh>
+			<log-match>-e "SSID name" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="6.4" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show wlan network on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step6.4_wlan_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show network | grep SSID"
+			</ssh>
+			<log-match>-e "SSID" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="6.5">
+			<desc>
+				connect to ssid ${ssid.name} on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step6.5_wlan_conn_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan connect ssid=${ssid.name} name=${ssid.name} interface=\"${sta1.tif.name}\""
+			</ssh>
+		</step>
+
+		<step no="6.6" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				wait until ssid ${ssid.name} connected on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step6.6_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-e "State" -i " connected"</log-match>
+		</step>
+
+		<step no="6.7" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				wait until ip assigned on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step6.7_wlan_ip_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+			<log-match>-e "IPv4 Address" -i "192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="6.8">
+			<desc>
+				Dump all interfaces data from remote host ${sta1.mif.ip}
+			</desc>
+			<log-file>step6.8_wlan_ip_dump_sta.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+		</step>
+
+		<step no="6.9">
+			<desc>
+				Get station's ip
+			</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step6.8_wlan_ip_dump_sta.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+
+		<step no="6.10">
+			<desc>
+				ap ping sta
+			</desc>
+			<log-file>step6.10_ap_ping_sta.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip}"
+			</telnet>
+			<log-match>-e "from ${sta1.tif.ip}"</log-match>
+		</step>
+	</stage>
+</testcase>

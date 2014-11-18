@@ -1,0 +1,222 @@
+<testcase>
+	<brief>Unicast through mesh. </brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Topology to use:
+		Switch-------AP2 - - - - - - laptop2
+		|
+		Laptop1- - -- -- AP1
+		Description:
+		Unicast through mesh.
+		Pre-condition:
+		-laptop1 connect with ssid1 on AP1;
+		-laptop2 connect with ssid2 on AP2;
+		-AP1 and AP2 are in the same hive;
+		-all laptops and PC are in same vlan
+		-inter-station-traffic is disabled on ssid1.
+		Test procedure:
+		-disable IST on AP
+		AP1#no ssid ssid1 inter-station-traffic
+		-laptop1 sends unicast to laptop2. R1
+		-laptop2 sends unicast to laptop1. R2
+		Expect result:
+		R1,R2: both be dropped based on dst-mac lookup.
+		Test result:
+		pass
+	</description>
+	<stage>
+
+		<step no="config_ap1">
+			<desc>Set up AP1 interface through sw menu via console </desc>
+			<console target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile autoap qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface mgt0 hive ${hive.name}"
+				-f basic_apsetup.cfg
+			</console>
+		</step>
+
+		<step no="config_ap2_1">
+			<desc>Set up AP2 interface through sw menu via console</desc>
+			<console target="ap2">
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile autoap qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi0 ssid ${ssid.name}2"
+				-v "ssid ${ssid.name}2 security-object autoap"
+				-v "save config"
+				-f basic_apsetup.cfg
+			</console>
+		</step>
+		<step no="pre1.1">
+			<desc>
+				-show interface mgt0 in ap1
+			</desc>
+			<log-file>step_pre1.1c_show_interface_mgt0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		<step no="pre1.2">
+			<desc>
+				Get mgt0 ap in ap1
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step_pre1.1c_show_interface_mgt0_ap1.log -t str
+			</setvar>
+		</step>
+		<step no="pre2.1">
+			<desc>
+				-show interface mgt0 in ap2
+			</desc>
+			<log-file>step_pre2.1c_show_interface_mgt0_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="pre2.2">
+			<desc>
+				Get mgt0 ap in ap1
+			</desc>
+			<setvar name="ap2.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step_pre2.1c_show_interface_mgt0_ap2.log -t str
+			</setvar>
+		</step>
+		<step no="set_channel">
+			<desc>Show interface wifi1.1 of AP1 </desc>
+			<log-file>show_interface_wifi1.1</log-file>
+			<telnet target="ap1">
+				-v "interface wifi1 radio channel 36"
+				-v "show interface wifi1.1"
+			</telnet>
+		</step>
+
+		<step no="get_ap1_wifi1_mac">
+			<desc>Get_mac of wifi1.1 on AP1 </desc>
+			<setvar name="ap1.wifi1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi1.1 -i wifi1.1 -o aero -m -width 2
+			</setvar>
+		</step>
+
+		<step no="show_ap1_eth0">
+			<desc>Show interface eth0 of AP1 </desc>
+			<log-file>show_interface_eth0</log-file>
+			<telnet target="ap1">
+				-v "show interface eth0"
+			</telnet>
+		</step>
+
+		<step no="9">
+			<desc>Get_mac of eth0 on AP1 </desc>
+			<setvar name="ap1.eth0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_eth0 -i eth0 -o aero -m -width 2
+			</setvar>
+		</step>
+
+		<step no="up-down-hive-and-set-channel">
+			<desc>up-down-hive-and-set-channel</desc>
+			<console target="ap2">
+				-v "interface wifi1 radio channel 36"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</console>
+		</step>
+
+		<step no="6" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>check mesh network</desc>
+			<log-file>amrp_nei_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>i "${ap1.wifi1.mac}" -i "TWO-WAY"</log-match>
+		</step>
+
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+
+		<property name="conn2.ssid" value="${ssid.name}2" />
+		<property name="conn2.proto" value="open" />
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn2, sta2, ap2" />
+
+		<include prefix="6" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+		<include prefix="7" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4" />
+
+		<step no="clear_session_on_ap1">
+			<desc>Set SSID for DUT1 via telnet to</desc>
+			<telnet target="ap1">
+				-v "no ssid ${ssid.name} inter-station-traffic"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="add_filter">
+			<desc>Set ff and clear log buffered on AP1</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "save config"
+			</telnet>
+			<no-error-check />
+		</step>
+		<include prefix="31" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4, negative" />
+
+
+		<step no="32">
+			<desc>check_log_buffered on AP1</desc>
+			<log-file>logbuffer1.log</log-file>
+			<telnet target="ap1">
+				-v "show logg buf | in \"inter station traffic\""
+			</telnet>
+			<no-error-check />
+			<log-match>-e "inter station traffic not allowed on wifi0.1"</log-match>
+		</step>
+		<step no="reset_filter">
+			<desc>Set ff and clear log buffered on AP1</desc>
+			<telnet target="ap1">
+				-v "no _ff id 1"
+				-v "_ff id 1 src-mac ${sta2.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<include prefix="37" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4, negative" />
+
+
+		<step no="38">
+			<desc>check_log_buffered on AP1</desc>
+			<log-file>logbuffer2.log</log-file>
+			<telnet target="ap1">
+				-v "show logg buf | in \"inter station traffic\""
+			</telnet>
+			<no-error-check />
+			<log-match>-e "inter station traffic not allowed on wifi0.1" -c</log-match>
+		</step>
+	</stage>
+</testcase>

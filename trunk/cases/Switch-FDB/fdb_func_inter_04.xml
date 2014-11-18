@@ -1,0 +1,145 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=3) FDB process jumbo frames</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	
+		PC1++++++ Switch+++++++PC2
+		          +
+		          +
+		          PC3
+
+		Description	Check known unicast packets forwarding
+		Platform Dependence	Chesapeake
+		Pre-condition	?	PC1,PC2,PC3 connect to switch port1,port2,port3
+		?	PC1,PC2,PC3 are in same vlan 10
+		•	Set mtu is over 1500(for example 9600)
+		Test procedure	Dynamic unicast mac entries
+		1.	Set  PC2,PC3 to capture frames
+                2.	PC1 send jumbo frames to switch
+		3.	Check the mac entry for the jumbo frames src mac in FDB table          Result1
+		4.	Check the traffic on PC2,PC3      Result2
+
+		Expect result	Result1:   should learn the src mac of jumbo frames
+
+				Result2:  PC2 and PC3 should receive the jumbo frames
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+		<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+		<property name="sw1.port3.ixia_port.mac" value="0000.0000.0013"/>
+		<step no="1">
+			<desc>
+				configure 3 access ports in the same vlan and set mtu=9600
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan1}"
+				-v "interface  mtu  9600"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show mac-address-table all"
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				port1, send pkts to let switch learn FDB entries	
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-new="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff 
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-frame_length 9600"
+				-v ""
+
+				
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+				
+			</ssh>
+		</step>
+		<step no="2.2">
+			<desc>check FDB, mac entries are learned from the port1</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1.ixia_port.mac}\s*${sw1.port1}\s*no"</log-match>
+			
+		</step>
+
+		<step no="3.1">
+			<desc>
+				build stream, port1 sends pkt with src-mac ${sw1.port1.ixia_port.mac} to dst-mac ${sw1.port2.ixia_port.mac}
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v ""
+				<!-- disable streams -->
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				
+				<!-- configure the sencond stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port}
+				-mac_dst ${sw1.port2.ixia_port.mac}
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-frame_length 9600"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port1.ixia_port} -oneRxPort ${sw1.port2.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port1.ixia_port} -oneRxPort ${sw1.port3.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="3.2">
+			<desc>
+				analyse statistics on rxport,  port2  and port3 received pkts 
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port1.ixia_port} ${sw1.port2.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port1.ixia_port} ${sw1.port3.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+
+		
+	</stage>
+	<post-process>
+		<stage>
+			<step no="1">
+				<ssh timeout="180" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+					-v ""
+				</ssh>
+			</step>
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

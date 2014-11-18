@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check self healing of ICMP Redirect </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Linunx PC(IP:10.155.30.12)
+		linux-i2nd:~ # route add -net 12.12.1.1 netmask 255.255.255.255 gateway 10.155.30.128
+		linux-i2nd:~ # echo 1 &gt;/proc/sys/net/ipv4/ip_forward
+		Route(10.155.30.128):
+		Set another virtual interface IP 12.12.1.1
+		AP:
+		interface mgt0 ip 10.155.30.151 255.255.255.0
+		no interface mgt0 dhcp client
+		ip route net 0.0.0.0 0.0.0.0 gateway 10.155.30.12
+		system icmp-redirect enable
+		save configure and AP reboot
+		_ff id 1 protocol 1
+		_kdebug fe basic
+		Debug console
+
+		Test Procedure:
+		1. Enter into shell and execute command "killall -9 ah_scd"
+		2. Show system
+		3. Show running configure
+		4. Ping 12.12.1.1
+		5. Enter into shecll and execute configure "cat
+		/proc/sys/net/ipv4/conf/mgt0/accept_redirects"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				show interface of Portal1
+			</desc>
+			<log-file>show_portal_interface.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				get the eth0 mac address of portal
+			</desc>
+			<setvar name="ap1.eth0.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_portal_interface.log -k eth0 -p 2
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				Get master-PC's route table
+			</desc>
+			<log-file>show_mpc_route.log</log-file>
+			<script>
+				route >> ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Get master-PC's testbed interface
+			</desc>
+			<setvar name="mpc.tif.name">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_mpc_route.log -k ${tb.vlan1.gw} -p 8
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				get master-PC's tif ifconfig
+			</desc>
+			<log-file>show_mpc_ipconfig.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name}>> ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				Get master's tif mac-address
+			</desc>
+			<setvar name="mpc.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_mpc_ipconfig.log -i ${mpc.tif.name} -o linux -m
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				get 4 width mpc mac
+			</desc>
+			<setvar name="mpc.tif.w4mac">
+				echo ${mpc.tif.mac} | sed 's/://g; s/../&amp;:/g' | awk -F : '{print $1$2":"$3$4":"$5$6}'
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				Set server1's testbed interface ip
+			</desc>
+			<setvar name="server1.tif.ip">
+				echo ${tb.server1}
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				Set server1's testbed interface net
+			</desc>
+			<setvar name="server1.tif.net">
+				echo ${tb.vlan1.network} | sed 's/\//./g' | awk -F . '{print $1"."$2"."$3"."$4}'
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				Get server1's route table
+			</desc>
+			<log-file>show_server1_route.log</log-file>
+			<ssh host="${server1.tif.ip}" prompt=">|.*#">
+				-v "route"
+			</ssh>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				Get server1's testbed interface
+			</desc>
+			<setvar name="server1.tif.name">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_server1_route.log -k ${server1.tif.net} -p 8
+			</setvar>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				get server1's tif ifconfig
+			</desc>
+			<log-file>show_server1_ipconfig.log</log-file>
+			<ssh host="${server1.tif.ip}" prompt=">|.*#">
+				-v "ifconfig ${server1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				Get server1's tif mac-address
+			</desc>
+			<setvar name="server1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_server1_ipconfig.log -i ${server1.tif.name} -o linux -m
+			</setvar>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				get 4 width server1 mac
+			</desc>
+			<setvar name="server1.tif.w4mac">
+				echo ${server1.tif.mac} | sed 's/://g; s/../&amp;:/g' | awk -F : '{print $1$2":"$3$4":"$5$6}'
+			</setvar>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				config ssid for ap
+			</desc>
+			<log-file>setup4.1_ap1.log</log-file>
+			<console target="ap1">
+				-v "user-profile datapath qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-psk ascii aerohive"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				Set up AP1
+			</desc>
+			<log-file>setup4.2_ap1.log</log-file>
+			<console target="ap1">
+				-v "interface wifi0 radio channel 11"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "system icmp-redirect enable"
+				-v "save config"
+			</console>
+		</step>
+		
+		<step no="5">
+			<desc>
+				config mgt0 and gateway for ap
+			</desc>
+			<log-file>setup_ap1_route.log</log-file>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${ap1.mgt0.ip} 255.255.255.0"
+				-v "ip route net 0.0.0.0 0.0.0.0 gateway ${server1.tif.ip}"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				AP reboot
+			</desc>
+			<log-file>reboot_ap.log</log-file>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="5.2" delay="60">
+			<desc>
+				set route and ip forwarding on server1
+			</desc>
+			<log-file>set_server1_route.log</log-file>
+			<ssh host="${server1.tif.ip}" prompt=">|.*#">
+				-v "route add -net ${mpc.mif.ip} netmask 255.255.255.255 gateway ${mpc.tif.ip}"
+				-v "echo 1 >/proc/sys/net/ipv4/ip_forward"
+			</ssh>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				switch shell mode in ap1
+			</desc>
+			<log-file>step5.3_switch_shell_mode_ap1.log</log-file>
+			<telnet target="ap1" prompt="AH.*(#|$)">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "killall -9 ah_scd"
+				-v "exit 0"
+			</telnet>
+		</step>
+
+		<step no="6" delay="10">
+			<desc>
+				show system in ap1
+			</desc>
+			<log-file>show_system_ap1.log</log-file>
+			<console target="ap1" timeout="100">
+				-v "show system"
+			</console>
+			<log-match>-i "ICMP-redirect enable" -i "Yes" -c</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				show run in ap1
+			</desc>
+			<log-file>show_run_icmp_ap1.log</log-file>
+			<console target="ap1" timeout="100">
+				-v "show running-config"
+			</console>
+			<log-match>-i "system icmp-redirect enable" -c</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				set _ff and clear log buffer on ap1
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="7">
+			<desc>
+				ap1 ping mpc mif
+			</desc>
+			<log-file>ap1_ping_mpc_mif.log</log-file>
+			<console target="ap1" timeout="100">
+				-v "ping ${mpc.mif.ip} count 2"
+			</console>
+		</step>
+
+		<step no="7.1" delay="20">
+			<desc>
+				show log buffer that ap1 ping mpc mif
+			</desc>
+			<log-file>show_ap1_ping_mpc_mif.log</log-file>
+			<console target="ap1" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "\(i\) eth0 ${server1.tif.ip}->${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-redirect" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>
+				switch shell mode in ap1
+			</desc>
+			<log-file>step8_switch_shell_mode_ap1.log</log-file>
+			<console target="ap1" prompt="AH.*(#|$)">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "cat /proc/sys/net/ipv4/conf/mgt0/accept_redirects"
+				-v "exit 0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "^1$" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				resotre route and ip forwarding on server1
+			</desc>
+			<log-file>restore_server1_route.log</log-file>
+			<ssh host="${server1.tif.ip}" prompt=">|.*#">
+				-v "route delete ${mpc.mif.ip}"
+				-v "echo 0 >/proc/sys/net/ipv4/ip_forward"
+			</ssh>
+		</step>
+	</stage>
+
+	<failed-process>
+		<stage>
+			<step no="0.1">
+				<desc>resotre route and ip forwarding on server1</desc>
+				<log-file>restore_server1_route.log</log-file>
+				<ssh host="${server1.tif.ip}" prompt=">|.*#">
+					-v "route delete ${mpc.mif.ip}"
+					-v "echo 0 >/proc/sys/net/ipv4/ip_forward"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_failed_process.xml" />
+	</failed-process>
+</testcase>

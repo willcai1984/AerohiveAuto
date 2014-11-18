@@ -1,0 +1,523 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>AP will add the clients into the IP multicast group's membership table when receiving join message on wifi interface</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		On portal:
+		Laptop1 connects to portal through wifi0.1, and be authenticated
+		Laptop2 connects to portal through wifi1.2, and be authenticated
+		Active multicast stream is 238.1.1.1, 238.1.1.2
+
+		Test Procedure:
+		1. Laptop1 reports to join group 238.1.1.1, "show interface wifi0 multicast" to
+		check multicast group's membership table on portal
+		2. Laptop2 reports to join group 238.1.1.2, "show interface wifi1 multicast" to check
+		multicast group's membership on portal
+		3. Laptop1 to report to join group 238.1.1.2 , "show interface wifi0 multicast"
+		to check multicast group's membership table on portal
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="sta1.group1.capture.multicast.packet.result" value="sta1.group1.capture.multicast.packet.result" />
+	<property name="sta1.group2.capture.multicast.packet.result" value="sta1.group2.capture.multicast.packet.result" />
+	<property name="sta2.group2.capture.multicast.packet.result" value="sta2.group2.capture.multicast.packet.result" />
+	<property name="file.dir" value="/tmp" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				On portal:
+				creat ssid 1 and bind it to wifi0
+				creat ssid 2 and bind it to wifi1
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name} multicast conversion-to-unicast auto"
+				-v "interface wifi1 radio channel 36"
+				-v "ssid ${ssid.name}_1"
+				-v "interface wifi1 ssid ${ssid.name}_1"
+				-v "ssid ${ssid.name}_1 multicast conversion-to-unicast auto"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="2.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="2.2" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<step no="2.3">
+			<desc>Get sta1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta1.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				get sta1's mac with two delimiter style
+			</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<include prefix="3" file="subs/wpa_supplicant_start.xml" args="sta2" />
+
+		<step no="3.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "ifconfig ${sta2.tif.name} up"
+				-v "iwconfig ${sta2.tif.name} channel 36"
+				-v "iwconfig ${sta2.tif.name} commit"
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}_1\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="3.2" file="subs/chk_conn_in_sta.xml" args="sta2" />
+
+		<step no="3.3">
+			<desc>Get sta2's ip</desc>
+			<setvar name="sta2.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta2.log -i ${sta2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				get sta2's mac with two delimiter style
+			</desc>
+			<setvar name="sta2.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta2.mif.ip} -u ${sta2.user} -p ${sta2.passwd} -i ${sta2.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				capture packet on sta1
+			</desc>
+			<log-file>step3.5_capture_packet.log</log-file>
+			<ssh target="sta1">
+				-v "rm -f ${file.dir}/${sta1.group1.capture.multicast.packet.result}"
+				-v "nohup tshark -i ${sta1.tif.name} host ${pub.mtcast1.group1.ip} -V &gt; ${file.dir}/${sta1.group1.capture.multicast.packet.result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				get pid of "tshark" on sta1
+			</desc>
+			<setvar name="sta1.group1.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.5_capture_packet.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta1.join.group1.1">
+			<desc>
+				sta1 reports to join group1 238.1.1.1
+			</desc>
+			<log-file>sta1.join.group1.1_join_group.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ./mrecv -d ${pub.mtcast1.group1.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="sta1.join.group1.2">
+			<desc>
+				"show interface wifi0 multicast"
+			</desc>
+			<log-file>sta1.join.group1.2_show_interface_wifi0_multicast.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 multicast"
+			</telnet>
+		</step>
+
+		<step no="sta1.join.group1.3">
+			<desc>
+				get the number of transmitted Multicast packet(s) number
+			</desc>
+			<setvar name="wifi0.transmit.multicast.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta1.join.group1.2_show_interface_wifi0_multicast.log -p "Transmitted Multicast packet\(s\) number:\s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta1.join.group1.3.1">
+			<desc>
+				get the number of Multicast conversion to unicast packet(s) number
+			</desc>
+			<setvar name="wifi0.transmit.unicast.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta1.join.group1.2_show_interface_wifi0_multicast.log -p "Multicast conversion to unicast packet\(s\) number: \s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta1.join.group1.4">
+			<desc>
+				get pid of "mrecv" on sta1
+			</desc>
+			<setvar name="sta1.join.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta1.join.group1.1_join_group.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta1.join.group1.5" delay="60">
+			<desc>
+				"show interface wifi0 multicast" to check multicast group’s membership table on portal
+			</desc>
+			<log-file>sta1.join.group1.5_check_group_membership.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 multicast"
+			</telnet>
+			<log-match>-e "Group IP address : ${pub.mtcast1.group1.ip}"</log-match>
+			<log-match>-e "Group MAC address : ${pub.mtcast1.group1.mac}"</log-match>
+			<log-match>-c -e "MAC Address : ${sta1.tif.mac} *IP Address : ${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="sta1.join.group1.6">
+			<desc>
+				get the number of transmitted Multicast packet(s) number after 60 seconds
+			</desc>
+			<setvar name="wifi0.transmit.multicast.number.second">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta1.join.group1.5_check_group_membership.log -p "Transmitted Multicast packet\(s\) number:\s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta1.join.group1.7">
+			<desc>
+				check transmit number,if the number > 500,return true,else false.
+			</desc>
+			<log-file>sta1.join.group1.7_check_transmit_number.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta1.join.group1.5_check_group_membership.log -p "Multicast conversion to unicast packet\(s\) number: \s*(\d+)" --script "int(m.group(1))+${wifi0.transmit.multicast.number.second}-${wifi0.transmit.unicast.number}-${wifi0.transmit.multicast.number} &gt; 500" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="sta1.join.group1.8">
+			<desc>
+				kill process
+			</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.group1.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="sta1.join.group1.9">
+			<desc>
+				cat files
+			</desc>
+			<log-file>sta1.join.group1.9_check_result.log</log-file>
+			<ssh target="sta1">
+				-v "cat ${file.dir}/${sta1.group1.capture.multicast.packet.result}"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Internet Protocol, Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)" -ps p1 "(?i)Protocol: ${pub.mtcast1.protocol}" -e "User Datagram Protocol.*Dst Port:.*${pub.mtcast1.group1.port}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				capture packet on sta2
+			</desc>
+			<log-file>step4_capture_packet.log</log-file>
+			<ssh target="sta2">
+				-v "rm -f ${file.dir}/${sta2.group2.capture.multicast.packet.result}"
+				-v "nohup tshark -i ${sta2.tif.name} host ${pub.mtcast1.group2.ip} -V &gt; ${file.dir}/${sta2.group2.capture.multicast.packet.result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get pid of "tshark" on sta2
+			</desc>
+			<setvar name="sta2.group2.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4_capture_packet.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta2.join.group2.1">
+			<desc>
+				sta2 reports to join group2 238.1.1.2
+			</desc>
+			<log-file>sta2.join.group2.1_join_group.log</log-file>
+			<ssh target="sta2">
+				-v "nohup ./mrecv -d ${pub.mtcast1.group2.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="sta2.join.group2.2">
+			<desc>
+				"show interface wifi1 multicast"
+			</desc>
+			<log-file>sta2.join.group2.2_show_interface_wifi1_multicast.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 multicast"
+			</telnet>
+		</step>
+
+		<step no="sta2.join.group2.3">
+			<desc>
+				get the number of transmitted Multicast packet(s) number
+			</desc>
+			<setvar name="wifi1.transmit.multicast.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta2.join.group2.2_show_interface_wifi1_multicast.log -p "Transmitted Multicast packet\(s\) number:\s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta2.join.group2.3.1">
+			<desc>
+				get the number of Multicast conversion to unicast packet(s) number
+			</desc>
+			<setvar name="wifi1.transmit.unicast.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta2.join.group2.2_show_interface_wifi1_multicast.log -p "Multicast conversion to unicast packet\(s\) number: \s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta2.join.group2.4">
+			<desc>
+				get pid of "mrecv" on sta2
+			</desc>
+			<setvar name="sta2.join.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta2.join.group2.1_join_group.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta2.join.group2.5" delay="60">
+			<desc>
+				"show interface wifi1 multicast" to check multicast group’s membership table on portal
+			</desc>
+			<log-file>sta2.join.group2.5_check_group_membership.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 multicast"
+			</telnet>
+			<log-match>-e "Group IP address : ${pub.mtcast1.group2.ip}"</log-match>
+			<log-match>-e "Group MAC address : ${pub.mtcast1.group2.mac}"</log-match>
+			<log-match>-c -e "MAC Address : ${sta2.tif.mac} *IP Address : ${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="sta2.join.group2.6">
+			<desc>
+				get the number of transmitted Multicast packet(s) number after 60 seconds
+			</desc>
+			<setvar name="wifi1.transmit.multicast.number.second">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta2.join.group2.5_check_group_membership.log -p "Transmitted Multicast packet\(s\) number:\s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta2.join.group2.7">
+			<desc>
+				check transmit number,if the number > 500,return true,else false.
+			</desc>
+			<log-file>sta2.join.group2.7_check_transmit_number.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta2.join.group2.5_check_group_membership.log -p "Multicast conversion to unicast packet\(s\) number: \s*(\d+)" --script "int(m.group(1))+${wifi1.transmit.multicast.number.second}-${wifi1.transmit.unicast.number}-${wifi1.transmit.multicast.number} &gt; 500" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="sta2.join.group2.8">
+			<desc>
+				kill process
+			</desc>
+			<ssh target="sta2">
+				-v "kill ${sta2.group2.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="sta2.join.group2.9">
+			<desc>
+				cat files
+			</desc>
+			<log-file>sta2.join.group2.9_check_result.log</log-file>
+			<ssh target="sta2">
+				-v "cat ${file.dir}/${sta2.group2.capture.multicast.packet.result}"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Internet Protocol, Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group2.ip} \(${pub.mtcast1.group2.ip}\)" -ps p1 "(?i)Protocol: ${pub.mtcast1.protocol}" -e "User Datagram Protocol.*Dst Port:.*${pub.mtcast1.group2.port}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				capture packet on sta1
+			</desc>
+			<log-file>step5_capture_packet.log</log-file>
+			<ssh target="sta1">
+				-v "rm -f ${file.dir}/${sta1.group2.capture.multicast.packet.result}"
+				-v "nohup tshark -i ${sta1.tif.name} host ${pub.mtcast1.group2.ip} -V &gt; ${file.dir}/${sta1.group2.capture.multicast.packet.result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				get pid of "tshark" on sta1
+			</desc>
+			<setvar name="sta1.group2.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4_capture_packet.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta1.join.group2.1">
+			<desc>
+				sta1 reports to join group2 238.1.1.2
+			</desc>
+			<log-file>sta1.join.group2.1_join_group.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ./mrecv -d ${pub.mtcast1.group2.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="sta1.join.group2.2">
+			<desc>
+				"show interface wifi0 multicast"
+			</desc>
+			<log-file>sta1.join.group2.2_show_interface_wifi0_multicast.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 multicast"
+			</telnet>
+		</step>
+
+		<step no="sta1.join.group2.3">
+			<desc>
+				get the number of transmitted Multicast packet(s) number
+			</desc>
+			<setvar name="wifi0.transmit.multicast.number2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta1.join.group2.2_show_interface_wifi0_multicast.log -b "Group IP address : ${pub.mtcast1.group2.ip}" -p "Transmitted Multicast packet\(s\) number:\s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta1.join.group2.3.1">
+			<desc>
+				get the number of Multicast conversion to unicast packet(s) number
+			</desc>
+			<setvar name="wifi0.transmit.unicast.number2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta1.join.group2.2_show_interface_wifi0_multicast.log -b "Group IP address : ${pub.mtcast1.group2.ip}" -p "Multicast conversion to unicast packet\(s\) number: \s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta1.join.group2.4">
+			<desc>
+				get pid of "mrecv" on sta1
+			</desc>
+			<setvar name="sta1.join.pid2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta1.join.group2.1_join_group.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta1.join.group2.5" delay="60">
+			<desc>
+				"show interface wifi0 multicast" to check multicast group’s membership table on portal
+			</desc>
+			<log-file>sta1.join.group2.5_check_group_membership.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 multicast"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Group IP address : ${pub.mtcast1.group1.ip}" -e "Group MAC address : ${pub.mtcast1.group1.mac}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Group IP address : ${pub.mtcast1.group2.ip}" -e "Group MAC address : ${pub.mtcast1.group2.mac}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Group IP address : ${pub.mtcast1.group1.ip}" -e "(?i)MAC Address : ${sta1.tif.mac} *IP Address : ${sta1.tif.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Group IP address : ${pub.mtcast1.group2.ip}" -e "(?i)MAC Address : ${sta1.tif.mac} *IP Address : ${sta1.tif.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="sta1.join.group2.6">
+			<desc>
+				get the number of transmitted Multicast packet(s) number after 60 seconds
+			</desc>
+			<setvar name="wifi0.transmit.multicast.number2.second">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta1.join.group2.5_check_group_membership.log -b "Group IP address : ${pub.mtcast1.group2.ip}" -p "Transmitted Multicast packet\(s\) number:\s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="sta1.join.group2.7">
+			<desc>
+				check transmit number,if the number > 500,return true,else false.
+			</desc>
+			<log-file>sta1.join.group2.7_check_transmit_number.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -f ${log.dir}/sta1.join.group2.5_check_group_membership.log -b "Group IP address : ${pub.mtcast1.group2.ip}" -p "Multicast conversion to unicast packet\(s\) number: \s*(\d+)" --script "int(m.group(1))+${wifi0.transmit.multicast.number2.second}-${wifi0.transmit.unicast.number2}-${wifi0.transmit.multicast.number2} &gt; 500" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="sta1.join.group2.8">
+			<desc>
+				kill process
+			</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.group2.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="sta1.join.group2.9">
+			<desc>
+				cat files
+			</desc>
+			<log-file>sta1.join.group2.9_check_result.log</log-file>
+			<ssh target="sta1">
+				-v "cat ${file.dir}/${sta1.group2.capture.multicast.packet.result}"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Internet Protocol, Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group2.ip} \(${pub.mtcast1.group2.ip}\)" -ps p1 "(?i)Protocol: ${pub.mtcast1.protocol}" -e "User Datagram Protocol.*Dst Port:.*${pub.mtcast1.group2.port}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+
+		<stage>
+			<step no="0">
+				<desc>
+					kill all process at sta1
+				</desc>
+				<ssh target="sta1">
+					-v "kill ${sta1.join.pid}"
+					-v "kill ${sta1.join.pid2}"
+					-v "kill ${sta1.group1.tshark.pid}"
+					-v "kill ${sta1.group2.tshark.pid}"
+					-v "rm -f ${file.dir}/${sta1.group1.capture.multicast.packet.result}"
+					-v "rm -f ${file.dir}/${sta1.group2.capture.multicast.packet.result}"
+				</ssh>
+			</step>
+
+			<step no="1">
+				<desc>
+					kill all process at sta2
+				</desc>
+				<ssh target="sta2">
+					-v "kill ${sta2.join.pid}"
+					-v "kill ${sta2.group2.tshark.pid}"
+					-v "rm -f ${file.dir}/${sta2.group2.capture.multicast.packet.result}"
+				</ssh>
+			</step>
+		</stage>
+	</post-process>
+</testcase>

@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>AP run as dhcp client, if already use static ip, dhcpc should not renew lease and just send discovery pkt when expired</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		AP can obtain ip address from DHCP server
+		Set a static ip address to AP that different with obtained
+
+		Test Procedure:
+
+		When it's time to renew, check if AP will renew
+	</description>
+
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+
+		<step no="pre.1">
+			<desc>
+				AP can obtain ip address from DHCP server
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="pre.1.1" delay="10">
+			<desc>
+				AP can obtain ip address from DHCP server
+			</desc>
+			<log-file>pre.1._show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show int mgt0"
+			</console>
+		</step>
+
+		<step no="pre.1.2">
+			<desc>get ip address of ap</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/pre.1._show_interface_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="set_tmp_IP">
+			<multi-setvar>
+				echo "ap1.mgt0.testip=$(echo ${ap1.mgt0.ip} | cut -d. -f1,2,3).$(expr $(echo ${ap1.mgt0.ip} | cut -d. -f4) + 4)"
+			</multi-setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				config a static ip address for mgt0
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${ap1.mgt0.testip}/${br.lan.netmask}"
+			</console>
+		</step>
+
+		<step no="1.1b">
+			<desc>
+				check mgt0 ip address
+			</desc>
+			<log-file>step3.1b_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "IP addr=${ap1.mgt0.testip};"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				enable dhcp client mgt0
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="2.1b">
+			<desc>
+				get ip from dhcp server, but ap should still use the static ip
+			</desc>
+			<log-file>step2.1_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap1" slow="yes">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-e "DHCP client: Enabled"</log-match>
+			<log-match>-e "DNS server (option number 6): ${pub.dns1.ip}"</log-match>
+			<log-match>-e "Log server (option number 7): ${pub.syslog1.ip}"</log-match>
+		</step>
+
+		<step no="2.1c">
+			<desc>
+				check mgt0 ip address, should still use the static ip
+			</desc>
+			<log-file>step2.1c_show_interface_mgt0.log</log-file>
+			<console target="ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "IP addr=${ap1.mgt0.testip};"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				enable debug
+			</desc>
+			<console target="ap1" slow="yes">
+				-v "_debug dhcpc basic"
+				-v "_debug dhcpc scan"
+				-v "clear log buf"
+			</console>
+		</step>
+
+		<step no="3.2" delay="620">
+			<desc>
+				When it is time to renew, AP will not renew mgt0 ip address
+			</desc>
+			<log-file>step3.2_show_interface_mgt0.log</log-file>
+			<console target="ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "IP addr=${ap1.mgt0.testip};"</log-match>
+		</step>
+
+		<step no="3.3" delay="620">
+			<desc>
+				show log buf
+			</desc>
+			<log-file>step3.3_show_log_buf.log</log-file>
+			<console target="ap1" slow="yes">
+				-v "show log buf | in dhcp"
+				-v ""
+				-v ""
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "dhcpc: \[dhcp_basic\]: Entering renew state" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "dhcpc: \[dhcp_basic\]: need not send renewing for ${ap1.mgt0.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "dhcpc: \[dhcp_basic\]: DHCPC state on mgt0 from 'renewing' to 'rebinding'" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "dhcpc: \[dhcp_basic\]: Entering rebinding state" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "dhcpc: \[dhcp_basic\]: need not send rebinding for ${ap1.mgt0.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "dhcpc: \[dhcp_basic\]: DHCPC state on mgt0 from 'rebinding' to 'init_selecting'" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "dhcpc: Lease lost, entering init state" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "dhcpc: mgt0 entering raw listen mode" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "dhcpc: \[dhcp_basic\]: Opening raw socket on mgt0" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "dhcpc: Sending DHCP discover on mgt0" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+</testcase>

@@ -1,0 +1,127 @@
+<testcase>
+	<brief>use scenario 1 to test</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+	<description>
+		TOPO:
+		SW++++pc
+		|
+		laptop1-----ap
+		Description:
+		Process for to-self-session in enable mode
+		Pre-condition:
+		STA1 and STA2 link to ap, and assigned ip address
+		Test procedure:
+		1. Configure mac policies which permit to ap on ap
+		2. Laptop1 ping ap, result 1
+		3. Pc ping ap, result 1
+		4. Configure ip policies which permit to ap on ap
+		5. Laptop1 ping ap, result 2
+		6. Pc ping ap, result 2
+		Expect result:
+		Result 1:ping successfully, and there is log info when mac-session is logged for to-self
+		Result 2:ping successfully, and there is log info when ip-session is logged for to-self
+	</description>
+	<stage>
+		<step no="1">
+			<desc>cfg AP-1</desc>
+			<log-file>cfg_ap.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-f cfg-ap-1.cfg
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="2" delay="10">
+			<desc>show interface mgt0 of AP-1</desc>
+			<log-file>ap_ip.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+		<step no="3">
+			<desc>Get the ip of AP1</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ap_ip.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		<step no="5">
+			<desc>Remove the current ~/.ssh/known_hosts of Master PC to avoid the denial access to the DUT</desc>
+			<script>
+				rm -f ~/.ssh/known_hosts
+			</script>
+		</step>
+		<step no="6">
+			<desc>setup ssid for ap-1</desc>
+			<log-file>set_ap_ssid.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v " "
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object icsa"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</ssh>
+		</step>
+		
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="16" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1,sta1, ap1" />
+
+		<step no="17">
+			<desc>check the mac of ${sta1.mif.ip} in AP</desc>
+			<log-file>vpn_client_route.log</log-file>
+			<ssh target="ap1">
+				-v "show route"
+			</ssh>
+			<log-match>-i "L" -c -i "${sta1.tif.mac}" </log-match>
+		</step>
+		<step no="18">
+			<desc>ping AP from the laptop1</desc>
+			<log-file>ping_ap.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ping ${ap1.mgt0.ip} -S ${sta1.tif.ip}" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+		<step no="19">
+			<desc>get to-self log from log buffer</desc>
+			<log-file>log_buffer_mac_policy.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered level info | in MAC"
+			</ssh>
+			<no-error-check />
+			<log-match>-i "${sta1.tif.mac}" -c -i "MAC session for to-self traffic is created"</log-match>
+		</step>
+		<step no="20">
+			<desc>setup ip-policy for ap-1</desc>
+			<log-file>set_ap_ippolicy.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v " "
+				-v "ip-policy test"
+				-v "ip-policy test id 1 action permit"
+				-v "user-profile icsa security ip-policy from-access test to-access test"
+				-v "clear log buffer"
+				-v "console page 0"
+				-v "clear forwarding-engine ip-sessions"
+				-v "save config"
+			</ssh>
+		</step>
+		<step no="21">
+			<desc>ping AP from the laptop1</desc>
+			<log-file>ping_AP_ip2.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ping ${ap1.mgt0.ip} -S ${sta1.tif.ip}" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+		<step no="22">
+			<desc>get the to self ip-session log from log buffer</desc>
+			<log-file>log_buffer_IP_policy.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered level info | in IP"
+			</ssh>
+			<no-error-check />
+			<log-match>-i "${sta1.tif.ip}" -c -i "IP session" -i "for to-self traffic is created"</log-match>
+		</step>
+	</stage>
+</testcase>

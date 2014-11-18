@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the PSK-generation-method password-only works</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		All other group attributes are default
+
+		Test Procedure:
+		-Create a user-group
+		-config the PSK-generation-method password-only
+		- All other group attributes are default
+		-Create a user, bind it to this group, wpa-aes-PSK
+		-check the user group [result 1]
+		-bind the group to ssid
+		-Check result 2
+		-bind ssid to wifi0
+		-Check result 3
+		Configure a user group with user accounts auto generation then repeat
+		the test. [result 4]
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="default.psk" value="aerohive" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-tkip-psk" />
+	<property name="conn1.psk" value="ppskuser" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-create a user-group
+				-create a user
+				-create a password of user
+				-bind the user to this group
+			</desc>
+			<telnet target="ap1">
+				-v "user-group userGroup"
+				-v "user-group userGroup psk-generation-method password-only"
+				-v "user ppsk_user"
+				-v "user ppsk_user password ppskuser"
+				-v "user ppsk_user group userGroup"
+				-v "_debug auth info"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Config ap1
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key ${default.psk}"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "security-object ppsk security private-psk"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-bind the group to ssid
+				-bind ssid to wifi0
+			</desc>
+			<telnet target="ap1">
+				-v "user-profile ttt vlan-id 1 attribute 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show user
+			</desc>
+			<log-file>step2.2_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "ppsk_user" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step2.3_show_user_group.log</log-file>
+			<telnet target="ap1">
+				-v "show user-group"
+			</telnet>
+			<log-match>-c -i "userGroup" -p 6 -i "MP"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				show run users
+			</desc>
+			<log-file>step2.4_show_run_user.log</log-file>
+			<telnet target="ap1">
+				-v "show run users"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-check the PPSK is active, and PMK is ready
+			</desc>
+			<log-file>step3_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "PPSK-enabled=yes"</log-match>
+			<log-match>-c -i "ppsk_user" -i "Yes"</log-match>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step6_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " 1 *Yes *1"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-sh roa ca
+			</desc>
+			<log-file>step6.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				-show auth
+			</desc>
+			<log-file>step6.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "ppsk_user" -i "done"</log-match>
+		</step>
+
+		<include prefix="7" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="8">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				-Configure a user group with user accounts auto generation
+			</desc>
+			<telnet target="ap1">
+				-v "user-group userGroup password-generation-method auto"
+				-v "user-group userGroup auto-generation index-range 1"
+			</telnet>
+		</step>
+
+		<include prefix="9" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step9_show_logging_buffered.log" />
+
+		<step no="9.1">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step9_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup0001\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="10">
+			<desc>
+				show user
+			</desc>
+			<log-file>step10_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup0001 *auto" -i "Yes"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step10.1_show_user_group.log</log-file>
+			<telnet target="ap1">
+				-v "show user-group"
+			</telnet>
+			<log-match>-c -i "userGroup" -p 6 -i "AP"</log-match>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step10.2_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "PPSK-enabled=yes"</log-match>
+			<log-match>-c -i "userGroup0001" -i "Yes"</log-match>
+		</step>
+
+		<step no="pre.conn2.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn2.psk" type="special">
+				echo ${ppsk.auto.value}
+			</setvar>
+		</step>
+
+		<property name="conn2.ssid" value="${ssid.name}" />
+		<property name="conn2.proto" value="wpa-tkip-psk" />
+
+		<include prefix="11" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="12">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step12_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " 1 *Yes *1"</log-match>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				-sh roa ca
+			</desc>
+			<log-file>step12.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="12.2">
+			<desc>
+				-show auth
+			</desc>
+			<log-file>step12.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup0001" -i "done"</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unknown unicast send from mgt0</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-laptop1 is connected to portal, pass authentication
+		-laptop2 connects with switch, pc connects ap through wired
+		-all laptops are in same vlan
+
+		Test Procedure:
+
+		-add a static arp entry on ap in shell mode, such as 1.1.1.1 00-11-22-
+		33-44-55
+		-ap ping 1.1.1.1, result 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}_1" />
+	<property name="tb.tmp.mac" value="00:11:22:33:44:55" />
+
+	<stage>
+		<if>"${ap1.wifi1.existed}" =="true" &amp;&amp; "${ap1.eth1.existed}" =="true"</if>
+
+		<step no="pre1.2">
+			<desc>
+				creat hive and ssid ,then bind them to interface
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="1.2">
+			<desc>
+				enable debug
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe_arp basic"
+				-v "_ff id 1 protocol 1"
+				-v "_ff id 2 protocol 47"
+				-v "_ff id 3 etype 0806"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				delete arp entry in shell mode
+			</desc>
+			<log-file>step2.1_clear_arp_in_shell_mode.log</log-file>
+			<telnet target="ap1" prompt="AH.*$">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "arp -s ${tb.unreach.ip1} ${tb.tmp.mac}"
+				-v "exit 0"
+				-v ""
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="2.2">
+			<desc>
+				AP ping unreachable IP:ping unsuccessfully,
+			</desc>
+			<log-file>step2.2_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${tb.unreach.ip1}"
+			</telnet>
+			<log-match>-n -c -i "from ${tb.unreach.ip1}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step2.3_show_log_buff.log</log-file>
+			<telnet target="ap1" timeout="240">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) wifi0.1 ${ap1.mgt0.ip}-&gt;${tb.unreach.ip1}.+ icmp-echo-req" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth1 ${ap1.mgt0.ip}-&gt;${tb.unreach.ip1}.+ icmp-echo-req" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) wifi1.1 ${ap1.mgt0.ip}-&gt;${tb.unreach.ip1}.+ icmp-echo-req" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0 ${ap1.mgt0.ip}-&gt;${tb.unreach.ip1}.+ icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

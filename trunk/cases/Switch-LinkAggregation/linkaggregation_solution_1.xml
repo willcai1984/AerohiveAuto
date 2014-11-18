@@ -1,0 +1,788 @@
+<testcase>
+	<brief>(IxPort: CoF=4)Lan interface link aggregation(access)</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+	<description>
+		Lan interface link aggregation, mode access, direction interface2agg/agg2interface/both, Pkts mode no_tag/vlan_tag(correct/incorrect)/bad_pkts
+	</description>
+	<comment>
+		Pre-condition Configure on Chesapeake:
+		interface 1 mode access vlan10
+		interfaces 3 4 are in a port_channel and mode access vlan10
+		Configure on IXIA:
+		interfaces 3 4 are in a port_channel
+		Test procedure
+		1. IXIA port1 send random source mac broadcast pkts, result 1
+		2. IXIA port1 send random source mac multicast pkts, result 1
+		3. IXIA port1 send random destination mac unicast pkts, result 1
+		4. IXIA port1 send random source mac IXIA port_channel mac is destination unicast pkts, result 1
+		5. IXIA port 3 or 4 send broadcast/multicast/unicast pkts, result 2
+		6. IXIA port 3 or 4 send broadcast/multicast/unicast pkts with tagged vlan 10, result 3
+		7. Modify the port-channel’s members media from copper to fiber
+		8. Repeat1-6, result 4
+		9. IXIA port1 send random source IP unicast pkts, result 1
+		10. IXIA port1 send random destination IP unicast pkts, result 1
+		11. IXIA port1 send random ports unicast pkts, result 1
+		Expect result
+		Result 1: IXIA port 3 and port4 get the pkts from port1 is about 1:1
+		Result 2: IXIA
+		port 1 get the pkts from port 3 or 4 successfully
+		Result 3: IXIA port 1 cannot get ant pkts, because the pkts dropped on port 3 or 4
+		Result 4: The same as before
+
+	</comment>
+
+	<property name="sw1.user" value="admin" />
+	<property name="sw1.passwd" value="aerohive" />
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="tx_port2" value="${sw1.port2.ixia_port}" />
+	<property name="tx_port3" value="${sw1.port3.ixia_port}" />
+	<property name="rx_port1" value="${sw1.port4.ixia_port}" />
+	<property name="agg_id" value="1" />
+	<property name="correct_vlan" value="101" />
+	<property name="incorrect_vlan" value="102" />
+
+	<stage>
+		<step no="1.0.1">
+			<desc>
+				Show interface mgt0 to get ip address
+			</desc>
+			<log-file>step1.0.1_mgt0_ip_info.log</log-file>
+			<console target="sw1">
+				-v 'show interface mgt0'
+			</console>
+		</step>
+
+		<step no="1.0.2">
+			<desc>
+				Get mgt0's ip address
+			</desc>
+			<setvar name="sw1.ip">
+				python ${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/step1.0.1_mgt0_ip_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.1.1">
+			<desc>
+				aggregation, mode access, direction ingress.
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'vlan ${correct_vlan}'
+				-v 'vlan ${incorrect_vlan}'
+				-v 'agg ${agg_id}'
+				-v 'interface ${sw1.port1} switch mode access'
+				-v 'interface ${sw1.port2} switch mode access'
+				-v 'interface ${sw1.port1} agg ${agg_id}'
+				-v 'interface ${sw1.port2} agg ${agg_id}'
+				-v 'interface agg${agg_id} switchport mode access'
+				-v 'interface agg${agg_id} switchport access vlan ${correct_vlan}'
+				-v 'interface ${sw1.port4} switchport mode access'
+				-v 'interface ${sw1.port4} switchport access vlan ${correct_vlan}'
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="1.1.2.1">
+			<desc>
+				Direction:ingress; Pkts:no_tag; Port1 send pkts
+			</desc>
+			<log-file>step1.1.2.1_ingress_no_tag.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1} -rxPortList ${rx_port1}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${tx_port1} -oneRxPort ${rx_port1}"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="1.1.2.2">
+			<desc>
+				Direction:ingress; Pkts:no_tag, Port1 send pkts; rx1=tx1(Port1 is in source ports list)
+			</desc>
+			<log-file>step1.1.2.1_ingress_no_tag.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${tx_port1} ${rx_port1} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+
+
+
+		<step no="1.1.3.1">
+			<desc>
+				Direction:ingress; Pkts:no_tag; Port2 send pkts
+			</desc>
+			<log-file>step1.1.3.1_ingress_no_tag.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port2},${rx_port1} -phyList ${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port2},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port2} -rxPortList ${rx_port1}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${tx_port2} -oneRxPort ${rx_port1}"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="1.1.3.2">
+			<desc>
+				Direction:ingress; Pkts:no_tag, Port2 send pkts; rx1=tx2(Port2 is in source ports list)
+			</desc>
+			<log-file>step1.1.3.1_ingress_no_tag.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${tx_port2} ${rx_port1} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+
+
+		<step no="1.1.4.1">
+			<desc>
+				Direction:ingress; Pkts:no_tag; Both Port1 and 2 send pkts
+			</desc>
+			<log-file>step1.1.4.1_ingress_no_tag.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016"
+				-v "traffic_configure_eth2 -portListIn ${tx_port2},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0017
+				-rate_pps 20"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1},${tx_port2} -rxPortList ${rx_port1}"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="1.1.4.2">
+			<desc>
+				Direction:ingress; Pkts:no_tag; Both Port1 and 2 send pkts; Get tx1 send pkts
+			</desc>
+			<setvar name="tx1.send">
+				python ${bin.dir}/get_ixia_pkt.py -f ${log.dir}/step1.1.4.1_ingress_no_tag.log -t ${tx_port1}
+			</setvar>
+		</step>
+
+		<step no="1.1.4.3">
+			<desc>
+				Direction:ingress; Pkts:no_tag; Both Port1 and 2 send pkts; Get tx2 send pkts
+			</desc>
+			<setvar name="tx2.send">
+				python ${bin.dir}/get_ixia_pkt.py -f ${log.dir}/step1.1.4.1_ingress_no_tag.log -t ${tx_port2}
+			</setvar>
+		</step>
+
+		<step no="1.1.4.4">
+			<desc>
+				Direction:ingress; Pkts:no_tag; Both Port1 and 2 send pkts; Get rx1 receive pkts
+			</desc>
+			<setvar name="rx1.receive">
+				python ${bin.dir}/get_ixia_pkt.py -f ${log.dir}/step1.1.4.1_ingress_no_tag.log -r ${rx_port1}
+			</setvar>
+		</step>
+
+		<step no="1.1.4.5">
+			<desc>
+				Direction:ingress; Pkts:no_tag; Both Port1 and 2 send pkts; check if rx1=tx1+tx2(exist bug, both the two ports send the pkts at the same time )
+			</desc>
+			<log-file>step1.1.4.5_check_sum.log</log-file>
+			<script>
+				python ${bin.dir}/check_sum.py -s ${tx1.send} -s ${tx2.send} -c ${rx1.receive} > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "The two lists' sum are the same"</log-match>
+		</step>
+
+		<step no="1.2.2.1">
+			<desc>
+				Direction:ingress; Pkts:correct_vlan; Port1 send pkts
+			</desc>
+			<log-file>step1.2.2.1_ingress_correct_vlan.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-vlan enable
+				-vlan_id ${correct_vlan}"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1} -rxPortList ${rx_port1}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${tx_port1} -oneRxPort ${rx_port1}"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="1.2.2.2">
+			<desc>
+				Direction:ingress; Pkts:correct_vlan, Port1 send pkts; rx1=0(Access port drop any pkt with vlan tag)
+			</desc>
+			<log-file>step1.2.2.1_ingress_correct_vlan.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${tx_port1} ${rx_port1} framesSent userDefinedStat2 result is blocked"</log-match>
+		</step>
+
+
+
+		<step no="1.2.3.1">
+			<desc>
+				Direction:ingress; Pkts:correct_vlan; Port2 send pkts
+			</desc>
+			<log-file>step1.2.3.1_ingress_correct_vlan.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port2},${rx_port1} -phyList ${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port2},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-vlan enable
+				-vlan_id ${correct_vlan}"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port2} -rxPortList ${rx_port1}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${tx_port2} -oneRxPort ${rx_port1}"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="1.2.3.2">
+			<desc>
+				Direction:ingress; Pkts:correct_vlan, Port2 send pkts; rx1=0(Access port drop any pkt with vlan tag)
+			</desc>
+			<log-file>step1.2.3.1_ingress_correct_vlan.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${tx_port2} ${rx_port1} framesSent userDefinedStat2 result is blocked"</log-match>
+		</step>
+
+
+		<step no="1.2.4.1">
+			<desc>
+				Direction:ingress; Pkts:correct_vlan; Both Port1 and 2 send pkts
+			</desc>
+			<log-file>step1.2.4.1_ingress_correct_vlan.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-vlan enable
+				-vlan_id ${correct_vlan}"
+				-v "traffic_configure_eth2 -portListIn ${tx_port2},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0017
+				-vlan enable
+				-vlan_id ${correct_vlan}
+				-rate_pps 20"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1},${tx_port2} -rxPortList ${rx_port1}"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="1.2.4.2">
+			<desc>
+				Direction:ingress; Pkts:correct_vlan; Both Port1 and 2 send pkts; Get tx1 send pkts
+			</desc>
+			<setvar name="tx1.send">
+				python ${bin.dir}/get_ixia_pkt.py -f ${log.dir}/step1.2.4.1_ingress_correct_vlan.log -t ${tx_port1}
+			</setvar>
+		</step>
+
+		<step no="1.2.4.3">
+			<desc>
+				Direction:ingress; Pkts:correct_vlan; Both Port1 and 2 send pkts; Get tx2 send pkts
+			</desc>
+			<setvar name="tx2.send">
+				python ${bin.dir}/get_ixia_pkt.py -f ${log.dir}/step1.2.4.1_ingress_correct_vlan.log -t ${tx_port2}
+			</setvar>
+		</step>
+
+		<step no="1.2.4.4">
+			<desc>
+				Direction:ingress; Pkts:correct_vlan; Both Port1 and 2 send pkts; Get rx1 receive pkts
+			</desc>
+			<setvar name="rx1.receive">
+				python ${bin.dir}/get_ixia_pkt.py -f ${log.dir}/step1.2.4.1_ingress_correct_vlan.log -r ${rx_port1}
+			</setvar>
+		</step>
+
+		<step no="1.2.4.5">
+			<desc>
+				Direction:ingress; Pkts:correct_vlan; Both Port1 and 2 send pkts; check if rx1=0(Access port drop any pkt with vlan tag)
+			</desc>
+			<log-file>step1.2.4.5_check.log</log-file>
+			<script>
+				python ${bin.dir}/check_sum.py -s 0 -c ${rx1.receive} > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "The two lists' sum are the same"</log-match>
+		</step>
+
+
+		<step no="1.3.2.1">
+			<desc>
+				Direction:ingress; Pkts:incorrect_vlan; Port1 send pkts
+			</desc>
+			<log-file>step1.3.2.1_ingress_incorrect_vlan.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-vlan enable
+				-vlan_id ${incorrect_vlan}"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1} -rxPortList ${rx_port1}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${tx_port1} -oneRxPort ${rx_port1}"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="1.3.2.2">
+			<desc>
+				Direction:ingress; Pkts:incorrect_vlan, Port1 send pkts; rx1=0 (Access port drop any pkt with vlan tag)
+			</desc>
+			<log-file>step1.3.2.1_ingress_incorrect_vlan.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${tx_port1} ${rx_port1} framesSent userDefinedStat2 result is blocked"</log-match>
+		</step>
+
+
+
+		<step no="1.3.3.1">
+			<desc>
+				Direction:ingress; Pkts:incorrect_vlan; Port2 send pkts
+			</desc>
+			<log-file>step1.3.3.1_ingress_incorrect_vlan.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port2},${rx_port1} -phyList ${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port2},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-vlan enable
+				-vlan_id ${incorrect_vlan}"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port2} -rxPortList ${rx_port1}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${tx_port2} -oneRxPort ${rx_port1}"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="1.3.3.2">
+			<desc>
+				Direction:ingress; Pkts:incorrect_vlan, Port2 send pkts; rx1=0(Access port drop any pkt with vlan tag)
+			</desc>
+			<log-file>step1.3.3.1_ingress_incorrect_vlan.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${tx_port2} ${rx_port1} framesSent userDefinedStat2 result is blocked"</log-match>
+		</step>
+
+
+		<step no="1.3.4.1">
+			<desc>
+				Direction:ingress; Pkts:incorrect_vlan; Both Port1 and 2 send pkts
+			</desc>
+			<log-file>step1.3.4.1_ingress_incorrect_vlan.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-vlan enable
+				-vlan_id ${incorrect_vlan}"
+				-v "traffic_configure_eth2 -portListIn ${tx_port2},${rx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0017
+				-vlan enable
+				-vlan_id ${incorrect_vlan}
+				-rate_pps 20"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1},${tx_port2} -rxPortList ${rx_port1}"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="1.3.4.2">
+			<desc>
+				Direction:ingress; Pkts:incorrect_vlan; Both Port1 and 2 send pkts; Get tx1 send pkts
+			</desc>
+			<setvar name="tx1.send">
+				python ${bin.dir}/get_ixia_pkt.py -f ${log.dir}/step1.3.4.1_ingress_incorrect_vlan.log -t ${tx_port1}
+			</setvar>
+		</step>
+
+		<step no="1.3.4.3">
+			<desc>
+				Direction:ingress; Pkts:incorrect_vlan; Both Port1 and 2 send pkts; Get tx2 send pkts
+			</desc>
+			<setvar name="tx2.send">
+				python ${bin.dir}/get_ixia_pkt.py -f ${log.dir}/step1.3.4.1_ingress_incorrect_vlan.log -t ${tx_port2}
+			</setvar>
+		</step>
+
+		<step no="1.3.4.4">
+			<desc>
+				Direction:ingress; Pkts:incorrect_vlan; Both Port1 and 2 send pkts; Get rx1 receive pkts
+			</desc>
+			<setvar name="rx1.receive">
+				python ${bin.dir}/get_ixia_pkt.py -f ${log.dir}/step1.3.4.1_ingress_incorrect_vlan.log -r ${rx_port1}
+			</setvar>
+		</step>
+
+		<step no="1.3.4.5">
+			<desc>
+				Direction:ingress; Pkts:incorrect_vlan; Both Port1 and 2 send pkts; check if rx1=0(Access port drop any pkt with vlan tag)
+			</desc>
+			<log-file>step1.3.4.5_check.log</log-file>
+			<script>
+				python ${bin.dir}/check_sum.py -s 0 -c ${rx1.receive} > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "The two lists' sum are the same"</log-match>
+		</step>
+
+		<step no="2.1.1">
+			<desc>
+				source aggregation_access, direction egress. configure port4's vlan is the same as agg 1
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="2.1.2.1">
+			<desc>
+				Direction:egress; Pkts:no_tag, rx1 to tx1 and tx2
+			</desc>
+			<log-file>step2.1.2.1_egress_no_tag.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port1}
+				-mac_dst 0000.0000.0011
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-rate_pps 100"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port2}
+				-mac_dst 0000.0000.0012
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1"
+				-v ""
+				-v "start_trans_getstats -txPortList ${rx_port1} -rxPortList ${tx_port1},${tx_port2}"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${rx_port1} -txStParaList framesSent -rxPortList ${tx_port1},${tx_port2} -rxStParaList userDefinedStat2,userDefinedStat2"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="2.1.2.2">
+			<desc>
+				Direction:egress; Pkts:no_tag; Expect:tx1+tx2=rx1(port4 and agg1 is access vlan 10, the pkts' sum is the same)
+			</desc>
+			<log-file>step2.1.2.1_egress_no_tag.log</log-file>
+			<log-match>-e "check_sum_equal_tx_with_rx ${rx_port1} framesSent ${tx_port1},${tx_port2} userDefinedStat2,userDefinedStat2 result is equal"</log-match>
+		</step>
+
+
+		<step no="2.1.3.1">
+			<desc>
+				Direction:egress; Pkts:correct vlan tag
+			</desc>
+			<log-file>step2.1.3.1_correct_vlan_tag.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port1}
+				-mac_dst 0000.0000.0011
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-vlan enable
+				-vlan_id ${correct_vlan}
+				-rate_pps 100"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port2}
+				-mac_dst 0000.0000.0012
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-vlan enable
+				-vlan_id ${correct_vlan}
+				-rate_pps 100"
+				-v ""
+				-v "start_trans_getstats -txPortList ${rx_port1} -rxPortList ${tx_port1},${tx_port2}"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${rx_port1} -txStParaList framesSent -rxPortList ${tx_port1},${tx_port2} -rxStParaList
+				userDefinedStat2,userDefinedStat2"
+				-v
+				""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="2.1.3.2">
+			<desc>
+				Direction:egress; Pkts:correct_vlan_tag; Expect:rx=0(port4 is access drop the pkts with vlan tag)
+			</desc>
+			<log-file>step2.1.3.1_correct_vlan_tag.log</log-file>
+			<log-match>-e "check_sum_equal_tx_with_rx ${rx_port1} framesSent ${tx_port1},${tx_port2} userDefinedStat2,userDefinedStat2 result is blocked"</log-match>
+		</step>
+
+		<step no="2.1.4.1">
+			<desc>
+				Direction:egress; Pkts:incorrect vlan tag
+			</desc>
+			<log-file>step2.1.4.1_incorrect_vlan_tag.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port1}
+				-mac_dst 0000.0000.0011
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-vlan enable
+				-vlan_id ${incorrect_vlan}
+				-rate_pps 100"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port2}
+				-mac_dst 0000.0000.0012
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-vlan enable
+				-vlan_id ${incorrect_vlan}
+				-rate_pps 100"
+				-v ""
+				-v "start_trans_getstats -txPortList ${rx_port1} -rxPortList ${tx_port1},${tx_port2}"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${rx_port1} -txStParaList framesSent -rxPortList ${tx_port1},${tx_port2} -rxStParaList
+				userDefinedStat2,userDefinedStat2"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="2.1.4.2">
+			<desc>
+				Direction:egress; Pkts:incorrect_vlan_tag; Expect:rx=0(port4 is access mode drop the pkts with incorrect vlan tag)
+			</desc>
+			<log-file>step2.1.4.1_incorrect_vlan_tag.log</log-file>
+			<log-match>-e "check_sum_equal_tx_with_rx ${rx_port1} framesSent ${tx_port1},${tx_port2} userDefinedStat2,userDefinedStat2 result is blocked"</log-match>
+		</step>
+
+
+		<step no="3.1.1">
+			<desc>
+				aggregation, mode access, direction both.
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="3.1.2.1">
+			<desc>
+				Direction:both; Pkts:no_tag; tx1 and tx2 to rx1/ rx1 to tx1 and tx2
+			</desc>
+			<log-file>step3.1.2.1_both_no_tag.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port1}
+				-mac_dst 0000.0000.0011
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-rate_pps 100"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port2}
+				-mac_dst 0000.0000.0012
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-rate_pps 100"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1},${tx_port2},${rx_port1} -rxPortList ${tx_port1},${tx_port2},${rx_port1}"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${tx_port1},${tx_port2} -txStParaList framesSent,framesSent -rxPortList ${rx_port1} -rxStParaList userDefinedStat2"
+				-v ""
+				-v
+				"check_sum_equal_tx_with_rx -txPortList ${rx_port1} -txStParaList framesSent -rxPortList ${tx_port1},${tx_port2} -rxStParaList userDefinedStat2,userDefinedStat2"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="3.1.2.2">
+			<desc>
+				Direction:both; Pkts:no_tag; Expect:rx1=tx1+tx2/ tx1+tx2= rx1(no tag pkts should be captured all)
+			</desc>
+			<log-file>step3.1.2.1_both_no_tag.log</log-file>
+			<log-match>-e "check_sum_equal_tx_with_rx ${tx_port1},${tx_port2} framesSent,framesSent ${rx_port1} userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "check_sum_equal_tx_with_rx ${rx_port1} framesSent ${tx_port1},${tx_port2} userDefinedStat2,userDefinedStat2 result is equal"</log-match>
+		</step>
+
+		<step no="3.1.3.1">
+			<desc>
+				Direction:both; Pkts:correct vlan; tx1 and tx2 to rx1/ rx1 to tx1 and tx2
+			</desc>
+			<log-file>step3.1.3.1_both_correct_vlan.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port1}
+				-mac_dst 0000.0000.0011
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-vlan enable
+				-vlan_id ${correct_vlan}
+				-rate_pps 100"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port2}
+				-mac_dst 0000.0000.0012
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-vlan enable
+				-vlan_id ${correct_vlan}
+				-rate_pps 100"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1},${tx_port2},${rx_port1} -rxPortList ${tx_port1},${tx_port2},${rx_port1}"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${tx_port1},${tx_port2} -txStParaList framesSent,framesSent
+				-rxPortList ${rx_port1}
+				-rxStParaList userDefinedStat2"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${rx_port1} -txStParaList framesSent -rxPortList ${tx_port1},${tx_port2} -rxStParaList userDefinedStat2,userDefinedStat2"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="3.1.3.2">
+			<desc>
+				Direction:both; Pkts:correct_tag; Expect:rx1=0/ tx1+tx2= 0(access port will droped all pkts with vlan tag)
+			</desc>
+			<log-file>step3.1.3.1_both_correct_vlan.log</log-file>
+			<log-match>-e "check_sum_equal_tx_with_rx ${tx_port1},${tx_port2} framesSent,framesSent ${rx_port1} userDefinedStat2 result is blocked"</log-match>
+			<log-match>-e "check_sum_equal_tx_with_rx ${rx_port1} framesSent ${tx_port1},${tx_port2} userDefinedStat2,userDefinedStat2 result is blocked"</log-match>
+		</step>
+
+		<step no="3.1.4.1">
+			<desc>
+				Direction:both; Pkts:incorrect vlan; tx1 and tx2 to rx1/ rx1 to tx1 and tx2
+			</desc>
+			<log-file>step3.1.4.1_both_incorrect_vlan.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${rx_port1} -phyList ${sw1.port1.ixia_port.phytype},${sw1.port2.ixia_port.phytype},${sw1.port4.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port1}
+				-mac_dst 0000.0000.0011
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-vlan enable
+				-vlan_id ${incorrect_vlan}
+				-rate_pps 100"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${tx_port2}
+				-mac_dst 0000.0000.0012
+				-mac_src 0000.0000.0001
+				-mac_src_count 8
+				-mac_src_step 1
+				-vlan enable
+				-vlan_id ${incorrect_vlan}
+				-rate_pps 100"
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1},${tx_port2},${rx_port1} -rxPortList ${tx_port1},${tx_port2},${rx_port1}"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${tx_port1},${tx_port2} -txStParaList
+				framesSent,framesSent -rxPortList ${rx_port1}
+				-rxStParaList userDefinedStat2"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${rx_port1} -txStParaList framesSent -rxPortList ${tx_port1},${tx_port2} -rxStParaList userDefinedStat2,userDefinedStat2"
+				-v ""
+				-v "exit"
+			</ssh>
+		</step>
+
+		<step no="3.1.4.2">
+			<desc>
+				Direction:both; Pkts:correct_tag; Expect:rx1=0/ tx1+tx2= 0(access port will droped all pkts with vlan tag)
+			</desc>
+			<log-file>step3.1.4.1_both_incorrect_vlan.log</log-file>
+			<log-match>-e "check_sum_equal_tx_with_rx ${tx_port1},${tx_port2} framesSent,framesSent ${rx_port1} userDefinedStat2 result is blocked"</log-match>
+			<log-match>-e "check_sum_equal_tx_with_rx ${rx_port1} framesSent ${tx_port1},${tx_port2} userDefinedStat2,userDefinedStat2 result is blocked"</log-match>
+		</step>
+
+	</stage>
+</testcase>
+

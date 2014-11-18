@@ -1,0 +1,396 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Lan ports work with trunk mode, check ingress packet forwarding with/without vlan tag, </brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Pc1 connect to switch
+		Laptop1 connect to lan port eth1
+		Laptop2 connect to lan port eth2
+		Lan ports work with trunk mode
+
+		Test Procedure:
+
+		1. Configure native-vlan, allowed-vlan list for ethx
+		2. Disable vlan-id-check feature for ethx
+		3. Laptop1 send a packet to laptop2 with vlan tag, but not match native-vlan and allowed-vlan
+		list. (icmp) Result1
+		4. Enable vlan-id-check feature for ethx
+		5. Laptop1 send a packet to laptop2 with vlan tag, but not match native-vlan and allowed-vlan
+		list. (icmp) Result2
+		6. Allow vlan list support 16 vlan(include native-vlan).
+		Interface ethx allow-vlan all
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<stage>
+
+		
+
+		<step no="1.1">
+			<desc>
+				Laptop1 connect to lan port eth3
+				Laptop2 connect to lan port eth1
+				Lan ports work with trunk mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.1 dns-server enable"				
+				-v "interface eth3 mode bridge-802.1q"				
+			</telnet>
+		</step>
+
+		<step no="1.2_1">
+			<desc>
+				1. Lan port eth1/eth4 in same vlan
+				2. Configure native-vlan, allowed-vlan list for ethx
+			</desc>
+			<telnet target="${br1.br.wan.ip}">				
+				-v "interface eth3 native-vlan ${br1.vpc1.vlan}"
+				-v "interface eth1 allowed-vlan ${br1.vpc2.vlan}"
+				-v "interface eth3 allowed-vlan ${br1.vpc3.vlan}"
+				-v "interface eth1 allowed-vlan ${br1.vpc1.vlan}"
+				-v "interface eth3 allowed-vlan ${br1.vpc1.vlan}"
+			</telnet>
+		</step>
+		
+		<step no="1.2_2">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				1. Lan port eth1/eth4 in same vlan
+				2. Configure native-vlan, allowed-vlan list for ethx
+			</desc>
+		        <telnet target="${br1.br.wan.ip}">
+		        -v "interface eth1 mode bridge-access"
+				-v ""
+				-v "interface eth1 mode bridge-802.1q"
+				-v "interface eth1 native-vlan ${br1.vpc1.vlan}"
+                </telnet>
+		</step>
+		
+		<step no="1.2_3">
+			<if>"${br.platform}" == "br100"</if>
+				<desc>
+				change eth1 as access port becuase of bug15388 to avoid the case failed on br100
+				</desc>
+				<telnet target="${br1.br.wan.ip}">
+					-v "interface eth1 mode bridge-access"
+					-v ""
+					-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute ${br1.vpc1.vlan}"
+					-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vpc1.vlan}"
+				</telnet>
+		</step>
+		
+		<step no="1.3">
+			<desc>
+				AP1 as Laptop1 connect to lan port eth3
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0 native-vlan ${br1.vpc1.vlan}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="1.3b" delay="20">
+			<desc>
+				show AP1 mgt0
+			</desc>
+			<log-file>step1.3b_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.3c">
+			<desc>get ip address of ap1</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step1.3b_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.4">
+			<desc>br1.vpc1 connect to lan ports eth1, dhclient retrieve ip address</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.4b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="get_prefix">
+			<multi-setvar>
+				echo "br1.mgt0.1.prefix=$(echo ${br1.br.mgt0.1.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.vpc1.prefix=$(echo ${br1.vpc1.tif.ip} | cut -d. -f1,2,3)"
+				echo "br1.ap1.prefix=$(echo ${br1.ap1.mgt0.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+
+		<step no="1.5a">
+			<desc>
+				check ip address of AP1: AP1 obtain ip address from mgt0.1 dhcp server
+			</desc>
+			<script>
+				if [ "${br1.mgt0.1.prefix}" == "${br1.ap1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="1.5b">
+			<desc>
+				check ip address of vpc1 in the same vlan of AP1
+			</desc>
+			<script>
+				if [ "${br1.vpc1.prefix}" == "${br1.ap1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				AP1 set static ip
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 ip ${br1.ap1.mgt0.ip}/${br.lan.netmask}"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="1.7" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Laptop1(AP1) send a packet to vpc1
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="2.1a">
+			<desc>
+				packet capture on br1.vpc1
+			</desc>
+			<log-file>step2.1a_vpc1_packet_capture.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "nohup tshark -l -i ${br1.vpc1.tif.name} ip proto 1 &gt; ${job.id}vpc1_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="2.1b">
+			<desc>
+				get vpc1 tshark process
+			</desc>
+			<setvar name="vpc1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1a_vpc1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				3. Laptop1 send a packet to laptop2 without vlan tag. (icmp)
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "no interface mgt0 vlan"
+				-v "no interface mgt0 native-vlan"
+				-v ""
+				-v ""
+				-v ""
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+		</step>
+
+		<step no="2.3" delay="10">
+			<desc>
+				Result1: laptop2 will receive the packet
+			</desc>
+			<log-file>vpc1_check_ping_packet_int.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "kill -9 ${vpc1.tshark.id_1}"
+				-v "cat ${job.id}vpc1_icmp_1.log"
+				-v "rm -f ${job.id}vpc1_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.ap1.mgt0.ip} -&gt; ${br1.vpc1.tif.ip}[\t ]+ICMP Echo.+request" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.1a">
+			<desc>
+				packet capture on br1.vpc1
+			</desc>
+			<log-file>step3.1a_vpc1_packet_capture.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "nohup tshark -l -i ${br1.vpc1.tif.name} ip proto 1 &gt; ${job.id}vpc1_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.1b">
+			<desc>
+				get vpc1 tshark process
+			</desc>
+			<setvar name="vpc1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.1a_vpc1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				4. Laptop1 send a packet to laptop2 with a vlan tag match native-vlan. (icmp)
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc1.vlan}"
+				-v ""
+				-v ""
+				-v ""
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+		</step>
+
+		<step no="3.3" delay="10">
+			<desc>
+				Result2: laptop2 will receive the packet
+			</desc>
+			<log-file>vpc1_check_ping_packet_int.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "kill -9 ${vpc1.tshark.id_1}"
+				-v "cat ${job.id}vpc1_icmp_1.log"
+				-v "rm -f ${job.id}vpc1_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.ap1.mgt0.ip} -&gt; ${br1.vpc1.tif.ip}[\t ]+ICMP Echo.+request" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.1a">
+			<desc>
+				packet capture on br1.vpc1
+			</desc>
+			<log-file>step4.1a_vpc1_packet_capture.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "nohup tshark -l -i ${br1.vpc1.tif.name} ip proto 1 &gt; ${job.id}vpc1_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.1b">
+			<desc>
+				get vpc1 tshark process
+			</desc>
+			<setvar name="vpc1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4.1a_vpc1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				5. Laptop1 send a packet to laptop2 with a vlan tag match allowed-vlan list. (icmp) Result3
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc2.vlan}"
+				-v ""
+				-v ""
+				-v ""
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+		</step>
+
+		<step no="4.3" delay="10">
+			<desc>
+				Result3: laptop2 can’t receive the packet
+				( since the lan port eth3 vlan is not the same as the packet vlan tag)
+			</desc>
+			<log-file>vpc1_check_ping_packet_int.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "kill -9 ${vpc1.tshark.id_1}"
+				-v "cat ${job.id}vpc1_icmp_1.log"
+				-v "rm -f ${job.id}vpc1_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.ap1.mgt0.ip} -&gt; ${br1.vpc1.tif.ip} ICMP Echo \(ping\) request" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.1a">
+			<desc>
+				packet capture on br1.vpc1
+			</desc>
+			<log-file>step5.1a_vpc1_packet_capture.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "nohup tshark -l -i ${br1.vpc1.tif.name} ip proto 1 &gt; ${job.id}vpc1_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="5.1b">
+			<desc>
+				get vpc1 tshark process
+			</desc>
+			<setvar name="vpc1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.1a_vpc1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				6. Laptop1 send a packet to laptop2 with a vlan tag not match allowed-vlan list
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc3.vlan}"
+				-v ""
+				-v ""
+				-v ""
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+		</step>
+
+		<step no="5.3" delay="10">
+			<desc>
+				Result4: laptop2 can’t receive the packet.
+			</desc>
+			<log-file>vpc1_check_ping_packet_int.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "kill -9 ${vpc1.tshark.id_1}"
+				-v "cat ${job.id}vpc1_icmp_1.log"
+				-v "rm -f ${job.id}vpc1_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.ap1.mgt0.ip} -&gt; ${br1.vpc1.tif.ip}[\t ]+ICMP Echo.+request" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>		
+
+	</stage>
+
+	<failed-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					kill tshark process on br1.vpc1
+				</desc>
+				<ssh target="br1.vpc1">
+					-v "kill -9 ${vpc1.tshark.id_1}"
+					-v "rm -f ${job.id}vpc1_icmp_1.log"
+				</ssh>
+				<no-error-check />
+			</step>			
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+
+</testcase>

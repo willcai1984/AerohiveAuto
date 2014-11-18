@@ -1,0 +1,143 @@
+<testcase>
+	<brief>for study</brief>
+	<priority>low</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition
+		-config a ssid with wpa2-tkip-psk
+		-config a user-profile,with a vlan id
+		-bind the user-profile to the ssid
+		Test procedure
+		-client connect to ssid with the correct psk
+		-check the auth method on client is correct,client passes auth successfully
+		-check the ip got from DHCP is correct
+		-ping the gateway,success
+		-ping for 10 min,traffic is not broken
+		-client reconnects success
+		Expect result
+		1. Client connection successful
+		2. Check the 4 way hankshake debug info,pmk is correct
+		3. Check the 2 way handshake,the group key install is success
+		4. Check the roaming cache adding is correct, ‘sh roa ca mac xxxx’
+		5. Check station state, ‘sh ssid xxx st’, ‘sh auth’
+		6. Check the client gets the correct ip from DHCP server
+		7. Make sure the traffic run well,ping gateway for 10 minutes
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>create ssid with security-protocol wpa2-tkip-psk</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${tb.name}"
+				-v "ssid ${ssid.name} security-object ${tb.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="2.1">
+			<desc>show running-config</desc>
+			<log-file>show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+		<step no="2.2">
+			<desc>show ssid ${ssid.name}</desc>
+			<log-file>show_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+			<log-match>-e "${ssid.name}" -i "SSID profile:" -p 3 -c</log-match>
+			<log-match>-e "${tb.name}" -i "Security Object:" -p 3 -c</log-match>
+		</step>
+		<step no="2.3">
+			<desc>show security-object</desc>
+			<log-file>show_secobj.log</log-file>
+			<telnet target="ap1">
+				-v "show security-object ${tb.name}"
+			</telnet>
+			<log-match>-e "${tb.name}" -i "Security Object:" -p 3 -c</log-match>
+			<log-match>-e "wpa2-tkip-psk" -i "Protocol suite:" -p 3 -c</log-match>
+		</step>
+		<step no="2.4">
+			<desc>check protocol-suite</desc>
+			<log-file>show_proto_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show security-object ${tb.name} security protocol-suite"
+			</telnet>
+			<log-match>-e "Method=wpa2-tkip-psk"</log-match>
+		</step>
+		<step no="3">
+			<desc>enable auth debug on ap</desc>
+			<telnet target="ap1">
+				-v "_debug auth basic"
+				-v "_debug auth error"
+				-v "_debug auth excessive"
+			</telnet>
+		</step>
+
+		<property name="sta1.ssid" value="${ssid.name}" />
+		<include prefix="4" file="subs/sta_connect_linux.xml" rargs="sta1" />
+		<step no="5">
+			<desc>save log buffer to file</desc>
+			<log-file>show_buff.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="6.1">
+			<desc>check show auth</desc>
+			<log-file>show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-e "done" -i "${sta1.tif.mac}" -p 7 -c</log-match>
+			<log-match>-e "wpa2/tkip" -i "${sta1.tif.mac}" -p 9 -c</log-match>
+		</step>
+		<step no="6.2">
+			<desc>check show station</desc>
+			<log-file>show_station_${apid}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-e "Yes" -i "${sta1.tif.mac}" -p 11 -c</log-match>
+			<log-match>-e "wpa2-psk" -i "${sta1.tif.mac}" -p 7 -c</log-match>
+			<log-match>-e "tkip" -i "${sta1.tif.mac}" -p 8 -c</log-match>
+			<log-match>-e "${sta1.tif.ip}" -i "${sta1.tif.mac}" -p 2 -c</log-match>
+		</step>
+		<step no="6.3">
+			<desc>check roaming cache info</desc>
+			<log-file>show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-e "YNN" -i "${sta1.tif.mac}" -p 12 -c</log-match>
+		</step>
+		<step no="6.4">
+			<desc>check auth debug to make sure 4 way handshake is ok</desc>
+			<log-file>show_buff.log</log-file>
+			<log-match>-e "sending 1/4 msg of 4-Way Handshake"</log-match>
+			<log-match>-e "received EAPOL-Key frame (2/4 Pairwise)"</log-match>
+			<log-match>-e "sending 3/4 msg of 4-Way Handshake"</log-match>
+			<log-match>-e "received EAPOL-Key frame (4/4 Pairwise)"</log-match>
+			<log-match>-e "madwifi_set_key:"</log-match>
+			<log-match>-e " New roaming entry is added: SPA=${sta1.tif.mac}" -c</log-match>
+			<log-match>-e "event is sent to AMRP: event=join SPA=${sta1.tif.mac}" -c</log-match>
+			<log-match>-e "pairwise key handshake completed (RSN)"</log-match>
+		</step>
+		<step no="7">
+			<log-file>ping_sta1_${sta1.tif.ip}_2_mpc.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${mpc.tif.ip} -c 4"
+			</ssh>
+			<log-match>-n -e "(100\% loss)"</log-match>
+		</step>
+
+	</stage>
+</testcase>

@@ -1,0 +1,552 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check that telnet/ssh/ping/snmp/all is forbidden when disable telnet/ssh/ping/snmp on SSID bound to the wifi1.x and the SSID do not affect another SSID.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Manager IP is on default setup
+		-Set two SSIDs and bind them to interface wifi1
+		-Use a laptop1 connect to SSID1
+		-Use a laptop2 connect to SSID2
+
+		Test Procedure:
+		-No ssid ssid1 manage all, laptop1 ping/ssh/telnet/snmp AP
+		-Laptop2 ping/ssh/telnet/snmp AP
+		-Ssid ssid1 manage all, laptop1 ping/ssh/telnet/snmp AP
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				reset config
+			</desc>
+			<console target="ap1">
+				-v "reset config"
+			</console>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Set first SSID and bind it to interface wifi1
+			</desc>
+			<console target="ap1">
+				-v "console page 0"
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "interface wifi1 radio channel 36"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				-show snmp info
+			</desc>
+			<log-file>step2_show_snmp_info.log</log-file>
+			<console target="ap1">
+				-v "show snmp"
+			</console>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				get snmp contact info
+			</desc>
+			<setvar name="ap1.snmp.contact">
+				${bin.dir}/getbyrexp.py -p "Syscontact:\s*(\S+)\s*" -t str -f ${log.dir}/step2_show_snmp_info.log
+			</setvar>
+		</step>
+
+		<include prefix="3" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="3.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "ifconfig ${sta1.tif.name} up"
+				-v "iwconfig ${sta1.tif.name} channel 36"
+				-v "iwconfig ${sta1.tif.name} commit"
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="3.2" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<step no="3.3">
+			<desc>
+				delete tmp files
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/enable.manage.all.1_ssh_ap.log"
+				-v "rm -f /tmp/enable.manage.all.2_telnet_ap.log"
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="4">
+			<desc>
+				-open debug mode
+			</desc>
+			<console target="ap1">
+				-v "_ff dst-port 22 bidirectional"
+				-v "_ff dst-port 23 bidirectional"
+				-v "_ff dst-port 161 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</console>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				-No ssid ssid1 manage all.
+			</desc>
+			<console target="ap1">
+				-v "no ssid ${ssid.name} manage all"
+			</console>
+		</step>
+
+		<step no="disable.manage.all.1">
+			<desc>
+				laptop1 ssh AP.
+			</desc>
+			<log-file>disable.manage.all.1_ssh_ap.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "ssh admin@${ap1.mgt0.ip}"
+			</ssh>
+			<log-match>-e "connect to host ${ap1.mgt0.ip} port 22: Connection timed out"</log-match>
+		</step>
+
+		<step no="disable.manage.all.1.1">
+			<desc>
+				show logging buffered.
+			</desc>
+			<log-file>disable.manage.all.1.1_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="500">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "ssh not enabled on wifi1.1, drop pkt"</log-match>
+		</step>
+
+		<step no="disable.manage.all.2">
+			<desc>
+				-clear log all.
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="disable.manage.all.2.1">
+			<desc>
+				laptop1 telnet AP
+			</desc>
+			<log-file>disable.manage.all.2.1_telnet_ap.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "telnet ${ap1.mgt0.ip}"
+			</ssh>
+			<log-match>-e "telnet: connect to address ${ap1.mgt0.ip}: Connection timed out"</log-match>
+		</step>
+
+		<step no="disable.manage.all.2.2">
+			<desc>
+				show logging buffered.
+			</desc>
+			<log-file>disable.manage.all.2.2_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="500">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "telnet not enabled on wifi1.1, drop pkt"</log-match>
+		</step>
+
+		<step no="disable.manage.all.3">
+			<desc>
+				laptop1 ping AP
+			</desc>
+			<log-file>disable.manage.all.3_ping_ap.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "ping ${ap1.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+			<log-match>-e "100% packet loss"</log-match>
+		</step>
+
+		<step no="disable.manage.all.4">
+			<desc>
+				-clear log all.
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="disable.manage.all.4.1">
+			<desc>
+				laptop1 snmp AP.
+			</desc>
+			<log-file>disable.manage.all.4.1_snmp_ap.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4"
+			</ssh>
+			<log-match>-e "Timeout: No Response from ${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="disable.manage.all.4.2">
+			<desc>
+				show logging buffered.
+			</desc>
+			<log-file>disable.manage.all.4.2_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="500">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "snmp not enabled on wifi1.1, drop pkt"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				-Set second SSID and bind it to interface wifi1
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}123"
+				-v "interface wifi1 ssid ${ssid.name}123"
+			</console>
+		</step>
+
+		<include prefix="6" file="subs/wpa_supplicant_start.xml" args="sta2" />
+
+		<step no="6.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "ifconfig ${sta2.tif.name} up"
+				-v "iwconfig ${sta2.tif.name} channel 36"
+				-v "iwconfig ${sta2.tif.name} commit"
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}123\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="6.2" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				check if the client was associated successfully
+			</desc>
+			<log-file>step6.2_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				get ip address for sta2
+			</desc>
+			<log-file>step6.3_ifconfig_sta2.log</log-file>
+			<ssh target="sta2" timeout="30">
+				-v "dhclient ${sta2.tif.name}"
+				-v "ifconfig ${sta2.tif.name}"
+			</ssh>
+			<log-match>-e "inet addr:"</log-match>
+		</step>
+
+		<step no="6.4">
+			<desc>
+				delete tmp files
+			</desc>
+			<ssh target="sta2">
+				-v "rm -f /tmp/default.manage.all.1_ssh_ap.log"
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="default.manage.all.0">
+			<desc>
+				-clear log all.
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="default.manage.all.1">
+			<desc>
+				- Laptop2 ssh AP
+			</desc>
+			<ssh target="sta2" timeout="500">
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 22 -o 500 -d ${ap1.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m ${ap.def.prompt} -n -z default.manage.all.1_ssh_ap.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+		</step>
+
+		<step no="default.manage.all.1.1">
+			<desc>
+				-check the result of ssh ap.
+			</desc>
+			<log-file>default.manage.all.1.1_check_result.log</log-file>
+			<ssh target="sta2">
+				-v "cat /tmp/default.manage.all.1_ssh_ap.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="default.manage.all.1.2">
+			<desc>
+				Remove temporary file
+			</desc>
+			<ssh target="sta2">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="default.manage.all.2">
+			<desc>
+				laptop2 telnet AP
+			</desc>
+			<log-file>default.manage.all.2_telnet_ap.log</log-file>
+			<ssh target="sta2" timeout="300">
+				-v "telnet ${ap1.mgt0.ip}"
+			</ssh>
+			<log-match>-e "telnet: connect to address ${ap1.mgt0.ip}: Connection timed out"</log-match>
+		</step>
+
+		<step no="default.manage.all.2.1">
+			<desc>
+				show logging buffered.
+			</desc>
+			<log-file>default.manage.all.2.1_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="500">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "telnet not enabled on wifi1.2, drop pkt"</log-match>
+		</step>
+
+		<step no="default.manage.all.3">
+			<desc>
+				laptop2 ping ap
+			</desc>
+			<log-file>default.manage.all.3_ping_ap.log</log-file>
+			<ssh target="sta2" timeout="300">
+				-v "ping ${ap1.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="default.manage.all.3.1">
+			<desc>
+				check ping result
+			</desc>
+			<log-file>default.manage.all.3.1_ping_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/default.manage.all.3_ping_ap.log --script "int(m.group(1))&lt;=50" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="default.manage.all.4">
+			<desc>
+				-clear log all.
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="default.manage.all.4.1">
+			<desc>
+				laptop2 snmp AP.
+			</desc>
+			<log-file>default.manage.all.4.1_snmp_ap.log</log-file>
+			<ssh target="sta2" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4"
+			</ssh>
+			<log-match>-e "Timeout: No Response from ${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="default.manage.all.4.2">
+			<desc>
+				show logging buffered.
+			</desc>
+			<log-file>default.manage.all.4.2_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="500">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "snmp not enabled on wifi1.2, drop pkt"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				-Ssid ssid1 manage all
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name} manage all"
+			</console>
+		</step>
+
+		<step no="enable.manage.all.1" delay="20">
+			<desc>
+				laptop1 ssh AP.
+			</desc>
+			<ssh target="sta1" timeout="500">
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 22 -o 500 -d ${ap1.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m ${ap.def.prompt} -n -z enable.manage.all.1_ssh_ap.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+		</step>
+
+		<step no="enable.manage.all.1.1">
+			<desc>
+				- check the result of ssh ap
+			</desc>
+			<log-file>enable.manage.all.1.1_check_result.log</log-file>
+			<ssh target="sta1">
+				-v "cat /tmp/enable.manage.all.1_ssh_ap.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="enable.manage.all.1.2">
+			<desc>
+				Remove temporary file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="enable.manage.all.2">
+			<desc>
+				laptop1 telnet AP.
+			</desc>
+			<ssh target="sta1" timeout="300">
+				-v 'echo "clicfg.pl -i 23 -o 500 -d ${ap1.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m ${ap.def.prompt} -n -z enable.manage.all.2_telnet_ap.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+		</step>
+
+		<step no="enable.manage.all.2.1">
+			<desc>
+				- check the result of telnet ap
+			</desc>
+			<log-file>enable.manage.all.2.1_check_result.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "cat /tmp/enable.manage.all.2_telnet_ap.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="enable.manage.all.2.2">
+			<desc>
+				Remove temporary file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="enable.manage.all.3">
+			<desc>
+				laptop1 ping AP.
+			</desc>
+			<log-file>enable.manage.all.3_ping_ap.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "ping ${ap1.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="enable.manage.all.3.1">
+			<desc>
+				check ping result
+			</desc>
+			<log-file>enable.manage.all.3.1_ping_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/enable.manage.all.3_ping_ap.log --script "int(m.group(1))&lt;=50" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="enable.manage.all.4">
+			<desc>
+				laptop1 snmp AP.
+			</desc>
+			<log-file>enable.manage.all.4_snmp_ap.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "snmpget -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap1.snmp.contact}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+
+		<stage>
+			<step no="0">
+				<desc>
+					delete tmp files
+				</desc>
+				<ssh target="sta1">
+					-v "rm -f /tmp/enable.manage.all.1_ssh_ap.log"
+					-v "rm -f /tmp/enable.manage.all.2_telnet_ap.log"
+					-v "rm -f /tmp/tmp.sh"
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					delete tmp files
+				</desc>
+				<ssh target="sta2">
+					-v "rm -f /tmp/default.manage.all.1_ssh_ap.log"
+					-v "rm -f /tmp/tmp.sh"
+				</ssh>
+			</step>
+		</stage>
+	</post-process>
+</testcase>

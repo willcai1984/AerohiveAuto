@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>SSH tunnel with default timeout and not set SSH port and SSH server with ip can be created in AP(AP1 and AP2), and every priority user can login AP via SSH tunnel(set timeout)</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		1. Login AP(AP1 and AP2)
+		2. Create a SSH tunnel with default timeout and not set SSH port and SSH server with ip in AP
+		3. Create a read write user and a read only user in AP
+		4. Check traffic between AP and SSH server is ok
+		5. Login AP via SSH tunnel(localhost login or other laptop login) in any priority AP user
+		6. Check if can login successfully
+
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<property name="ap1.ssh.tunnel.port" value="2000" />
+	<property name="ap2.ssh.tunnel.port" value="2001" />
+	<property name="ap1.read.write.user" value="ap1rw" />
+	<property name="ap1.read.only.user" value="ap1r" />
+	<property name="ap2.read.write.user" value="ap2rw" />
+	<property name="ap2.read.only.user" value="ap2r" />
+	<property name="ssh.server.ip" value="localhost" />
+	<property name="time.out" value="5" />
+	<property name="ssh.command" value="show admin active" />
+	<property name="ap.nonadmin.passwd" value="Aerohive123" />
+
+
+	<stage>
+		<if>"${ap.wifi1.existed}" == "true"</if>
+		<step no="0">
+			<desc>
+				-when ap is ap320/330/340/350 shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<ssh target="ap2">
+				-v "interface eth1 shutdown"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-Configure AP1
+			</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${ap.def.passwd}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 44"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				-Configure AP2
+			</desc>
+			<ssh target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${ap.def.passwd}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 44"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</ssh>
+		</step>
+
+		<include prefix="2.1" file="subs/ap_amrp_neighbor_check.xml" obj-args="ap1,ap2" />
+		<include prefix="2.2" file="subs/ap_amrp_neighbor_check.xml" obj-args="ap2,ap1" />
+
+		<step no="3.1">
+			<desc>
+				free ap1.tunnel.port
+			</desc>
+			<script>
+				lsof -i:${ap1.ssh.tunnel.port} | awk 'END {print $2}' | xargs kill -9 ; exit 0
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="3.2">
+			<desc>
+				free ap2.tunnel.port
+			</desc>
+			<script>
+				lsof -i:${ap2.ssh.tunnel.port} | awk 'END {print $2}' | xargs kill -9 ; exit 0
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="5.2">
+			<desc>
+				-Shut down eth0 on ap2
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-Configure read-write/only users on AP1
+			</desc>
+			<console target="ap1">
+				-v "admin read-write ${ap1.read.write.user} password ${ap.nonadmin.passwd}"
+				-v "admin read-only ${ap1.read.only.user} password ${ap.nonadmin.passwd}"
+			</console>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				-Configure read-write/only users on AP2
+			</desc>
+			<console target="ap2">
+				-v "admin read-write ${ap2.read.write.user} password ${ap.nonadmin.passwd}"
+				-v "admin read-only ${ap2.read.only.user} password ${ap.nonadmin.passwd}"
+			</console>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				-Create ssh tunnel on AP1
+			</desc>
+			<console target="ap1">
+				-v "no ssh-tunnel"
+				-v "ssh-tunnel server ${mpc.tif.ip} tunnel-port ${ap1.ssh.tunnel.port} user ${pc.def.user} password ${pc.def.passwd} timeout ${time.out}"
+			</console>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				-Show ssh tunnel on AP1
+			</desc>
+			<log-file>step7.2_show_ssh_tunnel_ap1.log</log-file>
+			<console target="ap1">
+				-v "show ssh-tunnel"
+			</console>
+			<log-match>-i "SSH server" -i "${mpc.tif.ip}"</log-match>
+			<log-match>-i "Tunnel port" -i "${ap1.ssh.tunnel.port}"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Tunnel timeout in minutes: ${time.out}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7.3">
+			<desc>
+				-Create ssh tunnel on AP2
+			</desc>
+			<console target="ap2">
+				-v "no ssh-tunnel"
+				-v "ssh-tunnel server ${mpc.tif.ip} tunnel-port ${ap2.ssh.tunnel.port} user ${pc.def.user} password ${pc.def.passwd} timeout ${time.out}"
+			</console>
+		</step>
+
+		<step no="7.4">
+			<desc>
+				-Show ssh tunnel on AP2
+			</desc>
+			<log-file>step7.4_show_ssh_tunnel_ap2.log</log-file>
+			<console target="ap2">
+				-v "show ssh-tunnel"
+			</console>
+			<log-match>-i "SSH server" -i "${mpc.tif.ip}"</log-match>
+			<log-match>-i "Tunnel port" -i "${ap2.ssh.tunnel.port}"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Tunnel timeout in minutes: ${time.out}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				-Server ssh ap1(admin)
+			</desc>
+			<log-file>step8.1_server_ssh_ap1.log</log-file>
+			<script>
+				python ${case.dir}/bin/ssh_server.py -d "${ssh.server.ip}" -u ${ap.def.user} -p ${ap.def.passwd} -t ${ap1.ssh.tunnel.port} -c "${ssh.command}" > ${log.dir}/${log.file}
+			</script>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap.def.user} .* ${ssh.server.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				-Server ssh ap1(read-write)
+			</desc>
+			<log-file>step8.2_server_ssh_ap1.log</log-file>
+			<script>
+				python ${case.dir}/bin/ssh_server.py -d "${ssh.server.ip}" -u ${ap1.read.write.user} -p ${ap.nonadmin.passwd} -t ${ap1.ssh.tunnel.port} -c "${ssh.command}" > ${log.dir}/${log.file}
+			</script>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.read.write.user} .* ${ssh.server.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.3">
+			<desc>
+				-Server ssh ap1(read-only)
+			</desc>
+			<log-file>step8.3_server_ssh_ap1.log</log-file>
+			<script>
+				python ${case.dir}/bin/ssh_server.py -d "${ssh.server.ip}" -u ${ap1.read.only.user} -p ${ap.nonadmin.passwd} -t ${ap1.ssh.tunnel.port} -c "${ssh.command}" > ${log.dir}/${log.file}
+			</script>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.read.only.user} .* ${ssh.server.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.4">
+			<desc>
+				-Server ssh ap2(admin)
+			</desc>
+			<log-file>step8.4_server_ssh_ap2.log</log-file>
+			<script>
+				python ${case.dir}/bin/ssh_server.py -d "${ssh.server.ip}" -u ${ap.def.user} -p ${ap.def.passwd} -t ${ap2.ssh.tunnel.port} -c "${ssh.command}" > ${log.dir}/${log.file}
+			</script>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap.def.user} .* ${ssh.server.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.5">
+			<desc>
+				-Server ssh ap2(read-write)
+			</desc>
+			<log-file>step8.5_server_ssh_ap2.log</log-file>
+			<script>
+				python ${case.dir}/bin/ssh_server.py -d "${ssh.server.ip}" -u ${ap2.read.write.user} -p ${ap.nonadmin.passwd} -t ${ap2.ssh.tunnel.port} -c "${ssh.command}" > ${log.dir}/${log.file}
+			</script>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.read.write.user} .* ${ssh.server.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.6">
+			<desc>
+				-Server ssh ap2(read-only)
+			</desc>
+			<log-file>step8.6_server_ssh_ap2.log</log-file>
+			<script>
+				python ${case.dir}/bin/ssh_server.py -d "${ssh.server.ip}" -u ${ap2.read.only.user} -p ${ap.nonadmin.passwd} -t ${ap2.ssh.tunnel.port} -c "${ssh.command}" > ${log.dir}/${log.file}
+			</script>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.read.only.user} .* ${ssh.server.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="9.1" delay="300">
+			<desc>
+				-Check ssh-tunnel status after timeout on ap1
+			</desc>
+			<log-file>step9.1_check_ssh_tunnel.log</log-file>
+			<console target="ap1">
+				-v "show ssh-tunnel"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "SSH server .* ${mpc.tif.ip}" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Tunnel port .* ${ap2.ssh.tunnel.port}" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Tunnel timeout in minutes: ${time.out}" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				-Check ssh-tunnel status after timeout on ap2
+			</desc>
+			<log-file>step9.2_check_ssh_tunnel.log</log-file>
+			<console target="ap2">
+				-v "show ssh-tunnel"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "SSH server .* ${mpc.tif.ip}" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Tunnel port .* ${ap2.ssh.tunnel.port}" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Tunnel timeout in minutes: ${time.out}" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				-free ssh tunnel on ap1
+			</desc>
+			<console target="ap1">
+				-v "no ssh-tunnel"
+			</console>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				-free ssh tunnel on ap1
+			</desc>
+			<console target="ap2">
+				-v "no ssh-tunnel"
+			</console>
+		</step>
+
+	</stage>
+
+</testcase>

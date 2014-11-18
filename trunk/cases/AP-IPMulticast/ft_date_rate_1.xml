@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>for local multicast packet, the data rate should be the highest basic rate</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Local multicast packet, with destination ip 224.0.0.1, destination mac
+		0100:5e00:0001.
+		Switch connects to portal on eth0
+
+		Test Procedure:
+		1. Laptop connects to portal on wifi0 access interface
+		Send local multicast packet from switch, capture to verify data rate of multicast
+		packet forwarding
+		2. Laptop connects to portal on wifi1 access interface
+		Send local multicast packet from switch, capture to verify data rate of multicast
+		packet forwarding
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				config portal
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name} multicast conversion-to-unicast auto"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				open debug on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "_ff dst-ip 224.0.0.1"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug wifi-driver wifi0.1 awemcast"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="2.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="2.2" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<step no="2.3">
+			<desc>Get sta1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta1.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				get sta1's mac with two delimiter style
+			</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				config portal2
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>set filter</desc>
+			<log-file>show_filter.log</log-file>
+			<telnet target="ap1">
+				-v "no capture interface wifi0"
+				-v "filter 1 l3 protocol 1"
+				-v "show filter"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>set filter</desc>
+			<log-file>set_default_capture_file.log</log-file>
+			<telnet target="ap1">
+				-v "capture save interface wifi0 ${job.id}_wifi0.dmp"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "capture interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-ping 224.0.0.1
+			</desc>
+			<log-file>step5.1_ping_local_multicast_group.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "ping 224.0.0.1 count 50"
+			</telnet>
+		</step>
+
+		<step no="6" delay="50">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1" timeout="90">
+				-v "save capture local ${job.id}_wifi0.dmp tftp://${mpc.tif.ip}:/${job.id}_wifi0.dmp"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>show ssid XXX</desc>
+			<log-file>step6.1_show_ssid.log</log-file>
+			<telnet target="ap1" timeout="90">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				get the basic rate (the min of all basic rate)
+			</desc>
+			<setvar name="min.basic.rate">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6.1_show_ssid.log -p "11g rate set:\s*.*?(\S+)M\(b\)" -t str --script "float(m.group(1))"
+			</setvar>
+		</step>
+
+		<step no="7">
+			<desc>Use Tshark convert pcap file to packet tree, in order to make sure how many packets received</desc>
+			<log-file>step7_wifi0.1_log.log</log-file>
+			<script>
+				sleep 10;tshark -r /tftpboot/${job.id}_wifi0.dmp &gt; ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>
+				get the Frame list which received packects's dst ip is 224.0.0.1
+			</desc>
+			<setvar name="received.Frame.list">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_wifi0.1_log.log -p "(\d+)\s*.*?${ap2.mgt0.ip} -&gt; 224.0.0.1\s*ICMP Echo \(ping\) request" --script "','.join(m.groups())"
+			</setvar>
+		</step>
+
+		<step no="8">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>step8_wifi0.1_log.log</log-file>
+			<script>
+				sleep 10;tshark -r /tftpboot/${job.id}_wifi0.dmp -V &gt; ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+			<log-match loop-values="${received.Frame.list}" bin="${bin.dir}/searchbyrexp.py">-b "Frame ${loop.v}:" -p "Data Rate: ${min.basic.rate} Mb/s" -e "Data Rate:" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+
+		<stage>
+			<step no="0">
+				<desc>
+					delete local files on mpc
+				</desc>
+				<script>
+					rm -f /tftpboot/${job.id}_wifi0.dmp
+				</script>
+			</step>
+		</stage>
+	</post-process>
+</testcase>

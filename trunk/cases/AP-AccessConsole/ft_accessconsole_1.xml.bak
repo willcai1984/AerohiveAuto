@@ -1,0 +1,228 @@
+<testcase>
+	<brief>The first test case of Access Console</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+
+		Description
+		Wifi0 and wifi1 are access mode,Ethernet backhaul is lost and mesh failover is not enabled (portal), check if we can login AP via ssh by associate default access console SSID(default super user)
+		Pre-condition
+		Login AP1 via console
+		AP1 obtain ip address from DHCP server
+		Test procedure
+		1.Check access console by show access console
+		2. Set access console with auto mode(default access console is auto mode)
+		3.Set track action enable-access-console and set track default-gateway
+		4.Check track result
+		5.Execute “interface wifi1 mode access” or “interface wifi1 hive xxx shutdown”
+		6.Shutdown interface eth0 by CLI(11n box, only eth0 connect to switch), or shutdown port in switch which connect to eth0(a/b/g box) or cut off eth0 cable
+		7.Check track result
+		8.Check access console state by show access console _
+		9.Check if access console SSID be bound to interface by show interface
+		10.Use a laptop to connect to access console SSID
+		11.Login AP via SSH from laptop
+		Expect result
+		1.Default access
+		console mode: disableauto
+		Default access console SSID: hostname_ac
+		2.Show access console mode display :auto
+		3.Show running config should display these two commands:
+		track xxx action enable-access-console
+		track xxx default-gateway
+		4.Track result: targets reachable
+		5.Show interface can see wifi1 mode with access or state display “D”
+		6.Show interface can see eth0 state display “D”
+		7.Show track xxx display targets unreachable
+		8.Access console current state display running
+		9.Access console SSID be bound to interface
+		10.Laptop can connect to access console SSID and obtain a internal ip address
+		11.Can login AP via SSH from laptop
+		TOPO:
+		AP1------SW------DHCP server
+		|
+		AP2
+
+	</description>
+	<stage>
+		<step no="1">
+			<desc>Remove the current ~/.ssh/known_hosts of Master PC to avoid the denial access to the APs</desc>
+			<script>
+				rm -f ~/.ssh/known_hosts
+			</script>
+		</step>
+
+		<step no="2">
+		  <if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>Set interface wifi1 to access mode and set track config for AP1 via console to ${ap1.mgt0.ip}</desc>
+			<ssh target="ap1" timeout="60">
+				-v "interface wifi1 mode access"
+				-v "save config"
+			</ssh>
+		</step>
+		
+		<step no="2.1">
+			<desc>Set track config for AP1 via console to ${ap1.mgt0.ip}</desc>
+			<ssh target="ap1" timeout="60">
+				-v "track ${tb.name} enable"
+				-v "track ${tb.name} action enable-access-console"
+				-v "track ${tb.name} default-gateway"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>Check default access console mode should be auto</desc>
+			<log-file>show_access_console_1.log</log-file>
+			<ssh target="ap1">
+				-v "show access-console "
+			</ssh>
+			<log-match>-i "Mode" -e "auto" -c</log-match>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>Check track result should be reachable</desc>
+			<log-file>show_track_1.log</log-file>
+			<ssh target="ap1" timeout="60">
+				-v "show track "
+			</ssh>
+			<log-match>-n -e "Unreachable" -c</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>Shutdown interface eth0 and eth1</desc>
+			<console target="ap1" timeout="60">
+				-v "interface eth0 shutdown"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="5.2">
+			<desc>Shutdown interface eth1</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<console target="ap1" timeout="60">
+				-v "interface eth1 shutdown"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="6" delay="30">
+			<desc>After interface shutdown, check track result should be unreachable</desc>
+			<log-file>show_track_2.log</log-file>
+			<console target="ap1">
+				-v "show track "
+			</console>
+			<log-match>-e "Unreachable" -c</log-match>
+		</step>
+
+		<step no="7">
+			<desc>Check access console should be in running state</desc>
+			<log-file>show_access_console_2.log</log-file>
+			<console target="ap1">
+				-v "show access-console _"
+			</console>
+			<log-match>-i "Current state" -e "running" -c</log-match>
+		</step>
+
+		<step no="8">
+			<desc>Get access console SSID</desc>
+			<setvar name="ac.ssid">
+				cat ${log.dir}/show_access_console_2.log | awk -F ':' '/Selected SSID/{split($2,a," "); print a[1]}'
+			</setvar>
+		</step>
+
+		<step no="9" delay="5">
+			<desc>Show interface wifi0.1 to check access console SSID be bound to interface wifi0.1</desc>
+			<log-file>show_interface_wifi0.1.log</log-file>
+			<console target="ap1">
+				-v "show interface wifi0.1"
+			</console>
+			<log-match>-i "SSID=" -e "${ac.ssid}" -c</log-match>
+		</step>
+
+		<step no="10" delay="5">
+		  <if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>Show interface wifi1.1 to check access console SSID be bound to interface wifi1.1</desc>
+			<log-file>show_interface_wifi1.1.log</log-file>
+			<console target="ap1">
+				-v "show interface wifi1.1"
+			</console>
+			<log-match>-i "SSID=" -e "${ac.ssid}" -c</log-match>
+		</step>
+
+		<step no="11">
+			<desc>Get access console SSID</desc>
+			<setvar name="sta1.ssid">
+				cat ${log.dir}/show_access_console_2.log | awk -F ':' '/Selected SSID/{split($2,a," "); print a[1]}'
+			</setvar>
+		</step>
+
+		<property name="sta1.proto" value="wpa-aes-psk" />
+		<property name="sta1.psk" value="aerohive" />
+		<include prefix="12" file="subs/sta_connect_${tb.os}.xml" rargs="sta1" />
+
+		<step no="12.1">
+			<desc>Show laptop1's dhcp info</desc>
+			<log-file>sta1.dhcp.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "cat /var/lib/dhclient/dhclient.leases"
+			</ssh>
+		</step>
+
+		<step no="12.2">
+			<desc>Get access interface's IP</desc>
+			<setvar name="vap.ip">
+				awk '/option dhcp-server-identifier/ {print $3}' ${log.dir}/sta1.dhcp.log | tail -n1 | sed 's/;//'
+			</setvar>
+		</step>
+
+		<step no="13">
+			<desc>Check traffic between client and VAP</desc>
+			<log-file>ping_vap.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${vap.ip} -c 4"
+			</ssh>
+			<log-match>-i "from ${vap.ip}" -i "ttl=" -c</log-match>
+		</step>
+
+		<step no="14" delay="30">
+			<desc>SSH to AP1 from laptop1</desc>
+			<ssh target="sta1" timeout="900" prompt="root@.*~.*#" slow="true">
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 22 -o 600 -d ${vap.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m \"AH.*#\" -n -z step14_ssh_ap1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="15" delay="30">
+			<desc>Cat file</desc>
+			<log-file>step15_ssh_ap1.log</log-file>
+			<ssh target="sta1">
+				-v "cat /tmp/step14_ssh_ap1.log"
+			</ssh>
+			<log-match>-i "admin" -i "pts" -c</log-match>
+		</step>
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="16">
+				<desc>Remove file in station</desc>
+				<ssh target="sta1">
+					-v "rm -f /tmp/step14_ssh_ap1.log"
+					-v "rm -f /tmp/step14_ssh_ap1.log.bak"
+					-v "rm -f /tmp/step15_ssh_ap1.log"
+					-v "rm -f /tmp/tmp.sh"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

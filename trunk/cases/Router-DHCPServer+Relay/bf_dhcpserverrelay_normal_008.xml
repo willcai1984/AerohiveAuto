@@ -1,0 +1,152 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that the function of mgt0.x manage</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1. Verify that only ping is enabled for mgt0.x and can ping
+		2. Verify that disable ping function for mgt0.x and can not ping.
+		3. Verify that other manage packet such as telnet, snmp etc can not arrive the mgt0.x, can ssh mgt0.x
+		4. Verify that ping function is not lost when dhcp server enable/disable or dhcp relay enable/disable.
+	</description>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+	
+	<property name="br1.vlan4.dhcp_start" value="192.168.254.200" />
+	<property name="br1.vlan4.dhcp_end" value="192.168.254.204" />
+	<property name="ssid.name" value="ssid008" />
+	
+	<stage>
+		<step no="1">
+			<desc>
+				Set vlan vlan2 to interface mgt0.1
+				Set ip address to interface mgt0.1
+				Create a SSID and bind it to interface wifi0
+				Create a user-profile and set the same vlan with mgt0.1
+				Set the same attribute to SSID with user-profile
+			</desc>
+			<log-file>step1_use_laptop_connect_ssid.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vlan4}"
+				-v "interface mgt0.1 ip ${br1.vlan4.dhcp_start}/24"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.vlan4.dhcp_start} ${br1.vlan4.dhcp_end}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "user-profile ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${br1.vlan4} attribute 1"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Verify that only ping is enabled for mgt0.x and can ping
+			</desc>
+			<log-file>step1.1_check_mgt0.1_ping.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface mgt0.1 manage"
+			</telnet>
+			<log-match>-c -e "Management options enabled on mgt0.1"</log-match>
+			<log-match>-c -e "ping"</log-match>
+		</step>
+
+		<step no="2">
+            <multi-setvar>
+                echo "conn1.ssid=${ssid.name}"
+                echo "conn1.proto=open"
+                echo "conn1.pif=${ssid_bind_interface}"
+            </multi-setvar>
+        </step>
+        <include prefix="2.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, br1.sta1,br1.br" />
+
+		<step no="3" delay="10">
+			<desc>
+				sta ping mgt0.1
+			</desc>
+			<log-file>step1.7_ifconfig_wlan0.log</log-file>
+			<ssh target="br1.sta1" timeout="120">
+				-v "ping ${br1.vlan4.dhcp_start} -c 5"
+			</ssh>
+			<log-match>-e "from ${br1.vlan4.dhcp_start}"</log-match>
+			<log-match>-n -e "100% packet loss"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Verify that other mange packet such as telnet can
+				not arrive the mgt0.x.
+			</desc>
+			<log-file>step3_telnet_not_arrive_the_mgt0.1.log</log-file>
+			<ssh target="br1.sta1" timeout="300">
+				-v "telnet ${br1.vlan4.dhcp_start}"
+			</ssh>
+			<log-match>-c -e "Connection timed out" -e "Connection refused"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				Verify that other mange packet such as ssh can
+				arrive the mgt0.x.
+			</desc>
+			<log-file>step3.1_ssh_arrive_the_mgt0.1.log</log-file>
+			<ssh target="br1.sta1" timeout="300" prompt="root@.*~">
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 22 -o 60 -d ${br1.vlan4.dhcp_start} -u ${ap.def.user} -p ${ap.def.passwd} -m ${ap.def.prompt} -n -z step3_ssh_mgt0.1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				- cat file
+			</desc>
+			<log-file>step3.2_ssh_ap1.log</log-file>
+			<ssh target="br1.sta1">
+				-v "cat /tmp/step3_ssh_mgt0.1.log"
+			</ssh>
+			<log-match>-i "admin" -i "pts" -i "${br1.sta1.tif.ip}" -c</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				Verify that other mange packet such as snmp can
+				not arrive the mgt0.x.
+			</desc>
+			<log-file>step3.2_snmp_not_arrive_the_mgt0.1.log</log-file>
+			<ssh target="br1.sta1" timeout="200">
+				-v "snmpwalk -v 2c ${br1.vlan4.dhcp_start} -c hivecommunity .1.3.6.1.2.1.1.4"
+			</ssh>
+			<log-match>-c -e "Timeout: No Response from ${br1.vlan4.dhcp_start}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				Verify that ping function is not lost when dhcp server disable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="9" delay="10">
+			<desc>
+				sta ping mgt0.1
+			</desc>
+			<log-file>step4.3_ifconfig_wlan0.log</log-file>
+			<ssh target="br1.sta1" timeout="120">
+				-v "ping ${br1.vlan4.dhcp_start} -c 5"
+			</ssh>
+			<log-match>-e "from ${br1.vlan4.dhcp_start}"</log-match>
+			<log-match>-n -e "100% packet loss"</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Filter rule add, modify and delete.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		pre-condition:
+		_debug mdnsd all
+		_debug bgd all
+
+		test procedure:
+		1. Configure filter with from and to VLAN groups
+		2. Modify the filter with a new from VLAN group
+		3. Modify the filter with a new to VLAN group
+		4. Modify the filter with no from VLAN group
+		5. Modify the filter with no to VLAN group
+		6. Modify the filter with a new service pattern
+		7. Modify the filter with a new metric value
+		8. Delete the filter
+		
+		expect result:
+		All configurations are successful, check the goodbye message is sent out when filter rule is modified or deleted.(also can capture the packets)	
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+	
+		<include prefix="0" file="subs/l3swcfg_port_vlan.xml" args="${tb.apple.l3sw.port}, ${tb.vlan1}, ${tb.vlans}" />
+		
+		<step no="1">
+    		<desc>
+       			config ap1
+    		</desc>
+    		<log-file>ap1_config.log</log-file>
+    		<console target="ap1">
+       			-v "interface mgt0 vlan ${tb.vlan1}"
+       			-v "interface mgt0 native-vlan ${tb.vlan1}"
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}"
+       			-v "interface mgt0 hive ${hive.name}"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan1} ${tb.vlan3}"
+    		</console>
+		</step>
+		
+		<include prefix="1.0" file="subs/ap_renew_ip.xml" obj-args="ap1" />
+		
+		<step no="1.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>check bonjour-gateway status on ap1</desc>
+			<log-file>step1.1_show_bonjour_status.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+			<log-match>-re -i "Total +\d+ Local Attached VLANs:" -i "${tb.vlan1}" -i "${tb.vlan2}" -i "${tb.vlan3}"</log-match>
+		</step>
+		
+		<step no="2"  type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap1</desc>
+			<log-file>step2_show_local_service.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="3">
+			<desc>config filter rule on ap1</desc>
+			<log-file>config_filter.log</log-file>
+			<ssh target="ap1">
+				-v "vlan-group 1 ${tb.vlan1}"
+				-v "vlan-group 2 ${tb.vlan2}"
+				-v "vlan-group 3 ${tb.vlan3}"
+				-v "_debug bgd all"		
+				-v "clear log all"			
+			</ssh>
+		</step>
+	
+		<step no="4">
+			<desc>check the logging buffer</desc>
+			<log-file>ste4_log_buf.log</log-file>
+			<ssh target="ap1">
+				-v "bonjour-gateway filter rule 1 from 1 *._appletv-v2._tcp to 2"
+				-v ""
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "new src ref_cnt"</log-match>
+			<log-match>-i "new dst ref_cnt"</log-match>
+			<log-match>-i "Start to convert filter 1"</log-match>
+			<log-match>-i "receive BGD filter change(Add):\*._appletv-v2._tcp"</log-match>
+			<log-match>-i "Add filter \*._appletv-v2._tcp"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="5">
+			<desc>modify the from vlan-group</desc>
+			<log-file>step5_modify.log</log-file>
+			<ssh target="ap1">
+				-v "_test bgd show 3"
+				-v "no _debug bgd all"
+				-v "_debug mdnsd raw"
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 from 3 *._appletv-v2._tcp to 2"
+				-v ""
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "Notify MDNS to say goodbye for rule 1"</log-match>
+			<log-match>-i "mDNSResponder: Say goodbye"</log-match>
+			<log-match>-re -i "sending goodbye to subnet 192.168.${tb.vlan2}.\d+/255.255.255.0 on vlan ${tb.vlan2}"</log-match>
+			<no-error-check />
+		</step>
+						
+		<include prefix="6" file="subs/l3swcfg_port_vlan.xml" args="${tb.apple.l3sw.port}, ${tb.vlan3}, ${tb.vlans}" />
+		
+		<step no="7"  type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap1</desc>
+			<log-file>step7_show_local_service.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan3}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan3}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan3}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan3}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan3}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="8">
+			<desc>modify the to vlan-group</desc>
+			<log-file>step8_modify.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 from 3 *._appletv-v2._tcp to 1"
+				-v ""
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "Notify MDNS to say goodbye for rule 1"</log-match>
+			<log-match>-i "mDNSResponder: Say goodbye"</log-match>
+			<log-match>-re -i "sending goodbye to subnet 192.168.${tb.vlan2}.\d+/255.255.255.0 on vlan ${tb.vlan2}"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="9">
+			<desc>delete the from vlan-group</desc>
+			<log-file>step9_modify.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 *._appletv-v2._tcp to 1"
+				-v ""
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "Notify MDNS to say goodbye for rule 1"</log-match>
+			<log-match>-i "mDNSResponder: Say goodbye"</log-match>
+			<log-match>-re -i "sending goodbye to subnet 192.168.${tb.vlan1}.\d+/255.255.255.0 on vlan ${tb.vlan1}"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="10">
+			<desc>delete the to vlan-group</desc>
+			<log-file>step10_modify.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 from 3 *._appletv-v2._tcp"
+				-v ""
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "Notify MDNS to say goodbye for rule 1"</log-match>
+			<log-match>-i "mDNSResponder: Say goodbye"</log-match>
+			<log-match>-re -i "sending goodbye to subnet 192.168.${tb.vlan1}.\d+/255.255.255.0 on vlan ${tb.vlan1}"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="11">
+			<desc>modify the service pattern</desc>
+			<log-file>step11_modify.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 from 3 *._raop._tcp. to 1"
+				-v ""
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "Notify MDNS to say goodbye for rule 1"</log-match>
+			<log-match>-i "mDNSResponder: Say goodbye"</log-match>
+			<log-match>-re -i "sending goodbye to subnet 192.168.${tb.vlan1}.\d+/255.255.255.0 on vlan ${tb.vlan1}"</log-match>
+			<log-match>-re -i "sending goodbye to subnet 192.168.${tb.vlan2}.\d+/255.255.255.0 on vlan ${tb.vlan2}"</log-match>
+			<log-match>-n -re -i "sending goodbye to subnet 192.168.${tb.vlan3}.\d+/255.255.255.0 on vlan ${tb.vlan3}"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="12">
+			<desc>modify the metric</desc>
+			<log-file>step12_modify.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 from 3 *._raop._tcp. to 1 metric 2"
+				-v ""
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "Notify MDNS to say goodbye for rule 1"</log-match>
+			<log-match>-i "mDNSResponder: Say goodbye"</log-match>
+			<log-match>-re -i "sending goodbye to subnet 192.168.${tb.vlan1}.\d+/255.255.255.0 on vlan ${tb.vlan1}"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="13">
+			<desc>delete the filter</desc>
+			<log-file>step13_modify.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "no bonjour-gateway filter rule 1"
+				-v ""
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "Notify MDNS to say goodbye for rule 1"</log-match>
+			<log-match>-i "mDNSResponder: Say goodbye"</log-match>
+			<log-match>-re -i "sending goodbye to subnet 192.168.${tb.vlan1}.\d+/255.255.255.0 on vlan ${tb.vlan1}"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

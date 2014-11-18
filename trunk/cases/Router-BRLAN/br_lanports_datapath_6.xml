@@ -1,0 +1,252 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check dhcp packet process for AP with lan ports port based mode</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		PC1 connect to switch
+		AP connect to lan ports ethx
+		Station1 connect to wifi
+		BR lan port works with port based/trunk mode
+
+		Test Procedure:
+
+		1. configure mgt0 vlan, native-vlan
+		2. configure mgt0.x vlan
+		3. configure lan ports vlan
+		4. check ip address of AP mgt0. Result1
+		Bug 15388: (dhcp discover packet send to BR without vlan-tag, but the offer packet
+		from BR have an native-vlan tag)
+		－Use a laptop connects to lan port eth4, the network card support vlan-tag. Check
+		the laptop ip address.
+		－Use an AP/BR connects to trunk lan port eth4, check mgt0 ip address.
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>	
+
+	<stage>
+		<step no="pre.1">
+			<desc>
+				1. configure mgt0 native-vlan 10
+				2. configure mgt0.1 vlan 10, mgt0.2 vlan 20
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0 native-vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.2 vlan ${br1.vpc3.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="pre.1">
+			<desc>
+				3. configure lan ports eth3 with trunk mode
+				4. disable lan port eth3 vlan-id-check
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth3 mode bridge-802.1q"
+				-v "interface eth2 mode bridge-802.1q"
+				-v "interface eth3 native-vlan ${br1.vlan3}"
+				-v "interface eth2 native-vlan ${br1.vlan3}"
+				-v "no interface eth3 allowed-vlan"
+				-v "no interface eth2 allowed-vlan"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>1. Enable mgt0 dhcp/dns server</desc>
+			<log-file>step1.1_mgt0_status.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show run | in mgt0"
+			</telnet>
+			<log-match>-i "interface mgt0 ip ${br1.br.mgt0.ip}"</log-match>
+			<log-match>-i "interface mgt0 dhcp-server ip-pool ${br1.br.mgt0.ip_pool_start}"</log-match>
+			<log-match>-i "interface mgt0 dhcp-server enable"</log-match>
+			<log-match>-i "interface mgt0 dns-server enable"</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				port-config table shows native-vlan, vlan-table shows allow-vlan list correctly
+			</desc>
+			<log-file>step1.2_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth3" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "${br1.vlan3}" -p 6 -i "No" </log-match>
+			<log-match>-p 1 -i "eth2" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "${br1.vlan3}" -p 6 -i "No" </log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="1.3">
+		
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step1.3_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth2[\t ]+eth3[\t ]+eth4[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth2[\t ]+eth3[\t ]+${br1.vlan3}" -f ${log.dir}/${log.file}</log-match>
+		</step>		
+		
+		<include prefix="pre2" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="${br1.vpc3.vlan},${br1.vpc3.vlan},access" />
+		
+		<step no="2">
+			<desc>
+				vpc3 connect to lan port eth1
+			</desc>
+			<log-file>ifconfig_vpc3_.log</log-file>
+			<ssh target="br1.vpc3" timeout="120">
+				-v "dhclient ${br1.vpc3.tif.name}"
+				-v "ifconfig ${br1.vpc3.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>set br1.vpc3.tif.ip var for vpc3 on BR side</desc>
+			<setvar name="br1.vpc3.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc3.mif.ip} -u ${br1.vpc3.user} -p ${br1.vpc3.passwd} -i ${br1.vpc3.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="get_prefix">
+			<multi-setvar>
+				echo "br1.mgt0.prefix=$(echo ${br1.br.mgt0.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.mgt0.1.prefix=$(echo ${br1.br.mgt0.1.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.mgt0.2.prefix=$(echo ${br1.br.mgt0.2.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.vpc3.prefix=$(echo ${br1.vpc3.tif.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				Correct result---the laptop/AP can retrieve the ip address from dhcp server.
+			</desc>
+			<script>
+				if [ "${br1.mgt0.2.prefix}" == "${br1.vpc3.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="3">
+			<desc>
+				6. Configure AP mgt0 vlan as BR lan ports native-vlan 10
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc1.vlan}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="3.1b" delay="20">
+			<desc>
+				show AP2 mgt0
+			</desc>
+			<log-file>step3.1b_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="3.1c">
+			<desc>get IP address of ap1 mgt0</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step3.1b_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="get_prefix">
+			<multi-setvar>
+				echo "br1.ap1.prefix=$(echo ${br1.ap1.mgt0.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				P mgt0 retrieve ip address from BR mgt0.1 dhcp server successfully
+			</desc>
+			<script>
+				if [ "${br1.mgt0.1.prefix}" == "${br1.ap1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="4">
+			<desc>
+				10. Enable vlan-id-check of lan port eth3
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth2 allowed-vlan ${br1.vpc1.vlan}"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				port-config table shows native-vlan, vlan-table shows allow-vlan list correctly
+			</desc>
+			<log-file>step5.2_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth2" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "${br1.vlan3}" -p 6 -i "Yes" </log-match>
+			<log-match>-p 1 -i "eth3" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "${br1.vlan3}" -p 6 -i "No" </log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step5.3_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth3[\t ]+eth4[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth2[\t ]+eth3[\t ]+${br1.vlan3}" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>		
+
+		<step no="6">
+			<desc>
+				vpc2 connect to lan port eth1
+			</desc>
+			<log-file>ifconfig_vpc2_.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"; exit 0
+			</ssh>
+			<log-match>-n -i "inet addr"</log-match>
+		</step>	
+
+	</stage>
+        <post-process>
+		<stage>
+			<include prefix="post_br1_eth2_l2swcfg" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="999, ${br1.vlan2}\,${br1.vlan3}" />
+	   </stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

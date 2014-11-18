@@ -1,0 +1,308 @@
+<testcase>
+	<brief>test combination of dscp and dot1p classify .fiber_or_copper,port count:2</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Test QoS map and marker combination:
+		1. if packet matches classify of dscp, packet is in queue of dscp mapping table
+		2. if no dscp map table is matched, packet will be classify by dot1p mapping. in egress
+		direction, packet will be marked by dot1p mark table.
+	</description>
+
+	<property name="correct_vlan" value="101" />
+	<property name="vlan_id0" value="0" />
+	<property name="qos_name" value="aa" />
+	<property name="myUDFoffset" value="34" />
+	<property name="myUDFoffsetValue" value="88" />
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="rx_port1" value="${sw1.port2.ixia_port}" />
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include prefix="pre" file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				basic config and set qos class profile to ${sw1.port1}, qos marker profile to ${sw1.port2},
+				enable qos
+			</desc>
+			<telnet target="sw1">
+				-v 'vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} switchport mode trunk'
+				-v 'interface ${sw1.port1} switchport trunk allow vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port2} shutdown'
+				-v 'interface ${sw1.port2} switchport mode trunk'
+				-v 'interface ${sw1.port2} switchport trunk allow vlan ${correct_vlan}'
+				-v 'qos classifier-profile ${qos_name} diffserv'
+				-v 'qos classifier-profile ${qos_name} 8021p'
+				-v 'qos marker-profile ${qos_name} diffserv'
+				-v 'interface ${sw1.port1} qos-classifier ${qos_name}'
+				-v 'interface ${sw1.port2} qos-marker ${qos_name}'
+				-v 'qos enable'
+				-v 'qos marker-map 8021p 0 0'
+				-v 'qos marker-map 8021p 1 1'
+				-v 'qos marker-map 8021p 2 2'
+				-v 'qos marker-map 8021p 3 3'
+				-v 'qos marker-map 8021p 4 4'
+				-v 'qos marker-map 8021p 5 5'
+				-v 'qos marker-map 8021p 6 6'
+				-v 'qos marker-map 8021p 7 7'
+				-v 'show running-config'
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				show dscp marker map table to check
+			</desc>
+			<log-file>step1.2_show_marker_dscp_map.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos marker-map diffserv'
+			</telnet>
+			<log-match>-e '^\d\s+0\s+8' -re</log-match>
+			<log-match>-e '^\d\s+1\s+16' -re</log-match>
+			<log-match>-e '^\d\s+2\s+0' -re</log-match>
+			<log-match>-e '^\d\s+3\s+24' -re</log-match>
+			<log-match>-e '^\d\s+4\s+32' -re</log-match>
+			<log-match>-e '^\d\s+5\s+40' -re</log-match>
+			<log-match>-e '^\d\s+6\s+48' -re</log-match>
+			<log-match>-e '^\d\s+7\s+56' -re</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				show dot1p marker map table to check
+			</desc>
+			<log-file>step1.3_show_marker_dot1p_map.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos marker-map 8021p'
+			</telnet>
+			<log-match>-e '^\d\s+0\s+0' -re</log-match>
+			<log-match>-e '^\d\s+1\s+1' -re</log-match>
+			<log-match>-e '^\d\s+2\s+2' -re</log-match>
+			<log-match>-e '^\d\s+3\s+3' -re</log-match>
+			<log-match>-e '^\d\s+4\s+4' -re</log-match>
+			<log-match>-e '^\d\s+5\s+5' -re</log-match>
+			<log-match>-e '^\d\s+6\s+6' -re</log-match>
+			<log-match>-e '^\d\s+7\s+7' -re</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<stage loop-values="0,8,16,24,32,40,48,56" var-name="priority_class">
+		
+		<step no="2.1">
+			<desc>
+				ixia send pkts with priority=${priority_class} for loop
+			</desc>
+			<log-file>step2_${priority_class}_1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect
+				-chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip}
+				-userName ${job.user}${job.sid}
+				-portList ${tx_port1},${rx_port1}
+				-phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+				-v ""
+				-v "stream_delete_all -portList ${tx_port1}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016"
+				-v "stream_ipv4_header_set -portList ${tx_port1} -destIpAddr 1.1.1.1 -dscpValue ${priority_class} -sourceIpAddr 2.2.2.2 -streamId 1 " 
+				-v ""
+				-v "stream_transmit_method_set -portList ${tx_port1} -streamId 1 -transmitMethod stopStream"
+				-v ""
+
+				<!-- start transmit -->
+				-v "stop_transmit -portList ${tx_port1},${rx_port1}"
+				-v ""
+				<!-- start port1 capture -->
+				-v "clear_statistic -portList ${tx_port1},${rx_port1}"
+				-v ""
+				-v "start_capture -portList ${rx_port1}"
+				-v ""
+				-v "start_transmit -portList ${tx_port1} -firstTryFlag false"
+				-v "wait_time -second 1"
+				-v ""
+				-v "stop_transmit -portList ${tx_port1}"
+				-v ""
+				<!-- stop port1 capture -->
+				-v "stop_capture -portList ${rx_port1}"
+				-v ""
+				<!-- save port1 capture -->
+				-v "save_capture -onePort ${rx_port1} -fileName ${job.id}_${priority_class}.enc"
+		        -v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_${priority_class}.enc"
+			    -v "rm -f ${job.id}_${priority_class}.enc"
+			
+			</ssh>
+			<no-error-check />
+		</step>
+		
+		<step no="2.2">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_${priority_class}.enc ${log.dir}
+			</script>
+		</step>
+		
+				<!-- [root@hzswtb3-mpc ~]# let "b=3<<1" [root@hzswtb3-mpc ~]# echo `printf %02x $b` 06 note:the operator "<" should be replace by "&lt;" in xml file -->
+		
+		<step no="2.3">
+			<desc>check the packet of dscp priority</desc>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_${priority_class}.enc  -R 'ip.dsfield.dscp==${priority_class}' 2>/dev/null |grep 2.2.2.2 -c`" -eq "0" ]
+				then
+				exit 1
+				fi
+			</script>
+			<file>${job.id}_${priority_class}.enc</file>
+		</step>
+		
+
+		
+	</stage>
+	<stage>
+	<step no="3.1">
+			<desc>
+				Set qos dot1p marker map, binding qos marker profile to port2
+				
+			</desc>
+			<telnet target="sw1">
+				-v 'no qos marker-profile ${qos_name} diffserv'
+				-v 'qos marker-profile ${qos_name} 8021p'
+				-v 'show running-config'
+				</telnet>
+		</step>
+
+
+		<step no="3.2">
+			<desc>
+				show dot1p marker map table to check
+			</desc>
+			<log-file>step3.2_show_marker_dot1p_map.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos marker-map 8021p'
+			</telnet>
+			<log-match>-e '^\d\s+0\s+0' -re</log-match>
+			<log-match>-e '^\d\s+1\s+1' -re</log-match>
+			<log-match>-e '^\d\s+2\s+2' -re</log-match>
+			<log-match>-e '^\d\s+3\s+3' -re</log-match>
+			<log-match>-e '^\d\s+4\s+4' -re</log-match>
+			<log-match>-e '^\d\s+5\s+5' -re</log-match>
+			<log-match>-e '^\d\s+6\s+6' -re</log-match>
+			<log-match>-e '^\d\s+7\s+7' -re</log-match>
+			<no-error-check />
+		</step>
+</stage>	
+	<stage loop-values="0,1,2,3,4,5,6,7" var-name="dot1p_priority">
+	 <step no="3.3">
+			<desc>
+				Set qos dot1p priority for non-ip 
+			</desc>
+			<telnet target="sw1">
+				-v 'qos classifier-map 8021p 1  ${dot1p_priority} '
+				</telnet>
+	 </step>
+				
+		<step no="3.4">
+			<desc>
+				ixia send pkts with priority=1 and change dot1p mapping for loop;
+			</desc>
+			<log-file>step4_1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${rx_port1}
+				-phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+				-v ""
+
+				-v "stream_delete_all -portList ${tx_port1}"
+				-v ""
+
+				-v "traffic_configure_eth2 -portListIn ${tx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+			    -eth2_protocol 0x0000
+				-vlan enable
+				-vlan_id ${correct_vlan}
+				-vlan_dot1p 1"
+				-v ""
+
+				-v "stream_transmit_method_set -portList ${tx_port1}
+				-streamId 1
+				-transmitMethod stopStream"
+				-v ""
+
+				<!-- start transmit -->
+				-v "stop_transmit -portList ${tx_port1},${rx_port1}"
+				-v ""
+				<!-- start port1 capture -->
+				-v "clear_statistic -portList ${tx_port1},${rx_port1}"
+				-v ""
+
+				-v "start_capture -portList ${rx_port1}"
+				-v ""
+
+				-v "start_transmit -portList ${tx_port1} -firstTryFlag false"
+				-v "wait_time -second 1"
+				-v ""
+
+				-v "stop_transmit -portList ${tx_port1}"
+				-v ""
+
+				<!-- stop port1 capture -->
+				-v "stop_capture -portList ${rx_port1}"
+				-v ""
+				<!-- save port1 capture -->
+				-v "save_capture -onePort ${rx_port1} -fileName ${job.id}_${dot1p_priority}.enc"
+		        -v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_${dot1p_priority}.enc"
+			    -v "rm -f ${job.id}_${dot1p_priority}.enc"
+			
+			</ssh>
+			<no-error-check />
+		</step>
+		
+		<step no="3.5">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_${dot1p_priority}.enc ${log.dir}
+			</script>
+		</step>
+	
+		
+		<step no="3.6">
+			<desc>check the packet of dot1p priority</desc>
+			<script>
+			<!-- & should be stead by &amp; -->
+				if [ "`tshark -r ${log.dir}/${job.id}_${dot1p_priority}.enc -R 'vlan.priority==${dot1p_priority}&amp;&amp;vlan.id==${correct_vlan}' 2>/dev/null | wc -l `" -eq "0" ]
+				then
+				exit 1
+				fi
+			</script>
+			<file>${job.id}_${dot1p_priority}.enc</file>
+		</step>
+		
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include prefix="post" file="include/sw_default_post_process.xml" />
+	</post-process>
+
+</testcase>

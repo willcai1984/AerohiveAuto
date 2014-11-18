@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Complete upload config, default 10min disconnect wait time</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		AP connect with HM
+		AP with default setting in HM
+		Create a WLAN Policy in HM and with default setting
+		Execute the following command in AP:
+		capwap client server name 192.168.20.200
+		capwap client dtls hm-defined-passphrase *** key-id 1
+		capwap client vhm-name home
+		no capwap client dtls negotiation enable
+
+		Test Procedure:
+
+		1. Change capwap client server name in HM, then select AP and
+		upload delta config or complete config, verify if rollback
+		command be generated
+		2. After some time, if AP can't connect to HM(by execute
+		command "interface eth0 shutdown, no capwap client enable,
+		capwap client enable"), show config rollback _detail to check,
+		verify if AP will rollback to previous config
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="selenium_path" value="/root/selenium-server-standalone-2.42.2.jar" />
+
+	<stage>
+		<step no="0.1">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "export DISPLAY=:1"
+				-v "nohup java -jar ${selenium_path} 1>logfile.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "printenv"
+			</ssh>
+		</step>
+
+		<step no="1">
+			<desc>
+				AP connect with HM
+				AP with default setting in HM
+				Create a WLAN Policy in HM and with default setting
+				Execute the following command in AP:
+				capwap client server name 192.168.20.200
+				capwap client dtls hm-defined-passphrase *** key-id 1
+				capwap client vhm-name home
+				no capwap client dtls negotiation enable
+			</desc>
+			<ssh target="ap1">
+				-v "capwap client server name ${pub.hm1.ip}"
+				-v "capwap client enable"
+				-v "ssid ${ssid.name}"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>config ap2</desc>
+			<ssh target="ap2">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite open"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile up qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="1.2.1" delay="30">
+			<desc>Just for delay</desc>
+		</step>
+
+		<step no="1.2.2" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				check the capwap client state
+			</desc>
+			<log-file>configurationRollbackviaHM_Function_1_check_capwap.log</log-file>
+			<ssh target="ap1">
+				-v "show capwap client"
+			</ssh>
+			<log-match>-c -i "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap2" />
+
+		<step no="3">
+			<desc>
+				upload complete config
+			</desc>
+			<log-file>upload_complete_config.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/AerohiveGUI/scripts/configrollback/configrollback_basic.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=http://${pub.hm1.ip} device.mac=${ap1.mgt0.mac} update.mode=complete -t ff -l info -f ${log.dir}/${log.file} --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="4.1" delay="30">
+			<desc>
+				login ap1 and show config roll back status
+			</desc>
+			<log-file>step4.show.config.rollback.log</log-file>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+				-v "show config rollback _d"
+				-v "save config"
+			</console>
+			<log-match>-c -e "Status: enabled"</log-match>
+		</step>
+
+		<step no="4.2">
+			<if>"${ap.eth1.existed}"=="true" </if>
+			<desc>
+				login ap1 and show config roll back status
+			</desc>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="5">
+			<desc>
+				login ap1 and show config roll back status
+			</desc>
+			<log-file>step5.show.config.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-c -e "ssid ${ssid.name}" -n</log-match>
+		</step>
+
+		<step no="6.1" delay="600">
+			<desc>
+				Just for delay, default roll back expiration time is 10 minute(s)
+			</desc>
+		</step>
+
+		<step no="6.2" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				login ap1 and show config roll back status
+			</desc>
+			<log-file>step6.show.config__${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show config rollback _d | in Status"
+				-v "show config rollback _d | in Expiration"
+				-v "show running-config"
+			</console>
+			<log-match>-c -e "ssid ${ssid.name}"</log-match>
+		</step>
+	</stage>
+</testcase>

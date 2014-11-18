@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=3) Check multicast packets forwarding(multicast mac learning is changed since geneva, it's process by IGMP Snooping but not by FDB, we just check the the multicast pkts will broadcast in a vlan)</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use :
+		Multicast Source Server++++Router++++Switch(access) ++++PC1
+		+(access)
+		+
+		PC2
+		Description: Check multicast packets forwarding
+		Platform Dependence: Chesapeake
+		Pre-condition:
+		• Switch port3 connect Router
+		• PC1 connect to switch access port 1
+		• PC2 connect to switch access port 2
+		• PC1,PC2 are in same vlan 10
+		• Switch FDB table size doesn’t exceed
+		• Switch access ports are with learning/forwarding state
+		Test procedure:
+		Enable igmp snooping
+		1. Set igmp snooping enable for vlan10
+		CLI: ip igmp snooping vlan 10
+		2. PC1 send an igmp report packet to Router
+		3. Check FDB table, and verify if PC1,PC2 can receive multicast packets Result1
+		4. PC2 send report packet to join the multicast group too
+		5. Check FDB table, and verify if PC1,PC2 can receive multicast packets Result2
+
+		Disable igmp snooping
+		6. Set igmp snooping disabled for vlan10
+		CLI: no ip igmp snooping groups vlan 10
+		7. Check FDB table entry for the muticast group learnt on port1 Result3
+		8. Set PC1,PC2 to receive multicast packets
+		9. Check if PC1,PC2 can receive multicast packets Result4
+
+		Static add multicast mac entry for PC2
+		10. Static add multicast mac entry for PC2:
+		[multicast dst mac, vlan10, port3,2]
+		11. Set PC1,PC2 to capture multicast packets
+		12. Check if PC1,PC2 can receive multicast packets Result5
+		Expect result:
+		Result1: create multicast mac entry for PC1 [multicast mac, vlan10, port3,1]
+		PC1 can receive the multicast packets as normal;
+		PC2 can’t, because PC2 don’t add to the multicast group.
+
+		Result2: update the multicast mac entry [multicast mac, vlan10, port3,1,2]
+		PC1,PC2 can receive the multicast packets as normal
+
+		Result3: the multicast group mac entry deleted dynamically, because igmp snooping disabled
+
+		Result4: both PC1,PC2 can receive multicast packets as normal
+
+		Result5: PC1 can’t receive multicast packets; PC2 should receive the multicast packets.
+
+	</description>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011" />
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012" />
+	<property name="sw1.port3.ixia_port.mac" value="0000.0000.0013" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				config switch, port1 and port2 access port with vlan${tb.vlan1}
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan2}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				port1 sends multicast pkts, dst-ip is 225.1.1.1, capture pkt on port2 and port3
+			</desc>
+			<log-file>multicast.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype}"
+				-v ""
+				-v "stream_import -onePort ${sw1.port1.ixia_port} -fileName ${case.dir}/conf/potr1.str"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 10 -maintanceOp enable"
+				-v ""
+				-v "start_capture -portList ${sw1.port2.ixia_port}"
+				-v "start_capture -portList ${sw1.port3.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port}"
+				-v "stop_capture -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port}"
+				-v "save_capture -onePort ${sw1.port2.ixia_port} -fileName ${job.id}_1.enc"
+				-v "save_capture -onePort
+				${sw1.port3.ixia_port} -fileName ${job.id}_2.enc"
+				-v ""
+				-v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_1.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_2.enc"
+				-v "rm -f ${job.id}_1.enc"
+				-v "rm -f ${job.id}_2.enc"
+
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_1.enc ${log.dir}
+			</script>
+		</step>
+
+		<step no="3.2">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_2.enc ${log.dir}
+			</script>
+		</step>
+
+		<step no="4.1">
+			<desc>check port2 recieve pkt from port1</desc>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_1.enc 2>/dev/null | grep "192.168.1.1 \-> 225.1.1.1" -c`" -eq "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_2.enc 2>/dev/null | grep "192.168.1.1 \-> 225.1.1.1" -c`" -ne "0" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+
+
+</testcase>

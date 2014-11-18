@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Tracing a client with wep share success</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-AP connected to capwap server success
+		-config a ssid with wep share
+
+		Test Procedure:
+
+		-add the STA1,2 to monitor
+		'exec client-monitor 001e:65f2:5628'
+		-check the Client Trace Table, result 1
+		-STA1 connects to ssid with correct key, check debug info, '_de capwap
+		itk' to make sure, result 2,3,4,5,6
+		-STA1 de-auth, result 7
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	
+	<property name="so1.name" value="autoap1" />
+	<property name="so1.proto" value="wep-shared" />
+	<property name="so1.ps.keyidx" value="3" />
+	<property name="so1.ps.keytype" value="ascii" />
+	<property name="so1.ps.keyvalue" value="1234567890123" />
+	
+	
+	<stage>
+	
+		<include prefix="1" file="subs/set_so_for_ssid.xml" obj-args="ap1, so1" args="${ssid.name}" />
+
+		<include prefix="2" file="subs/bind_ssid_for_radio.xml" args="ap1, ${ssid.name}, wifi0" />
+		
+		<step no="3.1">
+			<desc>setup ap</desc>
+			<telnet target="ap1">
+				-v "capwap client server name ${pub.hm1.ip}"
+				-v "capwap client enable"
+			</telnet>
+		</step>
+		
+		<step no="3.2" delay="30" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check the capwap connection is success</desc>
+			<log-file>capwap_conn_check_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show capwap client"
+			</telnet>
+			<log-match>-e "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+		
+		<step no="4">
+			<desc>get mac of sta1's ${sta1.tif.name}</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width 2 | tr '[A-F]' '[a-f]'
+			</setvar>
+		</step>
+		
+		<step no="5">
+			<desc>add STA1 to monitor</desc>
+			<telnet target="ap1">
+				-v "exec client-monitor ${sta1.tif.mac}"
+			</telnet>
+		</step>
+		
+		<step no="6">
+			<desc>check the Client Trace Table</desc>
+			<log-file>check_client_trace_table.log</log-file>
+			<telnet target="ap1">
+				-v "_show client-monitor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Entry\(${sta1.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="7">
+			<desc>enable debug on AP trace the client</desc>
+			<telnet target="ap1">
+				-v "_debug capwap itk"
+			</telnet>
+		</step>
+		
+		<step no="8">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=${so1.proto}"
+				echo "conn1.keyidx=${so1.ps.keyidx}"
+				echo "conn1.psk.keytype=${so1.ps.keytype}"
+				echo "conn1.psk=${so1.ps.keyvalue}"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+		
+		<include prefix="9" file="subs/sta_wifi_connect_${tb.os}_new.xml" rargs="conn1, sta1, ap1" />
+
+		<include prefix="10" file="subs/chk_sta_conn_status_in_ap.xml" obj-args="ap1, sta1" args="wep-shared, x, wep-shared, wep" />
+	
+		<step no="11">
+			<desc>check the STA connection process</desc>
+			<log-file>trace_open.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered | in capwap_itk"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "module\(802.11\).*?report sta\(${sta1.tif.mac}\).*?Rx auth &lt;shared&gt; \(frame 1.*?step\(3\/6\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "module\(802.11\).*?report sta\(${sta1.tif.mac}\).*?Tx auth &lt;shared&gt; \(frame 2.*?step\(4\/6\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "module\(802.11\).*?report sta\(${sta1.tif.mac}\).*?Rx auth &lt;shared&gt; \(frame 3.*?step\(3\/6\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "module\(802.11\).*?report sta\(${sta1.tif.mac}\).*?Tx auth &lt;shared&gt; \(frame 4.*?step\(0\/0\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "module\(802.11\).*?report sta\(${sta1.tif.mac}\).*?Rx assoc req.*?step\(0\/0\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(802.11\).*?report sta\(${sta1.tif.mac}\).*?Tx assoc resp &lt;accept&gt;.*?step\(0\/0\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?Preshared auth is starting.*?step\(1\/2\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?Authentication is successfully finished.*?step\(0\/0\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "module\(DHCP\).*?report sta\(${sta1.tif.mac}\).*?DHCP session completed for station.*?step\(0\/0\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+	</stage>
+	
+			 <failed-process>
+	 <stage>
+        <step no="fp_1">
+			<desc>
+				shutdown wlan interface on sta
+			</desc>
+			<log-file>fp_1.log</log-file>
+			<ssh target="sta1" prompt=".*#">
+            -v "ifconfig ${sta1.tif.name} down"
+			</ssh>
+		</step>
+		
+		<step no="fp_2">
+			<desc>
+				shutdown wlan interface on sta
+			</desc>
+			<log-file>fp_2.log</log-file>
+			<ssh target="sta2" prompt=".*#">
+            -v "ifconfig ${sta2.tif.name} down"
+			</ssh>
+		</step>
+		</stage>
+    </failed-process>
+	
+</testcase>

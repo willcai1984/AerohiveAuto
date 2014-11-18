@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>DHCP disabled, when static ip be configured,use static IP;when no static ip be configured,use default IP</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition
+		-Configure static IP in box, DHCP disable
+
+		Test procedure
+		1: Check interface mgt0 IP (show interface mgt0 )
+		2: Check interface mgt0 DHCP client (show interface mgt0 dhcp client)
+		3: Check no DHCP packets send out
+		_ff id 1 src-mac xxxx src-port 68 bidirectional
+		_kdebug fe basic
+		Debug console
+		4. Delete static ip, check which ip be used by show interface mgt0
+
+		Expect result
+		1: Interface mgt0 IP is static configure IP.
+		2: DHCP client: Disabled
+		3: No DHCP packets send out
+		4: Default ip address be used
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="pre0">
+			<desc>
+				show ap1's interface mgt0 info
+			</desc>
+			<log-file>pre0_show_ap1_interface_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="pre1">
+			<desc>
+				get ap1's mgt0's mac address
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/pre0_show_ap1_interface_info.log -i mgt0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				- Configure static IP in box, DHCP disable
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 ip ${ap1.mgt0.ipset}/24"
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="2" delay="30">
+			<desc>
+				1: Check interface mgt0 IP (show interface mgt0 )
+			</desc>
+			<log-file>step2_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-c -i "IP addr=${ap1.mgt0.ipset}; Netmask=255.255.255.0;"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				2: Check interface mgt0 DHCP client (show interface mgt0 dhcp client)
+			</desc>
+			<log-file>step3_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-c -i "DHCP client: *Disabled"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				- open debug mode and clear log all
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 src-mac ${ap1.mgt0.mac} src-port 68 bidirectional"
+				-v "_kdebug fe basic"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="5" delay="30">
+			<desc>
+				- show logging buffered
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<log-match>-n -c -i "(i) mgt0 0.0.0.0-&gt;255.255.255.255" -i "UDP 68-&gt;67 DHCP Discover"</log-match>
+			<log-match>-n -c -i "(o) eth0 0.0.0.0-&gt;255.255.255.255" -i "UDP 68-&gt;67 DHCP Discover"</log-match>
+			<log-match>-n -c -i "Sending DHCP discover on mgt0"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				- Delete static ip
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 ip"
+			</console>
+		</step>
+
+		<step no="7" delay="30">
+			<desc>
+				1: Check interface mgt0 IP (show interface mgt0 )
+			</desc>
+			<log-file>step7_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "IP\s*addr=192.168.\d+.\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

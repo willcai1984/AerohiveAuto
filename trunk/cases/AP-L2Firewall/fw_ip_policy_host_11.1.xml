@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Config single "from" policy(permit)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Configure the dns server right which can resolve the hostname in ip-policy
+
+		Test Procedure:
+
+		1) Laptop ping gateway of SW
+		2) Laptop ping Server
+		3) Laptop ping AP1
+		4) Configure a L3 policy and bind it to FW:
+		"ip-policy FW"
+		"ip-policy FW from &lt; hostname1&gt; action permit"
+		"user-profile FW security ip-policy from-access FW"
+		5) Repeat step 1-3
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FW" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="domain" value="${job.id}" />
+
+	<stage>
+		<step no="pre1">
+			<desc>
+				-Laptop uses user-profile "FW"
+			</desc>
+			<console target="ap1">
+				-v "dns server-ip ${pub.dns1.ip}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<step no="pre2">
+			<desc>show interface mgt0</desc>
+			<log-file>show_int_m0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="pre3">
+			<desc>retrieve AP's mgt0 IP after config mgt0 vlan</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_int_m0.log -t str
+			</setvar>
+		</step>
+
+		<include prefix="pre4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="pre5" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${domain}, ${sta1.tif.ip}" />
+
+		<step no="pre6">
+			<desc>main case</desc>
+			<ssh host="${pub.dns1.ip}">
+				-v "host ${domain}"
+			</ssh>
+		</step>
+
+		<step no="open.debug">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.gw}, 4" />
+
+		<include prefix="2" file="subs/sta_ping.xml" args="sta1, ${pub.dns1.domain1}, 4" />
+
+		<include prefix="3" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+		<step no="4">
+			<desc>
+				4) Configure a L3 policy and bind it to FW:
+				"ip-policy FW"
+				"ip-policy FW from &lt; hostname1&gt; action permit"
+				"user-profile FW security ip-policy from-access FW"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${domain} action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="5" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.gw}, 4" />
+
+		<include prefix="6" file="subs/sta_ping.xml" args="sta1, ${pub.dns1.domain1}, 4" />
+
+		<include prefix="7" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+		<step no="8">
+			<desc>
+				check policy
+			</desc>
+			<log-file>step8_show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${ap1.mgt0.gw}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[${user_id}\] id \[1\] \[permit\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.gw}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${pub.dns1.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[${user_id}\] id \[1\] \[permit\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${pub.dns1.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(u\) mgt0 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[${user_id}\] id \[1\] \[permit\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="del" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${domain}, ${sta1.tif.ip}" />
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

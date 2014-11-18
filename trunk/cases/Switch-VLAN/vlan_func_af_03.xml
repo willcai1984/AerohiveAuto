@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=2) Check the received untagged frames minimum size, should be 64 bytes in length  </brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	
+	<description>
+Topology to use:	
+IXIA PORT1++++(trunk)Switch(access)++++IXIA PORT2
+
+Description:	
+Platform Dependence	SR2024
+Pre-condition:
+•	Reset config of switch to factory default
+•	Create vlan related vlan first on switch
+•	IXIA PORT1 connect to switch trunk port, pvid is 10, allow-vlan list is 10,20
+•	IXIA PORT2 connect to switch access port, pvid 20
+Test procedure:
+1.	 Set IXIA PORT2 to capture frames
+2.	Transmit 64 bytes vlan 20 tagged frames from IXIA PORT1   Result1
+3.	 Transmit 65 bytes vlan 20 tagged frames from IXIA PORT1    Result2
+4.	Transmit 68 bytes vlan 20 tagged frames from IXIA port1     Result3
+Expect result:
+Result1:   IXIA PORT2 should receive untagged frames sent from IXIA PORT1, the received frames size is 64 bytes
+ 
+Result2:   IXIA PORT2 should receive untagged frames sent from IXIA PORT1, the received frames size is 64 bytes
+
+Result3:  IXIA port2 should receive untagged frames sent from IXIA port1, the received frames is 64 bytes
+
+	</description>
+	
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+	
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	
+		<property name="sw1.port1.ixia_port.mac" value="0000.0000.0015"/>
+		<property name="sw1.port2.ixia_port.mac" value="0000.0000.0016"/>
+		<property name="sw1.port3.ixia_port.mac" value="0000.0000.0017"/>
+		<property name="min.frame.length" value="64" />
+	
+	<stage>
+		<step no="pre_1">
+			<desc>
+				pre-condition: config related vlans and sw port1/port2/port3 pvid,allow vlan
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v ""
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "no interface ${sw1.port1} switchport trunk allow vlan all"
+				-v "interface ${sw1.port1} switchport trunk native vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport trunk allow vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport trunk allow vlan ${tb.vlan2}"
+				-v ""
+				-v "interface ${sw1.port2} switchport mode access"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan2}"
+				-v ""
+				-v ""
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v ""
+				-v "show interface ${sw1.port1} switchport"
+				-v "show interface ${sw1.port2} switchport"	
+			</telnet>
+		</step>
+		
+
+
+		<property name="stream1.txport1" value="${sw1.port1.ixia_port}" />
+		<property name="stream1.rxport2" value="${sw1.port2.ixia_port}" />
+		<property name="stream1.rxport3" value="${sw1.port3.ixia_port}" />
+	
+		<property name="stream1.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+		<property name="stream1.rxport1.mac" value="ffff.ffff.ffff" />
+		<property name="stream1.etype" value="0x0800" />
+		<property name="stream1.UDFoffset1" value="38" />
+		<property name="stream1.UDFoffset2" value="34" />
+		<property name="stream1.patternOffset1" value="38" />
+		<property name="stream1.patternOffset2" value="34" />
+		<property name="stream1.frame.length" value="64" />
+
+		
+		<step no="1.1">
+			<desc>add udf1 to check vlan ${tb.vlan2}</desc>
+			<setvar name="stream1.UDFsignature1">
+				echo "8100`printf %04x ${tb.vlan2}`"
+			</setvar>	
+		</step>	
+		
+		<step no="1.2">
+			<desc>
+				1.	Transmit 64 bytes vlan ${tb.vlan2} tagged frames from IXIA PORT1
+			</desc>
+			<log-file>tagged_stream1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}" 
+				-v ""
+
+				<!--configure stream-->
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+				-vlan enable
+				-vlan_id ${tb.vlan2}
+				-frame_length ${stream1.frame.length}
+				-eth2_protocol ${stream1.etype}
+				-udf_offset ${stream1.UDFoffset1}
+				-patternOffset2 ${stream1.UDFoffset1}
+				-userDefinedStat2Pattern pattern1AndPattern2"
+				-v ""								
+				
+				-v "traffic_configure_eth2 -portListIn ${stream1.rxport2}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+				-eth2_protocol ${stream1.etype}
+				-frame_length ${min.frame.length}
+				-udf_offset ${stream1.UDFoffset2}
+				-patternOffset2 ${stream1.patternOffset2}"
+				-v ""
+							
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport2}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport2}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>			
+		</step>
+		
+		<step no="1.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		
+		<step no="1.4">
+			<desc>
+				analyse statistics on rxport port2
+			</desc>
+			<log-file>tagged_stream1.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport2} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>	
+
+		
+		<property name="stream2.txport1" value="${sw1.port1.ixia_port}" />
+		<property name="stream2.rxport2" value="${sw1.port2.ixia_port}" />
+		<property name="stream2.rxport3" value="${sw1.port3.ixia_port}" />
+	
+		<property name="stream2.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+		<property name="stream2.rxport1.mac" value="ffff.ffff.ffff" />
+		<property name="stream2.etype" value="0x0800" />
+		<property name="stream2.UDFoffset1" value="38" />
+		<property name="stream2.UDFoffset2" value="34" />
+		<property name="stream2.patternOffset1" value="38" />
+		<property name="stream2.patternOffset2" value="34" />
+		<property name="stream2.frame.length" value="65" />
+		
+		
+		<step no="2.1">
+			<desc>add udf1 to check vlan ${tb.vlan2}</desc>
+			<setvar name="stream2.UDFsignature1">
+				echo "8100`printf %04x ${tb.vlan2}`"
+			</setvar>	
+		</step>	
+		
+		<step no="2.2">
+			<desc>
+				1.	Transmit 65 bytes vlan ${tb.vlan2} tagged frames from IXIA PORT1
+			</desc>
+			<log-file>tagged_stream2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}" 
+				-v ""
+
+				<!--configure stream-->
+				-v "traffic_configure_eth2 -portListIn ${stream2.txport1}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream2.txport1.mac}
+				-vlan enable
+				-vlan_id ${tb.vlan2}
+				-frame_length ${stream2.frame.length}
+				-eth2_protocol ${stream2.etype}
+				-udf_offset ${stream2.UDFoffset1}
+				-patternOffset2 ${stream2.UDFoffset1}
+				-userDefinedStat2Pattern pattern1AndPattern2"
+				-v ""
+	
+				-v "traffic_configure_eth2 -portListIn ${stream2.rxport2}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream2.txport1.mac}
+				-eth2_protocol ${stream2.etype}
+				-frame_length ${min.frame.length}
+				-udf_offset ${stream2.UDFoffset2}
+				-patternOffset2 ${stream2.patternOffset2}"
+				-v ""
+							
+				-v "start_trans_getstats -txPortList ${stream2.txport1} -rxPortList ${stream2.rxport2}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${stream2.txport1} -oneRxPort ${stream2.rxport2}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>			
+		</step>
+		
+		<step no="2.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		
+		<step no="2.4">
+			<desc>
+				analyse statistics on rxport port2
+			</desc>
+			<log-file>tagged_stream2.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${stream2.txport1} ${stream2.rxport2} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>	
+		
+		<property name="stream3.txport1" value="${sw1.port1.ixia_port}" />
+		<property name="stream3.rxport2" value="${sw1.port2.ixia_port}" />
+		<property name="stream3.rxport3" value="${sw1.port3.ixia_port}" />
+	
+		<property name="stream3.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+		<property name="stream3.rxport1.mac" value="ffff.ffff.ffff" />
+		<property name="stream3.etype" value="0x0800" />
+		<property name="stream3.UDFoffset1" value="38" />
+		<property name="stream3.UDFoffset2" value="34" />
+		<property name="stream3.patternOffset1" value="38" />
+		<property name="stream3.patternOffset2" value="34" />
+		<property name="stream3.frame.length" value="68" />
+		
+		
+		<step no="3.1">
+			<desc>add udf1 to check vlan ${tb.vlan2}</desc>
+			<setvar name="stream3.UDFsignature1">
+				echo "8100`printf %04x ${tb.vlan2}`"
+			</setvar>	
+		</step>	
+		
+		<step no="3.2">
+			<desc>
+				1.	Transmit 68 bytes vlan ${tb.vlan2} tagged frames from IXIA PORT1
+			</desc>
+			<log-file>tagged_stream3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}" 
+				-v ""
+
+				<!--configure stream-->
+				-v "traffic_configure_eth2 -portListIn ${stream3.txport1}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream3.txport1.mac}
+				-vlan enable
+				-vlan_id ${tb.vlan2}
+				-frame_length ${stream3.frame.length}
+				-eth2_protocol ${stream3.etype}
+				-udf_offset ${stream3.UDFoffset1}
+				-patternOffset2 ${stream3.UDFoffset1}
+				-userDefinedStat2Pattern pattern1AndPattern2"
+				-v ""
+	
+				-v "traffic_configure_eth2 -portListIn ${stream3.rxport2}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream3.txport1.mac}
+				-eth2_protocol ${stream3.etype}
+				-frame_length ${min.frame.length}
+				-udf_offset ${stream3.UDFoffset2}
+				-patternOffset2 ${stream3.patternOffset2}"
+				-v ""
+							
+				-v "start_trans_getstats -txPortList ${stream3.txport1} -rxPortList ${stream3.rxport2}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${stream3.txport1} -oneRxPort ${stream3.rxport2}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>			
+		</step>
+		
+		<step no="3.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		
+		<step no="3.4">
+			<desc>
+				analyse statistics on rxport port2
+			</desc>
+			<log-file>tagged_stream3.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${stream3.txport1} ${stream3.rxport2} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>	
+
+		
+		
+
+	</stage>
+	
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+	
+	
+</testcase>
+

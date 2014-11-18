@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>uid and vid got at the same time</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a ssid with mac auth
+		-config a radius server to support pap/chap/mschapv2
+		-config a radius account to return vid and uid
+		-config different vlan in user-profile than the one return from radius server
+
+		Test Procedure:
+		-AP1 receive multi attribute from access-accept
+		-check STA1 could get correct uid and vid
+		-check STA1 gets IP by DHCP success
+		-check STA1 can ping gateway success
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ipconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+		</step>
+
+		<step no="0.1">
+			<desc>Get sta1's mac with five delimiter</desc>
+			<setvar name="sta1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig.log -i ${sta1.tif.name} -o win -m -dash
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				--create security-object, wpa 802.1x
+				-cofing a radius account
+			</desc>
+			<telnet target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap security aaa radius primary ${ap1.mgt0.ip}"
+				-v "security-object autoap security additional-auth-method mac-based-auth"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "aaa radius-server local db-type local"
+				-v "aaa radius-server local enable"
+				-v "user-group xxx"
+				-v "aaa radius-server local user-group xxx"
+				-v "user ${sta1.mac}"
+				-v "user ${sta1.mac} password ${sta1.mac}"
+				-v "user ${sta1.mac} group xxx"
+				-v "user-group xxx vlan-id ${tb.vlan2}"
+				-v "user-group xxx user-attribute 2"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-config a ssid and bind it to interface
+			</desc>
+			<telnet target="ap1">
+				-v "aaa mac-format case-sensitivity upper-case"
+				-v "aaa mac-format delimiter dash"
+				-v "aaa mac-format style five-delimiter"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 2"
+				-v "interface wif0 radio channel 1"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>step1.2_show_interface_wifi0_info.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>Get ap1's wifi0‘s mac with five delimiter</desc>
+			<setvar name="ap1.wifi0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.2_show_interface_wifi0_info.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>-config a ssid with mac auth</desc>
+			<telnet target="ap2">
+				-v "security-object autoap"
+				-v "security-object autoap security aaa radius primary ${ap2.mgt0.ip}"
+				-v "security-object autoap security additional-auth-method mac-based-auth"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "aaa radius-server local db-type local"
+				-v "aaa radius-server local enable"
+				-v "user-group xxx"
+				-v "aaa radius-server local user-group xxx"
+				-v "user ${sta1.mac}"
+				-v "user ${sta1.mac} password ${sta1.mac}"
+				-v "user ${sta1.mac} group xxx"
+				-v "user-group xxx vlan-id ${tb.vlan2}"
+				-v "user-group xxx user-attribute 2"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-config a ssid and bind it to interface
+			</desc>
+			<telnet target="ap2">
+				-v "aaa mac-format case-sensitivity upper-case"
+				-v "aaa mac-format delimiter dash"
+				-v "aaa mac-format style five-delimiter"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 2"
+				-v "interface wif0 radio channel 1"
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3" delay="30" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check roaming neighbor on ap1</desc>
+			<log-file>check_roaming_neighor_ap1_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-i "${ap2.mgt0.ip}" -p 4 -i "D"</log-match>
+		</step>
+
+		<step no="4" delay="30" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check roaming neighbor on ap2</desc>
+			<log-file>check_roaming_neighor_ap2_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-i "${ap1.mgt0.ip}" -p 4 -i "D"</log-match>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show logging buffered</desc>
+			<log-file>step6_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "user-profile-group-ID=2, VLAN-ID=${tb.vlan2}/${tb.vlan2}" -i "ssid=${ssid.name}, mgt IP=${ap1.mgt0.ip}"</log-match>
+			<log-match>-c -i "MAC-based auth: RADIUS server send OK to station ${sta1.tif.mac}, returned UPID (2) VLAN (${tb.vlan2})"</log-match>
+			<log-match>-c -i "station ${sta1.tif.mac} passed MAC auth before, use vlan ${tb.vlan2}, upid 2 in cache"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				- 'sh ssid xxx sta',
+			</desc>
+			<log-file>step7_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " ${tb.vlan2} *yes *2 "</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-'sh roa ca mac xxx'
+			</desc>
+			<log-file>step8_show_roaming.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache mac ${sta1.mac}"
+			</telnet>
+			<log-match>-i "User name: "</log-match>
+			<log-match>-i "User Profile ID: 2"</log-match>
+			<log-match>-i "VLAN ID: ${tb.vlan2}"</log-match>
+			<log-match>-c -i "MAC based auth flag: set"</log-match>
+			<log-match>-i "Station IP address: ${sta1.tif.ip}"</log-match>
+			<log-match>-c -i "Authenticator Address: MAC=${ap1.wifi0.mac}, IP=${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				-'sh roa ca mac xxx'
+			</desc>
+			<log-file>step8.1_show_roaming.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming cache mac ${sta1.mac}"
+			</telnet>
+			<log-match>-i "User name: "</log-match>
+			<log-match>-i "User Profile ID: 2"</log-match>
+			<log-match>-i "VLAN ID: ${tb.vlan2}"</log-match>
+			<log-match>-c -i "MAC based auth flag: set"</log-match>
+			<log-match>-i "Station IP address: ${sta1.tif.ip}"</log-match>
+			<log-match>-c -i "Authenticator Address: MAC=${ap1.wifi0.mac}, IP=${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<include prefix="9" file="subs/sta_ping.xml" args="sta1, ${tb.vlan2.gw}, 5" />
+	</stage>
+</testcase>

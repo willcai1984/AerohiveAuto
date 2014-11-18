@@ -1,0 +1,409 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Multi action trigger and recover</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP1 IP_addr is IP1, AP2 IP_addr is IP2 , (IP1, IP2is in the
+		same subnet)
+		-Configure AP1
+		"hive tracktest"
+		"interface mgt0 hive tracktest"
+		-Configure AP2(MP)
+		"hive tracktest"
+		"interface mgt0 hive tracktest"
+		"track group1 default-gateway"
+		"track group1 action start-mesh-failover"
+		"track group1 action enable-access-console"
+		"track group1 action disable-access-radio"
+
+		Test Procedure:
+		1)Show track state on AP2
+		2)Shutdown Eth on AP2
+		3)Recover
+		4)Shutdown Wifi1 on AP2
+		5)Recover
+		6)Shutdown Eth and Wifi1 on AP2
+		7)Recover
+		8)Shutdown Eth (or Wifi1) on AP1
+		9)Recover
+		10)Shutdown Eth on AP2,Shutdown Eth (or Wifi1) on AP1
+		11)Recover
+		Expectant result
+		1. Track all IFS is reachable, Track ETH IFS is reachable
+		2. Track all IFS is reachable, Track ETH IFS is unreachable
+		3. The same as step 1
+		4. Track all IFS is unreachable, Track ETH IFS is reachable
+		5. The same as step 1
+		6. Track all IFS is unreachable, Track ETH IFS is unreachable
+		7. The same as step 1
+		8. The same as step 1
+		9. The same as step 1
+		10.
+		Track all IFS is unreachable, Track ETH IFS is unreachable
+		11. The same as step 1
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<property name="hostname" value="AH-hello-world" />
+	<stage>
+		<step no="0">
+			<desc>
+				-when ap is ap340,shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<telnet target="ap2" timeout="1000">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Configure AP1
+				"hive tracktest"
+				"interface mgt0 hive tracktest"
+			</desc>
+			<telnet target="ap1" timeout="1000">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 36"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Configure AP2(MP)
+				"hive tracktest"
+				"interface mgt0 hive tracktest"
+				"track group1 default-gateway"
+				"track group1 action start-mesh-failover"
+				"track group1 action enable-access-console"
+				"track group1 action disable-access-radio"
+			</desc>
+			<telnet target="ap2" timeout="1000">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 36"
+				-v "hostname AH-hello-world"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "track group1 default-gateway"
+				-v "track group1 action start-mesh-failover"
+				-v "track group1 action enable-access-console"
+				-v "track group1 action disable-access-radio"
+			</telnet>
+		</step>
+
+		<step no="3" delay="20">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step3_show_track.log</log-file>
+			<telnet target="ap2" timeout="1000">
+				-v "show track"
+			</telnet>
+			<log-match>-p 3 -i "Reachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Reachable" -i "group1"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				2)Shutdown Eth on AP2
+			</desc>
+			<console target="ap2" timeout="1000">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5">
+			<desc>
+				show ap1's interface
+			</desc>
+			<log-file>show_ap1_interface_info.log</log-file>
+			<telnet target="ap1" timeout="1000">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				gain ap1's wifi1's mac address
+			</desc>
+			<setvar name="ap1.wifi1.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_interface_info.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="6" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor when ap2's wifi1's acsp neighbor list more than 128
+			</desc>
+			<log-file>step6_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show acsp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.wifi1.mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step6.1_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.wifi1.mac}\s+${ap1.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="8" loop-interval="6">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step7_show_track.log</log-file>
+			<console target="ap2" timeout="1000">
+				-v "show track"
+			</console>
+			<log-match>-p 3 -i "Reachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Unreachable" -i "group1"</log-match>
+		</step>
+		<step no="7.1" type="loop-check" loop-max-times="3" loop-interval="6">
+			<desc>
+				1)Show route for check default gateway
+			</desc>
+			<log-file>step7.1_show_route.log</log-file>
+			<console target="ap2" timeout="1000">
+				-v "show route"
+			</console>
+			<log-match>-p 3 -i "wifi1.1" -i "0000:0000:0000"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				3)Recover
+			</desc>
+			<console target="ap2" delay="60">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="3" loop-interval="6">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step9_show_track.log</log-file>
+			<console target="ap2" delay="30">
+				-v "show track"
+			</console>
+			<log-match>-p 3 -i "Reachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Reachable" -i "group1"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				4)Shutdown Wifi1 on AP2
+			</desc>
+			<telnet target="ap2" timeout="1000">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="11" delay="5">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step11_show_track.log</log-file>
+			<telnet target="ap2" timeout="1000">
+				-v "show track"
+			</telnet>
+			<log-match>-p 3 -i "Reachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Reachable" -i "group1"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				5)Recover
+			</desc>
+			<telnet target="ap2" timeout="1000">
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="13">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step13_show_track.log</log-file>
+			<telnet target="ap2" timeout="1000">
+				-v "show track"
+			</telnet>
+			<log-match>-p 3 -i "Reachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Reachable" -i "group1"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				6)Shutdown Eth and Wifi1 on AP2
+			</desc>
+			<console target="ap2" timeout="1000">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="15" type="loop-check" loop-max-times="8" loop-interval="6">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step15_show_track.log</log-file>
+			<console target="ap2" timeout="1000">
+				-v "show track"
+			</console>
+			<log-match>-p 3 -i "Unreachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Unreachable" -i "group1"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				7)Recover
+			</desc>
+			<console target="ap2" timeout="1000">
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="17" delay="5">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step17_show_track.log</log-file>
+			<telnet target="ap2" timeout="1000">
+				-v "show track"
+			</telnet>
+			<log-match>-p 3 -i "Reachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Reachable" -i "group1"</log-match>
+		</step>
+
+		<step no="18">
+			<desc>
+				8)Shutdown Eth (or Wifi1) on AP1
+			</desc>
+			<telnet target="ap1" timeout="1000">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="19" delay="18">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step19_show_track.log</log-file>
+			<telnet target="ap2" timeout="1000">
+				-v "show track"
+			</telnet>
+			<log-match>-p 3 -i "Reachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Reachable" -i "group1"</log-match>
+		</step>
+
+		<step no="20">
+			<desc>
+				9)Recover
+			</desc>
+			<telnet target="ap1" timeout="1000">
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="21" delay="20">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step21_show_track.log</log-file>
+			<telnet target="ap2" timeout="1000">
+				-v "show track"
+			</telnet>
+			<log-match>-p 3 -i "Reachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Reachable" -i "group1"</log-match>
+		</step>
+
+		<step no="22">
+			<desc>
+				Shutdown Eth (or Wifi1) on AP1
+			</desc>
+			<telnet target="ap1" timeout="1000">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="22.1">
+			<desc>
+				Shutdown Eth on AP2
+			</desc>
+			<console target="ap2" timeout="1000">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="23"  type="loop-check" loop-max-times="8" loop-interval="6">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step23_show_track.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-p 3 -i "Unreachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Unreachable" -i "group1"</log-match>
+		</step>
+		<step no="23.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>"show ssid"</desc>
+			<log-file>show_ssid_first_${loop_check.idx}.log</log-file>
+			<console target="ap2">-v "show ssid"</console>
+			<log-match>-e "${hostname}_ac" -p 2</log-match>
+		</step>
+		<step no="24">
+			<desc>
+				11)Recover
+				Expectant result
+			</desc>
+			<console target="ap2" timeout="1000">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="24.1">
+			<desc>
+				11)Recover
+				Expectant result
+			</desc>
+			<telnet target="ap1" timeout="1000">
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="25" delay="20">
+			<desc>
+				1)Show track state on AP2
+			</desc>
+			<log-file>step25_show_track.log</log-file>
+			<telnet target="ap2" timeout="1000">
+				-v "show track"
+			</telnet>
+			<log-match>-p 3 -i "Reachable" -i "group1"</log-match>
+			<log-match>-p 4 -i "Reachable" -i "group1"</log-match>
+		</step>
+
+		<step no="20.1">
+			<desc>"show ssid"</desc>
+			<log-file>show_ssid_second_.log</log-file>
+			<ssh target="ap2">-v "show ssid"</ssh>
+			<log-match>-n -e "${hostname}_ac"</log-match>
+		</step>
+	</stage>
+</testcase>

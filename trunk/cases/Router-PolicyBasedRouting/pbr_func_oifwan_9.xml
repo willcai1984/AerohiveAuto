@@ -1,0 +1,295 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Forwarding and Routing traffic based on policy, oif is eth0 pppoe</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Description:	Forwarding and Routing traffic based on policy, oif is eth0 pppoe
+		Platform Dependence:	BR100,BR200,BR200-WP,BRAP330,BRAP350,BRAP121,BRAP141
+		Pre-condition	:
+		Set interface eth0 mode wan and eth0 is pppoe 
+		Test procedure	:
+		1.	Set a match-map 
+		routing match-map mb user-profile 2 to any
+		2.	Set a route-map, the oif for all traffic is eth0 interface
+		routing route-map rb via eth0
+		3.	Create one routing policy and bind the route-map and the  match-map
+		routing policy pa id 1 match-map mb route-map rb
+		4.	Laptop connect to the match-map
+		5.	Laptop send traffic to vpn network, check result1
+		6.	Laptop send traffic to internet, check result2
+		7.	Eth0 down
+		8.	Laptop send traffic to vpn network, check result3
+		9.	Laptop send traffic to internet, check result3
+		10.	Eth0 up
+		11.	Laptop send traffic to vpn network, check result1
+		12.	Laptop send traffic to internet, check result2
+		Expect result	:
+		Result1:traffic to vpn network via eth0,but no response traffic
+		Result2:traffic to internet via eth0,laptop can connect to internet webpage.
+		Result3:traffic are dropped
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>
+
+	<property name="apn.name" value="3gnet" />
+	<property name="des.addr" value="0.0.0.0" />
+	<property name="invalid.addr" value="1.1.1.1" />
+	<property name="gw.addr" value="192.168.10.254" />
+	<property name="baidu.addr" value="61.135.169.125" />
+	<property name="pppoe.Remote.ip" value="10.0.10.22" />
+	<stage>
+		<include prefix="1" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+	    <step no="2">
+			<desc>
+				eth0 WAN is working as PPPoE
+			</desc>
+			<log-file>step2_0.log</log-file>
+			<console target="br1.br" timeout="180">
+				-v "interface eth0 pppoe username ${pub.pppoe1.username} password ${pub.pppoe1.passwd}"
+				-v "interface eth0 pppoe enable"
+			</console>
+		</step>
+		
+		<step no="3">
+			<desc>
+				br1.vpc1 get ip address
+			</desc>
+			<log-file>step3_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show dns
+			</desc>
+			<log-file>step3.2_check_dns.log</log-file>
+			<console target="br1.br">
+				-v "show dns"
+			</console>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				get dns
+			</desc>
+			<setvar name="dns1.addr">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.2_check_dns.log -p "Primary\s+:\s+(\S+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4" delay="10" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show interface eth0 pppoe ,pppoe get the ip address
+			</desc>
+			<log-file>step4_show_interface_eth0_pppoe_${loop_check.idx}.log</log-file>
+			<console target="br1.br" timeout="300">
+				-v "show interface eth0 pppoe"
+			</console>
+			<log-match>-c -i "Remote IP: ${pppoe.Remote.ip}"</log-match>
+			<log-match>-c -i "PPPoE status: enabled"</log-match>
+			<log-match>-c -i "Username: ${pub.pppoe1.username}"</log-match>
+			<log-match>-c -i "Connection status: connected"</log-match>
+		</step>
+		
+		<step no="open.debug">
+			<desc>
+				open.debug
+			</desc>
+			<console target="br1.br">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				br1.vpc1 ping dns,ping is successful
+			</desc>
+			<log-file>step5_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+			   	-v "ping ${dns1.addr} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${dns1.addr}" -i "ttl="</log-match>
+		</step>
+		
+		<step no="5.1">
+			<desc>
+				show log buffer,check the ping traffic is forwarded on pppoe interface(ppp1)
+			</desc>
+			<log-file>step5.1_show_ip_route.log</log-file>
+			<console target="br1.br">
+				-v "show log buffer"
+				-v "clear log buffered"
+			</console>
+			<log-match> -i "(i) eth1 ${br1.vpc1.tif.ip}->${dns1.addr}.*icmp-echo-req"</log-match>
+			<log-match> -i "iptables FORWARD pkt ${br1.vpc1.tif.ip}(mgt0)->${dns1.addr}(ppp1) "</log-match>
+			<no-error-check />
+		</step>
+                
+
+		<step no="6" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				br1.vpc1 ping cvg.vpc1 ,ping is successful 
+			</desc>
+			<log-file>step6_vpc_ping_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+		<step no="7">
+			<desc>
+			    Set  match-map to any
+			    Set a route-map, all traffic is eth0 interface
+			    bind the match-map and route-map to routing policy 
+			    
+			</desc>
+			<log-file>step7_Set_match_map.log</log-file>
+			<console target="br1.br">
+				-v "routing match-map mb user-profile default-profile to any"
+				-v "routing route-map rb via eth0"
+				-v "routing policy pa id 1 match-map mb route-map rb"
+				-v "clear log buffer"
+				-v "show ip rule"
+			</console>
+		</step>
+		<step no="8" type="loop-check" loop-max-times="1" loop-interval="5">
+			<desc>
+				br1.vcp1 ping cvg.vpc1 ,ping is failed
+			</desc>
+			<log-file>step8_vpc_ping_cvg.vpc1_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+		<step no="8.1">
+			<desc>
+				show log buffer,check the ping traffic is forwarded on pppoe interface(ppp1)
+			</desc>
+			<log-file>step8.1.log</log-file>
+			<console target="br1.br">
+				-v "show log buffer"
+				-v "clear log buffered"
+			</console>
+			<log-match> -i "(i) eth1 ${br1.vpc1.tif.ip}->${cvg1.vpc1.tif.ip}.*icmp-echo-req"</log-match>
+			<log-match> -i "iptables FORWARD pkt ${br1.vpc1.tif.ip}(mgt0)->${cvg1.vpc1.tif.ip}(ppp1) "</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="9" type="loop-check" loop-max-times="1" loop-interval="5">
+			<desc>
+				br1.vpc1 ping dns,ping is successful
+			</desc>
+			<log-file>step9_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${dns1.addr} -c 5"
+			</ssh>
+			<log-match> -c -i "from ${dns1.addr}" -i "ttl="</log-match>
+		</step>
+		
+		<step no="9.1">
+			<desc>
+				show log buffer,check the ping traffic is forwarded on pppoe interface(ppp1)
+			</desc>
+			<log-file>step9.1.log</log-file>
+			<console target="br1.br">
+				-v "show log buffer"
+				-v "clear log buffered"
+			</console>
+			<log-match> -i "(i) eth1 ${br1.vpc1.tif.ip}->${dns1.addr}.*icmp-echo-req"</log-match>
+			<log-match> -i "iptables FORWARD pkt ${br1.vpc1.tif.ip}(mgt0)->${dns1.addr}(ppp1) "</log-match>
+			<no-error-check />
+		</step>
+	
+		<step no="10">
+			<desc>
+				 shutdown interface eth0
+			</desc>
+			<console target="br1.br">
+				-v "interface eth0 shutdown"
+				-v "show ip rule"
+			</console>
+		</step>
+		<step no="11" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				vpc1 ping dns ,ping traffic is drop base the routing policy
+			</desc>
+			<log-file>step11_vpc_ping_dns.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${dns1.addr}" -i "ttl="</log-match>
+		</step>
+		
+		<step no="11.1">
+			<desc>
+			    show log buffer ,ping traffic is drop base the routing policy
+			    
+			</desc>
+			<log-file>step11.1_Set_match_map.log</log-file>
+			<console target="br1.br">
+				-v "show log buffer"
+				-v "clear log buffer"
+			</console>
+			<log-match> -i "(i) eth1 ${br1.vpc1.tif.ip}->${cvg1.vpc1.tif.ip}.*icmp-echo-req"</log-match>
+			<log-match> -i " routing done, ${br1.vpc1.tif.ip} -> ${cvg1.vpc1.tif.ip} .*no available route"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="12">
+			<desc>
+				  interface eth0 up
+			</desc>
+			<console target="br1.br">
+				-v "no interface eth0 shutdown"
+				-v "show ip rule"
+			</console>
+		</step>
+		
+		<step no="13" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				br.vpc1 ping dns ,ping is successful
+			</desc>
+			<log-file>step13_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${dns1.addr} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${dns1.addr}" -i "ttl="</log-match>
+		</step>
+		
+		<step no="13.1">
+			<desc>
+				show log buffer,check the ping traffic is forwarded on pppoe interface(ppp1)
+			</desc>
+			<log-file>step13.1.log</log-file>
+			<console target="br1.br">
+				-v "show log buffer"
+				-v "clear log buffered"
+			</console>
+			<log-match> -i "(i) eth1 ${br1.vpc1.tif.ip}->${dns1.addr}.*icmp-echo-req"</log-match>
+			<log-match> -i "iptables FORWARD pkt ${br1.vpc1.tif.ip}(mgt0)->${dns1.addr}(ppp1) "</log-match>
+			<no-error-check />
+		</step>
+		
+	</stage>
+</testcase>

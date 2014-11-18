@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>check device overview functions for switch monitoring </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		switch monitoring
+	</description>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+    <property name="job_selenium_jar" value="${job_selenium_jar}" />
+    <property name="owner.id" value="102" />
+    <property name="access_addr" value="${tb.http_server}" />
+    <property name="login_addr" value="${tb.http_server}/login" />
+    <property name="tmp_policy_name" value="auto_sw_policy" />
+    <property name="tmp_ssid_name" value="auto_ssid" />
+    <property name="tmp_template_name" value="auto_sw_temp" />
+    <property name="job_selenium_port" value="${cloud.selenium.port}" />
+	<property name="job_selenium_log" value="/tmp/selenium-${job.id}.log" />
+	<property name="device_function" value="Switch" />
+	
+	<stage>
+
+        <step no="debu.0">
+            <script>
+                echo ${tb.browser_type}
+                echo "${tb.browser_path}"
+                echo ${tb.browser_type}
+            </script>
+        </step>
+        	
+		<include prefix="start_selenium_server1" file="subs/start_selenium_server_${tb.os}.xml" args="${job_selenium_jar}, ${job_selenium_port}, ${job_selenium_log}, ${tb.browser_type},${tb.browser_path}" />
+	
+		<step no="pre.0">
+			<desc>
+				get access addr
+			</desc>
+			<setvar name="access_addr">
+				echo "${tb.http_server}"
+			</setvar>
+		</step>
+		
+		<step no="pre.1">
+			<desc>
+				get login addr
+			</desc>
+			<setvar name="login_addr">
+				echo "${tb.http_server}/login"
+			</setvar>
+		</step>
+		
+		<step no="pre.2">
+			<desc>
+				get random number
+			</desc>
+			<setvar name="random.number">
+				echo $RANDOM
+			</setvar>
+		</step>
+		
+		<step no="pre.3">
+			<desc>
+				get network policy name
+			</desc>
+			<setvar name="policy_name">
+				echo ${tmp_policy_name}$RANDOM
+			</setvar>
+			
+		</step>	
+		
+		<step no="pre.4">
+			<desc>
+				get device template name
+			</desc>
+			<setvar name="template_name">
+				echo ${tmp_template_name}$RANDOM
+			</setvar>
+		</step>	
+		
+		<step no="pre.5">
+			<desc>
+				get device template name
+			</desc>
+			<setvar name="product_type">
+				echo ${sw1.platform} | sed 's/(..)(.*)/\1_\2/g' -r
+			</setvar>
+		</step>	
+		
+		<step no="pre.6">
+			<desc>show hardware info for switch</desc>
+			<log-file>sw_info.log</log-file>
+			<console target="sw1">
+				-v "show hw-info"
+				-v "show version"
+				-v "show interface mgt0"
+			</console>
+		</step>
+		
+		<step no="pre.7">
+			<desc>get serial number</desc>
+			<setvar name="sn_name">
+				cat ${log.dir}/sw_info.log|grep "Serial number"|awk '{print $3}'|sed '3,$d'
+			</setvar>
+		</step>
+		
+		<step no="pre.8">
+			<desc>get hos version</desc>
+			<setvar name="hos_name">
+				cat ${log.dir}/sw_info.log|grep "Version" |awk '{print $3}'|sed '3,$d'
+			</setvar>
+		</step>
+
+		<step no="pre.9">
+			<desc>get netmask</desc>
+			<setvar name="netmask">
+				${bin.dir}/getbyrexp.py -p "Netmask=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/sw_info.log -t str
+			</setvar>
+		</step>		
+		
+		<step no="pre.10">
+			<desc>get default gateway version</desc>
+			<setvar name="gateway">
+				${bin.dir}/getbyrexp.py -p "Default Gateway:(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/sw_info.log -t str
+			</setvar>
+		</step>		
+
+        <step no="1">
+            <desc>
+                access cloud3.0
+            </desc>
+            <log-file>login_cloud.html</log-file>
+            <file>session_id.log</file>
+            <script>
+                export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/cloud_login_positive.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t ${tb.browser_type} -f ${log.dir}/${log.file} -l debug --preserve-session --parameters visit.pre_url=${login_addr} visit.url=${access_addr} &gt; ${log.dir}/session_id.log
+            </script>
+        </step>
+
+        <step no="2">
+            <desc>
+                get session id
+            </desc>
+            <setvar name="session.id">
+                ${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log -t str
+            </setvar>
+        </step>
+
+		<step no="check.connect.capwap">
+			<desc>
+				1. Check the duttype capwap connect state.
+			</desc>
+			<console target="sw1">
+				-v ""
+				-v "show capwap client"
+				-v ""
+				-v "show running-config"
+				-v ""
+			</console>
+		</step>	
+		
+		<step no="3">
+			<desc>
+				execute script to create sw policy and template, then push config
+			</desc>
+			<log-file>config_push.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/sw_monitor_policy_push.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t ${tb.browser_type} -f ${log.dir}/${log.file} -l debug --preserve-session --parameters dev_mgt0_mac=${sw1.mgt0.mac} sw_policy_name=${policy_name} sw_template_name=${template_name} visit.pre_url=${login_addr} visit.url=${access_addr} --session-id=${session.id}
+			</script>
+		</step>
+		
+		<step no="4">
+			<desc>
+				deploy policy
+			</desc>
+			<log-file>deploy_policy.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/deploy_policy.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --preserve-session --parameters deploy_policy.check_mac=${sw1.mgt0.mac} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l debug
+			</script>
+		</step>				
+
+		<step no="5" delay="120">
+			<desc>
+				show run config
+			</desc>
+			<log-file>running_config.log</log-file>
+			<console target="sw1">
+				-v "show capwap client"
+				-v "show running-config"
+			</console>
+		</step>
+		
+		<step no="6" delay="900">
+			<desc> 
+				delay 11 min to wait the data report from switch to cloud
+			</desc>
+		</step>
+		
+		<step no="7">
+			<desc>
+				check switch overview network details after sw bootup
+			</desc>
+			<log-file>device_overview_check.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/sw_monitor_device_overview_check.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t ${tb.browser_type} -f ${log.dir}/${log.file} -l debug --parameters dev_mgt0_mac=${sw1.mgt0.mac} sw_policy_name=${policy_name} sw_template_name=${template_name} sw_product_name=${product_type} sw_function_name=${device_function} sw_sn_name=${sn_name} sw_hos_ver=${hos_name} sw_mgmt_ip=${sw1.mgt0.ip} sw_netmask=${netmask} sw_gateway=${gateway} visit.pre_url=${login_addr} visit.url=${access_addr} --session-id=${session.id}
+			</script>
+		</step>
+
+	</stage>
+	
+	
+	<post-process>
+		<stage>
+			<include prefix="stop_selenium_server1" file="subs/stop_selenium_server_${tb.os}.xml"  args="${job_selenium_log}"/>
+		</stage>
+	</post-process>
+	
+</testcase>

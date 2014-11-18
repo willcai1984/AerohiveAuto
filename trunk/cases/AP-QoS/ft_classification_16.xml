@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, Incoming pkt base on oui mapping to class 0-7 wifi1 
+	interface Test topology Top1 Device Configuration Portal: ssid DeathKnight interface wifi1 mode access interface wifi1 ssid DeathKnight qos classifier-profile mac mac ssid DeathKnight qos-classifer mac qos classifier-map mac 000fb5 qos 0-7 notice 000fb5 is STA2's oui</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		portal:
+		- Set "_kdebug qos classifi"on CLI
+		- Set "_ff id 1 src-mac sta2's mac"
+		- Set "_kdebug fe basic"
+		- STA2generates traffic,then send to STA1.
+		Expected output
+		- Sniffering the traffic from STA1 incoming mac
+		- look over kdebug message
+		1970-01-02 08:08:07 debug [fe]: (i) wifi1.1
+		18.18.21.12-&gt;18.18.21.7(41) ttl(64) UDP 1976-&gt;10000 28
+		bytes
+		1970-01-02 08:08:07 debug [fe]: MAC session (id [9])
+		found
+		1970-01-02 08:08:07 debug [fe]: QoS: ingress pkt
+		fwd(wifi1.1) profile=0 qos=0-7
+		1970-01-02 08:08:07 debug [fe]: eth0 Tx 000f:b59c:8954 -&gt;
+		001d:0f0a:0c28 type 0x0800 42 bytes
+		1970-01-02 08:08:07 debug [fe]: (o) eth0
+		18.18.21.12-&gt;18.18.21.7(41) ttl(64) UDP 1976-&gt;10000 42
+		bytes
+		1970-01-02 08:08:07 debug [fe]: QoS: pkt forwarded
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<if>"${ap1.wifi1.existed}" =="true"</if>
+
+		<step no="create.ssid">
+			<desc>
+				create ssid
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<include prefix="pre1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="pre3">
+			<desc>
+				get server mac
+			</desc>
+			<script>
+				${bin.dir}/getrmtip.pl -d ${sta1.tif.ip} -u ${tb.dns.user} -p ${tb.dns.passwd} -i ${tb.dns.name} -m | tr '[A-F]' '[a-f]' &gt; ${log.dir}/serveroui.log
+			</script>
+		</step>
+
+		<step no="pre4">
+			<desc>get server oui</desc>
+			<setvar name="server.oui">
+				${bin.dir}/getbyrexp.py -p "(.*?:.*?:.*?):.*?:.*?:.*?" -f ${log.dir}/serveroui.log -t str
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				config qos
+			</desc>
+			<telnet target="ap1">
+				-v "qos classifier-profile diff diffserv"
+				-v "ssid ${ssid.name} qos-classifier diff"
+				-v "qos classifier-map diffserv 13 6"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} dst-ip ${tb.dns} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				- STA1generates DSCP(1-63) traffic,then send to STA2.
+				Expected output
+			</desc>
+			<log-file>send_ip.log</log-file>
+			<ssh host="${sta1.tif.ip}">
+				-v "hping3 ${tb.dns} -o 34 -p 80 -S -V -c 3"
+			</ssh>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "QoS: pkt queued"</log-match>
+			<log-match>-c -i "QoS: pkt forwarded"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\)" -ps p "QoS: ingress pkt fwd\(wifi0.1\) profile=\d+ qos=6" p "Classifier\(wifi0.1:DSCP\) DSCP=13 qos=6" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

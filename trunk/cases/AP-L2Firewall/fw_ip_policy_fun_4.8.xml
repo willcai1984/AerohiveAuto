@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>IP-session delete.(ssid shutdown)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Config ip-policy which permit Laptop's ip_address
+		"ip-policy FW"
+		"ip-policy FW from/to &lt;Laptop ip addr&gt; action permit"
+		"user-profile FW security ip-policy from/to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Server ping Laptop
+		3) Check the ip-session table on AP1
+		4) Shutdown the ssid by cmd
+		"intface wifi[num] ssid &lt;ssid_name&gt; shutdown"
+		5) Check the ip-session table on AP1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "service ftp protocol 6 timeout 300"
+			</console>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				"_ff id 1 dst-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				server ping sta
+			</desc>
+			<log-file>step2_server_ping_sta_successfully.log</log-file>
+			<ssh host="${tb.ftp}">
+				-v "ifconfig ${tb.server1.tif.name}"
+				-v "ping ${sta1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				get ftp mac addr
+			</desc>
+			<setvar name="tb.ftp.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step2_server_ping_sta_successfully.log -i ${tb.server1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				Configure a ip-policy and bind it to FW:
+				"ip-policy FW"
+				"ip-policy FW from/to &lt;Laptop ip addr&gt; action permit"
+				"user-profile FW security ip-policy from/to-access FW"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${sta1.tif.ip} action permit"
+				-v "ip-policy ${user_id} id 2 to ${sta1.tif.ip} action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id} to-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				get file to sta1
+			</desc>
+			<log-file>step4_get_file_to_sta1.log</log-file>
+			<ssh target="sta1" timeout="180">
+				-v "nohup curl -u ${tb.ftp.user}:${tb.ftp.passwd} ftp://${tb.ftp}/${tb.ftp.file3_small} -o /tmp/${tb.ftp.file3_small} --limit-rate 1k > /tmp/${job.id}file.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				check ftp process
+			</desc>
+			<log-file>step4.1_check_ftp_process.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep \"ftp\""
+			</ssh>
+			<log-match>-i "${tb.ftp}"</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				get curl ftp id
+			</desc>
+			<setvar name="ftp.process">
+				${bin.dir}/getbyrexp.py -p "root\s+(\d+)\s+.*${tb.ftp}" -f ${log.dir}/step4.1_check_ftp_process.log -t str
+			</setvar>
+		</step>
+
+		<step no="4.3" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Check the ip-session table on AP1
+			</desc>
+			<log-file>step4.3_show_forwarding_engine_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}.*-&gt; ${tb.ftp}/21.*Proto 6" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.ftp}/21 -&gt; ${sta1.tif.ip}.*Proto 6" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="check.mac.sessions.1">
+			<desc>
+				Check the mac-session
+			</desc>
+			<log-file>check_mac_sessions_1.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine mac-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${tb.ftp.mac}-&gt;${sta1.tif.mac},eth0" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${sta1.tif.mac}-&gt;${tb.ftp.mac},wifi0.1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				Get sessions id
+			</desc>
+			<setvar name="ip_sessions_id">
+				${bin.dir}/getbyrexp.py -p "Id:(\d+);" -e "${tb.ftp}/21 -&gt; ${sta1.tif.ip}.*Proto 6" -f ${log.dir}/step4.3_show_forwarding_engine_ip_sessions.log -s none -g-1 -t str
+			</setvar>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				Get sessions id
+			</desc>
+			<setvar name="mac_sessions_id">
+				${bin.dir}/getbyrexp.py -p "Id:(\d+);" -e "(?i)${sta1.tif.mac}-&gt;${tb.ftp.mac},wifi0.1" -f ${log.dir}/check_mac_sessions_1.log -s none -g-1 -t str
+			</setvar>
+		</step>
+
+		<step no="4.6">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step4.6_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${tb.ftp}\(\d+\) ttl\(\d+\) TCP" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[${user_id}\] id \[1\] \[permit\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${tb.ftp}\(\d+\) ttl\(\d+\) TCP" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.7">
+			<desc>
+				"no _kdebug fe basic"
+				"no _kdebug fe detail"
+				"_kdebug fe session"
+				"clear log buffered"
+			</desc>
+			<telnet target="ap1">
+				-v "no _kdebug fe basic"
+				-v "no _kdebug fe detail"
+				-v "_kdebug fe session"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Shutdown the ssid
+			</desc>
+			<log-file>step5.1_shutdown_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+				-v ""
+				-v "show interface"
+			</telnet>
+			<log-match>-i "Wifi0.1 " -p 4 -i "D"</log-match>
+		</step>
+
+		<step no="check.mac.sessions.2">
+			<desc>
+				Check the mac-session
+			</desc>
+			<log-file>check_mac_sessions_2.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine mac-sessions"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${tb.ftp.mac}-&gt;${sta1.tif.mac},eth0" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${sta1.tif.mac}-&gt;${tb.ftp.mac},n/a" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.2" delay="60">
+			<desc>
+				Check the ip-session table on AP1
+			</desc>
+			<log-file>step5.2_show_forwarding_engine_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}.*-&gt; ${tb.ftp}/21.*Proto 6" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.ftp}/21 -&gt; ${sta1.tif.ip}.*Proto 6" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step5.3_show_loging_buffered.log</log-file>
+			<console target="ap1" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)invalidate MAC sess \(${mac_sessions_id}\) for \(\d+\) seconds, reason \(station-deletion\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)invalidate IP sess \(${ip_sessions_id}\) for \(\d+\) seconds, reason \(MAC-session-ageout\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				kill server ping process
+				delete file
+			</desc>
+			<ssh target="sta1">
+				-v "kill ${ftp.process}"
+				-v "rm -f /tmp/${tb.ftp.file3_small}"
+				-v "rm -f /tmp/${job.id}file.log"
+			</ssh>
+		</step>
+	</stage>
+
+	<failed-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					kill server ping process
+				</desc>
+				<ssh target="sta1">
+					-v "kill ${ftp.process}"
+					-v "rm -f /tmp/${tb.ftp.file3_small}"
+					-v "rm -f /tmp/${job.id}file.log"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_failed_process.xml" />
+	</failed-process>
+</testcase>

@@ -1,0 +1,410 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Network firewall "To" IP/wildcard test</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP
+		Enable 3 dhcp server（mgt0.1 mgt0.2 mgt0.3）
+		Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+		Mgt0.2 vlan20 IPaddr 10.2.20.1 gateway 10.2.20.1
+		Mgt0.3 vlan30 IPaddr 10.1.30.1 gateway 10.1.30.1
+		Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+		Laptop2 connect to Mgt0.2 IPaddr 10.2.20.2
+		Laptop3 connect to Mgt0.3 IPaddr 10.1.30.2
+
+		Test Procedure:
+		1) Laptop2 ping Laptop1 and Laptop3
+		2) Configure network firewall rule
+		"network-firewall name 1001 to wildcard 10.1.10.2 255.255.0.255 action permit
+		logging off"
+		"network-firewall name 1002 from any to any action deny logging off"
+		3) Laptop2 ping Laptop1 and Laptop3
+		4) Delete network firewall config
+		"no network-firewall"
+		5) Laptop2 ping Laptop1 and Laptop3
+		6) Configure network firewall rule
+		"network-firewall name 1001 to wildcard 10.1.10.2 255.255.0.255 action permit
+		logging off"
+		"network-firewall name 1002 from any to any action deny logging off"
+		7) Laptop2 ping Laptop1 and Laptop3
+		8) Delete network firewall config on AP1
+		"no
+		network-firewall"
+		9) Laptop2 ping Laptop1 and Laptop3
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<property name="br.vpc.netmask" value="255.255.0.255" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP
+				Enable 3 dhcp server（mgt0.1 mgt0.2 mgt0.3
+				Mgt0.1 vlan11 IPaddr 10.1.11.1 gateway 10.1.11.1
+				Mgt0.2 vlan12 IPaddr 10.1.12.1 gateway 10.1.12.1
+				Mgt0.3 vlan13 IPaddr 10.1.13.1 gateway 10.1.13.1
+				Laptop1 connect to Mgt0.1 IPaddr 10.1.11.2 (user-profile name up11)
+				Laptop2 connect to Mgt0.2 IPaddr 10.1.12.2 (user-profile name up12)
+				Laptop3 connect to Mgt0.3 IPaddr 10.1.13.2 (user-profile name up13)
+			</desc>
+			<console target="br1.br">
+				-v "interface ${br1.br.wan.int1} mode wan"
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/24"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "vlan ${br1.vpc2.vlan}"
+				-v "interface vlan ${br1.vpc2.vlan}"
+				-v "interface vlan${br1.vpc2.vlan} ip ${br1.br.mgt0.2.ip}/24"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "vlan ${br1.vpc3.vlan}"
+				-v "interface vlan ${br1.vpc3.vlan}"
+				-v "interface vlan${br1.vpc3.vlan} ip ${br1.br.mgt0.3.ip}/24"
+				-v "interface vlan${br1.vpc3.vlan} dhcp-server options default-gateway ${br1.br.mgt0.3.ip}"
+				-v "interface vlan${br1.vpc3.vlan} dhcp-server ip-pool ${br1.br.mgt0.3.ip_pool_start} ${br1.br.mgt0.3.ip_pool_start}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc3.vlan} dhcp-server enable"
+			</console>
+		</step>
+
+		<step no="1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<console target="br1.br">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+				-v "interface ${br1.br.lan.int2} switchport mode trunk"
+				-v "user-profile lan3 qos-policy def-user-qos vlan-id ${br1.vpc3.vlan} attribute 3"
+				-v "interface ${br1.br.lan.int3} switchport mode access"
+				-v "interface ${br1.br.lan.int3} switchport access vlan ${br1.vpc3.vlan}"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="1.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>br1.vpc2 get ip addr from dhcp server of mgt0.2</desc>
+			<log-file>ifconfig_vpc2_.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ifconfig ${br1.vpc2.tif.name} down"
+				-v "ifconfig ${br1.vpc2.tif.name} up"
+				-v "dhclient ${br1.vpc2.tif.name} -r"
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.4">
+			<desc>set br1.vpc2.tif.ip var for vpc2 on BR side</desc>
+			<setvar name="br1.vpc2.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc2.mif.ip} -u ${br1.vpc2.user} -p ${br1.vpc2.passwd} -i ${br1.vpc2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				AP1 as Laptop1 connect to lan port eth3
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vlan3}"
+				-v "interface mgt0 native-vlan ${br1.vlan3}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="1.6" delay="20">
+			<desc>
+				show AP1 mgt0
+			</desc>
+			<log-file>step1.6_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.7">
+			<desc>get ip address of ap1</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step1.6_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.8" delay="10">
+			<desc>show interface eth0 on BR</desc>
+			<log-file>step1.8_show_br1.br_eth0.log</log-file>
+			<console target="br1.br">
+				-v "show interface ${br1.br.wan.int1} dhcp client"
+			</console>
+		</step>
+
+		<step no="1.9">
+			<desc>get eth0 ip of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "Get IP address (\d+\.\d+\.\d+\.\d+) from" -f ${log.dir}/step1.8_show_br1.br_eth0.log -t str
+			</setvar>
+		</step>
+
+
+		<step no="open.debug">
+			<desc>
+				"_ff id 1 src-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc2.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>br1.vpc2 ping br1.vpc1</desc>
+			<log-file>step2_vpc2_ping_vpc1.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${br1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>br1.vpc2 ping ap1</desc>
+			<log-file>step3_vpc2_ping_ap1.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${br1.ap1.mgt0.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Configure network firewall rule
+				“network-firewall name 1001 to wildcard 10.1.10.2 255.255.0.255 action permit logging on”
+				“network-firewall name 1002 from any to any action deny logging on”
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+				-v "network-firewall name 1001 to wildcard ${br1.vpc1.tif.ip} ${br.vpc.netmask} action permit logging on"
+				-v "network-firewall name 1002 from any to any action deny logging on"
+			</telnet>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>br1.vpc2 ping br1.vpc1</desc>
+			<log-file>step5_vpc2_ping_vpc1.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${br1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<include prefix="5.1" file="subs/save_ap_log.xml" args="show logging buffered, br1.br, step5.1_show_logging_buffered.log" />
+
+		<step no="5.2">
+			<desc>
+				check log
+			</desc>
+			<log-file>step5.1_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ACCEPT PACKET: SRC=${br1.vpc2.tif.ip} DST=${br1.vpc1.tif.ip} PROTO=ICMP TYPE=\d+ CODE=\d+ \(RULE=1001\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5.3">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>br1.vpc2 ping ap1</desc>
+			<log-file>step6_vpc2_ping_ap1.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${br1.ap1.mgt0.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<include prefix="6.1" file="subs/save_ap_log.xml" args="show logging buffered, br1.br, step6.1_show_logging_buffered.log" />
+
+		<step no="6.2">
+			<desc>
+				check log
+			</desc>
+			<log-file>step6.1_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "DROP PACKET: SRC=${br1.vpc2.tif.ip} DST=${br1.ap1.mgt0.ip} PROTO=ICMP TYPE=\d+ CODE=\d+ \(RULE=1002\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6.3">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				Delete network firewall config
+				"no network-firewall"
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no network-firewall"
+			</telnet>
+		</step>
+
+		<step no="8" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>br1.vpc2 ping br1.vpc1</desc>
+			<log-file>step8_vpc2_ping_vpc1.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${br1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>br1.vpc2 ping ap1</desc>
+			<log-file>step9_vpc2_ping_ap1.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${br1.ap1.mgt0.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				Configure network firewall rule
+				“network-firewall name 1001 to wildcard 10.1.10.2 255.255.0.255 action permit logging on”
+				“network-firewall name 1002 from any to any action deny logging on”
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+				-v "network-firewall name 1001 to wildcard ${br1.vpc1.tif.ip} ${br.vpc.netmask} action permit logging on"
+				-v "network-firewall name 1002 from any to any action deny logging on"
+			</telnet>
+		</step>
+
+		<step no="11" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>br1.vpc2 ping br1.vpc1</desc>
+			<log-file>step11_vpc2_ping_vpc1.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${br1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<include prefix="11.1" file="subs/save_ap_log.xml" args="show logging buffered, br1.br, step11.1_show_logging_buffered.log" />
+
+		<step no="11.2">
+			<desc>
+				check log
+			</desc>
+			<log-file>step11.1_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ACCEPT PACKET: SRC=${br1.vpc2.tif.ip} DST=${br1.vpc1.tif.ip} PROTO=ICMP TYPE=\d+ CODE=\d+ \(RULE=1001\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="11.3">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="12">
+			<desc>br1.vpc2 ping ap1</desc>
+			<log-file>step12_vpc2_ping_ap1.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${br1.ap1.mgt0.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<include prefix="12.1" file="subs/save_ap_log.xml" args="show logging buffered, br1.br, step12.1_show_logging_buffered.log" />
+
+		<step no="12.2">
+			<desc>
+				check log
+			</desc>
+			<log-file>step12.1_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "DROP PACKET: SRC=${br1.vpc2.tif.ip} DST=${br1.ap1.mgt0.ip} PROTO=ICMP TYPE=\d+ CODE=\d+ \(RULE=1002\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="12.3">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="13">
+			<desc>
+				Delete network firewall config on br1.br
+				"no network-firewall"
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no network-firewall"
+			</telnet>
+		</step>
+
+		<step no="14" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>br1.vpc2 ping br1.vpc1</desc>
+			<log-file>step14_vpc2_ping_vpc1.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${br1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="15" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>br1.vpc2 ping ap1</desc>
+			<log-file>step15_vpc2_ping_ap1.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${br1.ap1.mgt0.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+	</stage>
+</testcase>

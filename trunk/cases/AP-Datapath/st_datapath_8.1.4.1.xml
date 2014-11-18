@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Arp refresh on ap and eth interfaces</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-laptop and pc are in same vlan
+
+		Test Procedure:
+		-laptop connects with ap, pass authentication, result 1
+		-laptop ping pc, result 2
+		-clear arp table on ap
+		-pc ping laptop, result 3
+		-pc ping laptop again after some time (before arp entry is deleted)
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}_1" />
+
+	<stage>
+		<step no="pre1.1">
+			<desc>
+				-configure AP1 as MP1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="translate_mac">
+			<multi-setvar>
+				echo "sta1.tif.mac=$(echo ${sta1.tif.mac} | tr "A-F" "a-f")"
+			</multi-setvar>
+		</step>
+
+		<step no="1.2" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				1: there is arp entry of laptop on ap
+			</desc>
+			<log-file>step1.2_show_arp_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "AP" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="2.1a">
+			<desc>
+				enable debug
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="2.1b" file="subs/sta_ping.xml" args="sta1, ${mpc.tif.ip}, 4" />
+
+		<step no="2.1c" delay="10">
+			<desc>
+				make sure sta1.mac is not aged out
+			</desc>
+			<log-file>step2.1c_show_arp.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "AP" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="2.1d">
+			<desc>
+				-clear arp table on ap
+			</desc>
+			<log-file>step2.1d_show_arp.log</log-file>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>show interface of mpc</desc>
+			<log-file>step3.2_show_interface.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name} &gt; ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="3.2b">
+			<desc>get raw mac address of mpc</desc>
+			<setvar name="mpc.tif.mac1">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step3.2_show_interface.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.2c">
+			<desc>get mac of mpc</desc>
+			<setvar name="mpc.tif.mac">
+				echo $(echo $(echo $(echo ${mpc.tif.mac1} | cut -d : -f1)$(echo ${mpc.tif.mac1} | cut -d : -f2,3)$(echo ${mpc.tif.mac1} | cut -d : -f4,5)$(echo ${mpc.tif.mac1} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>-pc ping laptop, result 3</desc>
+			<log-file>step3.3_ping.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 4 &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${sta1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="3.4" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				there is arp entry of pc on ap
+			</desc>
+			<log-file>step3.4_show_arp_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${mpc.tif.mac}" -i "ETH" -i "${mpc.tif.ip}"</log-match>
+		</step>
+
+		<step no="4.1d">
+			<desc>
+				-clear arp on linux mpc
+			</desc>
+			<log-file>step4.1d_clear_arp.log</log-file>
+			<script>
+				ip neigh flush dev ${mpc.tif.name}
+			</script>
+		</step>
+
+		<step no="4.1c">
+			<desc>
+				-pc ping laptop again after some time (before arp entry is deleted)
+			</desc>
+			<log-file>step4.1c_ping.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 4 &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${sta1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="4.2" delay="10">
+			<desc>
+				arp entry of pc on ap should be refreshed, ageout time refresh
+			</desc>
+			<log-file>step4.2_show_log_buff.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "kernel: \[fe_arp\]: Refresh this arpc entry ${mpc.tif.ip} ${mpc.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-checck />
+		</step>
+	</stage>
+</testcase>

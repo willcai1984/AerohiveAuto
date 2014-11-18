@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Laptops link to the different wifi port, ssid and vlan</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptops has been associated with AP1 and assigned an ip address
+
+		Test Procedure:
+		1) Laptops link to different wifi port, ssid and vlan on AP1
+		2) Disable Inter-ssid-flood on AP1:
+		"no forwarding-engine inter-ssid-flood enable"
+		3) Laptop1 sends broadcast or multicast packet
+		4) Check the packets' process on AP1
+		5) Enable Inter-ssid-flood on AP1:
+		"forwarding-engine inter-ssid-flood enable"
+		6) Repeat step 3-4
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn2.ssid" value="${ssid.name}_1" />
+	<property name="conn2.pif" value="wifi1" />
+	<property name="conn2.channel" value="36" />
+
+	<stage>
+		<if>"${ap1.wifi1.existed}" == "true"</if>
+	
+		<step no="1">
+			<desc>
+				-Configure AP1 via console(configure the first ssid)
+			</desc>
+			<console target="ap1">
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile ${conn1.ssid} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				-Configure AP1 (configure the second ssid)
+			</desc>
+			<console target="ap1">
+				-v "security-object ${conn2.ssid}"
+				-v "security-object ${conn2.ssid} default-user-profile-attr 2"
+				-v "ssid ${conn2.ssid}"
+				-v "ssid ${conn2.ssid} security-object ${conn2.ssid}"
+				-v "interface wifi1 ssid ${conn2.ssid}"
+				-v "interface wifi1 radio channel 36"
+				-v "user-profile ${conn2.ssid} qos-policy def-user-qos vlan-id ${tb.vlan2} attribute 2"
+				
+			</console>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="4.3">
+			<desc>
+				-Get laptop2's interface associated to the ap1
+				-Show ssid2's info
+			</desc>
+			<log-file>step4.3_ssid2_info_log.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${conn2.ssid}"
+			</telnet>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				-Get ap1 inter associated to laptop2's info
+			</desc>
+			<setvar name="ap1.ssid2.inter">
+				${bin.dir}/getstring.pl -k "Bind interfaces" -p 3 -f ${log.dir}/step4.3_ssid2_info_log.log | awk '{print tolower($0)}'
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				-Disable inter-ssid-flood on ap1 and open debug
+			</desc>
+			<telnet target="ap1">
+				-v "no forwarding-engine inter-ssid-flood enable"
+				-v "_ff id 1 src-mac ${sta1.tif.mac} dst-mac ffff:ffff:ffff"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "clear forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<include prefix="5.1" file="subs/sta_send_arp.xml" args="sta1, ${tb.ftp} , 1" />
+
+		<step no="5.2" delay="10">
+			<desc>
+				-Confirm arp request cannot be sent out to laptop2
+			</desc>
+			<log-file>step5.2_arp_request_log.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-i "inter-ssid food is disabled, don't flood on ${ap1.ssid2.inter}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				-Enable inter-ssid-flood on ap1 and clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug wifi-driver wifi1.2 extend vlan"
+				-v "forwarding-engine inter-ssid-flood enable"
+				-v "clear log buffered"
+				-v "clear forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-Clear arp
+			</desc>
+			<ssh target="sta1">
+				-v "arp -n | awk '/^[1-9]/ {print \"arp -d \"\$1}' | sh #"
+			</ssh>
+		</step>
+ 
+	<include prefix="6.2" file="subs/sta_send_arp.xml" args="sta1, ${tb.ftp} , 1" />
+
+		<step no="6.3" delay="10">
+			<desc>
+				-Confirm arp request can be sent out to laptop2
+			</desc>
+			<log-file>step6.3_arp_request_log.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "wifi1.2: drop multicast packet due to vlan mismatch"</log-match>
+			<log-match>-n -c -i "inter-ssid food is disabled, don't flood on ${ap1.ssid.inter}"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) ${ap1.ssid2.inter} ${sta1.tif.mac}->f+:f+:f+ arp ${sta1.tif.ip}\(${sta1.tif.mac}\)->${tb.ftp}\(0+:0+:0+\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

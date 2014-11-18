@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Proxy ARP between ap interfaces in portal topo</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+		-laptops are in same vlan
+
+		Test procedure:
+		- clear arp table on both laptop1,laptop2
+		- clear arp table on ap
+		- laptop1 ping laptop2, should be successful
+		- clear arp table on laptop1(execute “arp –d” cmd)
+		Laptop1 send arp request to get mac of laptop2. Result 1
+
+		Expect result:
+		1: AP reply this request instead of laptop2, and do not flood this arp to eth0,wifi1 and wifi0 interface.(“_kdebu fe basic” and “_kdebug fe_arp basic” to see)
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config ssid, hive info and then bind them to interface
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="4">
+			<desc>
+				-open debug and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe_arp basic"
+				-v "_kdebu fe basic"
+				-v "_ff id 1 src-mac ${sta2.tif.mac} etype 0806 bidirectional"
+				-v "_ff id 2 src-mac ${sta1.tif.mac} etype 0806 bidirectional"
+				-v "clear arp-cache"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				-clear arp on sta
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step5_clear_sta2_arp.log</log-file>
+			<staf target="sta2">
+				-v "arp -d ${sta1.tif.ip}"
+			</staf>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-clear arp on sta
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step5.1_clear_sta2_arp.log</log-file>
+			<ssh target="sta2">
+				-v "ip neigh flush dev ${sta2.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="6">
+			<desc>
+				-clear arp on sta
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step6_clear_sta1_arp.log</log-file>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-clear arp on sta
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step6.1_clear_sta1_arp.log</log-file>
+			<staf target="sta1">
+				-v "arp -d ${sta2.tif.ip}"
+			</staf>
+		</step>
+
+		<include prefix="7" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 5" />
+
+		<include prefix="7.1" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 5" />
+
+		<step no="8">
+			<desc>
+				- clear arp table on ap
+			</desc>
+			<log-file>step8_arp_clear.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "AP *${sta1.tif.ip}"</log-match>
+			<log-match>-c -i "${sta2.tif.mac}" -i "AP *${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				-clear arp on windows sta PC3
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step9_clear_sta1_arp.log</log-file>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				-clear arp on windows sta PC3
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step9.1_clear_sta1_arp.log</log-file>
+			<staf target="sta1">
+				-v "arp -d ${sta2.tif.ip}"
+			</staf>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="10" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 5" />
+
+		<step no="11" delay="20">
+			<desc>
+				show logging buffered on ap
+			</desc>
+			<log-file>step11_show_logging_bufffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(r) wifi0.1 ${sta2.tif.mac}-&gt;${sta1.tif.mac} arp ${sta2.tif.ip}(${sta2.tif.mac})-&gt;${sta1.tif.ip}(${sta1.tif.mac})"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP reply to ${sta1.tif.ip}: ${sta2.tif.ip} is at mac=${sta2.tif.mac}"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP REQ to AP (ARP Reply: IP=${sta2.tif.ip} mac=${sta2.tif.mac})"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				-clear arp on sta
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step12_clear_sta2_arp.log</log-file>
+			<ssh target="sta2">
+				-v "ip neigh flush dev ${sta2.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				-clear arp on sta
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step12.1_clear_sta2_arp.log</log-file>
+			<staf target="sta2">
+				-v "arp -d ${sta1.tif.ip}"
+			</staf>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="13" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 5" />
+
+		<step no="14" delay="20">
+			<desc>
+				show logging buffered on ap
+			</desc>
+			<log-file>step14_show_logging_bufffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(r) wifi0.1 ${sta1.tif.mac}-&gt;${sta2.tif.mac} arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${sta2.tif.ip}(${sta2.tif.mac})"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP reply to ${sta2.tif.ip}: ${sta1.tif.ip} is at mac=${sta1.tif.mac}"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP REQ to AP (ARP Reply: IP=${sta1.tif.ip} mac=${sta1.tif.mac})"</log-match>
+		</step>
+	</stage>
+</testcase>

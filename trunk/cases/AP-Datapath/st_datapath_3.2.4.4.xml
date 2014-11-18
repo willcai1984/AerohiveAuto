@@ -1,0 +1,287 @@
+<testcase>
+	<brief>DHCP pkt process for laptop which connects to mpp</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofap>3</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Topology to use
+		Laptop1---Mp2---Mp1---Portal------Switch------DHCP server
+		Objective
+		DHCP pkt process for laptop which connects to mpp
+		Pre-condition
+		Laptop1 and DHCP server are in same vlan
+		Make sure wifi0 and wifi1 are up on portal AP and Mp1 and Mp2(You can bind a ssid to wifi0 and make a neighbor via wifi1)
+		Test procedure
+		-laptop connects to Mp2
+		-laptop will send dhcp discovery/request pkt to get ip address
+		check the FE debug to see.
+		Meet result 1,2,3,4,5
+		-laptop will receive dhcp offer/ack pkt to get ip address
+		check the FE debug to see.
+		Meet result 6,7,8
+		Expect result
+		1:Laptop can get ip address
+		2:MP2 will do special handle for DHCP discovery/request pkt:
+		Only send this pkt to wifi1 interface,pls make sure not send to wifi0
+		3:Mp1 receive the pkt from wifi1 and forward it only from wifi1.
+		4:Mp2 receive the pkt from Mp1 and drop it.
+		5:Portal receive the pkt from Mp1 and forward it only from eth0.
+		6:Portal receive the pkt from switch and forward it only from wifi1.
+		7:Mp1 receive the pkt from
+		Portal and forward it only form wifi1.
+		8. Mp2 receive the Pkt from Mp1 and forward it to specifical wifi0.x not other wifi0.x or wifi1.
+	</description>
+	<stage>
+		<if>"${ap.eth1.existed}" == "true" &amp;&amp; "${ap.wifi1.existed}" == "true"</if>
+		<step no="0.1">
+			<desc>show interface the wifi1 mac of ap3</desc>
+			<log-file>show_ap3_interface.log</log-file>
+			<telnet target="ap3">
+				-v "show interface wifi1.1"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="0.2">
+			<desc>get the wifi1 mac of ap3</desc>
+			<setvar name="ap3.wifi1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap3_interface.log -i wifi1.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>show interface the eth0 mac of ap3</desc>
+			<log-file>show_ap3_interface_eth0.log</log-file>
+			<telnet target="ap3">
+				-v "show interface eth0"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="0.4">
+			<desc>get the eth0 mac of ap3</desc>
+			<setvar name="ap3.eth0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap3_interface_eth0.log -i eth0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="0.5">
+			<desc>show interface the wifi1 mac of ap1</desc>
+			<log-file>ap1_show_interface.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="0.6">
+			<desc>get the wifi1 mac of ap1</desc>
+			<setvar name="ap1.wifi1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ap1_show_interface.log -i wifi1.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="0.5">
+			<desc>show interface the wifi1 mac of ap2</desc>
+			<log-file>show_interface_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1.1"
+				-v ""
+			</telnet>
+		</step>
+		<step no="0.6">
+			<desc>get the wifi1 mac of ap2</desc>
+			<setvar name="ap2.wifi1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_ap2.log -i wifi1.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>Set up DUT1 interface through sw menu</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface wifi1 radio channel 36"
+			</console>
+		</step>
+		<step no="pre1.1">
+			<desc>
+				-show interface mgt0 in ap1
+			</desc>
+			<log-file>step_pre1.1c_show_interface_mgt0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="pre1.2">
+			<desc>
+				Get mgt0 ap in ap1
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step_pre1.1c_show_interface_mgt0_ap1.log -t str
+			</setvar>
+		</step>
+
+		<step no="2.1">
+			<desc>Set up ap2 as mp</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface eth0 shutdown"
+				-v "interface eth1 shutdown"
+				-v "interface wifi1 radio channel 36"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>configure ssid at mpp</desc>
+			<console target="ap3">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi1 radio channel 36"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="3.3">
+			<desc>Set up ap3 as mpp </desc>
+			<console target="ap3">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security mac-filter filter default deny"
+				-v "security mac-filter filter address ${ap2.wifi1.mac} permit"
+				-v "hive ${hive.name} security mac-filter filter"
+				-v "interface eth0 shutdown"
+				-v "interface eth1 shutdown"
+				-v "interface wifi1 radio channel 36"
+			</console>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>check the amrp neighbour</desc>
+			<log-file>show_amrp_${loop_check.idx}.log</log-file>
+			<console target="ap3">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>-i "${ap2.wifi1.mac}" -i "TWO" </log-match>
+			<log-match>-n -i "${ap1.wifi1.mac}" -i "TWO"</log-match>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>check wether ap3 can get ip</desc>
+			<log-file>mpp_mgt0_${loop_check.idx}.log</log-file>
+			<console target="ap3">
+				-v "show interface mgt0 "
+			</console>
+			<log-match>-i "${tb.vlan1}"</log-match>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap3" />
+
+
+		<step no="7">
+			<desc>open debug at ap1</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-port 67 bi"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered "
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>open debug at ap3</desc>
+			<console target="ap3">
+				-v "_ff id 1 dst-port 67 bi"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all "
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="9">
+			<desc>open debug at ap2</desc>
+			<console target="ap2">
+				-v "_ff id 1 dst-port 67 bi"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all "
+				-v "save config"
+			</console>
+		</step>
+
+		<include prefix="10" file="subs/sta_dhcp_check.xml" obj-args="sta1" args="ingore" />
+
+		<step no="11">
+			<desc>check the log at portal</desc>
+			<log-file>portal.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "no _kdebug fe basic"
+				-v "no _kdebug fe all"
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(i) wifi1.1 0.0.0.0->255.255.255.255" -i "DHCP Discover"</log-match>
+			<log-match>-i "(o) eth0 0.0.0.0->255.255.255.255" -i "DHCP Discover"</log-match>
+			<log-match>-i "(u) mgt0 0.0.0.0->255.255.255.255" -i "DHCP Discover"</log-match>
+			<log-match>-i "eth1 drop illegal broadcast, route ifp wifi1.1"</log-match>
+			<log-match>-i "(!) eth1 0.0.0.0->255.255.255.255" -i "DHCP Discover"</log-match>
+			<log-match>-i "(i) eth0 ${tb.vlan1.gw}->${sta1.tif.ip}" -i "DHCP Offer"</log-match>
+			<log-match>-i "(o) wifi1.1 ${tb.vlan1.gw}->${sta1.tif.ip}" -i "DHCP Offer"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>check the log at mp</desc>
+			<log-file>mp.log</log-file>
+			<console target="ap2" timeout="200">
+				-v "no _kdebug fe basic"
+				-v "no _kdebug fe all"
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi1.1 0.0.0.0->255.255.255.255" -i "DHCP Discover"</log-match>
+			<log-match>-i "(o) wifi1.1 0.0.0.0->255.255.255.255" -i "DHCP Discover"</log-match>
+			<log-match>-i "(u) mgt0 0.0.0.0->255.255.255.255" -i "DHCP Discover"</log-match>
+			<log-match>-i "(i) wifi1.1 ${tb.vlan1.gw}->${sta1.tif.ip}" -i "DHCP Offer"</log-match>
+			<log-match>-i "(o) wifi1.1 ${tb.vlan1.gw}->${sta1.tif.ip}" -i "DHCP Offer"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>check the log at mpp</desc>
+			<log-file>mpp.log</log-file>
+			<console target="ap3" timeout="200">
+				-v "no _kdebug fe basic"
+				-v "no _kdebug fe all"
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.1 0.0.0.0->255.255.255.255" -i "DHCP Discover"</log-match>
+			<log-match>-i "(o) wifi1.1 0.0.0.0->255.255.255.255" -i "DHCP Discover"</log-match>
+			<log-match>-i "(u) mgt0 0.0.0.0->255.255.255.255" -i "DHCP Discover"</log-match>
+			<log-match>-i "wifi1.1 drop illegal broadcast from ${ap2.wifi1.mac} route-nhop ${ap3.eth0.mac}"</log-match>
+			<log-match>-i "(i) wifi1.1 ${tb.vlan1.gw}->${sta1.tif.ip}" -i "DHCP Offer"</log-match>
+			<log-match>-i "(o) wifi0.1 ${tb.vlan1.gw}->${sta1.tif.ip}" -i "DHCP Offer"</log-match>
+		</step>
+
+	</stage>
+
+</testcase>

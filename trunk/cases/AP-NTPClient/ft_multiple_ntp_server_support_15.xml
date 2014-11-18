@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>What would happen when receive NTP server from DHCP server, at the same time, the NTP server was set by CLI before</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Configure NTP server in DHCP server and NTP service be enabled in NTP server
+		Configure NTP server for AP by CLI and save config and NTP service be enabled in NTP server
+		Reboot AP
+
+		Test Procedure:
+		After bootup, set filter in AP, open kdebug fe basic and debug ssh:
+		_ff id 1 dst-port 123 bidirectional
+		_kdebug fe basic
+		debug ssh
+		Open _debug ntp all and debug ssh
+		Run interface mgt0 dhcp client to obtain IP address and other options from DHCP server
+		Check which NTP server be used
+		Check if time synchronization between AP and NTP server
+		5. Reboot then check the above again
+
+		Expect result
+		Show _ff can check filter
+		After command be executed, need check:
+		debug of sync with NTP server not be printed out(dhcp client didn’t affect ntp, when CLI configured with high priority)
+		show interface mgt0 dhcp client can see IP address and NTP server be obtained
+		Configured NTP server be used, display active
+		Time synchronization
+		NTP should work normal
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+		<step no="0">
+			<desc>
+				no pre-configure
+			</desc>
+			<ssh target="ap1">
+				-v "no ntp server ${pub.ntp1.ip}"
+				-v "show run"
+			</ssh>
+		</step>
+		<!-- Set NTP server is ntp2 on AP when the dhcp option is ntp1, AP can sync with the ntp server you config on AP -->
+		<step no="1">
+			<desc>
+				Show dhcp client status
+			</desc>
+			<log-file>step1_dhcp_client_status.log</log-file>
+			<ssh target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</ssh>
+			<log-match>-i "NTP server" -i "${pub.ntp1.ip}"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				Configure NTP server for AP by CLI
+			</desc>
+			<ssh target="ap1">
+				-v "ntp server ${pub.ntp2.ip}"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				open ntp debug
+			</desc>
+			<ssh target="ap1">
+				-v "_ff id 1 dst-port 123 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_debug ntp all"
+				-v "clear log buffered"
+			</ssh>
+		</step>
+
+		<step no="4">
+			<desc>
+				-Enable ntp to trigger
+			</desc>
+			<ssh target="ap1">
+				-v "ntp enable"
+			</ssh>
+		</step>
+
+		<step no="5" delay="5">
+			<desc>
+				Check time synchronization status
+			</desc>
+			<log-file>step5_check_time_synchronization.log</log-file>
+			<ssh target="ap1" timeout="300">
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-c -i "1 NTP servers has been configured"</log-match>
+			<log-match>-c -i "trying 1 times on ${pub.ntp2.ip}"</log-match>
+			<log-match>-c -i "Connect \[${pub.ntp2.ip}\] successful"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				show dhcp client status
+			</desc>
+			<log-file>step6_dhcp_client_status.log</log-file>
+			<ssh target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</ssh>
+			<log-match>-i "NTP server" -i "${pub.ntp1.ip}"</log-match>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Check NTP server
+			</desc>
+			<log-file>step7_show_ntp_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show ntp"
+			</ssh>
+			<log-match>-c -i "State: *Enable"</log-match>
+			<log-match>-c -i "First *${pub.ntp2.ip}" -i "active"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step8.1_check_time.log</log-file>
+			<ssh host="${pub.ntp2.ip}">
+				-v "clock"
+			</ssh>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step8.2_check_time.log</log-file>
+			<ssh target="ap1">
+				-v "show clock"
+			</ssh>
+		</step>
+
+		<step no="9">
+			<desc>
+				Reboot then check the above again
+			</desc>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>
+
+		<include prefix="9.1" file="subs/ap_renew_ip.xml" obj-args="ap1" />
+
+
+		<step no="10">
+			<desc>
+				open ntp debug switch
+			</desc>
+			<ssh target="ap1">
+				-v "_ff id 1 dst-port 123 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_debug ntp all"
+				-v "clear log buffered"
+			</ssh>
+		</step>
+
+		<step no="11">
+			<desc>
+				Enable mgt0 dhcp client
+			</desc>
+			<ssh target="ap1">
+				-v "ntp enable"
+			</ssh>
+		</step>
+
+		<step no="12" delay="5">
+			<desc>
+				Check time synchronization status
+			</desc>
+			<log-file>step12_check_time_synchronization.log</log-file>
+			<ssh target="ap1" timeout="300">
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-e "1 NTP servers has been configured"</log-match>
+			<log-match>-e "trying 1 times on ${pub.ntp2.ip}"</log-match>
+			<log-match>-e "Connect \[${pub.ntp2.ip}\] successful"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="13">
+			<desc>
+				show dhcp client status to check the ntp info get from dhcp server is ntp1
+			</desc>
+			<log-file>step13_dhcp_client_status.log</log-file>
+			<ssh target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</ssh>
+			<log-match>-i "NTP server" -i "${pub.ntp1.ip}"</log-match>
+		</step>
+
+		<step no="14" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Check NTP server's active ntp server is ntp2
+			</desc>
+			<log-file>step14_show_ntp_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show ntp"
+			</ssh>
+			<log-match>-e "State: *Enable"</log-match>
+			<log-match> -i "First *${pub.ntp2.ip}" -i "active"</log-match>
+		</step>
+
+		<step no="15.1">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step151_check_time.log</log-file>
+			<ssh host="${pub.ntp2.ip}">
+				-v "date"
+			</ssh>
+		</step>
+
+		<step no="15.2">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step152_check_time.log</log-file>
+			<ssh target="ap1">
+				-v "show clock"
+			</ssh>
+		</step>
+
+	</stage>
+
+</testcase>

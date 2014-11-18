@@ -1,0 +1,520 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Network firewall log "logging on" test</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP
+		Enable 2 dhcp server（mgt0.1 mgt0.2）
+		Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+		Mgt0.2 vlan20 IPaddr 10.1.20.1 gateway 10.1.20.1
+		Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+		Laptop2 connect to Mgt0.2 IPaddr 10.1.20.2
+		Laptop3 connect to Mgt0.1 IPaddr 10.1.10.3
+
+		Test Procedure:
+		1) Laptop1 and Laptop3 ping Laptop2 100 packets
+		2) Show logging and look up the network firewall logs
+		"show logging buffered | include l3-fw"
+		3) Configure network firewall rule
+		"network-firewall name 1001 from network 10.1.10.2 255.255.255.255 to
+		network 10.1.20.2 255.255.255.255 action permit logging on"
+		"network-firewall name 1002 from any to any action deny logging off"
+		4) Laptop1 and Laptop3 ping Laptop2 100 packets
+		5) Show logging and look up the network firewall logs
+		"show logging buffered | include l3-fw"
+		6) Delete network firewall config
+		"no network-firewall"
+		7) Configure network firewall rule
+		"network-firewall name 1001 from network 10.1.10.2 255.255.255.255 to
+		network 10.1.20.2
+		255.255.255.255 action deny logging on"
+		"network-firewall name 1002 from any to any action deny logging off"
+		8) Laptop1 and Laptop3 ping Laptop2 100 packets
+		9) Show logging and look up the network firewall logs
+		"show logging buffered | include l3-fw"
+		10) Delete network firewall config on AP1
+		"no network-firewall"
+		11) Laptop1 and Laptop3 ping Laptop2 100 packets
+		12) Show logging and look up the network firewall logs
+		"show logging buffered | include l3-fw"
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+	
+	<property name="br1.vpc1.mac_1" value="255.255.255.255" />	
+        <property name="value.id" value="4" />
+	<stage>
+		<step no="1">
+			<desc>
+				config CVG act as l3 VPN server
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="3">
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:certs/server_cert.pem"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:certs/server_key.pem"
+				-v "vpn xauth-client-list ${hive.name}_List local"
+				-v "vpn xauth-client-list ${hive.name}_List client-name ${br1.br.name} password aerohive"
+				-v "vpn server-ipsec-tunnel ${hive.name}_Server vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${hive.name}_Server client-list ${hive.name}_List"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel ${hive.name}_Server"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.mgt0.supermask}"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				enable ospf on CVG eth1
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="3">
+				-v "routing protocol ospf advertise eth1"
+				-v "routing protocol ospf router-id ${cvg1.cvg.lan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				config BR with WAN interface, nat enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "interface mgt0 ip ${br1.br.mgt0.ip}/${cvg1.cvg.wan.netmask}"				
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Show interface eth0 dhcp client to check if DNS server be obtained
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0 dhcp client"
+			</telnet>
+			<log-match>-i "DNS server" -i "192.168.10.201"</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				config mgt0.1 with dhcp service enable,dns service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.1 dns-server int-domain-name ${cvg1.dns1.domain1}"
+				-v "interface mgt0.1 dns-server int-resolve dns1 ${cvg1.dns1.ip}"
+				-v "interface mgt0.1 dns-server ext-resolve dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dns-server enable"
+			</telnet>
+		</step>		
+
+		<step no="2.3">
+			<desc>
+				Set interface eth0 to wan mode,eth1 to access mode and enable mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+			        -v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"				
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"				
+			</telnet>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				config BR as l3 VPN client
+			</desc>
+			<console target="br1.br">
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "vpn client-ipsec-tunnel ${br1.br.name}_client_ipsec_1 vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${br1.br.name}_client_ipsec_1 gateway ${cvg1.cvg.mip.ip} client-name ${br1.br.name} password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel ${br1.br.name}_client_ipsec_1 primary"
+				-v "routing route-request enable"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${cvg1.cvg.wan.netmask}"
+			</console>
+		</step>
+		
+		<step no="2.5">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		
+		<step no="2.6">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+	
+
+		<step no="3" delay="20" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				check vpn ike sa on BR1 side
+			</desc>
+			<log-file>step3_ike_sa_br_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.mip.ip}\[4500\]"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				check vpn ike sa on CVG side
+			</desc>
+			<log-file>step3.1_ike_sa_cvg_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="3">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "R" -i "${pub.br_fw.ip}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.2">
+			<desc>
+				check gre tunnel on br1 side
+			</desc>
+			<log-file>step3.2_show_gre_tunnel_br.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.mip.ip}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.3">
+			<desc>
+				check gre tunnel on cvg side
+			</desc>
+			<log-file>step3.3_show_gre_tunnel_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="3">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.4">
+			<desc>
+				BR check route
+			</desc>
+			<log-file>step3_show_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				cvg1 check route
+			</desc>
+			<log-file>step3.1_show_ip_route.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "show ip route"
+			</telnet>
+		</step>		
+
+		<step no="4">
+			<desc>
+				_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 1 bidirectional
+				_kdebug fe basic
+				_kdebug fe detail
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+		
+		<step no="5" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				br1.vpc1 ping cvg1.vpc1
+			</desc>
+			<log-file>step5_vpc1_ping_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c ${value.id}"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>		
+
+		<step no="6.1" delay="10">
+			<desc>
+				Show logging and look up the network firewall logs
+			</desc>
+			<log-file>step6.1_check_log.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="6.2">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>		
+
+		<step no="6.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Laptop2 ping Laptop1
+			</desc>
+			<log-file>step6.3_Laptop2_ping_Laptop1_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v " ping ${br1.vpc1.tif.ip} -c ${value.id}"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="6.4" delay="10">
+			<desc>
+				Show logging and look up the network firewall logs
+			</desc>
+			<log-file>step6.4_check_log.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="7">
+			<desc>
+				Configure network firewall rule
+				“network-firewall name 1001 from network 10.1.10.2 255.255.255.255 to vpn action permit logging on”
+				"network-firewall name 1002 from vpn to network 10.1.10.2 255.255.255.255 action permit logging on"
+				“network-firewall name 1002 from any to any action deny logging off”
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+				-v "network-firewall name 1001 from network ${br1.vpc1.tif.ip} ${br1.vpc1.mac_1} to vpn action permit logging on"
+				-v "network-firewall name 1002 from vpn to network ${br1.vpc1.tif.ip} ${br1.vpc1.mac_1} action permit logging on"
+				-v "network-firewall name 1003 from any to any action deny logging off"
+			</telnet>
+		</step>
+		
+		<step no="8" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				br1.vpc1 ping cvg1.vpc1
+			</desc>
+			<log-file>step8_vpc1_ping_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c ${value.id}"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				check log
+			</desc>
+			<log-file>step8.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ACCEPT PACKET: SRC=${br1.vpc1.tif.ip} DST=${cvg1.vpc1.tif.ip} PROTO=ICMP TYPE=8 CODE=0 \(RULE=1001\)" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8.2">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Laptop2 ping Laptop1
+			</desc>
+			<log-file>step8.3_Laptop2_ping_Laptop1_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v " ping ${br1.vpc1.tif.ip} -c ${value.id}"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="8.4" delay="10">
+			<desc>
+				Show logging and look up the network firewall logs
+			</desc>
+			<log-file>step8.4_check_log.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ACCEPT PACKET: SRC=${cvg1.vpc1.tif.ip} DST=${br1.vpc1.tif.ip} PROTO=ICMP TYPE=8 CODE=0 \(RULE=1002\)" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="9">
+			<desc>
+				Delete network firewall config
+				"no network-firewall"
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no network-firewall"
+			</telnet>
+		</step>
+
+		<step no="10">
+			<desc>
+				Configure network firewall rule
+				“network-firewall name 1001 from network 10.1.10.2 255.255.255.255 to network 10.1.20.2 255.255.255.255 action deny logging on”
+				“network-firewall name 1002 from any to any action deny logging off”
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+				-v "network-firewall name 1001 from network ${br1.vpc1.tif.ip} ${br1.vpc1.mac_1} to vpn action deny logging on"
+				-v "network-firewall name 1002 from vpn to network ${br1.vpc1.tif.ip} ${br1.vpc1.mac_1} action deny logging on"
+				-v "network-firewall name 1003 from any to any action deny logging off"
+			</telnet>
+		</step>
+		
+		<step no="11">
+			<desc>
+				br1.vpc1 ping cvg1.vpc1
+			</desc>
+			<log-file>step11_vpc1_ping.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c ${value.id}"
+			</ssh>
+			<log-match>-n -c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				check log
+			</desc>
+			<log-file>step11.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "DROP PACKET: SRC=${br1.vpc1.tif.ip} DST=${cvg1.vpc1.tif.ip} PROTO=ICMP TYPE=8 CODE=0 \(RULE=1001\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="11.2">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11.3">
+			<desc>
+				Laptop2 ping Laptop1
+			</desc>
+			<log-file>step11.3_Laptop2_ping_Laptop1.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v " ping ${br1.vpc1.tif.ip} -c ${value.id}"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="11.4" delay="30">
+			<desc>
+				Show logging and look up the network firewall logs
+			</desc>
+			<log-file>step11.4_check_log.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "DROP PACKET: SRC=${cvg1.vpc1.tif.ip} DST=${br1.vpc1.tif.ip} PROTO=ICMP TYPE=8 CODE=0 \(RULE=1002\)" -f ${log.dir}/${log.file}</log-match>			
+			<no-error-check />			
+		</step>
+
+		<step no="12">
+			<desc>
+				Delete network firewall config
+				"no network-firewall"
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no network-firewall"
+				-v "clear log all"
+			</telnet>
+		</step>
+		
+		<step no="13" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				br1.vpc1 ping cvg1.vpc1
+			</desc>
+			<log-file>step13_vpc1_ping_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c ${value.id}"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="13.1" delay="10">
+			<desc>
+				Show logging and look up the network firewall logs
+			</desc>
+			<log-file>step13.1_check_log.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "DROP PACKET" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ACCEPT PACKET" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="13.2">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="13.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Laptop2 ping Laptop1
+			</desc>
+			<log-file>step13.3_Laptop2_ping_Laptop1_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v " ping ${br1.vpc1.tif.ip} -c ${value.id}"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="13.4" delay="10">
+			<desc>
+				Show logging and look up the network firewall logs
+			</desc>
+			<log-file>step13.4_check_log.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "DROP PACKET" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ACCEPT PACKET" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

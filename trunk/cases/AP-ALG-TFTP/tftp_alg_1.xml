@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Wireless client download a file from tftp server</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		security-object zhhtest
+		security-object zhhtest default-user-profile-attr 1
+		ssid zhhtest
+		ssid zhhtest security-object zhhtest
+		interface wifi0 ssid zhhtest
+		user-profile uu qos-policy def-user-qos vlan-id 1 attribute 1
+		ip-policy xx
+		ip-policy xx id 1 service tftp action permit
+		ip-policy xx id 2 service dhcp-server action permit
+		ip-policy xx id 3 service dhcp-client action permit
+		ip-policy xx id 4 service icmp action permit
+		user-profile uu security ip-policy from-access xx
+		alg tftp enable
+		Laptop connect to SSID and obtain ip address
+		_debug fe alg_tftp_error
+		_debug fe alg_tftp_fsm
+		_debug fe alg_tftp_gate
+		_debug fe alg_tftp_pkt
+		_ff id 1 src-mac xxxx:yyyy:zzzz bidirectional
+		_kdebug fe basic
+		_kdebug fe detail
+		debug console
+		clear forwarding-engine ip-sessions
+
+		Test Procedure:
+
+		1. Wireless client download a file from tftp server, check if ip-gate and
+		control/data session can be created
+		2. After download file completed, check if data session be deleted
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="tftp_test_file_local_dir" value="/tmp" />
+	<stage>
+		<step no="1">
+			<desc>
+				Config AP,alg tftp disbale
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite open"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile fw qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "ip-policy fw"
+				-v "ip-policy fw service tftp action permit"
+				-v "ip-policy fw service dhcp-server action permit"
+				-v "ip-policy fw service dhcp-client action permit"
+				-v "ip-policy fw service icmp action permit"
+				-v "user-profile fw security ip-policy from-acces fw to-access fw"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				Open debug, alg tftp disbale
+			</desc>
+			<ssh target="ap1">
+				-v "_debug fed alg_tftp_error"
+				-v "_debug fed alg_tftp_fsm"
+				-v "_debug fed alg_tftp_gate"
+				-v "_debug fed alg_tftp_pkt"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				Download a file from tftp server to client,alg tftp disbale
+			</desc>
+			<log-file>4.1_curl_pid.log</log-file>
+			<ssh target="sta1">
+				-v "nohup curl --connect-timeout 20 tftp://${tb.tftp}/${tb.ftp.file3_small} -o ${tftp_test_file_local_dir}/${tb.ftp.file3_small} --limit-rate 50k> ${tftp_test_file_local_dir}/4.1_stdout.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+
+		<step no="4.2.1" type="loop-check" loop-max-times="6" loop-interval="5">
+			<desc>
+				Show forwarding-engine ip-sessions,alg tftp disbale
+			</desc>
+			<log-file>4.2.1_show_forwarding_ip_sessions_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+ -> ${tb.tftp}/69; Proto 17;" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.tftp}/69 -> ${sta1.tif.ip}/\d+; Proto 17;" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+ -> ${tb.tftp}/\d+; Proto 17;" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.tftp}/\d+ -> ${sta1.tif.ip}/\d+; Proto 17;" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.2.2">
+			<desc>
+				show log buffer,alg tftp disbale
+			</desc>
+			<log-file>4.2.2_show_log_buffer.log</log-file>
+			<ssh target="ap1">
+				-v "show log buffer"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="4.3">
+			<desc>
+				Get pid of "curl get",alg tftp disbale
+			</desc>
+			<setvar name="noalg.curl.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/4.1_curl_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4.4" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				Wait for process end,alg tftp disbale
+			</desc>
+			<log-file>step4.4_wait_process_stop_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep ${noalg.curl.pid}"
+			</ssh>
+			<log-match>-n -e "curl"</log-match>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				Check "curl get" result,alg tftp disbale
+			</desc>
+			<log-file>4.5_check_file.log</log-file>
+			<ssh target="sta1">
+				-v "cat ${tftp_test_file_local_dir}/4.1_stdout.log"
+			</ssh>
+			<no-error-check />
+			<log-match>-e "curl:.*(timed out|Timeout|couldn't connect to host|Connection time-out|The server failed to connect to data port|Transport endpoint is not connected)" -re</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				Config AP, alg tftp enbale
+			</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "alg tftp enable"
+			</ssh>
+		</step>
+
+		<step no="6.1" delay="5">
+			<desc>
+				Download a file from tftp server to client, alg tftp enbale
+			</desc>
+			<log-file>6.1_curl_pid.log</log-file>
+			<ssh target="sta1">
+				-v "nohup curl --connect-timeout 30 tftp://${tb.tftp}/${tb.ftp.file3_small} -o ${tftp_test_file_local_dir}/${tb.ftp.file3_small} --limit-rate 50k> ${tftp_test_file_local_dir}/6.1_stdout.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="6.2" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				-Show forwarding-engine ip-sessions, alg tftp enbale
+			</desc>
+			<log-file>6.2.1_show_forwarding_ip_sessions_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+ -> ${tb.tftp}/69; Proto 17;" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.tftp}/69 -> ${sta1.tif.ip}/\d+; Proto 17;" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+ -> ${tb.tftp}/\d+; Proto 17;" -c 2 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.tftp}/\d+ -> ${sta1.tif.ip}/\d+; Proto 17;" -c 2 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.2.2">
+			<desc>
+				show log buffer, alg tftp enbale
+			</desc>
+			<log-file>6.2.2_show_log_buffer.log</log-file>
+			<ssh target="ap1">
+				-v "show log buffer"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="6.3">
+			<desc>
+				Get pid of "curl get",alg tftp enbale
+			</desc>
+			<setvar name="alg.curl.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/6.1_curl_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.4" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				Wait for process end, alg tftp enbale
+			</desc>
+			<log-file>step6.4_wait_process_stop_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep ${alg.curl.pid}"
+			</ssh>
+			<log-match>-n -e "curl"</log-match>
+		</step>
+
+		<step no="6.5">
+			<desc>
+				Check "curl get" result, alg tftp enbale
+			</desc>
+			<log-file>6.5_check_file.log</log-file>
+			<ssh target="sta1">
+				-v "cat ${tftp_test_file_local_dir}/6.1_stdout.log"
+			</ssh>
+			<no-error-check />
+			<log-match>-n -e "curl:.*(timed out|Timeout|couldn't connect to host|Connection time-out|The server failed to connect to data port|Transport endpoint is not connected)" -re</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "100\s+\d+\w\s+100" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+	</stage>
+
+</testcase>

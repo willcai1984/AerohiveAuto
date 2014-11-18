@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that a specified account or index range of accounts can be removed without remove all the accounts.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Configure and bind a PPSK SSID.
+		Configure a user group, password auto generated, without setting the time range.
+		Set the user group to the PPSK SSID.
+
+		Test Procedure:
+		1. Configure a user group: password auto generated
+		2. Generate some user accounts for the user group by index 1 to 10
+		3. Check the user accounts list. [result 1]
+		4. Remove one of the generated user accounts by index 2.
+		#no user-group ug01 auto-generation in 2
+		5. Check the user accounts list. [result 2]
+		6. Try to connect to the PPSK SSID using the user account of index 2. [result 3]
+		7. Remove a range of generated user accounts by index
+		#no user-group ug01 auto-generation in 5 9
+		8. Check the user accounts list. [result 4]
+		9. Try to connect to the PPSK SSID using the user account of index 5. [result 5]
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Configure and bind a PPSK SSID.
+				-Configure a user group, password auto generated, without setting the time range.
+				-Set the user group to the PPSK SSID.
+			</desc>
+			<ssh target="ap1">
+				-v "_debug auth info"
+				-v "clear log all"
+				-v "user-group userGroup"
+				-v "user-group userGroup password-generation-method auto"
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key aerohive"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "security-object ppsk security private-psk"
+				-v "user-profile ttt vlan-id 1 attribute 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-group userGroup auto-generation index-range 1 10"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				show ap1's interface wifi0.1 info
+			</desc>
+			<log-file>show_ap1_interface_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				get ap1's wifi0.1's mac address
+			</desc>
+			<setvar name="ap1.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_interface_info.log -i wifi0.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="2" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step2_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "generated for user"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.remove.value1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup0003\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.remove.value2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup0005\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				show user
+			</desc>
+			<log-file>step4_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match loop-values="01,02,03,04,05,06,07,08,09,10">-c -i "userGroup00${loop.v}" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				4. Remove one of the generated user accounts by index 2.
+				#no user-group ug01 auto-generation in 2
+			</desc>
+			<telnet target="ap1">
+				-v "no user-group userGroup auto-generation index-range 3"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				show user
+			</desc>
+			<log-file>step5.1_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match loop-values="01,02,04,05,06,07,08,09,10">-c -i "userGroup00${loop.v}" -i "Yes *userGroup"</log-match>
+			<log-match>-n -c -i "userGroup0003"</log-match>
+		</step>
+
+		<step no="pre.conn1.psk">
+			<desc>set value of psk</desc>
+			<setvar name="conn1.psk">
+				echo "${ppsk.remove.value1}"
+			</setvar>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="wpa-tkip-psk" />
+		<property name="conn1.auth_negative_test" value="true" />
+		<property name="conn1.dhcp_negative_test" value="true" />
+		<step no="clear_log">
+			<ssh target="ap1">
+				-v "clear log b"
+			</ssh>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />		
+		<step no="7" delay="5">
+			<desc>
+				check the logging result
+			</desc>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<log-match>-c -i "sta ${sta1.tif.mac} is disassociated from ${ap1.wifi0.mac}(wifi0.1) in driver"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) at ${ap1.wifi0.mac}(wifi0.1, ${ssid.name}) EAPOL-Key timeout"</log-match>
+			<log-match>-c -i "invalid MIC in msg 2/4 of 4-Way Handshake"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				7. Remove a range of generated user accounts by index
+				#no user-group ug01 auto-generation in 5 9
+			</desc>
+			<telnet target="ap1">
+				-v "no user-group userGroup auto-generation index-range 5 9"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				show user
+			</desc>
+			<log-file>step8.1_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match loop-values="01,02,04,10">-c -i "userGroup00${loop.v}" -i "Yes *userGroup"</log-match>
+			<log-match loop-values="03,05,06,07,08,09">-n -c -i "userGroup00${loop.v}"</log-match>
+		</step>
+
+		<step no="pre.conn2.psk">
+			<desc>set value of psk</desc>
+			<setvar name="conn2.psk">
+				echo "${ppsk.remove.value2}"
+			</setvar>
+		</step>
+
+		<property name="conn2.ssid" value="${ssid.name}" />
+		<property name="conn2.proto" value="wpa-tkip-psk" />
+		<property name="conn2.auth_negative_test" value="true" />
+		<property name="conn2.dhcp_negative_test" value="true" />
+
+		<include prefix="9" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="10">
+			<desc>show log buffer</desc>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<ssh target="ap1">
+				-v "show log b"
+			</ssh>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				check the logging result
+			</desc>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<log-match>-c -i "sta ${sta1.tif.mac} is disassociated from ${ap1.wifi0.mac}(wifi0.1) in driver"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) at ${ap1.wifi0.mac}(wifi0.1, ${ssid.name}) EAPOL-Key timeout"</log-match>
+			<log-match>-c -i "invalid MIC in msg 2/4 of 4-Way Handshake"</log-match>
+		</step>
+	</stage>
+</testcase>

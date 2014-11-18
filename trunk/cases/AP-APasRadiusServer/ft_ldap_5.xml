@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>attribute mapping is working</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configed first
+		-setup a ssid using wpa-auto-802.1x,radius server is local
+		-config a minimal ldap
+		-enable cache
+
+		Test Procedure:
+		-config the attribute on openldap server side
+		-config the attribute map
+		-client connect to ssid
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="reauth.time.to.minute" value="10" />
+	<property name="acct1.CallbackId" value="${tb.vlan2}" />
+	<property name="acct1.ServiceType" value="600" />
+	<property name="acct1.CallbackNumber" value="2" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-aes-8021x" />
+	<property name="conn1.username" value="${job.sid}-aerohive" />
+	<property name="conn1.passwd" value="aerohive" />
+
+	<stage>
+		<include prefix="add.account" file="subs/ldap_add.xml" args="${job.sid}-aerohive, aerohive" obj-args="acct1" />
+
+		<step no="0">
+			<desc>config hive info</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-auto-8021x" />
+
+
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type ldap-server primary server ${pub.ldap1.ip}"
+				-v "aaa radius-server local db-type ldap-server primary basedn ${pub.ldap1.basedn}"
+				-v "aaa radius-server local db-type ldap-server primary binddn ${pub.ldap1.binddn} pass ${pub.ldap1.bindpwd}"
+				-v "aaa radius-server local attr-map user-profile-attr-name radiusCallbackNumber"
+				-v "aaa radius-server local attr-map vlan-attr-name radiusCallbackId"
+				-v "aaa radius-server local attr-map reauth-attr-name radiusServiceType"
+				-v "aaa radius-server local en"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "user-profile sss qos-policy def-user-qos vlan-id 1 attribute 2"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.aaa-chk">
+			<desc>show status of radius server</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3 -c</log-match>
+		</step>
+
+		<step no="4">
+			<desc>open debug mode and clear log all</desc>
+			<telnet target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>show logging buffered</desc>
+			<log-file>log_on_ap.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Tunnel-Private-Group-Id:\d+\s*=\s*\"${acct1.CallbackId}\"" -p "Tunnel-Private-Group-Id:0 = \"${acct1.CallbackNumber}\"" -p "Session-Timeout = ${acct1.ServiceType}" -e "Sending Access-Accept of id \d+ to ${ap1.forwards.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				- 'sh ssid xxx sta',
+			</desc>
+			<log-file>step7_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " ${acct1.CallbackId} *yes *${acct1.CallbackNumber}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-'sh roa ca mac xxx'
+			</desc>
+			<log-file>step8_show_roaming.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache mac ${sta1.tif.mac}"
+			</telnet>
+			<log-match>-i "User Profile ID: ${acct1.CallbackNumber}"</log-match>
+			<log-match>-i "VLAN ID: ${acct1.CallbackId}"</log-match>
+			<log-match>-c -i "Session time: ${acct1.ServiceType} seconds"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				-'sh auth'
+			</desc>
+			<log-file>step9_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${acct1.ServiceType} *done" </log-match>
+			<log-match>-c -i "${sta1.tif.mac}" -p 9 -i "WPA/CCMP"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				-'sh aaa radius cache'
+			</desc>
+			<log-file>step10_show_radius_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server cache"
+			</telnet>
+			<log-match>-c -i "${acct1.CallbackId} *${acct1.CallbackNumber} *${reauth.time.to.minute}" -i "${job.sid}-aerohive"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="delete.account" file="subs/ldap_delete.xml" args="${job.sid}-aerohive" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

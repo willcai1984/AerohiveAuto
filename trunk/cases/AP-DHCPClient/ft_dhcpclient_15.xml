@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify one MPP without static IP address can get IP address from DHCP server1 or DHCP server2.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		- Verify IP, Net mask, DNS, Default gateway, lease time etc. are configured
+		in DHCP server1 and DHCP server 2
+		- Either Wi-Fi interface or Ethernet interface is fully tested.
+		- Verify the route access testing is successful.
+		- Verify no IP address has been set in MPP1.
+
+		Test Procedure:
+		1. Run DHCP client.
+		- interface mgt dhcp client
+		2. Show mgt0 IP.
+		- show interface mgt0
+		3. Focus on the network traffic
+		- MPP1 ping WS1
+		-MPP1 ping www.google.com
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="mgt0.1_ip" value="192.168.${tb.vlan2}.100" />
+	<property name="pub.lease.time" value="600" />
+	<property name="ap.lease.time" value="80" />
+
+	<stage>
+		<step no="pre.0">
+			<desc>
+				-shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="pre.1">
+			<desc>
+				-shutdown eth1
+			</desc>
+			<if>"${ap2.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0">
+			<desc>
+				- Config dhcp server info
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0.1 vlan ${tb.vlan2}"
+				-v "interface mgt0.1 ip ${mgt0.1_ip}/24"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.1 dhcp-server ip-pool ${tb.vlan2.dhcp_start} ${tb.vlan2.dhcp_end}"
+				-v "interface mgt0.1 dhcp-server options lease-time ${ap.lease.time}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${tb.vlan2.gw}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server options domain-name ${pub.dns1.domain1}"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				- config hive info
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan2}"
+			</console>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				- close dhcp client
+			</desc>
+			<console target="ap2">
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="2.3" delay="5">
+			<desc>
+				- open dhcp client
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="3" delay="30">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step3_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-c -i "Netmask" -i "255.255.255.0"</log-match>
+			<log-match>-c -i "DNS server" -i "${pub.dns1.ip}"</log-match>
+			<log-match>-c -i "DNS domain" -i "${pub.dns1.domain1}"</log-match>
+			<log-match>-c -i "Relay agent ${tb.vlan2.gw}"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "Get IP address 192.168.${tb.vlan2}.\d+ from the server" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>Get ap2's rssi</desc>
+			<setvar name="server.ip">
+				${bin.dir}/getbyrexp.py -p "Get IP address 192.168.${tb.vlan2}.\d+ from the server (\d+.\d+.\d+.\d+)" -f ${log.dir}/step3_show_interface_mgt0_dhcp_client.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				check server is between dhcp server1 and dhcp server2
+			</desc>
+			<log-file>step3.2_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "'${server.ip}' == '${mgt0.1_ip}' or '${server.ip}' == '${pub.dhcp.ip}'" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<if>"${server.ip}" == "${pub.dhcp.ip}"</if>
+			<log-file>step3_show_interface_mgt0_dhcp_client.log</log-file>
+			<log-match>-c -i "Lease time: ${pub.lease.time} seconds;"</log-match>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<if>"${server.ip}" == "${mgt0.1_ip}"</if>
+			<log-file>step3_show_interface_mgt0_dhcp_client.log</log-file>
+			<log-match>-c -i "Lease time: ${ap.lease.time} seconds;"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				- show interface mgt0
+			</desc>
+			<log-file>step4_show_interface_mgt0.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "IP addr=192.168.${tb.vlan2}.\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step4_show_interface_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				- MPP1 ping WS1
+			</desc>
+			<log-file>step5_ping.log</log-file>
+			<telnet target="ap2">
+				-v "ping ${mpc.tif.ip} count 5"
+			</telnet>
+			<log-match>-c -i "from ${mpc.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-MPP1 ping www.google.com
+			</desc>
+			<log-file>step5.1_ping.log</log-file>
+			<telnet target="ap2">
+				-v "ping ${pub.dnstest.name1} count 5"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ping\s+${pub.dnstest.name1}\.${pub.dns1.domain1}\s+\(${pub.dnstest.ip1}\)\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

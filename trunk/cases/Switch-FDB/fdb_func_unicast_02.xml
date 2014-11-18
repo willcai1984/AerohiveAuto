@@ -1,0 +1,186 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=2) Enable mac learning, check one vlan can’t support a duplicated mac entry, but different vlan support</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	
+
+		IXIA port1+++++(access)switch(access)++++++IXIA port2
+
+		Description	Enable mac learning, check one vlan can’t support a duplicated mac entry, but different vlan support.
+		Platform Dependence	Chesapeake
+		Pre-condition	?	FDB table size doesn’t exceed
+		?	IXIA port1, port2 connect to switch access port1, port2
+		?	Switch port1 with pvid 10
+		?	Switch port2 with pvid 10
+		?	Switch access ports are with learning/forwarding state
+		Test procedure	1.	Set mac learning enabled for vlan 10
+		CLI: mac-address-table  learning  vlan  10
+		2.	IXIA port1 send frames to switch with src mac 0000-1111-1111     Result1
+		3.	IXIA port2 send frames to switch with src mac 0000-1111-1111    Result2
+
+		4.	Change the switch port2 vlan with pvid 20
+		CLI: Mac-learning-table learning vlan 20
+		5.	IXIA port1 send frames to switch with src mac 0000-2222-2222       Result3
+		6.	IXIA port2 send frames to switch with src mac 0000-2222-2222       Result4
+		Expect result	Result1:   switch add the mac entry with [0000-1111-1111,vlan10, port1]
+		Result2:   switch update the existent mac entry as [0000-1111-1111, vlan 10, port2];
+		The same mac entry for port1 doesn’t exist.
+		Result3:   switch  add the mac entry with  [0000-2222-2222, Vlan10, Port1]
+		Result4:   switch add the mac entry with [0000-2222-2222, Vlan20, Port2]
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+
+	<stage>
+		<step no="1">
+			<desc>
+				configure two access ports in same vlans
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show mac-address-table all"
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				port1 and port2 send pkts with same mac ${sw1.port1.ixia_port.mac}
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- configure the sencond stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port2.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="2.2">
+			<desc>change the mac format</desc>
+			<setvar name="mac1">
+				echo "${sw1.port1.ixia_port.mac}"| sed 's/\./:/g'
+			</setvar>
+		</step>
+		<step no="2.3">
+			<desc>check FDB</desc>
+			<log-file>show_FDB1.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.vlan1}\s*${mac1}" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				change port2 to vlan${tb.vlan2}
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan2}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show vlan id ${tb.vlan2}"
+				-v "show mac-address-table all"
+			</telnet>
+		</step>	
+		<step no="4.1">
+			<desc>
+				port1 and port2 send pkts with same mac ${sw1.port1.ixia_port.mac}
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- configure the sencond stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port2.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="4.2">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1.ixia_port.mac}\s*${sw1.port1}"</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port1.ixia_port.mac}\s*${sw1.port2}"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

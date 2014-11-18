@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify SNMP server with v2c and v3 can work normal Precondition AP setting: snmp traphost v2c a.b.c.d community hivecommunity snmp traphost v3 admin test auth md5 password 11111111 encryption aes password 22222222 snmp traphost v3 a.b.c.d admin test snmp trapinfo oversnmp Use Ethereal to capture snmp packet in PC</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test Procedure:
+		Generate trap in AP, verify if trap will be sent to SNMP server
+		with v2c and v3
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				remove tmpfile
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f /tmp/tshark_log.pcap"
+			</ssh>
+		</step>
+
+		<step no="1">
+			<desc>
+				Generate trap in AP
+			</desc>
+			<telnet target="ap1">
+				-v "snmp trap-host v2c ${tb.server1} community hivecommunity"
+				-v "snmp trap-host v3 admin test auth md5 password 11111111 encryption aes password 22222222"
+				-v "snmp trap-host v3 ${tb.server1} admin test"
+				-v "snmp trap-info over-snmp"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				_test trap-case alert alarmalert
+			</desc>
+			<telnet target="ap1">
+				-v "_test trap-case alert alarmalert"
+			</telnet>
+		</step>
+
+		<step no="3" delay="20">
+			<desc>check log file,verify if trap will be sent to SNMP server with v2c and v3</desc>
+			<log-file>check_log_file.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Internet Protocol, Src: ${ap1.mgt0.ip} \(${ap1.mgt0.ip}\), Dst: ${tb.server1} \(${tb.server1}\)" -ps p "msgVersion: snmpv3" p "Destination port: snmptrap" -e "Frame \d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Internet Protocol, Src: ${ap1.mgt0.ip} \(${ap1.mgt0.ip}\), Dst: ${tb.server1} \(${tb.server1}\)" -ps p "version: v2c" p "sNMPv2-Trap" -e "Frame \d+" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					kill tshark
+				</desc>
+				<ssh target="tb.server1">
+					-v "kill ${process_id}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

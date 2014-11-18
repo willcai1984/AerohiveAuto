@@ -1,0 +1,152 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unit Test 0101: In initial deployment, customer power on AP, AP's mgt0 gets IP address by DHCP, then connect to NMS to download initial configuration, which sets eth0 interface to wan mode, (AP will enable eth0's DHCP client automatically), disable mgt0's DHCP client. After reboot, AP will act as a L3 device, eth0 is wan interface with DHCP client enabled, mgt0 acts as default gateway for downlink stations. Wired clients connected to eth1 should be able to access Internet via AP.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		No precondition. Start from factory reset.
+
+		Test Procedure:
+		Upgrade AP's image, reset config, then reboot.
+		After reboot, set eth0 to wan mode; disable mgt0's DHCP client, config mgt0 IP,
+		enable mgt0 DHCP server, set default gateway to mgt0 IP; set eth1 mode to access,
+		then reboot.
+		CLI commands:
+		no interface mgt0 dhcp client
+		interface eth0 mode wan
+		interface mgt0 ip &lt;MGT0_IP/MASK&gt;
+		interface mgt0 dhcp-server enable
+		interface mgt0 dhcp-server ip-pool &lt;START_IP&gt; &lt;END_IP&gt;
+		interface mgt0 dhcp-server options default-gateway &lt;MGT0_IP&gt;
+		interface mgt0 dhcp-server options dns1 218.108.248.200
+		interface eth1 mode bridge-access
+		interface eth1 mac-learning enable
+		show running-config
+		save config
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+	        
+		<step no="1">
+			<desc>
+				set eth1 mode to access
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+			    -v "no interface m0 dhcp-server enable"
+			    -v "interface m0 dhcp-server enable"
+				-v "interface mgt0 vlan ${br1.vlan1}"
+				-v "user-profile FW"
+				-v "user-profile FW vlan-id ${br1.vlan1} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				check eth0 with wan mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0"
+			</telnet>
+			<log-match>-c -i "Mode=wan"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				show interface eth0 dhcp client
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0 dhcp client"
+			</telnet>
+			<log-match>-c -i "Get IP address ${br1.br.wan.ip}"</log-match>
+			<log-match>-c -i "Router" -i "${br1.br.fw_lan.gw}"</log-match>
+			<log-match>-c -i "DNS server" -i "${pub.dns1.ip}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				show ip route
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-c -p 2 -i "${br1.br.fw_lan.gw}" -p 4 -i "UG" -p 8 -i "eth0"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				br1.vpc1 show ip address got from mgt0 dhcp client
+			</desc>
+			<log-file>step5_ifconfig_br1_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc> get vpc ip addr</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_ifconfig_br1_vpc1.log -p "inet addr:(\d+.\d+.\d+.\d+)\s+" -t str
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc> get vpc mac addr</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step5_ifconfig_br1_vpc1.log -i ${br1.vpc1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				show interface m0 dhcp-server detail
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface m0 dhcp-server detail"
+			</telnet>
+			<log-match>-c -i "${br1.vpc1.tif.mac}" -i "${br1.vpc1.tif.ip}"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff dst-ip ${pub.dns1.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				Wired Ping logs when br with wan mode
+			</desc>
+			<log-file>step6.1_ping_br.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(o\) eth1 ${pub.dns1.ip}->${br1.vpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-reply" -ps p "(?i)\(i\) mgt0 ${pub.dns1.ip}->${br1.vpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-reply" p "(?i)\(i\) eth0 ${pub.dns1.ip}->${br1.br.wan.ip}\(\d+\) ttl\(\d+\) icmp-echo-reply" p "(?i)\(o\) eth0 ${br1.br.wan.ip}->${pub.dns1.ip}\(\d+\) ttl\(\d+\) mtu\(1500\) icmp-echo-req" p "(?i)\(u\) mgt0 ${br1.vpc1.tif.ip}->${pub.dns1.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" p "(?i)ip forward: ip pkt with dst-ip ${pub.dns1.ip} received on eth1" -e "(?i)\(i\) eth1 ${br1.vpc1.tif.ip}->${pub.dns1.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

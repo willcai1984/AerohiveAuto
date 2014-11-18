@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Proxy a request with no-strip/strip</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Setup a IAS radius server, accounting supported
+
+		Test Procedure:
+		-create two radius servers on AP2, 'aaa radius-server dark server 10.155.32.218
+		shared-secret ********'
+		-bind the above radius server to a proxy realm
+		-enable local radius service, 'aaa radius-server local enable' on AP2
+		-create a ssid with 802.1x auth method, use the local AP2 as radius server
+		-check the proxy status, result 1
+		-change strip to no-strip for the realm, check the proxy status, result 2,3
+		-connect a sta to ssid, check the username proxied to remote radius server
+		-STA1 connects to ssid with username@realm, credential is correct
+		-check the debug log on AP, '_debug radius excessive', result 4,5
+		-change the realm format to NT-domain
+		-STA1 connects to ssid with realm\username, credential is correct
+		-check the debug log on AP, '_debug radius excessive', result result 6
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.ad1.username}@${pub.ad1.realm}" />
+	<property name="conn1.passwd" value="${pub.ad1.passwd}" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.proto" value="wpa2-aes-8021x" />
+	<property name="conn2.username" value="${pub.ad1.realm}\\${pub.ad1.username}" />
+	<property name="conn2.passwd" value="${pub.ad1.passwd}" />
+
+
+	<stage>
+		<step no="0.1">
+			<desc>set vlan for mgt0</desc>
+			<console target="ap1" timeout="10">	
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+			</console>
+		</step>
+		<step no="0.2">
+			<desc>set vlan for mgt0</desc>
+			<console target="ap2" timeout="10">	
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+			</console>
+		</step>
+		<step no="0.3" delay="5">
+			<desc>show mgt0's ip of AP1</desc>
+			<log-file>AP1_int_info.log</log-file>
+			<console target="ap1">
+				-v "show interface ${ap1.forward.int}"
+			</console>
+		</step>
+		<step no="0.4">
+			 <desc>get IP of mgt0 on AP1</desc>
+       <setvar name="ap1.forward.ip">
+				 ${bin.dir}/getrmtip.pl -f ${log.dir}/AP1_int_info.log -i ${ap1.forward.int} -o aero -nomask
+       </setvar>
+		</step>
+		<step no="0.5">
+			<desc>show mgt0's ip of AP2</desc>
+			<log-file>AP2_int_info.log</log-file>
+			<console target="ap2">
+				-v "show interface ${ap2.forward.int}"
+			</console>
+		</step>
+		
+		<step no="0.6">
+			 <desc>get IP of mgt0 on AP2</desc>
+       <setvar name="ap2.forward.ip">
+				 ${bin.dir}/getrmtip.pl -f ${log.dir}/AP2_int_info.log -i ${ap2.forward.int} -o aero -nomask
+       </setvar>
+		</step>	
+		
+		<step no="1">
+			<desc>
+				-Set SSID for ap1
+				-set security-object parameters
+			</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object autoap"
+				-v "user-profile aaa qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "ssid ${ssid.name}"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius-server primary ${ap2.forward.ip} shared-secret aerohive"
+				-v "security-object autoap security aaa radius-server accounting primary ${ap2.forward.ip} shared-secret aerohive"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"				
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Set SSID for ap2
+				-set security-object parameters
+			</desc>
+			<ssh target="ap2">
+				-v "user-profile aaa qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object autoap"
+				-v "ssid ${ssid.name}-ap2"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius-server primary ${ap2.forward.ip} shared-secret aerohive"
+				-v "security-object autoap security aaa radius-server accounting primary ${ap2.forward.ip}"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ssid.name}-ap2 security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}-ap2"
+				-v "interface wifi0 radio channel 1"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>Set radius service for ap2</desc>
+			<telnet target="ap2">
+				-v "aaa radius-server name server1 server ${pub.radius2.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "aaa radius-server proxy realm ${pub.ad1.realm} primary server1"
+				-v "aaa radius-server local enable"
+				-v "aaa radius-server local nas ${ap1.forward.ip} shared-key aerohive"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>show running config on AP1</desc>
+			<log-file>show_run_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show run"
+			</telnet>
+			<log-match>-i "security-object autoap security protocol-suite wpa2-aes-8021x"</log-match>
+			<log-match>-i "security-object autoap security aaa radius-server primary ${ap2.forward.ip}"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>show running config on AP2</desc>
+			<log-file>show_run_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show run"
+			</telnet>
+			<log-match>-i "aaa radius-server proxy realm ${pub.ad1.realm} primary server1"</log-match>
+			<log-match>-i "aaa radius-server local enable"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>show radius proxy config on AP2</desc>
+			<log-file>show_radius_proxy_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show aaa radius-server proxy"
+			</telnet>
+			<log-match>-i "Realm format" -i "NAI" -i "user@real"</log-match>
+			<log-match>-c -i "strip realm: *yes"</log-match>
+			<log-match>-i "Status" -i "Enabled"</log-match>
+			<log-match>-i "1st realm" -i "${pub.ad1.realm}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				-change strip to no-strip for the realm
+			</desc>
+			<telnet target="ap2">
+				-v "aaa radius-server proxy realm ${pub.ad1.realm} no-strip"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>show radius proxy config on AP2</desc>
+			<log-file>step4.1_show_radius_proxy_ap2.log</log-file>
+			<telnet target="ap2" timeout="10">
+				-v "show aaa radius-server proxy"
+			</telnet>
+			<log-match>-i "Realm format" -i "NAI" -i "user@real"</log-match>
+			<log-match>-c -i "strip realm: *no"</log-match>
+			<log-match>-i "Status" -i "Enabled"</log-match>
+			<log-match>-i "1st realm" -i "${pub.ad1.realm}"</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>open debug and clear log all</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+				-v "_debug radius excessive"
+			</telnet>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>show logging buffered</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "rad_recv: Accounting-Request packet from host ${ap1.forward.ip}"</log-match>
+			<log-match>-i "Sending Accounting-Request" -i "to ${pub.radius2.ip} port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "Preparing to proxy accounting request to realm" -i "${pub.ad1.realm}"</log-match>
+			<log-match>-i "Proxying request" -i "to home server ${pub.radius2.ip} port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "rad_recv: Accounting-Response packet from host ${pub.radius2.ip} port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "proxy: allocating destination ${pub.radius2.ip} port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "rad_recv: Access-Request packet from host" -i "${ap1.forward.ip}" </log-match>
+			<log-match>-i "Looking up realm" -i "${pub.ad1.realm}" -i "for User-Name" -i "${pub.ad1.username}@${pub.ad1.realm}" </log-match>
+			<log-match>-i "Adding Realm" -i "${pub.ad1.realm}" </log-match>
+			<log-match>-i "Proxying request from user" -i "${pub.ad1.username}" -i "to realm ${pub.ad1.realm}" </log-match>
+			<log-match>-i "proxy: allocating destination" -i "${pub.radius2.ip}" -i "port ${pub.radius2.authport}" </log-match>
+			<log-match>-i "Sending Access-Request" -i "to ${pub.radius2.ip}" -i "port ${pub.radius2.authport}" </log-match>
+			<log-match>-i "rad_recv: Access-Challenge packet" -i "from host ${pub.radius2.ip}" -i "port ${pub.radius2.authport}" </log-match>
+		</step>
+
+		<include prefix="7" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="8">
+			<desc>
+				-change no-strip to strip for the realm
+				-clear log all
+			</desc>
+			<telnet target="ap2">
+				-v "no aaa radius-server proxy realm ${pub.ad1.realm} no-strip"
+				-v "aaa radius-server proxy realm format nt-domain"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>show radius proxy config on AP2</desc>
+			<log-file>step8.1_show_radius_proxy_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show aaa radius-server proxy"
+			</telnet>
+			<log-match>-i "Realm format" -i "nt-domain" -i "realm\\\\\user"</log-match>
+			<log-match>-c -i "strip realm: *yes"</log-match>
+			<log-match>-i "Status" -i "Enabled"</log-match>
+			<log-match>-i "1st realm" -i "${pub.ad1.realm}"</log-match>
+		</step>
+
+		<include prefix="9" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="10">
+			<desc>show logging buffered</desc>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "rad_recv: Accounting-Request packet from host ${ap1.forward.ip}"</log-match>
+			<log-match>-i "Sending Accounting-Request" -i "to ${pub.radius2.ip} port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "Preparing to proxy accounting request to realm" -i "${pub.ad1.realm}"</log-match>
+			<log-match>-i "Proxying request" -i "to home server ${pub.radius2.ip} port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "rad_recv: Accounting-Response packet from host ${pub.radius2.ip} port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "proxy: allocating destination ${pub.radius2.ip} port ${pub.radius1.acctport}"</log-match>
+			<log-match>-i "rad_recv: Access-Request packet from host" -i "${ap1.forward.ip}" </log-match>
+			<log-match>-i "Looking up realm" -i "${pub.ad1.realm}" -i "for User-Name" -i "${pub.ad1.realm}\\\\\${pub.ad1.username}" </log-match>
+			<log-match>-i "Adding Stripped-User-Name" -i "${pub.ad1.username}" </log-match>
+			<log-match>-i "Proxying request from user" -i "${pub.ad1.username}" -i "to realm ${pub.ad1.realm}" </log-match>
+			<log-match>-i "proxy: allocating destination" -i "${pub.radius2.ip}" -i "port ${pub.radius2.authport}" </log-match>
+			<log-match>-i "Sending Access-Request" -i "to ${pub.radius2.ip}" -i "port ${pub.radius2.authport}" </log-match>
+			<log-match>-i "rad_recv: Access-Challenge packet" -i "from host ${pub.radius2.ip}" -i "port ${pub.radius2.authport}" </log-match>
+		</step>
+	</stage>
+</testcase>

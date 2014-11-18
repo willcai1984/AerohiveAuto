@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that the function of vlan interface manage</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1. Verify that ping and ssh are enabled for vlan interface
+		2. Verify that disable ping function for vlan interface and can not ping.
+		3. Verify that other manage packet such as telnet, snmp etc can not arrive the vlan interface, can ssh mgt0.x
+		4. Verify that ping function is not lost when dhcp server enable/disable or dhcp relay enable/disable.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	
+	<property name="tb.vlan4.dhcp_start" value="192.168.${tb.vlan4}.200" />
+	<property name="tb.vlan4.dhcp_end" value="192.168.${tb.vlan4}.204" />
+	
+	<stage>
+		<step no="1">
+			<desc>
+				config vlan interface and access port
+			</desc>
+			<log-file>step1_config_int.log</log-file>
+			<ssh target="ap1">
+				-v "vlan ${tb.vlan4}"
+				-v "interface vlan ${tb.vlan4}"
+				-v "interface vlan${tb.vlan4} ip ${tb.vlan4.dhcp_start}/24"
+				-v "interface vlan${tb.vlan4} dhcp-server ip-pool ${tb.vlan4.dhcp_start} ${tb.vlan4.dhcp_end}"
+				-v "interface vlan${tb.vlan4} dhcp-server enable"
+				-v "interface ${sta1.sw.if} switchport mode access"    
+				-v "interface ${sta1.sw.if} switchport access vlan ${tb.vlan4}"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Verify that ping and ssh are enabled for vlan interface
+			</desc>
+			<log-file>step1.1_check_manage_int.log</log-file>
+			<ssh target="ap1">
+				-v "show interface manage"
+			</ssh>
+			<log-match>-c -e "Management options enabled on all physical interface"</log-match>
+			<log-match>-c -e "ping"</log-match>
+			<log-match>-c -e "ssh"</log-match>
+		</step>
+        
+        <step no="2">
+			<desc>1. Connect a PC to switch</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="sta1" timeout="120">
+				-v "dhclient ${sta1.tif.name} -r"
+				-v "dhclient ${sta1.tif.name}"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		
+		<step no="2.1">                      
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getinfo_ip.py -d ${sta1.mif.ip} -i ${sta1.tif.name} -v 'ip' -u ${sta1.user} -p ${sta1.passwd}
+			</setvar>
+		</step>	
+
+		<step no="3">
+			<desc>
+				sta ping vlan interface
+			</desc>
+			<log-file>step3_ping.log</log-file>
+			<ssh target="sta1" timeout="120">
+				-v "ping ${tb.vlan4.dhcp_start} -c 5"
+			</ssh>
+			<log-match>-e "from ${tb.vlan4.dhcp_start}"</log-match>
+			<log-match>-n -e "100% packet loss"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				disable ping function for vlan interface
+			</desc>
+			<log-file>step4_no_ping.log</log-file>
+			<ssh target="ap1">
+				-v "no interface manage ping"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				Verify that disable ping function for vlan interface and can not ping.
+			</desc>
+			<log-file>step5_check_ping_disable.log</log-file>
+			<ssh target="ap1">
+				-v "show interface manage"
+			</ssh>
+			<log-match>-n -c -e "Ping"</log-match>
+		</step>
+
+		<step no="6" delay="10">
+			<desc>
+				sta ping mgt0.1
+			</desc>
+			<log-file>step6_ifconfig_wlan0.log</log-file>
+			<ssh target="sta1" timeout="180">
+				-v "ping ${tb.vlan4.dhcp_start} -c 5"
+			</ssh>
+			<log-match>-n -e "from ${tb.vlan4.dhcp_start}"</log-match>
+			<log-match>-e "100% packet loss"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				Verify that telnet can not arrive the vlan interface
+			</desc>
+			<log-file>step7_telnet.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "telnet ${tb.vlan4.dhcp_start}"
+			</ssh>
+			<log-match>-c -e "Connection timed out"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				Verify that ssh can arrive the vlan interface
+			</desc>
+			<log-file>step8_ssh.log</log-file>
+			<ssh target="sta1" timeout="300" prompt="root@.*~">
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 22 -o 60 -d ${tb.vlan4.dhcp_start} -u ${ap.def.user} -p ${ap.def.passwd} -m ${ap.def.prompt} -n -z step3_ssh_mgt0.1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="9">
+			<desc>
+				- cat file
+			</desc>
+			<log-file>step9_ssh_ap1.log</log-file>
+			<ssh target="sta1">
+				-v "cat /tmp/step3_ssh_mgt0.1.log"
+			</ssh>
+			<log-match>-i "admin" -i "pts" -i "${sta1.tif.ip}" -c</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				Verify that other mange packet such as snmp can
+				not arrive the mgt0.x.
+			</desc>
+			<log-file>step10_snmp.log</log-file>
+			<ssh target="sta1" timeout="200">
+				-v "snmpwalk -v 2c ${tb.vlan4.dhcp_start} -c hivecommunity .1.3.6.1.2.1.1.4"
+			</ssh>
+			<log-match>-c -e "Timeout: No Response from ${tb.vlan4.dhcp_start}"</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				enable ping function for vlan interface
+			</desc>
+			<ssh target="ap1">
+				-v "interface manage ping"
+			</ssh>
+		</step>
+
+		<step no="12" delay="10">
+			<desc>
+				sta ping vlan interface
+			</desc>
+			<log-file>step12_ifconfig_wlan0.log</log-file>
+			<ssh target="sta1" timeout="120">
+				-v "ping ${tb.vlan4.dhcp_start} -c 5"
+			</ssh>
+			<log-match>-e "from ${tb.vlan4.dhcp_start}"</log-match>
+			<log-match>-n -e "100% packet loss"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				Verify that ping function is not lost when dhcp server disable
+			</desc>
+			<ssh target="ap1">
+				-v "no interface vlan${tb.vlan4} dhcp-server enable"
+			</ssh>
+		</step>
+
+		<step no="14" delay="10">
+			<desc>
+				sta ping vlan interface
+			</desc>
+			<log-file>step14_ifconfig_wlan0.log</log-file>
+			<ssh target="sta1" timeout="120">
+				-v "ping ${tb.vlan4.dhcp_start} -c 5"
+			</ssh>
+			<log-match>-e "from ${tb.vlan4.dhcp_start}"</log-match>
+			<log-match>-n -e "100% packet loss"</log-match>
+		</step>
+	</stage>
+</testcase>

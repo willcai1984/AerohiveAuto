@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the valid and invalid BL for response message</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Test Procedure:
+		Setup open+cwp authentication
+		Login with sip2 with invalid BL
+
+		Expect Result:
+		If get valid BL, will return successfully value, if get invalid BL, will reject
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="securityObject" value="autoap" />
+	<property name="psk" value="12qwaszx" />
+	<property name="sipPolicy" value="sip2" />
+	<property name="user" value="11111" />
+	<property name="user2" value="111111" />
+	<property name="userGroup" value="sip2" />
+
+	<stage>
+		<step no="SetRadiusServer.1">
+			<desc>Setup radius server,config users</desc>
+			<telnet target="ap1">
+				-v "security-object ${securityObject}"
+				-v "security-object ${securityObject} security aaa radius-server primary ${ap1.mgt0.ip}"
+				-v "security-object ${securityObject} security additional-auth-method captive-web-portal timer-display"
+				-v "security-object ${securityObject} web-server"
+				-v "security-object ${securityObject} security additional-auth-method captive-web-portal timer-display alert 10"
+				-v "security-object ${securityObject} security additional-auth-method captive-web-portal internal-servers"
+				-v "security-object ${securityObject} security additional-auth-method captive-web-portal failure-redirect login-page"
+				-v "user ${user}"
+				-v "user ${user} password ${psk}"
+				-v "user-group ${userGroup}"
+				-v "user-group ${userGroup} user-attribute 1"
+				-v "user ${user} group ${userGroup}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${securityObject}"
+			</telnet>
+		</step>
+
+		<step no="SetRadiusServer.2">
+			<desc>Setup radius server</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "library-sip-policy ${sipPolicy} default user-group ${userGroup}"
+				-v "aaa radius-server local library-sip-policy ${sipPolicy}"
+				-v "aaa radius-server local db-type library-sip-server primary server ${pub.libsip1.ip}"
+				-v "aaa radius-server local db-type library-sip-server primary login-user ${pub.libsip1.username} password ${pub.libsip1.passwd}"
+				-v "aaa radius-server local db-type library-sip-server primary institution-id ${pub.libsip1.institutionID}"
+				-v "aaa radius-server local db-type library-sip-server primary login-enable"
+				-v "aaa radius-server local enable"
+				-v "ssid ${ssid.name} user-group ${userGroup}"
+				-v "aaa radius-server local user-group ${userGroup}"
+				-v "user-profile ${userGroup} qos-policy def-user-qos attribute 1"
+				-v "_debug radiusd verbose"
+				-v "_debug radiusd sip-lib"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="CheckLibSipLog.1">
+			<desc>Check LibSip log</desc>
+			<log-file>test_library_sip.log</log-file>
+			<telnet target="ap1" timeout="120" slow="yes">
+				-v "exec aaa library-sip-test primary username ${user} password ${psk}"
+				-v ""
+				-v ""
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "valid patron\(BL\) *Y" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "patron identifier\(AA\) *${user}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="CheckLibSipLog.2">
+			<desc>Check LibSip log</desc>
+			<log-file>test_library_sip_2.log</log-file>
+			<telnet target="ap1" timeout="120" slow="yes">
+				-v "exec aaa library-sip-test primary username ${user2} password ${psk}"
+				-v ""
+				-v ""
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "query patron \"${user2}\" information fail" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

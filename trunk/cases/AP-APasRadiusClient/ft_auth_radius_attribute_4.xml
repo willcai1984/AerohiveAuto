@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Auth got session-timeout and Termination-Action=0 or not set</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-config a ssid with wpa2 802.1x auth on AP
+		-config a radius server to support eap type
+		-config a reauth time on this security-object
+		'security-object xxx security protocol-suite wpa-aes-8021x reauth-
+		interval 600'
+		-config the return attribute on radius server side:
+		-session-timeout
+		-Termination-Action=0 or not set
+
+		Test Procedure:
+
+		-client connected to AP
+		-check debug log, result 1
+		-check roaming cache to make sure session time out is correct got,
+		both AP1 and AP2
+		-wait for session timeout, result 2,3
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+		<step no="1">
+			<desc>setup ap with ssid wpa-aes-802.1x</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 radio channel 6"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "user-profile ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite wpa2-aes-8021x"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "_debug auth all"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>setup ap2 as a roaming neighbor</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 radio channel 6"
+				-v "ssid ${ssid.name}-dummy"
+				-v "interface wifi0 ssid ${ssid.name}-dummy"
+			</telnet>
+		</step>
+		<step no="3" delay="30" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check roaming neighbor on ap1</desc>
+			<log-file>check_roaming_neighor_ap1_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-i "${ap2.mgt0.ip}" -p 4 -i "D"</log-match>
+		</step>
+		<step no="4" delay="30" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check roaming neighbor on ap2</desc>
+			<log-file>check_roaming_neighor_ap2_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-i "${ap1.mgt0.ip}" -p 4 -i "D"</log-match>
+		</step>
+
+
+		<property name="conn1.proto" value="wpa2-aes-8021x" />
+		<step no="pre5.1">
+			<desc>set username</desc>
+			<setvar name="conn1.username">
+				echo "${pub.radius1.username}_sessiontimeout2"
+			</setvar>
+		</step>
+		<step no="pre5.2">
+			<desc>set password</desc>
+			<setvar name="conn1.passwd">
+				echo "${pub.radius1.passwd}"
+			</setvar>
+		</step>
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>save log buffer to file</desc>
+			<log-file>show_buff.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="7.1">
+			<desc>extract a piece of the log buffer</desc>
+			<script>
+				tac ${log.dir}/show_buff.log |sed -n '/RADIUS message: code=2 (Access-Accept)/,/WPA: PMK from EAPOL state machine/p' > ${log.dir}/sessiontime.log
+			</script>
+		</step>
+		<step no="7.2">
+			<desc>check session timeout returned from radius server</desc>
+			<log-file>sessiontime.log</log-file>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l Session-Timeout -l "Value: 120" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+			<log-match>-e "setting session timeout to 120 seconds"</log-match>
+		</step>
+		<step no="8">
+			<desc>check show auth</desc>
+			<log-file>show_auth_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-p 7 -i "done" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 6 -i "120" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 9 -i "WPA2/CCMP" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 10 -i "${conn1.username}" -i "done" -i "${sta1.tif.mac}" -c</log-match>
+		</step>
+		<step no="9">
+			<desc>check show station</desc>
+			<log-file>show_station_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-p 12 -i "Yes" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 7 -i "wpa2-8021x" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 8 -i "aes" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 2 -i "${sta1.tif.ip}" -i "${sta1.tif.mac}" -c</log-match>
+		</step>
+		<step no="10">
+			<desc>check roaming cache info</desc>
+			<log-file>show_roaming_cache_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-p 8 -i "120" -i "${sta1.tif.mac}" -c</log-match>
+		</step>
+		<step no="11">
+			<desc>check roaming cache detail info</desc>
+			<log-file>show_roaming_cache_detail_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache mac ${sta1.tif.mac}"
+			</telnet>
+			<log-match>-p 3 -i "${conn1.username}" -i "User name:" -c</log-match>
+			<log-match>-i "Session time:" -i "120 seconds"</log-match>
+		</step>
+		<step no="12">
+			<log-file>ping_sta1_${sta1.tif.ip}_2_mpc.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${mpc.tif.ip} -c 4"
+			</ssh>
+			<log-match>-n -e "(100\% packet loss)"</log-match>
+		</step>
+	
+		<step no="14" delay="135">
+			<desc>check after session timeout sta will be de-authenticated</desc>
+			<log-file>check_session_timeout.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Try to deauth sta ${sta1.tif.mac} from.*?for ssid ${ssid.name} because of session timeout" -f ${log.dir}/${log.file}</log-match>
+			<!--<log-match bin="${bin.dir}/searchbyrexp.py">-p "Station ${sta1.tif.mac} is de-authenticated from.*?thru SSID ${ssid.name}" -f ${log.dir}/${log.file}</log-match>-->
+		</step>
+		<step no="15">
+			<desc></desc>
+			<log-file>show_roaming_cache_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-p 11 -i "1" -i "${sta1.tif.mac}" -c</log-match>
+		</step>
+		<step no="16">
+			<desc>check roaming cache detail info on roaming neighbor</desc>
+			<log-file>show_roaming_cache_detail_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming cache mac ${sta1.tif.mac}"
+			</telnet>
+			<log-match>-p 3 -i "${conn1.username}" -i "User name:" -c</log-match>
+			<log-match>-i "Session time:" -i "120 seconds"</log-match>
+		</step>
+
+	</stage>
+</testcase>

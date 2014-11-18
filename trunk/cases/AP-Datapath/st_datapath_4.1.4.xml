@@ -1,0 +1,162 @@
+<testcase>
+	<brief>Default VLAN assignment for Bridge-8021q user, User-profile ID assignment for Bridge-access user</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>winlin</tbtype>
+	<description>
+		Topology to use
+		(AP)------pc2
+		pc1++++++sw+++++++portal (eth0)++++++++pc3
+		(Mesh)-------MP
+		(AP)----------laptop4
+		Objective
+		Default VLAN assignment for Bridge-8021q user, User-profile ID assignment for Bridge-access user
+		Pre-condition
+		-construct this topology
+		-the native vlan for portal and mp is VLAN m
+		-user-profile xxx is mapped to UID x
+		Test procedure
+		-set eth0 of mp to bridge-8021q mode via this cmd “inter eth0 mode bridge-8021q user-profile xxx”
+		-enable mac-learning on eth0 via “inter eth0 mac-learning enable”
+		-check the route table result 1
+		-check the mac-learning table via “show inter eth0 mac-learning all”
+		Result 2
+		Expect result
+		Result 1: can see the new entry for pc3;the “oif” flag is eth0
+		inteface; the “UID” flag is x
+		Result 2: can see the new entry for pc3, make sure VLAN m had been assigned to pc3
+	</description>
+	<stage>
+		<if>"${ap.eth1.existed}" == "true" &amp;&amp; "${ap.wifi1.existed}" == "true"</if>
+
+		<include prefix="0" file="subs/bpc_init.xml" obj-args="bpc1, ap2" args="none" />
+
+		<step no="1">
+			<desc>Set up portal's interface through sw menu</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "interface eth1 shutdown"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 36"
+			</console>
+		</step>
+
+		<step no="pre1.1">
+			<desc>
+				-show interface mgt0 in ap1
+			</desc>
+			<log-file>step_pre1.1c_show_interface_mgt0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="pre1.2">
+			<desc>
+				Get mgt0 ap in ap1
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step_pre1.1c_show_interface_mgt0_ap1.log -t str
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>show wifi1.1's mac of portal</desc>
+			<log-file>wifi_mac_portal.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>get wifi1.1' mac of portal</desc>
+			<setvar name="ap1.wifi1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/wifi_mac_portal.log -i wifi1.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>show eth0's mac of mp</desc>
+			<log-file>eth_mac_mp.log</log-file>
+			<console target="ap2">
+				-v "show interface eth0"
+				-v ""
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>get eth0's mac of mp</desc>
+			<setvar name="ap2.eth0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/eth_mac_mp.log -i eth0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>Set up mp's interface through sw menu</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "interface eth1 mode bridge-802.1q user-profile-attribute 2"
+				-v "interface eth1 mac-learning enable"
+				-v "interface eth0 shutdown"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 36"
+			</console>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="30" loop-interval="20">
+			<desc>check mesh network</desc>
+			<log-file>amrp_nei2_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show amrp nei"
+			</console>
+			<log-match>-i "${ap1_wifi1_mac}" -i "TWO-WAY"</log-match>
+		</step>
+
+		<step no="6" delay="60">
+			<desc>show mgt0's ip of MP</desc>
+			<log-file>mp_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-i "${tb.vlan1}"</log-match>
+		</step>
+
+		<include prefix="7" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<step no="8">
+			<desc>show route table on mp</desc>
+			<log-file>bridge_mp_route.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-c -i "${bpc1.tif.mac} *${ap2.eth0.mac} *eth1 *0 *2"</log-match>
+		</step>
+
+
+		<step no="9">
+			<desc>show mac-learning on mp</desc>
+			<log-file>bridge_mp_mac_learning.log</log-file>
+			<console target="ap2">
+				-v "show interface eth1 mac-learning all"
+			</console>
+			<log-match>-c -p 2 -i "${bpc1.tif.mac}" -p 3 -i "${tb.vlan1}"</log-match>
+		</step>
+
+	</stage>
+</testcase>

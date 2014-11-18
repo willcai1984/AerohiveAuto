@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Process multi clients for to-self traffic in enable mode</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1. Configure mac policies which permit to ap on ap
+		2. Laptop1/laptop2/pc ping ap, result 1
+		3. Configure ip policies which permit to ap on ap
+		4. Laptop1/laptop2/pc ping ap, result 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				config ap1
+				creat ssid and bind it to wifi0
+				creat user-profile and drop ip-fragmented-packets
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "user-profile FW qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "ssid ${ssid.name} security-object FWtest"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 5" />
+
+		<include prefix="5" file="subs/sta_ping.xml" args="sta2, ${ap1.mgt0.ip}, 5" />
+
+		<step no="6">
+			<desc>
+				MPC ping AP
+			</desc>
+			<log-file>step6_mpc_ping.log</log-file>
+			<script>
+				ping ${ap1.mgt0.ip} -c 5 >> ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				get master-PC's tif ifconfig
+			</desc>
+			<log-file>step6.1_check_mpc.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name}>> ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="6.2">
+			<desc> get mpc mac</desc>
+			<setvar name="mpc.tif.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step6.1_check_mpc.log -i ${mpc.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="7">
+			<desc>
+				Configure mac policies which permit to ap on ap
+			</desc>
+			<telnet target="ap1">
+				-v "forwarding-engine log to-self-sessions"
+				-v "mac-policy aaa"
+				-v "mac-policy aaa id 1 action permit"
+				-v "user-profile FW security mac-policy from-access aaa to-access aaa "
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_ff id 2 src-mac ${sta2.tif.mac} bidirectional"
+				-v "_ff id 3 src-mac ${mpc.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<include prefix="8" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 5" />
+
+		<include prefix="9" file="subs/sta_ping.xml" args="sta2, ${ap1.mgt0.ip}, 5" />
+
+		<step no="10">
+			<desc>
+				MPC ping AP
+			</desc>
+			<log-file>step10_mpc_ping.log</log-file>
+			<script>
+				ping ${ap1.mgt0.ip} -c 5 >> ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				show logging buffered an ap1
+			</desc>
+			<log-file>step11_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${sta1.tif.mac}->${ap1.mgt0.mac}, MAC session for to-self traffic is created" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${sta2.tif.mac}->${ap1.mgt0.mac}, MAC session for to-self traffic is created" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="12">
+			<desc>
+				Configure ip policies which permit to ap on ap
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy aaa"
+				-v "ip-policy aaa id 1 action permit"
+				-v "user-profile FW security ip-policy from-access aaa to-access aaa"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="13" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 5" />
+
+		<include prefix="14" file="subs/sta_ping.xml" args="sta2, ${ap1.mgt0.ip}, 5" />
+
+		<step no="15">
+			<desc>
+				MPC ping AP
+			</desc>
+			<log-file>step15_mpc_ping.log</log-file>
+			<script>
+				ping ${ap1.mgt0.ip} -c 5 >> ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				show logging buffered an ap1
+			</desc>
+			<log-file>step16_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[${sta2.tif.ip}/\d+->${ap1.mgt0.ip}/\d+, ${ap1.mgt0.ip}/\d+->${sta2.tif.ip}/\d+\] \(proto 1\), IP session for to-self traffic is created" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

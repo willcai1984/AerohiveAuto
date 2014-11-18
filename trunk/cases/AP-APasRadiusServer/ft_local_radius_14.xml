@@ -1,0 +1,178 @@
+<testcase>
+	<brief>Tls check-in-db enabled</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Pre-condition
+		-config a radius with local db
+		-config a radius server using local radius
+		-tls check-in-db enabled
+		-leave other parameters default
+		Test procedure
+		-client using tls to do auth
+		-the cert cn should be matched a user name in local db
+		Expect result
+		1. Client can passes auth success
+	</description>
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.hive">
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security aaa radius primary ${ap1.mgt0.ip}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<include prefix="ex.pem" file="subs/mpc_download_pem.xml" />
+
+		<step no="ex.radius-service">
+			<desc>Set radius service</desc>
+			<telnet target="ap1">
+				-v "save radius-server-key radius-server tftp://${mpc.tif.ip}:certs/cacert.pem"
+				-v "save radius-server-key radius-server tftp://${mpc.tif.ip}:certs/server_cert.pem"
+				-v "save radius-server-key radius-server tftp://${mpc.tif.ip}:certs/server_key.pem"
+				-v "aaa radius-server local sta-auth ca-cert cacert.pem server-cert server_cert.pem private-key server_key.pem"
+				-v "user-group autotest"
+				-v "user ${pub.radius1.username}"
+				-v "user ${pub.radius1.username} pass ${pub.radius1.passwd}"
+				-v "user ${pub.radius1.username} group autotest"
+				-v "aaa rad lo db local"
+				-v "aaa radius-server local user-group autotest"
+				-v "aaa radius-server local sta-auth type tls check-in-db"
+				-v "aaa radius-server lo enable"
+				-v "save server-files"
+				-v "save config"
+				-v "save config users"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.aaa-check">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match> -e "Enabled" -i "Local RADIUS" -p 3 -c</log-match>
+			<log-match>-e "Enabled" -i "local database:" -p 3 -c</log-match>
+			<log-match>-e "cacert.pem" -i "CA:" -p 2 -c</log-match>
+			<log-match>-e "server_cert.pem" -i "server cert:" -p 3 -c</log-match>
+			<log-match>-e "server_key.pem" -i "private key:" -p 3 -c</log-match>
+			<log-match>-e "Enabled" -i "Check In Db(TLS):" -p 4 -c</log-match>
+		</step>
+
+		<include prefix="4" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="ex.get_cert_file">
+			<desc>transport 3 certificate files to station</desc>
+			<ssh target="sta1">
+				-v "cd /tmp"
+				-v "tftp ${mpc.mif.ip} -c get certs/cacert.pem"
+				-v "tftp ${mpc.mif.ip} -c get certs/${pub.radius1.username}_cert.pem"
+				-v "tftp ${mpc.mif.ip} -c get certs/${pub.radius1.username}_key.pem"
+			</ssh>
+		</step>
+		<step no="ex.debug">
+			<desc>enable radius debug</desc>
+			<console target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</console>
+		</step>
+		<step no="5">
+			<desc>config the laptop to apply the ssid profile,then start to associate</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-f ft_local_radius_14_pc2.cfg
+				-v "set_network 0 identity \"${pub.radius1.username}\""
+				-v "set_network 0 anonymous_identity \"${pub.radius1.username}\""
+				-v "set_network 0 ca_cert \"/tmp/cacert.pem\""
+				-v "set_network 0 client_cert \"/tmp/${pub.radius1.username}_cert.pem\""
+				-v "set_network 0 private_key \"/tmp/${pub.radius1.username}_key.pem\""
+				-v "set_network 0 private_key_passwd \"aerohive\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="6" file="subs/chk_conn_in_sta.xml" args="sta1" />
+		<step no="6.1">
+			<log-file>log_on_ap.log</log-file>
+			<telnet target="ap1" timeout="120">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "RADIUS: The RADIUS server accepted user \'${pub.radius1.username}\' through the NAS at ${ap1.mgt0.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa-aes-8021x, WPA/CCMP, wpa-8021x, aes" />
+
+		<include prefix="8" file="subs/wpa_supplicant_start.xml" args="sta2" />
+
+		<step no="ex.get_cert_file_onsta2">
+			<desc>transport 3 certificate files to station</desc>
+			<ssh target="sta2">
+				-v "cd /tmp"
+				-v "tftp ${pub.tftp1.mip} -c get certs/cacert.pem"
+				-v "tftp ${pub.tftp1.mip} -c get certs/${pub.radius1.username}_cert.pem"
+				-v "tftp ${pub.tftp1.mip} -c get certs/${pub.radius1.username}_key.pem"
+			</ssh>
+		</step>
+
+		<step no="9">
+			<desc>config the laptop2 to apply the ssid profile,then start to associate</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-f ft_local_radius_14_pc2.cfg
+				-v "set_network 0 identity \"${pub.radius1.username}1\""
+				-v "set_network 0 anonymous_identity \"${pub.radius1.username}1\""
+				-v "set_network 0 ca_cert \"/tmp/cacert.pem\""
+				-v "set_network 0 client_cert \"/tmp/${pub.radius1.username}_cert.pem\""
+				-v "set_network 0 private_key \"/tmp/${pub.radius1.username}_key.pem\""
+				-v "set_network 0 private_key_passwd \"aerohive\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="10">
+			<desc>show the connection status</desc>
+			<log-file>stat_ap2.log</log-file>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED" -n</log-match>
+		</step>
+
+		<include prefix="11" file="subs/save_ap_log.xml" args="show logging buffered level error, ap1, check_buffer_err.log" />
+
+		<step no="12">
+			<log-file>check_buffer_err.log</log-file>
+			<log-match>-e "rlm_eap_tls: check-in-db enabled, and user ${pub.radius1.username}1 does not found in DB!"</log-match>
+			<no-error-check />
+		</step>
+
+
+	</stage>
+</testcase>

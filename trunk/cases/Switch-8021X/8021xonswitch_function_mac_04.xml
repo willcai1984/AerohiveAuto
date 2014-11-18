@@ -1,0 +1,396 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Port-based, radius server return vlan-id</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	       Switch----Hub----PC1 
+		|      \
+		PC2   PC3
+		Description	Port-based, radius server return vlan-id
+		Platform Dependence	SR2024
+		Pre-condition	Auth is port based, MAC based Auth enabled in the port,
+		security-object security-object name
+
+		security-object security-object name security aaa radius-server primary ip address of radius server shared-secret share-key
+
+		security-object security-object name security aaa radius-server accounting primary ip address of radius server> shared-secret share-key
+
+		security-object security-object name security additional-auth-method mac-based-auth auth-method chap
+
+		security-object security-object name security auth-mode port-based
+
+		security-object security-object name security initial-auth-method mac-based-auth
+
+		interface ethx/y switchport mode access
+
+		interface ethx/y security-object security-object name
+
+		vlan 10
+
+		vlan 20
+
+		vlan 30
+
+		Port configured VLAN 10, 
+		Radius server response MAC1 return VLAN 20, MAC2 return VLAN 30, MAC3 return VLAN20
+
+		Radius users configure(free radius)
+		Return vlan id directly
+		MAC1   Cleartext-Password :=  MAC1
+		Tunnel-Type = 13,
+		Tunnel-Medium-Type = 6,
+		Tunnel-Private-Group-ID = 20
+
+		MAC2   Cleartext-Password :=  MAC2
+		Tunnel-Type = 13,
+		Tunnel-Medium-Type = 6,
+		Tunnel-Private-Group-ID = 30
+
+		MAC3   Cleartext-Password :=  MAC3
+		Tunnel-Type = 13,
+		Tunnel-Medium-Type = 6,
+		Tunnel-Private-Group-ID = 20
+
+		PC1, PC2, PC3 didn’t do auth
+		Test procedure	1.	Enable MAC authentication, Check port access, result 1
+		2.	PC1 do MAC auth, check port access, result 2
+		3.	PC2 do MAC auth, check port access, result 3
+		4.	PC3 do MAC auth, check port access, result 4
+		5.	PC1 deauth, PC2 do MAC auth, check port access, result 5
+		6.	PC2 deauth, result 6
+		Expect result	Result 1: PC1 can’t access the port
+		Result 2: PC1 can access the port
+		Result 3: PC2 can’t auth, PC2 can’t access
+		Result 4: PC3 can’t auth, PC3 can’t access
+		Result 5: PC2 can access, port VLAN 30
+		Result 6: PC1, PC2 can’t access, port VLAN 10.
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+	<property name="sw1.port3.ixia_port.mac" value="0000.0000.0013"/>
+	<stage>
+		<step no="1">
+			<desc>
+				configure switch to support mac auth, port-basedt 
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "user-profile vlan${tb.vlan1} vlan-id ${tb.vlan1} attribute ${tb.vlan1}"
+				-v "user-profile vlan${tb.vlan2} vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+				-v "user-profile vlan${tb.vlan3} vlan-id ${tb.vlan3} attribute ${tb.vlan3}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan2}"
+				-v "security-object autoap"
+				-v "security-object autoap security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security additional-auth-method mac-based-auth"
+				-v "security-object autoap security auth-mode port-based"
+				-v "interface ${sw1.port1} security-object autoap"
+				-v "aaa mac-format style two-delimiter"
+				-v "aaa mac-format delimiter dot"
+				-v "show aaa"
+				-v "show auth"
+				-v "show auth interface ${sw1.port1}"
+				-v "_debug auth all"
+			</telnet>
+		</step>
+		<step no="2">
+			<multi-setvar>
+				echo sw1.port1.ixia_port.mac1=$(echo "${sw1.port1.ixia_port.mac}" | sed 's/\./:/g')
+				echo sw1.port2.ixia_port.mac1=$(echo "${sw1.port2.ixia_port.mac}" | sed 's/\./:/g')
+				echo sw1.port3.ixia_port.mac1=$(echo "${sw1.port3.ixia_port.mac}" | sed 's/\./:/g')
+			</multi-setvar>
+		</step> 
+
+		<property name="acct1.vlan" value="${tb.vlan1}" />
+		<property name="acct1.session_time" value="120" />
+		<include prefix="add_account1" file="subs/ldap_add.xml" args="${sw1.port1.ixia_port.mac}, ${sw1.port1.ixia_port.mac}" obj-args="acct1" />
+		<property name="acct2.vlan" value="${tb.vlan2}" />
+		<include prefix="add_account2" file="subs/ldap_add.xml" args="${sw1.port2.ixia_port.mac}, ${sw1.port2.ixia_port.mac}" obj-args="acct2" />
+
+
+		<step no="3.1">
+			<desc>
+				build stream, port1 sends untagged broadcast pkts
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-new="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port2.ixia_port.mac}
+				-eth2_protocol 0x0800"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port3.ixia_port.mac}
+				-eth2_protocol 0x0800"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 1 -maintanceOp enable"
+				-v "start_capture -portList ${sw1.port2.ixia_port}"
+				-v "start_capture -portList ${sw1.port3.ixia_port}"
+				
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 3 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 2 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				
+				-v "stop_capture -portList ${sw1.port2.ixia_port}"
+        -v "stop_capture -portList ${sw1.port3.ixia_port}"
+        
+				-v "save_capture -onePort  ${sw1.port2.ixia_port} -fileName ${job.id}_1.enc"
+				-v "save_capture -onePort  ${sw1.port3.ixia_port} -fileName ${job.id}_2.enc"
+
+				
+			</ssh>
+		</step>
+		<step no="3.2">
+			<desc>
+				move the capture files
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_1.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_2.enc"
+				-v "rm -f ${job.id}_1.enc"
+				-v "rm -f ${job.id}_2.enc"
+			</ssh>
+		</step>
+		<step no="3.3">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_1.enc ${log.dir}
+				mv /tftpboot/${job.id}_2.enc ${log.dir}
+			</script>
+		</step>
+		<step no="3.4">
+			<desc>check both port2 and port3 recieve pkt from port1, port4 doesn't</desc>
+			<file>${job.id}_1.enc</file>
+			<file>${job.id}_2.enc</file>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_1.enc -R'eth.addr==${sw1.port1.ixia_port.mac1}' 2>/dev/null | wc -l`" -eq "0" ]
+				then
+				exit 1
+
+				elif [ "`tshark -r ${log.dir}/${job.id}_1.enc -R'eth.addr==${sw1.port2.ixia_port.mac1}' 2>/dev/null | wc -l`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_1.enc -R'eth.addr==${sw1.port3.ixia_port.mac1}' 2>/dev/null | wc -l`" -ne "0" ]
+				then
+				exit 1
+				fi
+
+				if [ "`tshark -r ${log.dir}/${job.id}_2.enc -R'eth.addr==${sw1.port1.ixia_port.mac1}' 2>/dev/null | wc -l`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_2.enc -R'eth.addr==${sw1.port2.ixia_port.mac1}' 2>/dev/null | wc -l`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_2.enc -R'eth.addr==${sw1.port3.ixia_port.mac1}' 2>/dev/null | wc -l`" -ne "0" ]
+				then
+				exit 1
+				fi
+
+			</script>
+			<failed>next</failed>
+		</step>
+		<step no="3.5">
+			<desc>check auth table</desc>
+			<telnet target="sw1">
+				-v "show auth"
+			</telnet>
+			<log-match>-re -i "${sw1.port1.ixia_port.mac1}[ \t]+0[ \t]+120[ \t]+open[ \t]+data[ \t]+0007"</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="3.6">
+			<desc>check FDB,make sure the mac entries aren't changed</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-re -i "${tb.vlan1}[ \t]+${sw1.port1.ixia_port.mac1}[ \t]+${sw1.port1}"</log-match>
+			<log-match>-re -i "${tb.vlan1}[ \t]+${sw1.port2.ixia_port.mac1}[ \t]+${sw1.port1}" -n</log-match>
+			<log-match>-re -i "${tb.vlan1}[ \t]+${sw1.port3.ixia_port.mac1}[ \t]+${sw1.port1}" -n</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="3.7">
+			<desc>check FDB,make sure the mac entries aren't changed</desc>
+			<telnet target="sw1">
+				-v "show roaming cache mac ${sw1.port1.ixia_port.mac1}"
+			</telnet>
+		</step>
+		<step no="4">
+			<desc>show log buf</desc>
+			<log-file>check_macauth1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<failed>next</failed>
+			<no-error-check />
+			<log-match>-e "MAC-based auth: RADIUS server send OK to station ${sw1.port1.ixia_port.mac1}, returned UPID (-1) VLAN (${tb.vlan1}), DATA device"</log-match>
+			<log-match>-e "MAC Re-Auth: starting for sta ${sw1.port1.ixia_port.mac1} in 120 seconds"</log-match>
+		</step>
+
+		<include prefix="delete.mac.account1" file="subs/ldap_delete.xml" args="${sw1.port1.ixia_port.mac}" />
+		<step no="5.1">
+			<desc>wait for 50sec</desc>
+			<script>
+				sleep 120
+				exit 0
+			</script>
+		</step> 
+		<step no="5.2">
+			<desc>
+				port1 sends untagged broadcast pkts
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v "start_capture -portList ${sw1.port2.ixia_port}"
+				-v "start_capture -portList ${sw1.port3.ixia_port}"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 3 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 2 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 1 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				-v "stop_capture -portList ${sw1.port2.ixia_port}"
+				-v "stop_capture -portList ${sw1.port3.ixia_port}"
+
+				-v "save_capture -onePort  ${sw1.port2.ixia_port} -fileName ${job.id}_3.enc"
+				-v "save_capture -onePort  ${sw1.port3.ixia_port} -fileName ${job.id}_4.enc"
+			</ssh>
+		</step>
+		<step no="5.3">
+			<desc>
+				move the capture files
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_3.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_4.enc"
+				-v "rm -f ${job.id}_3.enc"
+				-v "rm -f ${job.id}_4.enc"
+			</ssh>
+		</step>
+		<step no="5.4">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_3.enc ${log.dir}
+				mv /tftpboot/${job.id}_4.enc ${log.dir}
+			</script>
+		</step>
+		<step no="5.5">
+			<desc>check both port2 and port3 recieve pkt from port1, port4 doesn't</desc>
+			<file>${job.id}_3.enc</file>
+			<file>${job.id}_4.enc</file>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_3.enc -R'eth.addr==${sw1.port1.ixia_port.mac1}' 2>/dev/null | wc -l`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_3.enc -R'eth.addr==${sw1.port2.ixia_port.mac1}' 2>/dev/null | wc -l`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_3.enc -R'eth.addr==${sw1.port3.ixia_port.mac1}' 2>/dev/null | wc -l`" -ne "0" ]
+				then
+				exit 1
+				fi
+
+				if [ "`tshark -r ${log.dir}/${job.id}_4.enc -R'eth.addr==${sw1.port1.ixia_port.mac1}' 2>/dev/null | wc -l`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_4.enc -R'eth.addr==${sw1.port2.ixia_port.mac1}' 2>/dev/null | wc -l`" -eq "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_4.enc -R'eth.addr==${sw1.port3.ixia_port.mac1}' 2>/dev/null | wc -l`" -ne "0" ]
+				then
+				exit 1
+				fi
+			</script>
+			<failed>next</failed>
+		</step>
+		<step no="6.1">
+			<desc>check auth table</desc>
+			<telnet target="sw1">
+				-v "show auth"
+			</telnet>
+			<log-match>-re -i "${sw1.port2.ixia_port.mac1}[ \t]+0[ \t]+-1[ \t]+open[ \t]+data[ \t]+0007"</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="6.2">
+			<desc>check FDB,make sure the mac entries aren't changed</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-re -i "${tb.vlan2}[ \t]+${sw1.port2.ixia_port.mac1}[ \t]+${sw1.port1}"</log-match>
+			<log-match>-re -i "${sw1.port1.ixia_port.mac1}[ \t]+${sw1.port1}" -n</log-match>
+			<log-match>-re -i "${sw1.port3.ixia_port.mac1}[ \t]+${sw1.port1}" -n</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="6.3">
+			<desc>check roaming cache</desc>
+			<telnet target="sw1">
+				-v "show roaming cache mac ${sw1.port2.ixia_port.mac1}"
+			</telnet>
+			<failed>next</failed>
+		</step>
+		<step no="7">
+			<desc>show log buf</desc>
+			<log-file>check_macauth2.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<failed>next</failed>
+			<no-error-check />
+			<log-match>-e " MAC Re-Auth: Failed for sta ${sw1.port1.ixia_port.mac1}"</log-match>
+			<log-match>-e "Try to disassoc ${sw1.port1.ixia_port.mac1}.*because mac re-auth failed"</log-match>
+			<log-match>-e "Roaming entry (SPA=${sw1.port1.ixia_port.mac1}) set disconnect flag"</log-match>
+			<log-match>-e "MAC-based auth: RADIUS server send reject to station ${sw1.port3.ixia_port.mac1}"</log-match>
+			<log-match>-e "MAC-based auth: RADIUS server send OK to station ${sw1.port2.ixia_port.mac1}, returned UPID (-1) VLAN (${tb.vlan2}), DATA device"</log-match>
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<include prefix="delete.mac.account1" file="subs/ldap_delete.xml" args="${sw1.port1.ixia_port.mac}" />
+			<include prefix="delete.mac.account2" file="subs/ldap_delete.xml" args="${sw1.port2.ixia_port.mac}" />
+			<step no="post1">
+				<ssh timeout="180" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+					-v ""
+				</ssh>
+			</step>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

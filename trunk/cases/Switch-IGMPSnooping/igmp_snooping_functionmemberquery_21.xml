@@ -1,0 +1,763 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=4) The switch can set/reset its member query interval and member query times for IGMPv3</brief>
+	<priority>middle</priority>
+	<automated>no</automated>
+
+	<description>
+		Topology to use	Topology 2
+		Description	The switch can set/reset its member query interval and member query times for IGMPv3.
+		Platform	Chesapeake
+		Pre-condition	IGMP snooping is enabled on the switch; the router port on the switch is up.Immediate-leave function is disabled. Hosts support IGMPv3. The router ports and the hosts are in vlan 100.
+		Test procedure	1. HostA and hostB  send  IGMPv3 join report  to join groupA , HostC sends  IGMPv3 join report  to join groupA  and groupB, after 10s make hostA  send leave message from groupA and not send any other  message in any case,result 1
+		2. Make hostC  send leave message from groupB and not send any other  message in any case,result 2
+		3. Configure “ip igmp snooping last-member-query-interval 3”, go to procedure  step.1 ,result 3
+		4. Configure “ip igmp snooping last-member-query-count 3”, go to procedure  step.1 ,result 4
+		5. Configure “ip igmp snooping last-member-query-interval 25”, go to procedure  step.1 ,result 5
+		6. Configure “ip igmp snooping last-member-query-count 1”, go to procedure  step.1 ,result 6
+		7. Configure “ip igmp snooping last-member-query-count 7”, go to procedure  step.1 ,result 7
+		8. Configure “No ip igmp snooping last-member-query-interval vlan 100”and “No ip igmp snooping last-member-query-count vlan 100” , go to procedure  step.1 ,result 1
+
+		Expect result	1. The switch sends group-specific-query messages for groupA in default query interval (1s), and after sending default query times (2times), multicast entry information on the switch for the port should be cleared. The switch does not send any group-specific-query messages to hostB and hostC.
+		2. The switch sends group-specific-query messages for groupB in default query interval (1s), and after sending default query times (2times), multicast entry information on the switch for the port should be cleared. The switch does not send any group-specific-query messages to hostA and hostB.
+		3. The switch sends group-specific-query messages for groupA in 3s query interval, and after sending default query times (2times), multicast entry information on the switch for the port should be cleared. The switch does not send any group-specific-query messages to hostB and hostC.
+		4. The switch sends group-specific-query messages for groupA in 3s query interval, and after sending 3 query times, multicast entry information on the switch for the port should be cleared. The switch does not send any group-specific-query messages to hostB and hostC.
+		5. The switch sends group-specific-query messages for groupA in 25s query interval, and after sending 3 query times, multicast entry information on the switch for the port should be cleared. The switch does not send any group-specific-query messages to hostB and hostC.
+		6. The switch sends group-specific-query messages for groupA in 25s query interval, and after sending 1 query times, multicast entry information on the switch for the port should be cleared. The switch does not send any group-specific-query messages to hostB and hostC.
+		7. The switch sends group-specific-query messages for groupA in 25s query interval, and after sending 7 query times, multicast entry information on the switch for the port should be cleared. The switch does not send any group-specific-query messages to hostB and hostC.
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+
+	<stage>
+		<step no="1">
+			<desc>
+				config switch, enable igmp snooping, disable Immediate-leave	
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port4} switchport access vlan ${tb.vlan1}"
+				-v "ip igmp snooping vlan ${tb.vlan1}"
+				-v "ip igmp snooping"
+				-v "no ip igmp snooping immediate-leave"
+				 -v "show interface"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>check igmp snooping is enable in vlan${tb.vlan1}, and immediate-leave is disable</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+				-v "_debug swd igmp"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+			<log-match>-e "Immediate leave: disable"</log-match>
+			<log-match>-e "Last member query interval: 1"</log-match>
+			<log-match>-e "Last member query count: 2"</log-match>
+		</step>
+		<step no="3">
+			<desc>
+				port1 sends igmp v3 query pkt
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-new="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "stream_import -onePort ${sw1.port1.ixia_port} -fileName ${case.dir}/conf/potr1.str"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 1 -maintanceOp enable"
+				-v ""
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="4">
+			<desc>check the mroute table added the entry</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v3"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				port2, port3 and port4 send igmp v3 report pkt to join the group 225.1.1.1, port4 joins group 225.0.0.1
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_import -onePort ${sw1.port2.ixia_port} -fileName ${case.dir}/conf/potr2.str"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 11 -maintanceOp enable"
+				-v ""
+				-v "stream_import -onePort ${sw1.port3.ixia_port} -fileName ${case.dir}/conf/potr3.str"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId 4 -maintanceOp enable"
+				-v ""<!-- start transmit -->
+				-v "stream_import -onePort ${sw1.port4.ixia_port} -fileName ${case.dir}/conf/potr4.str"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 4 -maintanceOp enable"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 11 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port}"
+			</ssh>
+		</step>
+		<step no="6.1">
+			<desc>show log buf</desc>
+			<log-file>check_igmp1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="6.2">
+			<desc>check the multicast entry information in vlan${tb.vlan1} is created correctly</desc>
+			<log-file>check_mgroup1.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Group number: 2"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 0" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.1.1.1" 
+				p1 "${sw1.port2}\s*dynamic" 
+				p1 "${sw1.port3}\s*dynamic" 
+				p1 "${sw1.port4}\s*dynamic" 
+				-e "\-\-\-"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 1" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.0.0.1" 
+				p1 "${sw1.port4}\s*dynamic" 
+				-e "\-\-\-"
+				-f ${log.dir}/${log.file}
+			</log-match>
+		</step>
+		<step no="7" delay="10">
+			<desc>port2 sends leave message</desc>
+			<log-file>eth2test3.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 12 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="8.1">
+			<desc>show log buf, check the query count</desc>
+			<log-file>check_igmp2.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match>-e "process delay leave, interval: 1, time:2"</log-match>
+			<log-match  bin="${bin.dir}/searchbyrexp.py">
+				-nb -e "process delay leave" 
+				-p "delay leave timeout" 
+				-c 2 
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<no-error-check />
+		</step>
+		<step no="8.2">
+			<desc>get the first and second retry time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp2.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp2.log | sed -n 2p| awk '{print $1,$2}'`"
+			</multi-setvar>
+		</step>
+		<step no="8.3">
+			<desc>check the retry interval is 1sec</desc>
+			<script>
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -ge "1" -a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -lt "3" ]; then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="8.4">
+			<desc>check the multicast entry of port2 is removed, and port3 is still alive</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "${sw1.port2}\s*dynamic" -n</log-match>
+			<log-match>-e "${sw1.port3}\s*dynamic"</log-match>
+		</step>
+		<step no="9">
+			<desc>port4 sends leave message in group 225.1.1.1</desc>
+			<log-file>eth2test4.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 5 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="10.1" delay="10">
+			<desc>show log buf</desc>
+			<log-file>check_igmp3.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match>-e "process delay leave, interval: 1, time:2."</log-match>
+			<log-match  bin="${bin.dir}/searchbyrexp.py">
+				-nb -e "process delay leave" 
+				-p "delay leave timeout" 
+				-c 2 
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<no-error-check />
+		</step>
+		<step no="10.2">
+			<desc>get the first and second retry time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp3.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp3.log | sed -n 2p| awk '{print $1,$2}'`"
+			</multi-setvar>
+		</step>
+		<step no="10.3">
+			<desc>check the retry interval is 1sec</desc>
+			<script>
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -ge "1" -a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -lt "3" ]; then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="10.4">
+			<desc>check the multicast entry of port4 is removed in group 225.1.1.1</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+		</step>
+		<step no="11">
+			<desc>change the last-member-query-interval to 3 and last-member-query-count to 3</desc>
+			<telnet  target="sw1">
+				-v "ip igmp snooping last-member-query-count 3"
+				-v "ip igmp snooping last-member-query-interval 3"
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+			<log-match>-e "Immediate leave: disable"</log-match>
+			<log-match>-e "Last member query interval: 3"</log-match>
+			<log-match>-e "Last member query count: 3"</log-match>
+		</step>
+		<step no="12">
+			<desc>
+				port 2,3,4 send igmp v3 report pkt to join the group
+			</desc>
+			<log-file>eth2test5.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 11 -maintanceOp enable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 4 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 11 -maintanceOp enable"
+				-v ""
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="13">
+			<desc>check the multicast entry information in vlan${tb.vlan1} is created correctly</desc>
+			<log-file>check_mgroup2.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 0" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.1.1.1" 
+				p1 "${sw1.port2}\s*dynamic" 
+				p1 "${sw1.port3}\s*dynamic" 
+				p1 "${sw1.port4}\s*dynamic" 
+				-e "\-\-\-"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 1" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.0.0.1" 
+				p1 "${sw1.port4}\s*dynamic" 
+				-e "\-\-\-"
+				-f ${log.dir}/${log.file}
+			</log-match>
+		</step>
+		<step no="14">
+			<desc>port2 sends leave message</desc>
+			<log-file>eth2test6.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 12 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="15.1" delay="10">
+			<desc>show log buf</desc>
+			<log-file>check_igmp4.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match>-e "process delay leave, interval: 3, time:3"</log-match>
+			<log-match  bin="${bin.dir}/searchbyrexp.py">
+				-nb -e "process delay leave" 
+				-p "delay leave timeout" 
+				-c 3 
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<no-error-check />
+		</step>
+		<step no="15.2">
+			<desc>get the first and second retry time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp4.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp4.log | sed -n 2p| awk '{print $1,$2}'`"
+			</multi-setvar>
+		</step>
+		<step no="15.3">
+			<desc>check the retry interval is 3sec</desc>
+			<script>
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -ge "3" -a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -le "5" ]; then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="15.4">
+			<desc>check the multicast entry of port2 is removed</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Group number: 2"</log-match>
+			<log-match>-e "vlan id: ${tb.vlan1}"</log-match>
+			<log-match>-e "group ip: 225.1.1.1"</log-match>
+			<log-match>-e "${sw1.port2}\s*dynamic" -n</log-match>
+			<log-match>-e "${sw1.port3}\s*dynamic"</log-match>
+		</step>
+		<step no="16">
+			<desc>port4 sends leave message in group 225.1.1.1</desc>
+			<log-file>eth2test7.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 5 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="17.1" delay="10">
+			<desc>show log buf</desc>
+			<log-file>check_igmp5.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match>-e "process delay leave, interval: 3, time:3"</log-match>
+			<log-match  bin="${bin.dir}/searchbyrexp.py">
+				-nb -e "process delay leave" 
+				-p "delay leave timeout" 
+				-c 3 
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<no-error-check />
+		</step>
+		<step no="17.2">
+			<desc>get the first and second retry time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp5.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp5.log | sed -n 2p| awk '{print $1,$2}'`"
+			</multi-setvar>
+		</step>
+		<step no="17.3">
+			<desc>check the retry interval is 3sec</desc>
+			<script>
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -ge "3" -a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -le "5" ]; then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="17.4">
+			<desc>check the multicast entry of port2 is removed in group 225.1.1.1</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+		</step>
+		<step no="18">
+			<desc>change the last-member-query-interval to 25 and last-member-query-count to 7</desc>
+			<telnet  target="sw1">
+				-v "ip igmp snooping router-aging-time 360"
+				-v "ip igmp snooping last-member-query-count 7"
+				-v "ip igmp snooping last-member-query-interval 25"
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+			<log-match>-e "Immediate leave: disable"</log-match>
+			<log-match>-e "Last member query interval: 25"</log-match>
+			<log-match>-e "Last member query count: 7"</log-match>
+		</step>
+		<step no="19">
+			<desc>
+				port 2,3,4 send igmp v3 report pkt to join the group, after 10sec, port2 sends leave msg 
+			</desc>
+			<log-file>eth2test8.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 11 -maintanceOp enable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 4 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 11 -maintanceOp enable"
+				-v ""
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port}"
+				-v "sleep 10"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 12 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="20.1" delay="180">
+			<desc>show log buf</desc>
+			<log-file>check_igmp6.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match>-e "process delay leave, interval: 25, time:7"</log-match>
+			<log-match  bin="${bin.dir}/searchbyrexp.py">
+				-nb -e "process delay leave" 
+				-p "delay leave timeout" 
+				-c 7 
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<no-error-check />
+		</step>
+		<step no="20.2">
+			<desc>get the first and second retry time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp6.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp6.log | sed -n 2p| awk '{print $1,$2}'`"
+			</multi-setvar>
+		</step>
+		<step no="20.3">
+			<desc>check the retry interval is 1sec</desc>
+			<script>
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -ge "25" -a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -le "28" ]; then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="20.4">
+			<desc>check the multicast entry of port2 is removed</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Group number: 2"</log-match>
+			<log-match>-e "vlan id: ${tb.vlan1}"</log-match>
+			<log-match>-e "group ip: 225.1.1.1"</log-match>
+			<log-match>-e "${sw1.port2}\s*dynamic" -n</log-match>
+			<log-match>-e "${sw1.port3}\s*dynamic"</log-match>
+		</step>
+		<step no="21">
+			<desc>port4 sends leave message in group 225.1.1.1</desc>
+			<log-file>eth2test9.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 4 -maintanceOp enable"
+				-v ""
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 11 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port}"
+				-v "sleep 10"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 5 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="22.1" delay="180">
+			<desc>show log buf</desc>
+			<log-file>check_igmp7.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match>-e "process delay leave, interval: 25, time:7"</log-match>
+			<log-match  bin="${bin.dir}/searchbyrexp.py">-nb -e "process delay leave" -p "delay leave timeout" -c 7 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<step no="22.2">
+			<desc>get the first and second retry time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp7.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp7.log | sed -n 2p| awk '{print $1,$2}'`"
+			</multi-setvar>
+		</step>
+		<step no="22.3">
+			<desc>check the retry interval is 25sec</desc>
+			<script>
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -ge "25" -a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -le "28" ]; then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="22.4">
+			<desc>check the multicast entry of port4 is removed, and port3 is still alive in group 225.1.1.1</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+		</step>
+		<step no="23">
+			<desc>reset last-member-query-interval and last-member-query-count to default</desc>
+			<telnet  target="sw1">
+				-v "no ip igmp snooping last-member-query-count"
+				-v "no ip igmp snooping last-member-query-interval"
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+			<log-match>-e "Immediate leave: disable"</log-match>
+			<log-match>-e "Last member query interval: 1"</log-match>
+			<log-match>-e "Last member query count: 2"</log-match>
+		</step>
+
+		<step no="24">
+			<desc>
+				port2, port3 and port4 send igmp v3 report pkt to join the group 225.1.1.1, port4 joins group 225.0.0.1
+			</desc>
+			<log-file>eth2test10.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 11 -maintanceOp enable"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 4 -maintanceOp enable"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 11 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="25.1">
+			<desc>show log buf</desc>
+			<log-file>check_igmp8.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="25.2">
+			<desc>check the multicast entry information in vlan${tb.vlan1} is created correctly</desc>
+			<log-file>check_mgroup1.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Group number: 2"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 0" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.1.1.1" 
+				p1 "${sw1.port2}\s*dynamic" 
+				p1 "${sw1.port3}\s*dynamic" 
+				p1 "${sw1.port4}\s*dynamic" 
+				-e "\-\-\-"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 1" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.0.0.1" 
+				-e "${sw1.port4}\s*dynamic" 
+				-f ${log.dir}/${log.file}
+			</log-match>
+		</step>
+		<step no="26" delay="10">
+			<desc>port2 sends leave message</desc>
+			<log-file>eth2test11.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 12 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="27.1">
+			<desc>show log buf, check the query count</desc>
+			<log-file>check_igmp9.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match>-e "process delay leave, interval: 1, time:2"</log-match>
+			<log-match  bin="${bin.dir}/searchbyrexp.py">
+				-nb -e "process delay leave" 
+				-p "delay leave timeout" 
+				-c 2 
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<no-error-check />
+		</step>
+		<step no="27.2">
+			<desc>get the first and second retry time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp9.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp9.log | sed -n 2p| awk '{print $1,$2}'`"
+			</multi-setvar>
+		</step>
+		<step no="27.3">
+			<desc>check the retry interval is 25sec</desc>
+			<script>
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -ge "1" -a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -le "3" ]; then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="27.4">
+			<desc>check the multicast entry of port2 is removed, and port3 is still alive</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "${sw1.port2}\s*dynamic" -n</log-match>
+			<log-match>-e "${sw1.port3}\s*dynamic"</log-match>
+		</step>
+		<step no="28">
+			<desc>port4 sends leave message in group 225.1.1.1</desc>
+			<log-file>eth2test12.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 5 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="29.1" delay="10">
+			<desc>show log buf</desc>
+			<log-file>check_igmp10.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match>-e "process delay leave, interval: 1, time:2."</log-match>
+			<log-match  bin="${bin.dir}/searchbyrexp.py">
+				-nb -e "process delay leave" 
+				-p "delay leave timeout" 
+				-c 2 
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<no-error-check />
+		</step>
+		<step no="29.2">
+			<desc>get the first and second retry time</desc>
+			<multi-setvar>
+				echo "time1=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp10.log | sed -n 1p| awk '{print $1,$2}'`"
+				echo "time2=`sed -n -e '/delay leave timeout/'p ${log.dir}/check_igmp10.log | sed -n 2p| awk '{print $1,$2}'`"
+			</multi-setvar>
+		</step>
+		<step no="29.3">
+			<desc>check the retry interval is 1sec</desc>
+			<script>
+				if [ "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -ge "1" -a "$(expr `date -d "${time1}" +%s` - `date -d "${time2}" +%s`)" -le "3" ] ; then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="29.4">
+			<desc>check the multicast entry of port4 is removed in group 225.1.1.1</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+		</step>
+
+	</stage>
+	<post-process>
+		<stage>
+			<step no="1">
+				<ssh timeout="900" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+					-v ""
+				</ssh>
+			</step>
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

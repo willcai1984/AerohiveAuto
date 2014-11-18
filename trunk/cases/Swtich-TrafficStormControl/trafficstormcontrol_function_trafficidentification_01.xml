@@ -1,0 +1,264 @@
+<testcase>
+	<brief>(IxPort: CoF=2)Test traffic storm control on GE port, limit type broadcast</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		TrafficStormControl_TrafficIdentification_01
+		Test traffic storm control can control broadcast.
+		1. set command to HOS, set incoming interface traffic storm control enable
+		2. Loop set rate for storm control on incoming interface, send traffic from IXIA, check RX rate
+		3. compare RX rate with CLI set rate
+	</description>
+	<comment>
+		Traffic storm control can control broadcast/multicast/unknow_unicast/tcpSYN, this case test broadcast
+	</comment>
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="tx_port1.phytype" value="${sw1.port1.phytype}" />
+	<property name="rx_port1" value="${sw1.port2.ixia_port}" />
+	<property name="rx_port1.phytype" value="${sw1.port2.phytype}" />
+	<property name="frame_size" value="512" />
+	<property name="frame_rate" value="12500" />
+	<property name="error" value="0.20" />
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include prefix="pre" file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				Set init storm control setting, set interface control type broadcast
+			</desc>
+			<telnet target="sw1">
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'no interface ${sw1.port1} storm-control type all'
+				-v 'interface ${sw1.port1} storm-control type broadcast'
+				-v 'no interface ${sw1.port2} shutdown'
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				connect to ixia, create session;
+			</desc>
+			<log-file>step1.2_ixia_session_cr.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-new="${job.user}-${job.sid}-1">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+			</ssh>
+			<no-error-check />
+		</step>
+	</stage>
+
+
+
+	<stage loop-values="10,50,80" var-name="rate">
+
+		<step no="2.1">
+			<desc>
+				set storm control on ${sw1.port1},and the rate limit is ${rate} percent
+			</desc>
+			<log-file>step2.1_set_ctrl_rate.log</log-file>
+			<telnet target="sw1">
+				-v 'interface ${sw1.port1} storm-control rate-limit percentage ${rate}'
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				connected to ixia, configure stream port1 for traffic test;
+			</desc>
+			<log-file>step2.2_ixia_send_traffic.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-get="${job.user}-${job.sid}-1">
+				-v "ah_ixia_connect
+				-chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip}
+				-userName ${job.user}${job.sid} -portList ${tx_port1},${rx_port1}
+				-phyList ${tx_port1.phytype},${rx_port1.phytype}"
+				-v ""
+				
+				<!-- configure stream 1 with rate is 1G -->
+				-v "traffic_configure_eth2 -portListIn ${tx_port1}
+				-mac_dst ffff.ffff.ffff
+				-mac_src 0000.0000.0016
+				<!-- in this case rate_pps just no use -->
+				-rate_pps ${frame_rate}
+				-frame_length ${frame_size}"
+
+				-v"stream_percent_rate_set -portList ${tx_port1}
+				-streamId 1
+				-percentRate 100"
+				-v ""
+
+				<!-- configure multi stream statistic -->
+				-v 'sleep 4'
+				-v "port_multi_stream_statistic_set -portList ${tx_port1},${rx_port1}"
+				-v "stop_transmit -portList ${tx_port1}"
+				-v "clear_statistic -portList ${tx_port1},${rx_port1}"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="2.2.1.1">
+			<desc>
+				Start traffic and get traffic result;
+			</desc>
+			<log-file>step2.2.1.1_ixia_send_traffic.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-get="${job.user}-${job.sid}-1">
+				-v "start_transmit -portList ${tx_port1}"
+				-v 'sleep 10'
+				-v " get_stream_statistic -portList ${rx_port1}"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="2.2.1.2">
+			<desc>
+				Get bps rate of stream receive
+			</desc>
+			<setvar name="rate_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.2.1.1_ixia_send_traffic.log -p '0.rx.port.${rx_port1}.1.bitRate=(\d+)' -t str
+			</setvar>
+		</step>
+
+
+		<step no="2.2.2.1">
+			<desc>
+				Get traffic result again;
+			</desc>
+			<log-file>step2.2.2.1_ixia_send_traffic.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-get="${job.user}-${job.sid}-1">
+				-v " get_stream_statistic -portList ${rx_port1}"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="2.2.2.2">
+			<desc>
+				Get bps rate of stream receive
+			</desc>
+			<setvar name="rate_2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.2.2.1_ixia_send_traffic.log -p '0.rx.port.${rx_port1}.1.bitRate=(\d+)' -t str
+			</setvar>
+		</step>
+
+		<step no="2.2.3.1">
+			<desc>
+				Get traffic result again;
+			</desc>
+			<log-file>step2.2.3.1_ixia_send_traffic.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-get="${job.user}-${job.sid}-1">
+				-v " get_stream_statistic -portList ${rx_port1}"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="2.2.3.2">
+			<desc>
+				Get bps rate of stream receive
+			</desc>
+			<setvar name="rate_3">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.2.3.1_ixia_send_traffic.log -p '0.rx.port.${rx_port1}.1.bitRate=(\d+)' -t str
+			</setvar>
+		</step>
+
+		<step no="2.2.4.1">
+			<desc>
+				Get traffic result again;
+			</desc>
+			<log-file>step2.2.4.1_ixia_send_traffic.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-get="${job.user}-${job.sid}-1">
+				-v " get_stream_statistic -portList ${rx_port1}"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="2.2.4.2">
+			<desc>
+				Get bps rate of stream receive
+			</desc>
+			<setvar name="rate_4">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.2.4.1_ixia_send_traffic.log -p '0.rx.port.${rx_port1}.1.bitRate=(\d+)' -t str
+			</setvar>
+		</step>
+
+		<step no="2.2.5.1">
+			<desc>
+				Get traffic result again;
+			</desc>
+			<log-file>step2.2.5.1_ixia_send_traffic.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-get="${job.user}-${job.sid}-1">
+				-v " get_stream_statistic -portList ${rx_port1}"
+				-v "stop_transmit -portList ${tx_port1}"
+				-v "clear_statistic -portList ${tx_port1},${rx_port1}"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="2.2.5.2">
+			<desc>
+				Get bps rate of stream receive
+			</desc>
+			<setvar name="rate_5">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.2.5.1_ixia_send_traffic.log -p '0.rx.port.${rx_port1}.1.bitRate=(\d+)' -t str
+			</setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>Get average rate value from 5 times test</desc>
+			<setvar name="rate_average">
+				${bin.dir}/average.py -s "(${rate_1},${rate_2},${rate_3},${rate_4},${rate_5})" -b '2'
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>calculate deviation</desc>
+			<multi-setvar>
+				echo "deviation=`echo \"scale=5;(${rate_average}-(${rate}*10000000))/(${rate}*10000000)\"|bc`"
+			</multi-setvar>
+		</step>
+
+		<step no="3.1">
+			<desc> deviation is ${deviation}, if deviation greater than ${error} then fail, less than ${error} then pass </desc>
+			<script>
+				echo ${deviation} ${error} | awk '{
+				if ( $1 &gt; $2 || $1 &lt; -$2 )
+				{exit(1);}
+				else
+				{exit(0);}
+				}'
+			</script>
+		</step>
+
+
+
+	</stage>
+	
+
+	<stage>
+		<step no="4.1">
+			<desc>close IXIA session</desc>
+			<ssh timeout="180" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+				-v ""
+			</ssh>
+		</step>
+
+	</stage>
+
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<ssh timeout="180" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+					-v ""
+				</ssh>
+			</step>
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

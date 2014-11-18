@@ -1,0 +1,145 @@
+<include obj-arg-names="__AP__">
+	<step no="1">
+		<desc>check console</desc>
+		<log-file>__AP___cons_check.log</log-file>
+		<console target="__AP__">
+			-v ""
+			-v "show version"
+			-v ""
+			-v "show hw-info"
+			-v ""; exit 0
+		</console>
+		<no-error-check />
+	</step>
+	<step no="1b">
+		<setvar name="cons_check_result" scope="local">
+			grep "show version" ${log.dir}/__AP___cons_check.log >/dev/null; echo $?
+		</setvar>
+	</step>
+	<step no="1c">
+		<if>"${cons_check_result}" != "0"</if>
+		<log-file>rmpts___AP__.log</log-file>
+		<script>
+			${bin.dir}/rmtps.pl ${tb.rmps.ip} ${tb.rmps.user}:${tb.rmps.passwd} ${__AP__.rmps_port}\pulse >> ${log.dir}/${log.file}
+			echo `date` >> ${log.dir}/${log.file}
+			sleep 45
+		</script>
+		<no-error-check />
+	</step>
+
+	<step no="2">
+		<desc>show run to ensure no any CLI</desc>
+		<log-file>show_run___AP__result.log</log-file>
+		<console target="__AP__" timeout="120">
+			-v ""
+			-v "show run"
+			-v ""
+		</console>
+	</step>
+	<step no="3a">
+		<desc>judge if the show run result is clear</desc>
+		<log-file>show_run___AP__result.log</log-file>
+		<setvar name="env.is_clean_in_reset" scope="local">
+			${bin.dir}/cmpcli_after_reset.sh ${log.dir}/${log.file} ${auto.root.dir}/subs/conf/br_preset_cli.txt >/dev/null; echo $?
+		</setvar>
+	</step>
+	<step no="3b">
+		<desc>judge if the show run result is clear</desc>
+		<log-file>show_run___AP__result.log</log-file>
+		<setvar name="env.is_clean_in_auto" scope="local">
+			${bin.dir}/searchblocks.py -b "^AH.*#show run$" -e "^AH.*#$" -ps p0 "." -nb -ne -f ${log.dir}/${log.file}; exit 0
+		</setvar>
+	</step>
+
+	<step no="debug">
+		<script>
+			echo "env.is_clean_in_reset=${env.is_clean_in_reset}"
+			echo "env.is_clean_in_auto=${env.is_clean_in_auto}"
+		</script>
+	</step>
+
+	<step no="clear.1">
+		<if>"${env.is_clean_in_reset}" != "0" &amp;&amp; "${env.is_clean_in_auto}" != "success"</if>
+		<desc>Reset AP to default </desc>
+		<console target="__AP__" timeout="300">
+			-v "boot-param region fcc"
+			-v ""
+			-v "reset config bootstrap"
+			-v ""
+			-v "reset config"
+		</console>
+	</step>
+	<step no="clear.2">
+		<if>"${env.is_clean_in_reset}" != "0" &amp;&amp; "${env.is_clean_in_auto}" != "success"</if>
+		<desc>temporary solution to avoid previous console issue</desc>
+		<console target="__AP__">
+			-v ""
+			-v "show version"
+			-v ""
+		</console>
+		<failed>next</failed>
+	</step>
+	<step no="clear.3">
+		<if>"${env.is_clean_in_auto}" != "success"</if>
+		<desc>BR as AP initialization</desc>
+		<console target="__AP__" timeout="120">
+			-v "no interface mgt0 dhcp-server options default-gateway"
+			-v "no interface mgt0 dhcp-server options dns1"
+			-v "no interface mgt0 dhcp-server ip-pool 192.168.85.10 192.168.85.99"
+			-v "no interface mgt0 dhcp-server enable"
+			-v "no interface mgt0 ip"
+			-v "no interface mgt0 dns-server enable"
+			-v "no interface eth0 mode"
+			-v "no interface eth1 mode"
+			-v "no interface eth2 mode"
+			-v "no interface eth3 mode"
+			-v "no interface eth4 mode"
+			-v "no interface eth4 mac-learning enable"
+			-v "no interface eth3 mac-learning enable"
+			-v "no interface eth3 mac-learning enable"
+			-v "no interface eth2 mac-learning enable"
+			-v "no interface eth1 mac-learning enable"
+			-v "int mgt0 dhcp client"
+			-v "no track wan_failover_test"
+			-v "no capwap client server port"
+			-v "save config"
+		</console>
+		<no-error-check />
+	</step>
+
+	<step no="4.0" delay="30">
+		<desc>show run to ensure no any CLI</desc>
+		<log-file>show_run___AP___result.log</log-file>
+		<console target="__AP__">
+			-v ""
+			-v "show run"
+			-v ""
+		</console>
+	</step>
+
+	<step no="4.1">
+		<desc>grep -v capwap cli in the show_run___AP___result.log  </desc>
+		<script>
+			grep -v "capwap" ${log.dir}/show_run___AP___result.log >${log.dir}/show_run__AP__.Empty.log
+		</script>
+	</step>
+	<step no="4.2">
+		<desc>show run after BR as AP initialization judge it is empty</desc>
+		<log-match bin="${bin.dir}/searchblocks.py">-b "^AH.*#show run$" -e "^AH.*#$" -ps p0 "." -nb -ne -f ${log.dir}/$show_run__AP__.Empty.log</log-match>
+	</step>
+
+	<step no="5" type="loop-check" loop-max-times="6" loop-interval="10">
+		<desc>check ap1 eth0 if status is up</desc>
+		<log-file>show_int___AP___${loop_check.idx}.log</log-file>
+		<console target="__AP__">
+			-v "console page 0"
+			-v ""
+			-v "show int"
+			-v ""
+			-v "console page 22"
+		</console>
+		<log-match>-i "Eth0" -i "backhaul *U"</log-match>
+		<failed>next</failed>
+	</step>
+
+</include>

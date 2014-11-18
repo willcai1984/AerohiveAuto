@@ -1,0 +1,132 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=1)Check default agetime for dynamic learnt mac entry</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	Router++++switch+++++IXIA port
+		Description	Check default agetime for dynamic learnt mac entry
+		Platform Dependence	Chesapeake
+		Pre-condition	?	IXIA connect to switch port g/1/1
+		Test procedure	1.	IXIA send a packet to switch, the source mac is 0000-1111-1111
+		2.	Check the FDB table mac entry for 0000-1111-1111       Result1
+		3.	Check the default age time      Result2
+		4.	IXIA don’t send any traffic to switch with this mac
+		5.	Check if the mac entry delete after the default age time out          Result3
+
+		Expect result	Result1:   FDB table has mac entries : [0000-1111-1111, vlan10, g/1/1]
+		Result2:  the default age time is 300 seconds
+		Result3:  the mac entry will deleted after 300-600 seconds
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+		<step no="1">
+			<desc>
+				configure 3 access ports in the same vlan
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan2}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show vlan id ${tb.vlan2}"
+				-v "show mac-address-table all"
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				build stream, port1 sends broadcast frame with src-mac ${sw1.port1.ixia_port.mac}	
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-rate_pps 500
+				-mac_src_count 8000"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 20"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="2.2">
+			<desc>check FDB, mac learned by FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table interface ${sw1.port1}"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1.ixia_port.mac}\s*${sw1.port1}\s*no"</log-match>
+		</step>
+		<step no="2.3">
+			<desc>check default agetime of each entry</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table idle-timeout "
+			</telnet>
+			<log-match>-e "The MAC table idle-timeout time is 300"</log-match>
+		</step>
+		<!--it's about 2*idle-timeout for a mac entry to age out at worst-->
+		<step no="3.1">
+			<desc>wait for 250sec</desc>
+			<script timeout="260">
+				sleep 230
+				exit 0
+			</script>
+		</step>
+		<step no="3.2">
+			<desc>check the 8k FDB entries is not ageout before 300sec</desc>
+			<log-file>FDB_age_timeout_pre.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table interface ${sw1.port1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.vlan1}.*${sw1.port1}\s*no" -c 8000 -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="3.3">
+			<desc>wait for 300sec</desc>
+			<script timeout="310">
+				sleep 300
+				exit 0
+			</script>
+		</step>
+		<step no="3.4" type="loop-check" loop-max-times="5" loop-interval="25">
+			<desc>check the mac ${sw1.port1.ixia_port.mac} will age timeout</desc>
+			<log-file>FDB_age_timeout${loop_check.idx}.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-e "${tb.vlan1}.*${sw1.port1}\s*no" -n</log-match>
+		</step>	
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

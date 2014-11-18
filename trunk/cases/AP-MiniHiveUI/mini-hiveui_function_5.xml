@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Use MiNi-HiveUI to config HTTP proxy server</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-AP can obtain ip address from DHCP server
+		-PC can access AP
+
+		Test Procedure:
+		1.	Login MiNi-HiveUI via web page from PC, config HM, select “HiveManager Configuration”, select “Send HiveAP communications with HiveManager through an HTTP proxy server”, config HTTP proxy server and port, apply, show running-config on AP to check
+		2.	Select “Authenticate the HiveAP on the HTTP proxy server”, config user name/password and apply, show running-config to check(check the max length of user name/password)
+		3.	Disable “Authenticate the HiveAP on the HTTP proxy server” and apply, check result
+		4.	Unselect “Send HiveAP communications with HiveManager through an HTTP proxy server” and apply, check result
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="selenium_path" value="/root/selenium-server-standalone-2.42.2.jar" />
+	<stage>
+	
+		<step no="0.1">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "export DISPLAY=:1"
+				-v "nohup java -jar ${selenium_path} 1>logfile.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "printenv"
+			</ssh>
+		</step>
+		
+		<step no="1">
+			<desc>
+				clear the capwap info
+			</desc>
+			<log-file>step1_clear_capwap.log</log-file>
+			<ssh target="ap1">
+				-v "no capwap client server"			
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>check the running-config</desc>
+			<log-file>step1.1_running_config.log</log-file>
+				<ssh target="ap1">
+				-v "show running-config"
+			</ssh>
+			<log-match>-n -i "capwap client server name"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				config ssid
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "save config"
+			</ssh>
+		</step>
+		
+		<step no="3.1">
+            <multi-setvar>
+                echo "conn1.ssid=${ssid.name}"
+                echo "conn1.proto=open"
+                echo "conn1.pif=${ssid_bind_interface}"
+            </multi-setvar>
+        </step>
+        <include prefix="3.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />		
+
+		<step no="4">
+			<desc>
+				open a browser on laptop,login NetConfigUI and config HM settings,proxy server
+			</desc>
+			<log-file>step4_config_HM.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir};
+				python ${auto.root.dir}/AerohiveGUI/scripts/miniui/miniui_basic.py -r http://${sta1.mif.ip}:4444/wd/hub \
+				--parameters visit.url=https://${ap1.mgt0.ip}/index.php5 config.mode=hm hm.is_http=flase hm.para_ip=${pub.hm1.ip} hm.proxy_ip=${pub.proxy1.ip} hm.proxy_port=${pub.proxy1.port} \
+				-t ff -l info -f ${log.dir}/${log.file} --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="5">
+			<desc>
+				check running-config
+			</desc>
+			<log-file>show_running_config.log</log-file>
+			<console target="ap1">
+				-v "capwap client enable"
+				-v "show running-config"
+			</console>
+			<log-match>-i "capwap client server name ${pub.hm1.ip}"</log-match>
+			<log-match>-i "capwap client HTTP proxy name ${pub.proxy1.ip} port ${pub.proxy1.port}"</log-match>
+		</step>
+		
+		<step no="6">
+			<desc>
+				config authenticate user and password
+			</desc>
+			<log-file>step6_config_HM.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir};
+				python ${auto.root.dir}/AerohiveGUI/scripts/miniui/miniui_basic.py -r http://${sta1.mif.ip}:4444/wd/hub \
+				--parameters visit.url=https://${ap1.mgt0.ip}/index.php5 config.mode=hm hm.is_para=false hm.is_http=flase hm.proxy_ip=${pub.proxy1.ip} hm.proxy_port=${pub.proxy1.port} hm.is_auth=true hm.user=${pub.proxy1.user1} hm.passwd=${pub.proxy1.passwd1} \
+				-t ff -l info -f ${log.dir}/${log.file} --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+		
+		<step no="7">
+			<desc>
+				check running-config
+			</desc>
+			<log-file>step7_show_running_config.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-i "capwap client server name ${pub.hm1.ip}"</log-match>
+			<log-match>-i "capwap client HTTP proxy name ${pub.proxy1.ip} port ${pub.proxy1.port}"</log-match>
+			<log-match>-i "capwap client HTTP proxy user ${pub.proxy1.user1} password ***"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				clear proxy info
+			</desc>
+			<log-file>step8_config_HM.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir};
+				python ${auto.root.dir}/AerohiveGUI/scripts/miniui/miniui_basic.py -r http://${sta1.mif.ip}:4444/wd/hub \
+				--parameters visit.url=https://${ap1.mgt0.ip}/index.php5 config.mode=hm hm.is_para=false hm.is_http=flase hm.proxy_ip=${pub.proxy1.ip} hm.proxy_port=${pub.proxy1.port} hm.is_auth=flase \
+				-t ff -l info -f ${log.dir}/${log.file} --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+		
+		<step no="9">
+			<desc>
+				check running-config
+			</desc>
+			<log-file>step9_show_running_config.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-i "capwap client server name ${pub.hm1.ip}"</log-match>
+			<log-match>-i "capwap client HTTP proxy name ${pub.proxy1.ip} port ${pub.proxy1.port}"</log-match>
+			<log-match>-n -i "capwap client HTTP proxy user ${pub.proxy1.user1} password *** "</log-match>
+		</step>	
+		
+		<step no="10">
+			<desc>
+				clear proxy info
+			</desc>
+			<log-file>step10_config_HM.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir};
+				python ${auto.root.dir}/AerohiveGUI/scripts/miniui/miniui_basic.py -r http://${sta1.mif.ip}:4444/wd/hub \
+				--parameters visit.url=https://${ap1.mgt0.ip}/index.php5 config.mode=hm hm.is_para=false hm.is_http=flase hm.is_proxy=flase \
+				-t ff -l info -f ${log.dir}/${log.file} --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+		
+		<step no="11">
+			<desc>
+				check running-config
+			</desc>
+			<log-file>step11_show_running_config.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-i "capwap client server name ${pub.hm1.ip}"</log-match>
+			<log-match>-n -i "capwap client HTTP proxy name ${pub.proxy1.ip} port ${pub.proxy1.port}"</log-match>
+			<log-match>-n -i "capwap client HTTP proxy user ${pub.proxy1.user1} password *** "</log-match>
+		</step>
+	</stage>
+</testcase>

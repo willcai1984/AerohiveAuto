@@ -1,0 +1,105 @@
+<testcase>
+	<brief> unknown unicast from ap interface  </brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+	<description>
+
+		Topology to use
+		Switch
+		|
+		Laptop1---------Portal
+		Objective
+		unknown unicast from ap interface
+		Pre-condition
+		-laptop1 connects with portal, pass authentication
+		-laptop1 get ip address. Etc. 1.1.1.2
+		Test procedure
+		-add a static arp on laptop1,etc 1.1.1.100-11-22-33-44-55
+		-laptop1 ping 1.1.1.1.
+		Then ap will receive a unknown unicast pkt.
+		Result 1.
+		Expect result
+		1: portal will relay this pkt to eth0. Match the default route.
+
+
+	</description>
+	<stage>
+		<property name="junkyip" value="192.168.${tb.vlan1}.6" />
+		<step no="1">
+			<desc>show interface of mgt0 on AP1</desc>
+			<log-file>show_int_mgt0.log</log-file>
+			<telnet target="ap1">
+				-v "interface eth0 manage all"
+				-v "show interface mgt0"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "save config"
+			</telnet>
+		</step>
+
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+
+		<step no="6">
+			<desc>clear log buffered for ap1 ${ap1.mgt0.ip}</desc>
+			<ssh target="ap1" timeout="60">
+				-v "_ff id 1 src-ip ${sta1.tif.ip}"
+				-v "console timeout 0"
+				-v "console page 0"
+				-v "save config "
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>Add a static arp on laptop1, $junkyip.6 00-00-22-33-44-55</desc>
+			<log-file>addarp_${sta1.mif.ip}.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "arp -s ${junkyip} 00-00-00-01-22-22" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+
+		<step no="7" delay="5">
+			<desc>laptop ping $junkyip.6</desc>
+			<log-file>ping_for_staticarp.log </log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ping ${junkyip} -n 2" -l ${log.dir} ;exit 0
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>show the logs for AP</desc>
+			<log-file>ap_received.log</log-file>
+			<ssh target="ap1" timeout="280">
+				-v "no _kdebug fe basic"
+				-v "no _kdebug fe detail"
+				-v "show logging buffer"
+			</ssh>
+			<log-match>-c -i "(o) eth0 ${sta1.tif.ip}->${junkyip}" -i "icmp-echo-req"</log-match>
+			<log--match>-c -i "(i) wifi0.1 ${sta1.tif.ip}->${junkyip}"</log--match>
+			<no-error-check />
+		</step>
+		
+		<step no="8.1">
+		  <desc>check the debug on eth1 for AP</desc>
+			<if> !("${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true") &amp;&amp; "${ap.eth1.existed}" == "true" </if>
+			<desc>show the logs for AP</desc>
+			<log-file>ap_received.log</log-file>
+			<log-match>-c -i "\[fe\]: pkt arrived on incorrect interface \[eth1\], route for ${sta1.tif.mac} is on \[wifi0.1\]"</log-match>
+			<no-error-check />
+		</step>
+  </stage>
+
+</testcase>

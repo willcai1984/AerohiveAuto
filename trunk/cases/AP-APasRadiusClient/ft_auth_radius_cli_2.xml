@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Change radius accounting port</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a ssid with wpa 802.1x auth
+		-config the primary server with auth and acct port default
+		-active the ssid
+
+		Test Procedure:
+		-'sh aaa' to check the default acct port is 1813
+		-STA connects to ssid, check the status, result 1
+		-change the primary accounting server to another one which uses other
+		radius acct port
+		-check the status of radius server on AP, result 2
+		-client reconnects to ssid, check the status, result 3
+		-no auth port
+		'no security-object xxx security aaa radius-server accounting primary
+		1.1.1.1 acct-port'
+		-check the status of radius server on AP, result 4
+		-STA reconnect, result 5
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.proto" value="wpa-aes-8021x" />
+	<property name="conn2.username" value="${pub.radius3.username}" />
+	<property name="conn2.passwd" value="${pub.radius3.passwd}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				set vlan for mgt0
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+		<step no="1.1">
+			<desc>
+				-config a ssid with wpa 802.1x auth
+				-config the primary server with auth port is default
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object test1"
+				-v "security-object test1 default-user-profile-attr 1"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object test1 security protocol-suite wpa-aes-8021x"
+				-v "security-object test1 security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object test1 security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "ssid ${ssid.name} security-object test1"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile normal qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "_debug auth probe"
+				-v "_debug auth info"
+				-v "_debug auth all"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				--'show aaa' the check the default acct port is 1813
+			</desc>
+			<log-file>step2_show_aaa.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa"
+			</telnet>
+			<log-match>-i "1 *Primary *${pub.radius1.ip} *${pub.radius1.acctport}"</log-match>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>
+				-STA connection is ok, AP sends acct request to the right port, and it can get acct response
+			</desc>
+			<log-file>step4_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+			<log-match>-p 2 -i "${sta1.tif.ip}" -p 7 -i "wpa-8021x"</log-match>
+		</step>
+
+		<include prefix="4" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step4.1_show_logging.log" />
+		
+		<step no="4.1" delay="10">
+			<desc>
+				--AP sends acct request to the right port, and it can get acct response
+			</desc>
+			<log-file>step4.1_show_logging.log</log-file>
+			<no-error-check />
+			<log-match>-i "Sending RADIUS message to accounting server ${pub.radius1.ip}"</log-match>
+			<log-match>-i "Sending RADIUS message to authentication server ${pub.radius1.ip}"</log-match>
+			<log-match>-c -i "RADIUS message: *code=5 *(Accounting-Response)"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				-change the primary accounting server to another one which uses other
+				radius acct port
+			</desc>
+			<log-file>step5_change_radius.log</log-file>
+			<ssh target="ap1">
+				-v "security-object test1 security aaa radius-server accounting primary ${pub.radius3.ip} shared-secret ${pub.radius3.sharesecret} acct-port ${pub.radius3.acctport}"
+				-v "security-object test1 security aaa radius primary ${pub.radius3.ip} shared-secret ${pub.radius3.sharesecret} auth-port ${pub.radius3.authport}"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				--'show aaa' the check the auth port is changed
+			</desc>
+			<log-file>step5.1_show_aaa.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa"
+			</telnet>
+			<log-match>-n -i "1 *Primary *${pub.radius1.ip} *${pub.radius1.acctport}"</log-match>
+			<log-match>-i "1 *Primary *${pub.radius3.ip} *${pub.radius3.acctport}"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				- clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<include prefix="7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="8" delay="5">
+			<desc>
+				-STA should pass auth success, and AP will send the acct request to right port,
+				get response from server, check debug to make sure
+			</desc>
+			<log-file>step8_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+			<log-match>-p 2 -i "${sta1.tif.ip}" -p 7 -i "wpa-8021x"</log-match>
+		</step>
+		
+		<include prefix="8" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step8.1_show_logging_buffered.log" />
+
+		<step no="8.1" delay="5">
+			<desc>
+				- AP will send the acct request to right port,
+				get response from server, check debug to make sure
+			</desc>
+			<log-file>step8.1_show_logging_buffered.log</log-file>
+			<log-match>-i "\[auth_info\]: Sending RADIUS message to accounting server ${pub.radius3.ip}"</log-match>
+			<log-match>-i "\[auth_info\]: Sending RADIUS message to authentication server ${pub.radius3.ip}"</log-match>
+			<log-match>-c -i "RADIUS message: *code=5 *(Accounting-Response)"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="9">
+			<desc>
+				-no security-object xxx security aaa radius-server accounting primary 1.1.1.1 acct-port
+			</desc>
+			<telnet target="ap1">
+				-v "no security-object test1 security aaa radius-server accounting primary ${pub.radius3.ip} acct-port"
+			</telnet>
+		</step>
+
+		<step no="10">
+			<desc>
+				-check the status of radius server on AP, the acct port is 1813
+			</desc>
+			<log-file>step10_show_aaa.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa"
+			</telnet>
+			<log-match>-i "1 *Primary *${pub.radius3.ip} *${pub.radius1.acctport}"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				- clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="11" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<include prefix="12" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="13" delay="5">
+			<desc>
+				-STA connects to ssid, check the status
+			</desc>
+			<log-file>step13_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+			<log-match>-p 2 -i "${sta1.tif.ip}" -p 7 -i "wpa-8021x"</log-match>
+		</step>
+
+		<include prefix="13" file="subs/save_ap_log.xml" args="show logging buffered, ap1, ste13.1_show_logging.log" />
+		
+		<step no="13.1" delay="10">
+			<desc>
+				-STA should pass auth with the second radius server
+			</desc>
+			<log-file>ste13.1_show_logging.log</log-file>
+			<log-match>-i "\[auth_info\]: Sending RADIUS message to accounting server ${pub.radius3.ip}"</log-match>
+			<log-match>-i "\[auth_info\]: Sending RADIUS message to authentication server ${pub.radius3.ip}"</log-match>
+			<log-match>-n -c -i "RADIUS message: *code=5 *(Accounting-Response)"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

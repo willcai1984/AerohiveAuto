@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check default time</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-wifi1 radio is backhaul/dual mode
+
+		Test Procedure:
+
+		1,Configure radio profile, CLI:
+		radio profile failover
+		radio profile failover phymode 11na
+		interface wifi1 radio profile failover
+		2, Check failover default trigger time by CLI:
+		Show interface wifi1 | in trigger
+		3, Open debug: _debug dcd chnl
+		4, interface eth0 shutdown, CLI:
+		Interface eth0 shutdown
+		5, get failover trigger time in log, CLI:
+		Show logging buffer
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-wifi1 radio is backhaul/dual mode
+				Configure radio profile, CLI:
+				radio profile failover
+				radio profile failover phymode 11na
+				interface wifi1 radio profile failover
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 mode dual"
+				-v "radio profile failover"
+				-v "radio profile failover phymode 11na"
+				-v "interface wifi1 radio profile failover"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				Check failover default trigger time by CLI:
+				Show interface wifi1 | in trigger
+			</desc>
+			<log-file>step2_show_interface_wifi1.log</log-file>
+			<telnet target="ap1">
+				-v "Show interface wifi1 | in trigger"
+			</telnet>
+			<log-match>-e "Trigger time=2s"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				3, Open debug: _debug dcd chnl
+			</desc>
+			<telnet target="ap1">
+				-v "_debug dcd chnl"
+				-v "logging debug"
+				-v "clear log"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				4, interface eth0 shutdown, CLI:
+				Interface eth0 shutdown
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5" delay="5">
+			<desc>
+				get failover trigger time in log, CLI:
+				Show logging debug
+			</desc>
+			<log-file>step5_show_logging_debug_failover.log</log-file>
+			<console target="ap1">
+				-v "show logging debug"
+			</console>
+			<no-error-check />
+			<log-match>-i "wifi1" -i "portal unreachable"</log-match>
+			<log-match>-i "ACSP failover trigger" -i "wifi1"</log-match>
+			<log-match>-i "wifi1" -i "start do failover"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				get the happen time of start do failover and turn it to seconds
+			</desc>
+			<setvar name="start_failover_time">
+				${bin.dir}/getbyrexp.py -p "(\d+-\d+-\d+\s+\d+:\d+:\d+)\s+debug.*?wifi1.*?start\s+do\s+failover" -f ${log.dir}/step5_show_logging_debug_failover.log --script "time.mktime(time.strptime(m.group(1), '%Y-%m-%d %H:%M:%S'))"
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				get the happen time of portal unreachable and turn it to seconds
+			</desc>
+			<setvar name="portal_unreachable_time">
+				${bin.dir}/getbyrexp.py -p "(\d+-\d+-\d+\s+\d+:\d+:\d+)\s+debug.*?\[dcd_chnl\]:\s+wifi1.*?portal\s+unreachable" -f ${log.dir}/step5_show_logging_debug_failover.log --script "time.mktime(time.strptime(m.group(1), '%Y-%m-%d %H:%M:%S'))"
+			</setvar>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				check trigger time
+			</desc>
+			<log-file>check_trigger_time.log</log-file>
+			<script>
+				python -c "print 'pass' if(${start_failover_time}-${portal_unreachable_time}) &lt; 4 else 'fail'" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "pass"</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>IP-session correlative mgt0 test (change mgt0's ip).</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Config ip-policy which permit Laptop's ip_address
+		"ip-policy FW"
+		"ip-policy FW from/to &lt;Laptop ip addr&gt; action permit"
+		"user-profile FW security ip-policy from/to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Laptop ping AP1
+		3) Check the ip-session table on AP1
+		4) Change the mgt0's ip
+		"intface mgt0 ip &lt;ip_address&gt;"
+		5) Check the ip-session table on AP1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "ssid ${ssid.name} manage all"
+				-v "service telnet protocol 6 timeout 300"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug.switch">
+			<desc>
+				"_ff id 1 dst-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				Configure a ip-policy and bind it to FW:
+				"ip-policy FW"
+				"ip-policy FW from/to &lt;Laptop ip addr&gt; action permit"
+				"user-profile FW security ip-policy from/to-access FW"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${sta1.tif.ip} action permit"
+				-v "ip-policy ${user_id} id 2 to ${sta1.tif.ip} action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id} to-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				Laptop ping AP1
+			</desc>
+			<log-file>step4_laptop_ping_ap.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ping ${ap1.mgt0.ip} &gt; /tmp/${job.id}ping_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get Laptop ping id
+			</desc>
+			<setvar name="laptop.ping.id">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4_laptop_ping_ap.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				check sta ping result
+			</desc>
+			<log-file>step4.2_check_sta_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /tmp/${job.id}ping_1.log"
+			</ssh>
+			<log-match>-c -i "from ${ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				Check the ip-session table on AP1
+			</desc>
+			<log-file>step4.3_show_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}.*-> ${ap1.mgt0.ip}/.*Proto 1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.mgt0.ip}/.*-> ${sta1.tif.ip}.*Proto 1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step4.4_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(u\) mgt0 ${sta1.tif.ip}->${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p " ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[FWtest\] id \[1\] \[permit\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}->${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.5">
+			<desc>
+				Get sessions id
+			</desc>
+			<setvar name="sessions_id">
+				${bin.dir}/getbyrexp.py -p "Id:(\d+);" -e "${ap1.mgt0.ip}/.*-> ${sta1.tif.ip}/.*Proto 1" -f ${log.dir}/step4.3_show_ip_sessions.log -s none -g-1 -t str
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				no _kdebug fe basic
+				no _kdebug fe detail
+				_kdebug fe session
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "no _kdebug fe basic"
+				-v "no _kdebug fe detail"
+				-v "_kdebug fe session"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Change the mgt0’s vlan attribute
+			</desc>
+			<log-file>step5.1_change_mgt0_vlan.log</log-file>
+			<console target="ap1">
+				-v "interface mgt0 ip ${pub.dnstest.ip1}/24"
+				-v ""
+				-v "show interface mgt0"
+			</console>
+			<log-match>-c -i "IP addr=${pub.dnstest.ip1};"</log-match>
+		</step>
+
+		<step no="5.2" delay="60">
+			<desc>
+				clear log on sta
+			</desc>
+			<ssh target="sta1">
+				-v "echo aerohive &gt; /tmp/${job.id}ping_1.log"
+			</ssh>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				check sta ping result
+			</desc>
+			<log-file>step5.3_check_sta_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /tmp/${job.id}ping_1.log"
+			</ssh>
+			<log-match>-n -c -i "from ${ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.4">
+			<desc>
+				Check the ip-session table on AP1
+			</desc>
+			<log-file>step5.4_show_forwarding_engine_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}.*-> ${ap1.mgt0.ip}/.*Proto 1" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.mgt0.ip}/.*-> ${sta1.tif.ip}.*Proto 1" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.5">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step5.5_show_loging_buffered.log</log-file>
+			<console target="ap1" timeout="600">
+				-v "show logging buffered"
+			</console>
+			<log-match>-i "invalidate IP sess (${sessions_id})"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>
+					kill laptop ping process
+				</desc>
+				<ssh target="sta1">
+					-v "kill ${laptop.ping.id}"
+					-v "rm -f /tmp/${job.id}ping_1.log"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

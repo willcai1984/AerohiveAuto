@@ -1,0 +1,359 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=4) When report suppression is enabled, the switch forwards only one IGMPv2 report per multicast router query to multicast router.</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	Topology 2
+		Description	When report suppression is enabled, the switch forwards only one IGMPv2 report per multicast router query to multicast router.
+		Platform	Chesapeake
+		Pre-condition	IGMP snooping is enabled on the switch. RouterA and hostA are in vlan 10; routerB, hostB and hostC are in vlan 100.
+		Test procedure	1. Disable report suppression on the switch, hostA  sends  IGMPv2 join report  for groupA , hostB  sends  IGMPv2 join report  for groupB, hostC  sends  IGMPv2 join report  for groupB, waite for the multicast routers to send query periodically. Capture packets on the hosts and the multicast routers,result 1
+		2.  Hosts send unsolicited IGMPv2 report packets. Capture packets on the hosts and the multicast routers,result 1
+		3.  Enable report suppression on the switch, waite for the multicast routers to send query periodically. Capture packets on the hosts and the multicast routers,result 2
+		4.  Hosts send unsolicited IGMPv2 report packets. Capture packets on the hosts and the multicast routers,result 2
+
+		Expect result	1. All three hosts send their report packets but do not receive others’ report packets, routerA receives one report packet and the routerB receives two report packets.
+		2. All three hosts send their report packets but do not receive others’ report packets, routerA receives one report packet and the routerB receives one report packet.
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+
+	<stage>
+		<step no="1">
+			<desc>
+				config switch, port1 and port2 in vlan${tb.vlan1} and port3, port4 in vlan${tb.vlan2}	
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port4} switchport access vlan ${tb.vlan1}"
+				-v "ip igmp snooping vlan ${tb.vlan1}"
+				-v "ip igmp snooping"
+				 -v "show interface"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>diable report suppression, it's default</desc>
+			<telnet target="sw1">
+				-v "no ip igmp snooping report-suppression"
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+				-v "_debug swd igmp"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+			<log-match>-e "Report suppression: disable"</log-match>
+		</step>
+		<step no="3">
+			<desc>
+				port1 sends igmp v2 query pkt
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-new="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "stream_import -onePort ${sw1.port1.ixia_port} -fileName ${case.dir}/conf/potr1.str"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 6 -maintanceOp enable"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+			</ssh>
+		</step>
+		<step no="4">
+			<desc>check the mroute table added the entry</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v2"</log-match>
+		</step>
+		<step no="5">
+			<desc>
+				port2 sends igmpv2 report pkt to join 225.0.0.1, port3 and port4 send igmp v2 report pkt to join 225.1.1.1 after query in 10sec 
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-get="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "stream_import -onePort ${sw1.port2.ixia_port} -fileName ${case.dir}/conf/potr2.str"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 9 -maintanceOp enable"
+				-v ""
+				-v "stream_import -onePort ${sw1.port3.ixia_port} -fileName ${case.dir}/conf/potr3.str"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId 12 -maintanceOp enable"
+				-v ""<!-- start transmit -->
+				-v "stream_import -onePort ${sw1.port4.ixia_port} -fileName ${case.dir}/conf/potr4.str"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 1 -maintanceOp enable"
+				-v ""
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port} -duration 1"
+				-v "sleep 10"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+				-v "sleep 10"
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port} -duration 1"
+				-v ""
+			</ssh>
+		</step>
+		<step no="6.1">
+			<desc>show log buf</desc>
+			<log-file>check_igmp1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="6.2">
+			<desc>check the multicast entry information in vlan${tb.vlan1} is created correctly</desc>
+			<log-file>check_igmp2.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 1" -ps p1 "vlan id: ${tb.vlan1}" 
+				p1 "group ip: 225.1.1.1" 
+				p1 "${sw1.port3}\s*dynamic" 
+				p1 "${sw1.port4}\s*dynamic" 
+				-e "\-\-\-"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 0" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.0.0.1" 
+				-e "${sw1.port2}\s*dynamic" 
+				-f ${log.dir}/${log.file}
+			</log-match>
+		</step>
+		<step no="7.1">
+			<desc>
+				port2 and port3 send igmp v2 report pkt without query 
+			</desc>
+			<log-file>eth2test3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900" session-close="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v ""
+				-v "start_capture -portList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port2.ixia_port} -duration 1"
+				-v "stop_capture -portList ${sw1.port1.ixia_port}"
+				-v "save_capture -onePort  ${sw1.port1.ixia_port} -fileName ${job.id}_1.enc"
+				-v ""
+				-v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_1.enc"
+				-v "rm -f ${job.id}_1.enc"
+			</ssh>
+		</step>
+		<step no="7.2">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_1.enc ${log.dir}
+			</script>
+		</step>
+		<step no="8.1">
+			<desc>show log buf</desc>
+			<log-file>check_igmp3.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="8.2">
+			<desc>check the routeA(225.0.0.1) receives 1 report pkt, while routeB(225.1.1.1) receives 2 report pkt</desc>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_1.enc 2>/dev/null | grep "IGMP V2 Membership Report / Join group 225.0.0.1" -c`" -lt "1" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_1.enc 2>/dev/null | grep "IGMP V2 Membership Report / Join group 225.1.1.1" -c`" -lt "2" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="9">
+			<desc>
+				config switch to enable report-suppression 	
+			</desc>
+			<telnet target="sw1">
+				-v "ip igmp snooping report-suppression"
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Report suppression: enable"</log-match>
+		</step>
+		<step no="10.1">
+			<desc>
+				port2, port4 and port3 send igmp v2 report pkt after query in 10sec 
+			</desc>
+			<log-file>eth2test4.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 1"
+				-v ""
+				-v "start_capture -portList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port} -duration 1"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port2.ixia_port} -duration 1"
+				-v ""
+				-v "stop_capture -portList ${sw1.port1.ixia_port}"
+				-v "save_capture -onePort ${sw1.port1.ixia_port} -fileName ${job.id}_2.enc"
+				-v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_2.enc"
+				-v "rm -f ${job.id}_2.enc"
+			</ssh>
+		</step>
+		<step no="10.2">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_2.enc ${log.dir}
+			</script>
+		</step>
+		<step no="11.1">
+			<desc>show log buf</desc>
+			<log-file>check_igmp4.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="11.2">
+			<desc>check the multicast entry information in vlan${tb.vlan1} is created correctly</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-file>igmp_group1.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 0" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.0.0.1" 
+				-e "${sw1.port2}\s*dynamic" 
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 1" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.1.1.1" 
+				-e "${sw1.port4}\s*dynamic" 
+				-f ${log.dir}/${log.file}
+			</log-match>
+		</step>
+		<step no="11.3">
+			<desc>check the routeA(225.0.0.1) receives 1 report pkt, while routeB(225.1.1.1) receives 2 report pkt</desc>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_2.enc 2>/dev/null | grep "IGMP V2 Membership Report / Join group 225.0.0.1" -c`" -ne "1" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_2.enc 2>/dev/null | grep "IGMP V2 Membership Report / Join group 225.1.1.1" -c`" -ne "1" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="12.1">
+			<desc>
+				port2 and port3 send igmp v2 report pkt without query 
+			</desc>
+			<log-file>eth2test5.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "sleep 10"
+				-v ""
+				-v "start_capture -portList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v "stop_capture -portList ${sw1.port1.ixia_port}"
+				-v "save_capture -onePort ${sw1.port1.ixia_port} -fileName ${job.id}_3.enc"
+				-v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_3.enc"
+				-v "rm -f ${job.id}_3.enc"
+			</ssh>
+		</step>
+		<step no="12.2">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_3.enc ${log.dir}
+			</script>
+		</step>
+		<step no="13.1">
+			<desc>show log buf</desc>
+			<log-file>check_igmp5.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="13.2">
+			<desc>check the multicast entry information in vlan${tb.vlan1} is created correctly</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-file>igmp_group2.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 0" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.0.0.1" 
+				-e "${sw1.port2}\s*dynamic" 
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 1" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.1.1.1" 
+				-e "${sw1.port4}\s*dynamic" 
+				-f ${log.dir}/${log.file}
+			</log-match>
+		</step>
+		<step no="13.3">
+			<desc>check the routeA(225.0.0.1) receives 1 report pkt, while routeB(225.1.1.1) receives 2 report pkt</desc>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_3.enc 2>/dev/null | grep "IGMP V2 Membership Report / Join group 225.0.0.1" -c`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_3.enc 2>/dev/null | grep "IGMP V2 Membership Report / Join group 225.1.1.1" -c`" -ne "0" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+	</stage>
+	<post-process>
+		<stage>
+			<step no="1">
+				<ssh timeout="900" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+					-v ""
+				</ssh>
+			</step>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

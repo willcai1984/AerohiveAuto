@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mac-session parameters test.(upid, Laptop with AP)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Config a mac-policy, binding it to a user-profile, and config a upid on AP1
+		"mac-policy MAC-0"
+		"mac-policy MAC-0 [from/to] &lt;Laptop mac_addr&gt; action permit"
+		"user-profile FW"
+		"user-profile FW security mac-policy from-access MAC-0 to-access MAC-0"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Laptop ping AP1
+		3) Check the mac-session table on AP1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FW" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Laptop uses user-profile "FW"
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				-open debug mode
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "clear forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				1) Config a mac-policy, binding it to a user-profile, and config a upid on AP1
+			</desc>
+			<telnet target="ap1">
+				-v "mac-policy ${user_id}"
+				-v "mac-policy ${user_id} id 1 from ${sta1.tif.mac} action permit"
+				-v "mac-policy ${user_id} id 2 to ${sta1.tif.mac} action permit"
+				-v "user-profile ${user_id} security mac-policy from-access ${user_id} to-access ${user_id}"
+				-v "ssid ${ssid.name} default-user-profile-attr 1"
+			</telnet>
+		</step>
+
+		<include prefix="3.1" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 5" />
+
+		<step no="4">
+			<desc>
+				Laptop ping AP1 in background
+			</desc>
+			<log-file>step4_sta1_start_ping.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ping ${ap1.mgt0.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				3) Check the mac-session table on AP1
+			</desc>
+			<log-file>step5_show_mac_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>Get the mac-session number of sta1 to ap1</desc>
+			<setvar name="id.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_show_mac_sessions.log -p "Id:(\d+)" -e "(?i)${ap1.mgt0.mac}-&gt;${sta1.tif.mac}" -t str -g-1 -s none
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				3) Check the mac-session table on AP1
+			</desc>
+			<log-file>step6_show_mac_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine mac-sessions id ${id.number}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)Src MAC=${ap1.mgt0.mac};\s*Dst MAC=${sta1.tif.mac}" -ps p "UPID=1" -e "(?i)Src MAC=${sta1.tif.mac};\s*Dst MAC=${ap1.mgt0.mac}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)Src MAC=${sta1.tif.mac};\s*Dst MAC=${ap1.mgt0.mac}" -ps p "UPID=4096" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					-kill process
+				</desc>
+				<ssh target="sta1">
+					-v "killall -q ping"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

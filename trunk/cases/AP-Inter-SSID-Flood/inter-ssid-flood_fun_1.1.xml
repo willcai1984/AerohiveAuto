@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Laptops link to the same wifi port, in the same ssid and vlan</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Laptops link to the same wifi port and vlan, in different ssid
+		Pre-condition
+		-Laptops has been associated with AP1 and assigned an ip address
+		Test procedure
+		1)Laptops link to different ssid but the same wifi port and vlan on AP1
+		2)Disable Inter-ssid-flood on AP1:
+		“no forwarding-engine inter-ssid-flood enable”
+		3)Laptop1 sends broadcast or multicast packet
+		4)Check the packets’ process on AP1
+		5)Enable Inter-ssid-flood on AP1:
+		“forwarding-engine inter-ssid-flood enable”
+		6)Repeat step 3-4
+		Expect result
+		- The packets should not be flooded to wifi port which links to Laptop2 on step 4
+		- The packets should be flooded to wifi port which links to Laptop2 on step 6
+		Test result
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Configure AP1 via ssh(configure the first ssid)
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+
+		<step no="3">
+			<desc>
+				-Configure AP1 (configure the second ssid)
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}_1"
+				-v "security-object ${ssid.name}_1 default-user-profile-attr 2"
+				-v "ssid ${ssid.name}_1"
+				-v "ssid ${ssid.name}_1 security-object ${ssid.name}_1"
+				-v "interface wifi0 ssid ${ssid.name}_1"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id 1 attribute 2"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<multi-setvar>
+				echo "conn2.ssid=${ssid.name}_1"
+				echo "conn2.proto=open"
+				echo "conn2.pif=wifi0"
+			</multi-setvar>
+		</step>
+		<include prefix="4.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+
+		<step no="4.9">
+			<desc>
+				-Get laptop2's interface associated to the ap1
+				-Show ssid2's info
+			</desc>
+			<log-file>step4.9_ssid2_info_log.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name}_1"
+			</ssh>
+		</step>
+
+		<step no="4.10">
+			<desc>
+				-Get ap1 inter associated to laptop2's info
+			</desc>
+			<setvar name="ap1.ssid2.inter">
+				${bin.dir}/getstring.pl -k "Bind interfaces" -p 3 -f ${log.dir}/step4.9_ssid2_info_log.log | awk '{print tolower($0)}'
+			</setvar>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-Disable inter-ssid-flood on ap1 and open debug
+			</desc>
+			<ssh target="ap1">
+				-v "no forwarding-engine inter-ssid-flood enable"
+				-v "_ff id 1 src-mac ${sta1.tif.mac} etype 0806"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "clear forwarding-engine mac-sessions"
+			</ssh>
+		</step>
+		<!-- Due to some reasons, delete arp 2 times -->
+		<include prefix="5.2" file="subs/sta_send_arp.xml" args="sta1, ${tb.server1} , 1" />
+
+		<include prefix="5.3" file="subs/sta_send_arp.xml" args="sta1, ${tb.server1} , 1" />
+
+		<step no="5.4" delay="5">
+			<desc>
+				-Confirm arp request cannot be sent out to laptop2
+			</desc>
+			<log-file>step5.4_arp_request_log.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-e "inter-ssid food is disabled, don't flood on ${ap1.ssid2.inter}" -c</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-Enable inter-ssid-flood on ap1 and clear log buffered
+			</desc>
+			<ssh target="ap1">
+				-v "forwarding-engine inter-ssid-flood enable"
+				-v "clear log buffered"
+				-v "clear forwarding-engine mac-sessions"
+			</ssh>
+		</step>
+		<!-- Due to some reasons, delete arp 2 times -->
+		<include prefix="6.2" file="subs/sta_send_arp.xml" args="sta1, ${tb.server1} , 1" />
+		<include prefix="6.3" file="subs/sta_send_arp.xml" args="sta1, ${tb.server1} , 1" />
+
+		<step no="6.4" delay="5">
+			<desc>
+				-Confirm arp request can be sent out to laptop2
+			</desc>
+			<log-file>step6.4_arp_request_log.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-e "inter-ssid food is disabled, don't flood on ${ap1.ssid2.inter}" -c -n</log-match>
+			<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) ${ap1.ssid2.inter} ${sta1.tif.mac}->f+:f+:f+ arp ${sta1.tif.ip}\(${sta1.tif.mac}\)->${tb.server1}\(0+:0+:0+\)" -f ${log.dir}/${log.file}</log-match> -->
+		</step>
+
+	</stage>
+</testcase>

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>a laptop disconnects with the ap firstly, then reconnect with this ap again, make sure that the ap send gratuitous arp </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition
+		-laptop connect with ap, pass authentication
+		Test procedure
+		- Laptop associates with ap
+		- shutdown ap’s eth port
+		- bring up eth’s port of ap, result 1
+		Expect result
+		1: make sure box has send the gratuitous arp in right vlan
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="shutdown.eth1">
+			<desc>
+				shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				Config ap1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}_type"
+				-v "interface mgt0 hive ${hive.name}_type"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "user-profile ${ssid.name} vlan-id ${tb.vlan1} attribute 1"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				enable debug on AP1
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				- shutdown ap’s eth port
+				- bring up eth’s port of ap,
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+				-v ""
+				-v ""
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show interface mgt0
+			</desc>
+			<log-file>step4.1_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-c -i "IP addr=${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="5" delay="10">
+			<desc>
+				check log info on AP1
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "\[fe_arp\]: fe receive gratuitous ARP request ${sta1.tif.mac} vlan ${tb.vlan1}"</log-match>
+			<log-match>-c -i "\[fe_arp\]: eth0 send gratuitous ARP ${sta1.tif.mac} vlan ${tb.vlan1}"</log-match>
+		</step>
+	</stage>
+</testcase>

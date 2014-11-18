@@ -1,0 +1,228 @@
+<testcase>
+	<brief>The second test case of Access Console</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+
+		Description
+		Ethernet backhaul is lost, backhaul failover is enabled , but AP can’t establish wireless backhaul link successfully after a certain period of time (portal),access console will be enabled and access console SSID will be bound to interface wifi0
+		Pre-condition
+		Set the config:
+		Hive xxx
+		Interface mgt0 hive xxx
+		Track xxx
+		Track xxx action enable-access-console
+		Track xxx action start-mesh-failover
+
+		Test procedure
+		1. Check track result and access console state
+		2. Shut down interface eth0(11n box, only eth0 connect to switch), or shutdown port in switch which connect to eth0(a/b/g box), or cut off eth0 cable
+		3. Check track result and access console state
+		4. Check if AP establish neighbor with other AP
+		5. Check access console state by show access console _
+		6. Check if access console SSID be bound to interface wifi0
+		7. Use a laptop to connect to access console SSID
+		8. Login AP via SSH from laptop
+
+
+		Expect result
+		1. Show track xxx should display targets reachable
+		2. Show interface can see eth0
+		with state “D”
+		3. Track result: targets unreachable
+		4. AP could not establish neighbor with other AP
+		5. Access console with running state
+		6. Show interface can see access console SSID be bound to interface wifi0 (bug 13380)
+		7. Laptop can connect to access console SSID and obtain a internal ip address
+		8. Can login AP via SSH from laptop
+
+
+		TOPO:
+		AP1------SW------DHCP server
+
+
+	</description>
+	
+	<property name="conn1.proto" value="wpa-aes-psk"/>
+	<property name="conn1.psk" value="aerohive"/>
+	
+	<stage>
+
+		<step no="1">
+			<desc>Set config to AP1 </desc>
+			<ssh target="ap1" timeout="60">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "track ${tb.name} enable"
+				-v "track ${tb.name} action enable-access-console"
+				-v "track ${tb.name} default-gateway"
+				-v "track ${tb.name} action start-mesh-failover"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="2" delay="30">
+			<desc>Check track result should be reachable in AP1</desc>
+			<log-file>ap1_track_state1.log</log-file>
+			<ssh target="ap1">
+				-v "show track "
+			</ssh>
+			<log-match>-n -e "Unreachable" -c</log-match>
+		</step>
+
+		<step no="3">
+		  <if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>Show interface wifi1 to check backhaul failover should be enabled in AP1</desc>
+			<log-file>ap1_wifi1_failover.log</log-file>
+			<ssh target="ap1">
+				-v "show interface wifi1"
+			</ssh>
+			<log-match>-e "Backhaul failover=enable" -c</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4">
+			<desc>Check default gateway should be eth0 in AP1</desc>
+			<log-file>ap1_route.log</log-file>
+			<ssh target="ap1">
+				-v "show route"
+			</ssh>
+			<log-match>-i "0000:0000:0000" -i "eth0" -c</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>Shutdown interface eth0 of AP1</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown "
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="5.2">
+			<desc>Shutdown interface eth1 of AP1</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="6" delay="60">
+			<desc>Check amrp neighbor of AP1</desc>
+			<log-file>ap1_amrp.log</log-file>
+			<console target="ap1">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>-n -e "TWO-WAY" -c</log-match>
+		</step>
+
+		<step no="7" delay="60">
+			<desc>Check track result of AP1</desc>
+			<log-file>ap1_track_state2.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show track"
+			</console>
+			<log-match>-e "Unreachable" -c</log-match>
+		</step>
+
+		<step no="8">
+			<desc>Check access console should be in running state of AP1</desc>
+			<log-file>ap1_ac_state.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show access-console _"
+			</console>
+			<log-match>-i "Current state" -e "running" -c</log-match>
+		</step>
+
+		<step no="9">
+			<desc>Get access console SSID of AP1</desc>
+			<setvar name="ap1.ac.ssid">
+				cat ${log.dir}/ap1_ac_state.log | awk -F ':' '/Selected SSID/{split($2,a," "); print a[1]}'
+			</setvar>
+		</step>
+
+		<step no="10">
+			<desc>Show interface wifi0.1 in AP1</desc>
+			<log-file>ap1_wifi0.1_state.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi0.1"
+			</console>
+			<log-match>-e "${ap1.ac.ssid}" -c</log-match>
+		</step>
+
+		<step no="11">
+			<desc>Get access console SSID</desc>
+			<setvar name="conn1.ssid">
+				cat ${log.dir}/ap1_ac_state.log | awk -F ':' '/Selected SSID/{split($2,a," "); print a[1]}'
+			</setvar>
+		</step>
+
+		<include prefix="12" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1"/>
+
+		<step no="12.1">
+			<desc>Show laptop1's dhcp info</desc>
+			<log-file>step12_sta1.dhcp.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "cat /var/lib/dhclient/dhclient.leases"
+			</ssh>
+		</step>
+
+		<step no="12.2">
+			<desc>Get access interface's IP</desc>
+			<setvar name="vap.ip">
+				awk '/option dhcp-server-identifier/ {print $3}' ${log.dir}/step12_sta1.dhcp.log | tail -n1 | sed 's/;//'
+			</setvar>
+		</step>
+
+		<step no="13">
+			<desc>Check traffic between client and VAP</desc>
+			<log-file>step13_ping_vap.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${vap.ip} -c 4"
+			</ssh>
+			<log-match>-e "0%.*loss" -c</log-match>
+		</step>
+
+		<step no="14" delay="30">
+			<desc>SSH to AP1 from laptop1</desc>
+			<ssh target="sta1" timeout="900" prompt="root@.*~.*#" slow="true">
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 22 -o 600 -d ${vap.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m \"AH.*#\" -n -z step14_ssh_ap1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="15">
+			<desc>Cat file</desc>
+			<log-file>step15_ssh_ap1.log</log-file>
+			<ssh target="sta1">
+				-v "cat /tmp/step14_ssh_ap1.log"
+			</ssh>
+			<log-match>-i "admin" -i "pts" -i "${sta1.tif.ip}" -c</log-match>
+		</step>
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="16">
+				<desc>Remove file in station</desc>
+				<ssh target="sta1">
+					-v "rm -f /tmp/step14_ssh_ap1.log"
+					-v "rm -f /tmp/step14_ssh_ap1.log.bak"
+					-v "rm -f /tmp/step15_ssh_ap1.log"
+					-v "rm -f /tmp/tmp.sh"
+				</ssh>
+			</step>
+		</stage>
+
+		<include prefix="def_post" file="include/default_post_process.xml" />
+	</post-process>
+
+</testcase>

@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Nas use auto share secrect,but server side disable the share secret</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-radius server disable the auto share secret
+		-nas use auto share secrect
+		-the server and nas are the same hive
+		Config a ssid with cwp
+
+		Test Procedure:
+		-client connect to ssid
+		-check the debug info on auth side and the radius server
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<include prefix="start_selenium_server" file="subs/start_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<step no="1">
+			<desc>
+				-set security-object parameters
+				-config ssid and bind it to interface wifi0
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal reg-user-profile-attr 1 auth-user-profile-attr 1 timer-display"
+				-v "security-object ${ssid.name} web-server"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal timer-display alert 10"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal pass-through vlan 1"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal failure-redirect login-page "
+				-v "security-object ${ssid.name} security aaa radius primary ${ap2.mgt0.ip}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ttt vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config local radius server
+				-config ssid and bind it to interface wifi0
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}_ap2 "
+				-v "security-object ${ssid.name} security aaa radius primary ${ap2.mgt0.ip} shared-secret aerohive"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal reg-user-profile-attr 1 auth-user-profile-attr 1 timer-display"
+				-v "ssid ${ssid.name}_ap2 security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}_ap2"
+				-v "user-profile ttt vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-config account on local radius server
+				-radius server disable the auto share secret
+			</desc>
+			<telnet target="ap2">
+				-v "user-group autotest"
+				-v "user auto"
+				-v "user auto pass aerohive"
+				-v "user auto group autotest"
+				-v "aaa radius-server local db local"
+				-v "aaa radius-server local user-group autotest"
+				-v "no aaa radius-server local shared-secret-auto-gen"
+				-v "aaa radius-server local enable"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>show status of the radius server</desc>
+			<log-file>step4_show_rad_srv.log</log-file>
+			<telnet target="ap2">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-i "Enabled" -i "local database:" -p 3</log-match>
+			<log-match>-i "Auto shared-secret:" -c -n</log-match>
+		</step>
+
+		<step no="5">
+			<desc>enable radius debug on AP2</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+				-v "_debug radiusd excessive"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>station_login.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_negative.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} visit.pre_url=${pub.hm2.ip} login.username=auto login.password=aerohive -t ff -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+
+		<step no="8">
+			<desc>save debug on AP2</desc>
+			<log-file>step11_show_debug.log</log-file>
+			<telnet target="ap2" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "Ignoring request to authentication address" -i "from unknown client ${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="9" delay="5">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step9_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *wifi0.1 *01 *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step10_show_roam.log</log-file>
+			<telnet target="ap1">
+				-v "show roam cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YNNN"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_workload}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

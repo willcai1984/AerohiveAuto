@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that outbound FTP, HTTP and SSH connections can be established with NAT enabled (inbound requires port forwarding feature).</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Basic NAT features are validated
+
+		Test Procedure:
+		Connect clients to both eth1 and wifi0/wifi1 interface of BR. Establish FTP, HTTP
+		and SSH connections to remote host.
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-1" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<console target="br1.br">
+				-v "ssid ${conn1.ssid}"
+				-v "security-object ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "user-profile fw11 qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				show interface eth0 indicates NAT is disabled
+			</desc>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+			<log-match>-c -i "NAT support=enable;"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				br1.vpc1 show ip address got from mgt0 dhcp client
+			</desc>
+			<log-file>step3_ifconfig_br1_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, br1.sta1, br1.br" />
+
+		<step no="5">
+			<desc>
+				br1.vpc1 clear file
+			</desc>
+			<ssh target="br1.vpc1">
+				-v "rm -f /${pub.ftp1.file_local_dir}/${pub.ftp1.file2_medium}"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				br1.sta1 clear file
+			</desc>
+			<ssh target="br1.sta1">
+				-v "rm -f /${pub.ftp1.file_local_dir}/${pub.ftp1.file2_medium}"
+			</ssh>
+		</step>
+
+		<step no="6">
+			<desc>
+				br1.vpc1 get file from ftp server
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "curl -u ${pub.ftp1.username}:${pub.ftp1.passwd} ftp://${pub.ftp1.ip}/${pub.ftp1.file2_medium} -o ${pub.ftp1.file_local_dir}/${pub.ftp1.file2_medium}"
+				-v ""
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				br1.vpc1 check file
+			</desc>
+			<ssh target="br1.vpc1">
+				-v "ls /${pub.ftp1.file_local_dir}"
+			</ssh>
+			<log-match>-c -i "${pub.ftp1.file2_medium}"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				br1.vpc1 ssh ftp server
+			</desc>
+			<ssh target="br1.vpc1">
+				-v "clicfg.pl -o 300 -i 22 -d ${pc.def.user} -u ${pub.ftp1.username} -p ${pub.ftp1.passwd} -m ${pc.def.prompt} -v \'pwd\'"
+				-v ""
+			</ssh>
+		</step>
+
+		<step no="7">
+			<desc>
+				br1.sta1 get file from ftp server
+			</desc>
+			<ssh target="br1.sta1" timeout="120">
+				-v "curl -u ${pub.ftp1.username}:${pub.ftp1.passwd} ftp://${pub.ftp1.ip}/${pub.ftp1.file2_medium} -o ${pub.ftp1.file_local_dir}/${pub.ftp1.file2_medium}"
+				-v ""
+			</ssh>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				br1.sta1 check file
+			</desc>
+			<ssh target="br1.sta1">
+				-v "ls /${pub.ftp1.file_local_dir}"
+			</ssh>
+			<log-match>-c -i "${pub.ftp1.file2_medium}"</log-match>
+		</step>
+
+
+		<step no="7.2">
+			<desc>
+				br1.sta1 ssh ftp server
+			</desc>
+			<ssh target="br1.sta1" timeout="120" slow="true" prompt="(root|logger)@.*#">
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -o 300 -i 22 -d ${pub.ftp1.ip} -u ${pc.def.user} -p ${pub.ftp1.passwd} -m ${pc.def.prompt} -v \"pwd\"" -n -z step7.2_ssh_ftp.log -l ${log.dir}  > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+		</step>
+
+		<step no="8">
+			<desc>
+				br1.vpc1 clear file
+			</desc>
+			<ssh target="br1.vpc1">
+				-v "rm -f /${pub.ftp1.file_local_dir}/${pub.ftp1.file2_medium}"
+			</ssh>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				br1.sta1 clear file
+			</desc>
+			<ssh target="br1.sta1">
+				-v "rm -f /${pub.ftp1.file_local_dir}/${pub.ftp1.file2_medium}"
+			</ssh>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>
+					br1.vpc1 clear file
+				</desc>
+				<ssh target="br1.vpc1">
+					-v "rm -f /${pub.ftp1.file_local_dir}/${pub.ftp1.file2_medium}"
+				</ssh>
+			</step>
+
+			<step no="1.1">
+				<desc>
+					br1.sta1 clear file
+				</desc>
+				<ssh target="br1.sta1">
+					-v "rm -f /${pub.ftp1.file_local_dir}/${pub.ftp1.file2_medium}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

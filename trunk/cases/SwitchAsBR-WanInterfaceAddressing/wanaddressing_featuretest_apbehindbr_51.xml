@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that Aerohive AP can be connected to eth1 of BR, and establish CAPWAP to HiveManager on WAN</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Basic WAN routing and NAT features are validated
+
+		Test Procedure:
+		Attach a Aerohive AP330 to eth1, with:
+		* AP330 mgt0 using DHCP
+		* AP330 mgt0 using static IP
+		Configure CAPWAP server on AP330 to point it to the HiveManager
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				set eth1 mode to access
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile FW"
+				-v "user-profile FW attribute 1"
+				-v "interface ${br1.br.lan.int1} switchport user-profile-attribute 1"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				show running-config
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				mgt0 get ip address from br
+			</desc>
+			<console target="br1.ap1">
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				check mgt0 ip
+			</desc>
+			<log-file>step2_check_mgt0_ip.log</log-file>
+			<console target="br1.ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				get mgt0 ip
+			</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_check_mgt0_ip.log -p "IP addr=(\S+);" -t str
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				Get mgt0 gateway
+			</desc>
+			<multi-setvar>
+				echo "br1.gateway.ip=$(echo ${br1.ap1.mgt0.ip} | cut -d. -f1,2,3).1"
+			</multi-setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				HiveAPs and HM are in capwap communication.
+			</desc>
+			<console target="br1.ap1">
+				-v "capwap client enable"
+				-v "capwap client server name ${pub.hm1.ip}"
+			</console>
+		</step>
+
+		<step no="3" delay="60" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				Check the HiveAPs capwap state.
+			</desc>
+			<log-file>step3_check_capwap_state_${loop_check.idx}.log</log-file>
+			<console target="br1.ap1">
+				-v "show capwap client"
+			</console>
+			<log-match>-e "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				mgt0 using static IP
+			</desc>
+			<console target="br1.ap1">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${br1.ap1.mgt0.ip}/24"
+				-v "ip route default gateway ${br1.gateway.ip}"
+				-v "no capwap client enable"
+				-v "capwap client enable"
+			</console>
+		</step>
+
+		<step no="4.1" delay="60" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				Check the HiveAPs capwap state.
+			</desc>
+			<log-file>step3_check_capwap_state_${loop_check.idx}.log</log-file>
+			<console target="br1.ap1">
+				-v "show capwap client"
+			</console>
+			<log-match>-e "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				check route information
+			</desc>
+			<console target="br1.ap1">
+				-v "show ip route"
+			</console>
+			<log-match>-e "0.0.0.0\s+${br1.gateway.ip}" -re</log-match>
+		</step>
+	</stage>
+</testcase>

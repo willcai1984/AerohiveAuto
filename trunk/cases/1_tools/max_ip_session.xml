@@ -1,0 +1,79 @@
+<testcase>
+	<brief>FW_IP_Policy_Perf_10.11</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Description:
+		Establish maximum ip-session 8191
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+	<stage>
+		<property name="user_id" value="FWtest" />
+		<property name="conn1.ssid" value="${ssid.name}" />
+
+		<step no="1">
+			<desc>
+				-Configure AP1 via console
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "ip-policy fw"
+				-v "ip-policy fw action permit"
+				-v "user-profile ${user_id} security ip-policy from-access fw to-access fw"
+			</console>
+		</step>
+
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>ping laptop to get arp</desc>
+			<log-file>step3_ping_get_arp.log</log-file>
+			<script timeout="50">
+				ping ${sta1.tif.ip} -c 5 -I ${mpc.tif.name} > ${log.dir}/${log.file} ; exit 0
+			</script>
+		</step>
+
+		<step no="3">
+			<desc>Send UDP pkt;Age-time is 100s,create new IP session, id [10] ageout 100 sec, alg n/a flags 0x400</desc>
+			<log-file>step3_send_UDP_pkt.log</log-file>
+			<script timeout="50">
+				nohup hping3 ${sta1.tif.ip} -2 -I ${mpc.tif.name} -i u100 -c 9000000 -p 2000 1>${log.dir}/${log.file} 2>&amp;1 &amp;
+				echo $! > ${log.dir}/3_hping.log ; exit 0
+			</script>
+		</step>
+
+		<step no="4">
+			<desc>Get the pkt process id</desc>
+			<setvar name="hpingid">
+				cat ${log.dir}/3_hping.log
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>Show ip session on ap, ip-session is use up but login AP via backhual donnot need any sessions</desc>
+			<log-file>step5_show_ip_session.log</log-file>
+			<ssh target="ap1">
+				-v "show forwarding-engine ip-sessions | include entries"
+			</ssh>
+			<log-match>-c -e "8191/8191"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>Kill the pkt process id</desc>
+			<script>
+				kill -9 ${hpingid} ; exit 0
+			</script>
+		</step>
+
+	</stage>
+</testcase>

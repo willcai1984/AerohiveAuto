@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Create a bulk ppsk, check its basic function</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a ppsk ssid
+		-create a user-group, passwd generation method auto
+		-specify index of this group
+		-specify start and expired time
+		-bind the group to ssid
+
+		Test Procedure:
+		-config bulk number and interval of the group
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="default.psk" value="aerohive" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-set vlan and native-vlan
+				-open debug mode
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "_debug auth info"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-create a user-group
+				-config the password-generation-method to auto
+			</desc>
+			<telnet target="ap1">
+				-v "user-group userGroup"
+				-v "user-group userGroup password-generation-method auto"
+				-v "clock date-time 2012-10-27 10:00:00"
+				-v "user-group userGroup start-time 2012-10-27/10:01:00"
+				-v "user-group userGroup expired-time 2012-10-27/11:00:00"
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa2-tkip-psk ascii-key ${default.psk}"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "security-object ppsk security private-psk"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-bind this user-group to a ssid
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ttt vlan-id ${tb.vlan1} attribute 1"
+				-v "user-group userGroup auto-generation index-range 1 3"
+				-v "user-group userGroup auto-generation bulk-number 2 bulk-interval 0 00:01"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="2" delay="120">
+			<desc>
+				-show logging buffered
+			</desc>
+			<log-file>step2_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match loop-values="01,02,03,04,05,06">-c -i "generated for user (userGroup00${loop.v})"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.valid.value1" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup0001\)" --script "m.group(1)" -s none -g-1
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.valid.value2" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup0004\)" --script "m.group(1)" -s none -g-1
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show user
+			</desc>
+			<log-file>step3.2_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match loop-values="01,02,03,04,05,06">-c -i "userGroup00${loop.v}" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step3.3_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "PPSK-enabled=yes"</log-match>
+			<log-match loop-values="01,02,03,04,05,06">-c -i "userGroup00${loop.v}" -i "Yes"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>Get the second times of generate ppsk</desc>
+			<setvar name="second.generate.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*password \(.*\) generated for user \(userGroup0004\)" -e "password \(.*\) generated for user \(userGroup0001\)" --script "m.group(1)" -s none -g-1
+			</setvar>
+		</step>
+
+		<step no="4.1">
+			<desc>Get the first times of generate ppsk</desc>
+			<setvar name="first.generate.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*password \(.*\) generated for user \(userGroup0001\)" -t str -g0 -s none
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				check if the interval is between 50 to 70.
+			</desc>
+			<log-file>step4.2_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${second.generate.time}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.generate.time}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt;= 50.0 and (mktime(datetime.strptime('${second.generate.time}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.generate.time}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt;= 70.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="pre.conn1.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn1.psk" type="special">
+				echo ${ppsk.valid.value1}
+			</setvar>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="wpa2-tkip-psk" />
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="pre.conn2.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn2.psk" type="special">
+				echo ${ppsk.valid.value2}
+			</setvar>
+		</step>
+
+		<property name="conn2.ssid" value="${ssid.name}" />
+		<property name="conn2.proto" value="wpa2-tkip-psk" />
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="7">
+			<desc>
+				- sh ssid xxx st
+			</desc>
+			<log-file>step7_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+			<log-match>-c -i "${sta2.tif.mac} *${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step7.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "YNNN"</log-match>
+			<log-match>-c -i "${sta2.tif.mac}" -p 5 -i "1" -i "YNNN"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step7.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta2.tif.mac} *1" -i "WPA2/TKIP" -i "userGroup0004"</log-match>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA2/TKIP" -i "userGroup0001"</log-match>
+		</step>
+	</stage>
+</testcase>

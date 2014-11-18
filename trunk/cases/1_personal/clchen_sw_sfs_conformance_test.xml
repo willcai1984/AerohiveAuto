@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(SfsPort: 1) Do_det_v_test, use switch POE port and Sifos</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use
+		Sifos++++++ Switch
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<!-- <pre-process> -->
+	<!-- <stage> -->
+	<!-- self defined steps -->
+	<!-- </stage> -->
+	<!-- <include file="include/sw_default_pre_process.xml" /> -->
+	<!-- </pre-process> -->
+
+	<pre-process />
+
+	<stage>
+		<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011" />
+		<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012" />
+		<property name="sw1.port3.ixia_port.mac" value="0000.0000.0013" />
+		<property name="sw1.port1" value="eth1/1" />
+		<property name="sw1.port1.sfs_port" value="1,1" />
+		
+		<property name="sw1.sfs_tcl_server" value="10.155.31.27" />
+		<property name="sw1.sfs_tcl_server.port" value="6900" />
+		
+		
+		<property name="Open_Circuit_Det_Voc_Low" value="2.8" />
+		<property name="Open_Circuit_Det_Voc_High" value="30" />
+
+		<property name="Peak_Det_Vvalid_Low" value="3.8" />
+		<property name="Peak_Det_Vvalid_High" value="10" />
+
+		<property name="Min_Det_Vvalid_Low" value="2.8" />
+		<property name="Min_Det_Vvalid_High" value="9" />
+
+		<property name="Det_Volt_Step_dVtest_Low" value="1" />
+		<property name="Det_Volt_Step_dVtest_High" value="7.2" />
+
+		<!-- 0 pass low is 0 and high is 0.l -->
+		<property name="Detection_Slew_Low" value="0" />
+		<property name="Detection_Slew_High" value="0.1" />
+
+		<property name="Good_Sig_Det_Pulse_Low" value="1" />
+		<property name="Good_Sig_Det_Pulse_High" value="9" />
+
+		<property name="Backoff_Voltage_Low" value="0" />
+		<property name="Backoff_Voltage_High" value="9" />
+
+		<!-- Warn info pass when great than 0,for example 2.13 -->
+		<property name="Non_802_Step_V_Low" value="0" />
+		<property name="Non_802_Step_V_High" value="0.1" />
+
+		<!-- Warn info pass when great than 3.8 -->
+		<property name="High_Sig_MaxV_Low" value="3.8" />
+		<property name="High_Sig_MaxV_High" value="11" />
+
+		<!-- Warn info pass when great than or equal 0 -->
+		<property name="Non_802_Discr_Low" value="0" />
+		<property name="Non_802_Discr_High" value="0" />
+
+		<property name="Detect_Strategy_Low" value="0" />
+		<property name="Detect_Strategy_High" value="2" />
+
+		<step no="1.1">
+			<desc>
+				ssh to tclclient,then operate the sifos by cmd,psa_conn_check_for_a_port
+			</desc>
+			<log-file>psa_conn_check_for_a_port.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-new="${job.user}-${job.sid}-1">
+				<!-- ahsfs initialize -->
+				-v 'tclsh8.5'
+				-v 'package req ahsfs'
+				-v ''
+				-v 'sfs_connect ${sw1.sfs_tcl_server} ${sw1.sfs_tcl_server.port}'
+				-v ''
+				-v 'cmd "psa_getConfig"'
+				-v 'cmd "psa_conn_check ${sw1.port1.sfs_port}#1"'
+				-v ''
+			</ssh>
+			<log-match>-i "cmdSeq 1" -i "CONNECTIONS;VERIFIED"</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				reuse the tclclient session,psa_auto_port for a port
+			</desc>
+			<log-file>psa_auto_port_for_a_port.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v ''
+				-v 'cmd "psa_auto_port ${sw1.port1.sfs_port}#2"'
+				-v ''
+			</ssh>
+			<log-match>-i "cmdSeq 2" -i "SUCCESS" </log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				reuse the tclclient session,do a test case for this port
+			</desc>
+			<log-file>do_det_v_test_for_this_port.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v ''
+				-v 'cmd "det_v ${sw1.port1.sfs_port}#3"'
+				-v ''
+			</ssh>
+			<log-match>-i "cmdSeq 3" -i "SUCCESS" </log-match>
+		</step>
+
+		<step no="1.4.generate_multi_var">
+			<desc>generate multi var</desc>
+			<multi-setvar>
+				echo "Open_Circuit_Det_Voc=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $4}'`"
+				echo "Peak_Det_Vvalid=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $7}'`"
+				echo "Min_Det_Vvalid=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $10}'`"
+				echo "Det_Volt_Step_dVtest=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $13}'`"
+				
+				echo "Detection_Slew=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $16}'`"
+				echo "Good_Sig_Det_Pulse=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $19}'`"
+				echo "Backoff_Voltage=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $22}'`"
+				echo "Non_802_Step_V=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $25}'`"
+				
+				echo "High_Sig_MaxV=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $28}'`"
+				echo "Non_802_Discr=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $31}'`"
+				echo "Detect_Strategy=`grep -w "cmdSeq 3" ${log.dir}/do_det_v_test_for_this_port.log |awk -F ';' '{print $34}'`"
+			</multi-setvar>
+		</step>
+
+		<step no="1.4.echo_multi_var">
+			<desc>
+				echo_multi_var
+			</desc>
+			<script>
+				echo 'Open_Circuit_Det_Voc is "${Open_Circuit_Det_Voc}"'
+				echo 'Peak_Det_Vvalid is "${Peak_Det_Vvalid}"'
+				echo 'Min_Det_Vvalid is "${Min_Det_Vvalid}"'
+				echo 'Det_Volt_Step_dVtest is "${Det_Volt_Step_dVtest}"'
+				
+				echo 'Detection_Slew is "${Detection_Slew}"'
+				echo 'Good_Sig_Det_Pulse is "${Good_Sig_Det_Pulse}"'
+				echo 'Backoff_Voltage is "${Backoff_Voltage}"'
+				echo 'Non_802_Step_V is "${Non_802_Step_V}"'
+				
+				echo 'High_Sig_MaxV is "${High_Sig_MaxV}"'
+				echo 'Non_802_Discr is "${Non_802_Discr}"'
+				echo 'Detect_Strategy is "${Detect_Strategy}"'
+			</script>
+		</step>
+		<step no="1.5check1">
+			<desc>
+				Check if Open_Circuit_Det_Voc is gt "${Open_Circuit_Det_Voc_Low}" and lt "${Open_Circuit_Det_Voc_High}"
+			</desc>
+			<script>
+				echo "${Open_Circuit_Det_Voc_Low}" "${Open_Circuit_Det_Voc}" "${Open_Circuit_Det_Voc_High}" | awk '{
+				if ( $1 &lt;= $2 &amp;&amp; $2 &lt;= $3)
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+		<step no="1.5check2">
+			<desc>
+				Check if Peak_Det_Vvalid=${Peak_Det_Vvalid} is gt ${Peak_Det_Vvalid_Low} and lt ${Peak_Det_Vvalid_High}
+			</desc>
+			<script>
+				echo "${Peak_Det_Vvalid_Low}" "${Peak_Det_Vvalid}" "${Peak_Det_Vvalid_High}" | awk '{
+				if ( $1 &lt;= $2 &amp;&amp; $2 &lt;= $3)
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+		<step no="1.5check3">
+			<desc>
+				Check if Min_Det_Vvalid is gt "${Min_Det_Vvalid_Low}" and lt "${Min_Det_Vvalid_High}"
+			</desc>
+			<script>
+				echo "${Min_Det_Vvalid_Low}" "${Min_Det_Vvalid}" "${Min_Det_Vvalid_High}" | awk '{
+				if ( $1 &lt;= $2 &amp;&amp; $2 &lt;= $3)
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+		<step no="1.5check4">
+			<desc>
+				Check if Det_Volt_Step_dVtest is gt "${Det_Volt_Step_dVtest_Low}" and lt "${Det_Volt_Step_dVtest_High}"
+			</desc>
+			<script>
+				echo "${Det_Volt_Step_dVtest_Low}" "${Det_Volt_Step_dVtest}" "${Det_Volt_Step_dVtest_High}" | awk '{
+				if ( $1 &lt;= $2 &amp;&amp; $2 &lt;= $3)
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+		<step no="1.5check5">
+			<desc>
+				Check if Detection_Slew is gt "${Detection_Slew_Low}" and lt "${Detection_Slew_High}"
+			</desc>
+			<script>
+				echo "${Detection_Slew_Low}" "${Detection_Slew}" "${Detection_Slew_High}" | awk '{
+				if ( $1 &lt;= $2 &amp;&amp; $2 &lt;= $3)
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+		<step no="1.5check6">
+			<desc>
+				Check if Good_Sig_Det_Pulse is gt "${Good_Sig_Det_Pulse_Low}" and lt "${Good_Sig_Det_Pulse_High}"
+			</desc>
+			<script>
+				echo "${Good_Sig_Det_Pulse_Low}" "${Good_Sig_Det_Pulse}" "${Good_Sig_Det_Pulse_High}" | awk '{
+				if ( $1 &lt;= $2 &amp;&amp; $2 &lt;= $3)
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+		<step no="1.5check7">
+			<desc>
+				Check if Backoff_Voltage is gt "${Backoff_Voltage_Low}" and lt "${Backoff_Voltage_High}"
+			</desc>
+			<script>
+				echo "${Backoff_Voltage_Low}" "${Backoff_Voltage}" "${Backoff_Voltage_High}" | awk '{
+				if ( $1 &lt;= $2 &amp;&amp; $2 &lt;= $3)
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+		<step no="1.5check8">
+			<desc>
+				Warn Check if Non_802_Step_V is gt "${Non_802_Step_V_Low}"
+			</desc>
+			<script>
+				echo "${Non_802_Step_V_Low}" "${Non_802_Step_V}" "${Non_802_Step_V_High}" | awk '{
+				if ( $1 &lt;= $2 )
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+		<step no="1.5check9">
+			<desc>
+				Warn Check if High_Sig_MaxV is gt "${High_Sig_MaxV_Low}"
+			</desc>
+			<script>
+				echo "${High_Sig_MaxV_Low}" "${High_Sig_MaxV}" "${High_Sig_MaxV_High}" | awk '{
+				if ( $1 &lt;= $2 )
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+		<step no="1.5check10">
+			<desc>
+				Warn Check if Non_802_Discr is gt or eq "${Non_802_Discr_Low}"
+			</desc>
+			<script>
+				echo "${Non_802_Discr_Low}" "${Non_802_Discr}" "${Non_802_Discr_High}" | awk '{
+				if ( $1 &lt;= $2 )
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+		<step no="1.5check11">
+			<desc>
+				Check if Detect_Strategy is gt "${Detect_Strategy_Low}" and lt "${Detect_Strategy_High}"
+			</desc>
+			<script>
+				echo "${Detect_Strategy_Low}" "${Detect_Strategy}" "${Detect_Strategy_High}" | awk '{
+				if ( $1 &lt;= $2 &amp;&amp; $2 &lt;= $3)
+				{exit (0);}
+				else
+				{exit (1);}
+				}'
+			</script>
+		</step>
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

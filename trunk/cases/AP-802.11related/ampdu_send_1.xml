@@ -1,0 +1,186 @@
+<testcase>
+	<brief>Default auth type is open</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+	<description>
+		Description
+		Verify that AMPDU takes effective.
+		Test procedure
+		1. Verify that AMPDU takes effective. Result 1
+		2. Verify that the AMPDU not takes effective by cmd: no radio profile
+		xxxx ampdu. Result 2
+		Expect result
+		1. The AMPDU takes effective
+		2. The AMPDU not takes effective
+	</description>
+	<stage>
+		<step no="2">
+			<desc>setup AP1</desc>
+			<telnet target="ap1">
+				-v "radio profile driver_ng" 
+				-v "radio profile driver_ng phymode 11ng" 
+				-v "interface wifi0 radio profile driver_ng" 
+				-v "hive ${hive.name}" 
+				-v "interface mgt0 hive ${hive.name}" 
+				-v "save config" 
+			</telnet>
+		</step>
+		
+		
+		<step no="3">
+			<desc>Set config for AP1 via telnet to </desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>Generate wifi_aerohive_test profile for ssid ${ssid.name} for laptop1</desc>
+			<script>
+				${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/open.xml -l ${log.dir} -o wifi_aerohive_test.xml -s "${ssid.name}"
+			</script>
+		</step>
+
+		<step no="5">
+			<desc>Copy a wifi windows profile file to laptop1 </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+		<step no="6">
+			<desc>Bring down the client Wireless of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="7">
+			<desc>Delete current Wireless profile of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan delete profile ${ssid.name} "
+			</script>
+		</step>
+
+		<step no="8">
+			<desc>Add new profile for ssid $G_TESTBED-$G_PROD_DESC0 to laptop1
+			</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="9" delay="120">
+			<desc>Bring up the client Wireless on laptop1 </desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan connect name=${ssid.name} interface=\"${sta1.tif.name}\"" -v " netsh wlan show profiles ${ssid.name}" -v "netsh wlan show interfaces"
+			</script>
+			<noerrorcheck>1</noerrorcheck>
+		</step>
+		<step no="10" delay="60">
+			<desc>Loop 10 times ipconfig to get ip in laptop1 </desc>
+			<script>
+				bash ${bin.dir}/aerohive/get_laptop_ip.sh ${sta1.mif.ip} ${log.dir} ipconfig1.log
+			</script>
+		</step>
+		<step no="11">
+			<desc>Show ipconfig in laptop1 </desc>
+			<log-file>ipconfig_${sta1.mif.ip}.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+		<step no="12">
+			<desc>Get the mac of laptop1</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -m -width 2
+			</setvar>
+		</step>
+		<step no="13">
+			<desc>Get the ip of laptop1</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+		<step no="14" delay="20">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi0_ssid_station.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|Total station count.*#" timeout="80">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+
+		</step>
+		<step no="15">
+			<desc>Get laptop1 ip in AP1  </desc>
+			<setvar name="laptop1_ip_in_ap">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi0_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+		<step no="16">
+			<desc>Compare laptop1 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop1_ip_in_ap} != ${sta1.tif.ip}"
+				if [ "${laptop1_ip_in_ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<!-- step 17: generate iperf packet -->
+		<include prefix="17" file="cases/802.11related/conf/sub_run_iperf.xml" />
+		<step no="18">
+			<desc>Show ssid counter in AP1 </desc>
+			<log-file>show_in_wifi0_counter.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 counter | in aggregated"
+			</telnet>
+		</step>
+		<step no="19">
+			<desc>Check whether exists ampdu packets</desc>
+			<script> export ampdu_pkt=$(cat ${log.dir}/show_in_wifi0_counter.log | perl -ne '/([0-9]+)\s+tx aggregated/and print $1')
+				echo ampdu_pkt = "$ampdu_pkt"
+				if [ $ampdu_pkt -eq 0 ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="20">
+			<desc>No short guard interval </desc>
+			<telnet target="ap1">
+				-v "no radio profile driver_ng ampdu"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="21">
+			<desc>Clear ssid counter </desc>
+			<telnet target="ap1">
+				-v "clear interface wifi0 counter"
+			</telnet>
+		</step>
+		<!-- step 22: generate iperf packet -->
+		<include prefix="22" file="cases/802.11related/conf/sub_run_iperf.xml" />
+		<step no="23" delay="120">
+			<desc>Show ssid ${ssid.name} counter in AP1 </desc>
+			<log-file>show_in_wifi0_counter_later.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 counter | in aggregated"
+			</telnet>
+		</step>
+		<step no="24">
+			<desc>Check whether exists ampdu packets</desc>
+			<script> export ampdu_pkt=$(cat ${log.dir}/show_in_wifi0_counter_later.log | perl -ne '/([0-9]+)\s+tx aggregated/and print $1')
+				echo ampdu_pkt = "$ampdu_pkt"
+				if [ "$ampdu_pkt" != "0" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+	</stage>
+</testcase>

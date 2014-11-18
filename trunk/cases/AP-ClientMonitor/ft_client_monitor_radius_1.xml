@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Trace eap-tls auth on local radius</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-AP connected to capwap server success
+		-config a ssid with wpa 802.1x
+		-config the AP as local radius
+		-load the correct cert
+
+		Test Procedure:
+
+		-add the STA1,2 to monitor
+		'exec client-monitor 001e:65f2:5628'
+		-check the Client Trace Table, result 1
+		-STA1 connects to ssid with EAP-TLS, check debug info, '_de capwap
+		itk' to make sure, result 2,3,4
+		-STA2 connects to ssid, use a cert which is unknow to server, result 5
+		-STA2 connects to ssid, it tries to verify the server's cert, but it doesn't
+		have the correct CA, result 6
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="pub.radius1.ip" value="192.168.10.32" />
+	
+	<property name="so1.name" value="autoap1" />
+	<property name="so1.proto" value="wpa-auto-8021x" />
+	<property name="co1.proto" value="wpa-aes-8021x" />
+	<property name="so1.radius.ip" value="${pub.radius1.ip}" />
+	<property name="so1.radius.sharesecret" value="${pub.radius1.sharesecret}" />
+
+
+
+
+	<stage>
+	
+		<step no="0.1">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "ifconfig ${sta1.tif.name} up"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig2.log</log-file>
+			<ssh target="sta2" timeout="80">
+				-v "ifconfig ${sta2.tif.name} up"
+				-v "ifconfig ${sta2.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="0.4">
+			<desc>Get laptop2's mac</desc>
+			<setvar name="sta2.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig2.log -i ${sta2.tif.name} -m -width
+			</setvar>
+		</step>
+		
+		
+		<include prefix="1" file="subs/set_so_for_ssid.xml" obj-args="ap1, so1" args="${ssid.name}" />
+
+		<include prefix="2" file="subs/bind_ssid_for_radio.xml" args="ap1, ${ssid.name}, wifi0" />
+
+		<step no="3">
+			<desc>
+				-AP connected to capwap server success
+			</desc>
+			<telnet target="ap1">
+				-v "capwap client enable"
+				-v "capwap client server name ${pub.hm1.ip}"
+			</telnet>
+		</step>
+
+		<step no="ex.hive">
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				-add the STA1,2 to monitor
+				'exec client-monitor 001e:65f2:5628'
+			</desc>
+			<telnet target="ap1">
+				-v "exec client-monitor ${sta1.tif.mac}"
+				-v "exec client-monitor ${sta2.tif.mac}"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				-check the Client Trace Table, result 1
+			</desc>
+			<telnet target="ap1">
+				-v "_sh client-monitor"
+				-v "_debug capwap itk"
+				-v "_debug auth basic"
+				-v "_debug auth info"
+			</telnet>
+			<log-match>-c -i "Client Trace Table(sta_num=2)"</log-match>
+			<log-match>-c -i "Entry(${sta1.tif.mac} cookie_num=1): 1"</log-match>
+			<log-match>-c -i "Entry(${sta2.tif.mac} cookie_num=1): 1"</log-match>
+		</step>
+
+		<step no="6">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=${co1.proto}"
+				echo "conn1.pif=wifi0"
+				echo "conn1.username=${pub.radius1.username}"
+				echo "conn1.passwd=${pub.radius1.passwd}"
+				echo "conn1.eap_type=TLS"
+			</multi-setvar>
+		</step>
+		<include prefix="7" file="subs/sta_wifi_connect_${tb.os}_new.xml" rargs="conn1, sta1, ap1" />
+<!--
+		<include prefix="8" file="subs/chk_sta_conn_status_in_ap.xml" obj-args="ap1, sta1" args="wpa-aes-8021x, WPA/CCMP, wpa-8021x, aes" />
+-->
+		<step no="9" delay="10">
+			<desc>
+				check log
+			</desc>
+			<log-file>step9_show_log.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+<!--
+				-v "clear log all"
+-->
+			</telnet>
+			<no-error-check />
+<!--			
+			<log-match>-c -i "RADIUS: EAP start with type tls"</log-match>
+			<log-match>-c -i "receive client hello message"</log-match>
+			<log-match>-c -i "send server certificate and other message"</log-match>
+			<log-match>-c -i "receive certificate and other message from client"</log-match>
+			<log-match>-c -i "accepted user '${conn1.username}'"</log-match>
+-->
+			<log-match>-c -i "report sta(${sta1.tif.mac})" -i "Access-Accept" -i "SUCCESS"</log-match>
+			<log-match>-c -i "report sta(${sta1.tif.mac})" -i "PTK is set" -i "SUCCESS"</log-match>
+			<log-match>-c -i "report sta(${sta1.tif.mac})" -i "Authentication is successfully finished" -i "SUCCESS"</log-match>
+		</step>
+<!--
+		<step no="10">
+			<desc>
+				-STA2 connects to ssid, use a cert which is unknow to server, result 5
+			</desc>
+			<ssh target="sta2">
+				-v "cd /tmp"
+				-v "tftp ${pub.tftp1.ip} -c get certs/cacert.pem"
+				-v "tftp ${pub.tftp1.ip} -c get certs/${conn1.username}_cert.pem"
+				-v "tftp ${pub.tftp1.ip} -c get certs/${conn1.username}_key.pem"
+				-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+				-v "killall -9 wpa_supplicant -q"
+				-v "killall dhclient -q"
+				-v "wpa_supplicant -i ${sta2.tif.name} -Dnl80211,wext -c /tmp/wpa_supplicant.cfg -B"
+			</ssh>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				configure ssid property on __STA__
+			</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-EAP"
+				-v "set_network 0 proto WPA"
+				-v "set_network 0 eap ${conn1.eap_type}"
+				-v "set_network 0 identity \"${conn1.username}\""
+				-v "set_network 0 ca_cert \"/tmp/cacert.pem\""
+				-v "set_network 0 client_cert \"/tmp/cacert.pem\""
+				-v "set_network 0 private_key \"/tmp/cacert.pem\""
+				-v "set_network 0 private_key_passwd \"${conn1.passwd}\""
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="10.2" delay="25">
+			<desc>check if __STA__ is associated unsuccessful</desc>
+			<log-file>wpa_stat.log</log-file>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED" -n</log-match>
+		</step>
+
+		<step no="10.3">
+			<desc>
+				check log
+			</desc>
+			<log-file>step10.3_show_log.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match>-n -c -i "receive client hello message"</log-match>
+			<log-match>-n -c -i "send server certificate and other message"</log-match>
+			<log-match>-n -c -i "receive certificate and other message from client"</log-match>
+			<log-match>-n -c -i "accepted user '${conn1.username}'"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="11">
+			<desc>
+				-STA2 connects to ssid, it tries to verify the server's cert, but it doesn't
+				have the correct CA, result 6
+			</desc>
+			<ssh target="sta2">
+				-v "cd /tmp"
+				-v "tftp ${pub.tftp1.ip} -c get certs/cacert.pem"
+				-v "tftp ${pub.tftp1.ip} -c get certs/${conn1.username}_cert.pem"
+				-v "tftp ${pub.tftp1.ip} -c get certs/${conn1.username}_key.pem"
+				-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+				-v "killall -9 wpa_supplicant -q"
+				-v "killall dhclient -q"
+				-v "wpa_supplicant -i wlan0 -Dnl80211,wext -c /tmp/wpa_supplicant.cfg -B"
+			</ssh>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				configure ssid property on __STA__
+			</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-EAP"
+				-v "set_network 0 proto WPA"
+				-v "set_network 0 eap ${conn1.eap_type}"
+				-v "set_network 0 identity \"${conn1.username}\""
+				-v "set_network 0 ca_cert \"/tmp/${conn1.username}_cert.pem\""
+				-v "set_network 0 client_cert \"/tmp/${conn1.username}_cert.pem\""
+				-v "set_network 0 private_key \"/tmp/${conn1.username}_key.pem\""
+				-v "set_network 0 private_key_passwd \"${conn1.passwd}\""
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="11.2" delay="25">
+			<desc>check if __STA__ is associated unsuccessful</desc>
+			<log-file>wpa_stat.log</log-file>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED" -n</log-match>
+		</step>
+
+		<step no="11.3" delay="30">
+			<desc>
+				check log
+			</desc>
+			<log-file>step10.3_show_log.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "RADIUS: The RADIUS server rejected user '${pub.radius1.username}' through the NAS at ${ap1.mgt0.ip}"</log-match>
+			<log-match>-c -i "RADIUS: eap auth for STA=${sta2.tif.mac} user=root failed with type EAP/tls"</log-match>
+			<log-match>-c -i "SSL: SSL_read failed inside of TLS (-1), TLS session fails."</log-match>
+			<no-error-check />
+		</step>
+-->		
+	</stage>
+	
+			 <failed-process>
+	 <stage>
+        <step no="fp_1">
+			<desc>
+				shutdown wlan interface on sta
+			</desc>
+			<log-file>fp_1.log</log-file>
+			<ssh target="sta1" prompt=".*#">
+            -v "ifconfig ${sta1.tif.name} down"
+			</ssh>
+		</step>
+		
+		<step no="fp_2">
+			<desc>
+				shutdown wlan interface on sta
+			</desc>
+			<log-file>fp_2.log</log-file>
+			<ssh target="sta2" prompt=".*#">
+            -v "ifconfig ${sta2.tif.name} down"
+			</ssh>
+		</step>
+		</stage>
+    </failed-process>
+	
+</testcase>

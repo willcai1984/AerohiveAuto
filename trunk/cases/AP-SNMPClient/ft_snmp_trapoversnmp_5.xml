@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Whenever IDP detects an AP in its neighborhood, trap be sent to SNMP server Precondition Enable trap over SNMP by snmp trapinfo oversnmp in AP Disable trap over Capwap by no trapinfo overcapwap in AP Set trap host by snmp traphost v2c a.b.c.d with default community (a.b.c.d is PC's ip address) in AP Use Wireshark or Ethereal to capture packet AP config of IDP: ssid 11 interface wifi0 ssid 11 security wlanidp profile testsnmp security wlanidp profile testsnmp appolicy security wlanidp profile testsnmp appolicy apoui security wlanidp profile testsnmp appolicy apoui entry 00:19:77 security wlanidp profile testsnmp appolicy ssid security wlanidp profile testsnmp appolicy ssid entry 11 security wlanidp profile testsnmp appolicy shortpreamble security wlanidp profile testsnmp appolicy shortbeacon no security wlanidp profile testsnmp apdetection connected interface wifi0 wlanidp profile testsnmp in its neighborhood. The ahRomoteId indicates the detected AP MAC address, and the
+		ahIDPCompliance indicates conformance of IDP policy this AP satisfies. The ahIDPChannel and ahIDPRSSI indicates the radio channel and Receive Signal Strenth Indication." ::= { ahTrapModule 5} 6.1.2.6. Ft_SNMP_TrapoverSNMP_6
+	</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		1. Check IDP AP by show interface wifi0 wlanidp apinfo, check if
+		IDP trap be sent to SNMP server, check trap format
+		2. Change community, check IDP AP by show interface wifi0
+		wlanidp apinfo, check if IDP trap can be sent to SNMP server,
+		check trap format
+		3. Change version to v1 with default community, check IDP AP by
+		show interface wifi0 wlanidp apinfo, check if IDP trap can be
+		sent to SNMP server, check trap format
+		4. Change community, check IDP AP by show interface wifi0
+		wlanidp apinfo , check if IDP trap can be sent to SNMP server,
+		check trap format
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="checkfile" value="/tmp/checkfile" />
+
+	<stage>
+		<step no="0">
+			<desc>rm checkfile</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f ${checkfile}"
+			</ssh>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				Enable trap over SNMP by snmp trapinfo oversnmp in AP
+				Disable trap over Capwap by no trapinfo overcapwap in AP
+				Set trap host by snmp traphost v2c a.b.c.d with default community (a.b.c.d is PC’s ip address) in AP
+			</desc>
+			<telnet target="ap1">
+				-v "snmp trap-host v2c ${tb.server1}"
+				-v "snmp trap-info over-snmp"
+				-v "no snmp trap-info over-capwap"
+			</telnet>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				AP config of IDP
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "security wlan-idp profile testsnmp"
+				-v "security wlan-idp profile testsnmp ap-policy"
+				-v "security wlan-idp profile testsnmp ap-policy ap-oui"
+				-v "security wlan-idp profile testsnmp ap-policy ap-oui entry 00:19:77"
+				-v "security wlan-idp profile testsnmp ap-policy ssid"
+				-v "security wlan-idp profile testsnmp ap-policy ssid entry ${ssid.name}"
+				-v "security wlan-idp profile testsnmp ap-policy short-preamble"
+				-v "security wlan-idp profile testsnmp ap-policy short-beacon"
+				-v "no security wlan-idp profile testsnmp ap-detection connected"
+				-v "interface wifi0 wlan-idp profile testsnmp"
+			</telnet>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.4">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+		<step no="1">
+			<desc>
+				1. Check IDP AP by show interface wifi0 wlanidp apinfo, check if
+				IDP trap be sent to SNMP server, check trap format
+			</desc>
+			<telnet target="ap1">
+				-v "show interface wifi0 wlan-idp ap-info"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>check log file</desc>
+			<log-file>check_log_file1.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "ahStateChangeEvent" -i "ahAPId" -i "ahAPName" -i "ahTrapDesc = access interface wifi0.1 is up now" -i "ahCode = 6" -i "ahObjectName = wifi0.1" -i "ahPreviousState = ahDown" -i "ahCurrentState = ahUp"</log-match>
+			<no-error-check />
+		</step>
+		
+	<step no="1.2">
+			<desc>check log file</desc>
+			<log-file>check_tshark1.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match>-c -i "version: v2c"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="1.3">
+			<desc>
+				kill tshark
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "kill ${process_id1}"
+			</ssh>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				remove tmpfile
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f /tmp/tshark_log.pcap"
+			</ssh>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Change community, check IDP AP by show interface wifi0
+				wlanidp apinfo, check if IDP trap can be sent to SNMP server,
+				check trap format
+			</desc>
+			<telnet target="ap1">
+				-v "no snmp trap-host v2c ${tb.server1}"
+				-v "snmp trap-host v2c ${tb.server1} community aerohive"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				show interface wifi0 wlan-idp ap-info
+			</desc>
+			<telnet target="ap1">
+				-v "show interface wifi0 wlan-idp ap-info"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>check log file</desc>
+			<log-file>check_log_file2.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+
+		</step>
+
+		<step no="3">
+			<desc>
+				3. Change version to v1 with default community, check IDP AP by
+				show interface wifi0 wlanidp apinfo, check if IDP trap can be
+				sent to SNMP server, check trap format
+			</desc>
+			<telnet target="ap1">
+				-v "no snmp trap-host v2c ${tb.server1}"
+				-v "snmp trap-host v1 ${tb.server1}"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show interface wifi0 wlan-idp ap-info
+			</desc>
+			<telnet target="ap1">
+				-v "show interface wifi0 wlan-idp ap-info"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>check log file</desc>
+			<log-file>check_log_file3.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+
+		</step>
+
+		<step no="4">
+			<desc>
+				4. Change community, check IDP AP by show interface wifi0
+				wlanidp apinfo , check if IDP trap can be sent to SNMP server,
+				check trap format
+			</desc>
+			<telnet target="ap1">
+				-v "no snmp trap-host v1 ${tb.server1}"
+				-v "snmp trap-host v1 ${tb.server1} community aerohive"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show interface wifi0 wlan-idp ap-info
+			</desc>
+			<telnet target="ap1">
+				-v "show interface wifi0 wlan-idp ap-info"
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>check log file</desc>
+			<log-file>check_log_file4.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+		</step>
+	</stage>
+</testcase>

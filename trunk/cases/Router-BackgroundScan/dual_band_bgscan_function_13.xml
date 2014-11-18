@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check when there is voip call, should not skip the scan</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test Procedure:
+		1.enable bgscan on wifi0
+		2.Excute: radio profile &lt;name&gt; scan access voice
+		3.set scan interval to certain value
+		4.open bgscan debug:
+		_kdebug wifi-driver wifi0.1 scan
+		Debug console
+		5.generate voip traffic, check if box still do bgscan.
+	</description>
+	<numofbr>1</numofbr>
+  <numofsta>0</numofsta>
+  <tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+			  set bgscan interval to 1 and enable bgscan voice.
+			</desc>
+			<log-file>br_config_1.log</log-file>
+			<console target="br1.br">
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "radio profile ng"
+				-v "radio profile ng phymode 11ng"
+				-v "radio profile ng scan access interval 1"
+				-v "radio profile ng scan access voice"
+				-v "interface wifi0 radio profile ng"
+				-v "interface wifi0 radio channel 6"
+		    -v "qos classifier-profile aa interface/ssid"                                                                                            
+        -v "ssid ${ssid.name}1 qos-classifier aa"                                                                                                  
+        -v "qos classifier-map ssid ${ssid.name}1 6"
+				-v "save config"
+			</console>
+		</step>
+		
+    <property name="conn1.ssid" value="${ssid.name}1" />
+	  <property name="conn1.proto" value="open" /> 
+    <include prefix="3" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta1, ap1" />
+	
+		<step no="4">
+			<desc>
+				4.open debug mode.
+				"_kdebug wifi-driver wifi0.1 scan"
+			</desc>
+			<log-file>add_debug_1_info.log</log-file>
+			<console target="br1.br">
+				-v "_kdebug wifi-driver wifi0.1 scan"
+			</console>
+		</step>
+		
+		<include prefix="5" file="${case.dir}/conf/sub_run_iperf_downlink_sta.xml" />
+		
+		<step no="6">
+			<desc>
+				clear ap history log
+			</desc>
+			<log-file>clear_log.log</log-file>
+			<console target="br1.br">
+				-v "clear log all"
+			</console>
+		</step>
+		
+		<step no="7" delay="180">
+		  <if>"${img.prodtype}" != "AP230" &amp;&amp; "${img.prodtype}" != "AP1130"</if>
+			<desc>
+				background scan work
+			</desc>
+			<log-file>show_wifi0_bgscan_2.log</log-file>
+			<console target="br1.br">
+				-v "show logging buffer | in self"
+			</console>
+		</step>
+		
+		<step no="8" delay="240">
+	  	<if>"${img.prodtype}" == "AP230" || "${img.prodtype}" == "AP1130"</if>
+			<desc>
+				background scan work
+			</desc>
+			<log-file>show_wifi0_bgscan_2.log</log-file>
+			<console target="br1.br">
+			  -v "show logging buffer | in \"wl0: wlc_scan: scan channels\""
+			</console>
+		</step>
+		
+		
+		<step no="9">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi0_logbuffer.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging buffer"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		<step no="10">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi0_logbuffer.log</log-file>
+			<setvar name="jump-check">
+				cat ${log.dir}/${log.file} |grep "Skip bg-scan due to high load" >/dev/null; 
+				if [ $? -eq 0 ]; then echo true; else echo false; fi
+			</setvar>
+			<no-error-check />
+		</step>
+		
+		<step no="11">
+	 	 <if>"${jump-check}" != "true"</if>
+			<desc>match all channel	</desc>
+			<log-file>find_wifi0_channel.log</log-file>
+			<script>
+				perl ${case.dir}/bin/check-scan-channel.pl ${log.dir}/show_wifi0_bgscan_2.log br840 > ${log.dir}/${log.file}
+			</script>
+		</step>
+		
+		
+		<step no="12">
+			<desc>disable bgscan with voice</desc>
+			<log-file>br_config_2.log</log-file>
+			<console target="br1.br">
+				-v "no radio profile ng scan access voice"
+			</console>
+		</step>
+	
+	  <step no="13">
+			<desc>
+				show qos
+			</desc>
+			<console target="br1.br">
+				-v "show qos counter user"
+			</console>
+		</step>
+		
+	  <step no="14">
+		  <if>"${img.prodtype}" == "AP230" || "${img.prodtype}" == "AP1130"</if>
+			<desc>
+			open debug
+			</desc>
+			<log-file>add_debug_1_info.log</log-file>
+			<console target="br1.br">
+				-v "_debug acsd scan"
+				-v "_debug acsd info"
+			</console>
+		</step>
+		
+    <include prefix="15" file="${case.dir}/conf/sub_run_iperf_downlink_sta.xml" />
+
+		
+		<!-- <step no="18">
+			<desc>
+				Sta ping AP to generate voip traffic
+			</desc>
+			<log-file>step18_sta_ping_ap.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ping ${ap1.mgt0.ip} -w 2000 -c 2000 &gt; ${log.dir}/${log.file} 2&gt;&amp;1 &amp;"
+			</ssh>
+		</step> -->
+		
+	
+		
+		<step no="16">
+			<desc>
+				clear ap history log
+			</desc>
+			<log-file>br_config_3.log</log-file>
+			<console target="br1.br">
+				-v "clear log all"
+			</console>
+		</step>
+		
+		<step no="17">
+			<desc>
+				show qos
+			</desc>
+			<console target="br1.br">
+				-v "show qos counter user"
+			</console>
+		</step>
+		
+		<step no="20" delay="180">
+		  <if>"${img.prodtype}" != "AP230" &amp;&amp; "${img.prodtype}" != "AP1130"</if>
+			<desc>
+				background scan not work
+			</desc>
+			<log-file>step20_show_wifi1_bgscan_1.log</log-file>
+			<console target="br1.br">
+				-v "show logging buffer | in self"
+			</console>
+			<log-match loop-values="36,40,44,48,149,153,157,161,165">-n -e "channel ${loop.v}"</log-match>
+		</step>
+		
+		<step no="20" delay="180">
+		  <if>"${img.prodtype}" == "AP230" || "${img.prodtype}" == "AP1130"</if>
+			<desc>
+				background scan not work
+			</desc>
+			<log-file>step20_show_wifi1_bgscan_2.log</log-file>
+			<console target="br1.br">
+				-v "show logging buffer | in \"wlc_scan: scan\""
+			</console>
+			<log-match loop-values="36,40,44,48,149,153,157,161,165">-n -e "channel ${loop.v}"</log-match>
+		</step>
+		
+		<step no="21">
+		  <if>"${img.prodtype}" != "AP230" &amp;&amp; "${img.prodtype}" != "AP1130"</if>
+			<desc>
+				background scan not work
+			</desc>
+			<log-file>step21_show_wifi1_bgscan_1.log</log-file>
+			<telnet target="br1.br">
+				-v "show logging buffer"
+			</telnet>
+			<log-match>-i "voip load" -i "skip bgscan"</log-match>
+		</step>
+		
+		<step no="21">
+		  <if>"${img.prodtype}" == "AP230" || "${img.prodtype}" == "AP1130"</if>
+			<desc>
+				background scan not work
+			</desc>
+			<log-file>step21_show_wifi1_bgscan_2.log</log-file>
+			<console target="br1.br">
+				-v "show logging buffer | in \"Not allowed to scan\""
+			</console>
+			<log-match>-e "voip_pkt"</log-match>
+		</step>
+	
+		
+		<step no="22">
+			<desc>show run	</desc>
+			<log-file>show_run.log</log-file>
+			<console target="br1.br">
+				-v "show running-config"
+			</console>
+			<log-match>-n -e "radio profile ng scan access voice"</log-match>
+		</step>
+		
+	
+	</stage>
+</testcase>

@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<testcase>
+	<brief>check version flag in log which is for both CM1.0 and CM2.0</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		1. trigger CM1.0 with a client
+		2. trigger a problem of CM2.0
+		3. check version flag in log
+    </description>
+	<numofbr>1</numofbr>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="cmp.name" value="xxx" />
+	<property name="radio.profile" value="rp_ng" />
+	<property name="security.object" value="zhxu-psk" />
+	<property name="conn1.pif" value="wifi0"/>
+	<property name="conn1.proto" value="wpa2-aes-psk"/>
+	<property name="conn1.psk.correct" value="aerohive"/>
+	<property name="conn1.psk.incorrect" value="aaaaaaaa"/>
+	
+	<stage>
+		<step no="0.1">
+			<desc>config capwap</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "capwap client server name ${pub.hm1.ip}"
+				-v "capwap client enable"
+			</telnet>
+		</step>
+		
+		<step no="0.2" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the capwap connection is success</desc>
+			<log-file>capwap_conn_check_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show capwap client"
+			</telnet>
+			<log-match>-i "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+	
+		<step no="1.1">
+			<desc>config client-monitor policy</desc>
+			<log-file>step1.1.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "client-monitor policy ${cmp.name} problem-type association trigger-times 1 report-interval 0 quiet-time 300"
+				-v "client-monitor policy ${cmp.name} problem-type authentication trigger-times 1 report-interval 0 quiet-time 300"
+			</telnet>
+		</step>
+		
+		<step no="1.2">
+			<desc>config max-client limit</desc>
+			<log-file>step1.2.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "radio profile ${radio.profile}"
+				-v "radio profile ${radio.profile} phymode 11ng"
+				-v "radio profile ${radio.profile} max-client 1"
+				-v "interface wifi0 radio profile ${radio.profile}"
+			</telnet>
+		</step>
+		
+		<step no="1.3">
+			<desc>config security object</desc>
+			<log-file>step1.3.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object ${security.object}"
+				-v "security-object ${security.object} security protocol-suite wpa2-aes-psk ascii-key ${conn1.psk.correct}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${security.object}"
+				-v "in w0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+		
+		<step no="1.4">
+			<desc>bind policy to ssid</desc>
+			<log-file>step1.4.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ssid ${ssid.name} client-monitor-policy ${cmp.name}"
+			</telnet>
+		</step>
+		
+		<step no="1.5">
+			<desc>check config</desc>
+			<log-file>step1.5.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "sh ru"
+			</telnet>
+			<log-match>-e "radio profile ${radio.profile}"</log-match>
+			<log-match>-e "radio profile ${radio.profile} phymode 11ng"</log-match>
+			<log-match>-e "radio profile ${radio.profile} max-client 1"</log-match>
+			<log-match>-e "interface wifi0 radio profile ${radio.profile}"</log-match>
+			<log-match>-e "security-object ${security.object}"</log-match>
+			<log-match>-e "security-object ${security.object} security protocol-suite wpa2-aes-psk ascii-key"</log-match>
+			<log-match>-e "ssid ${ssid.name}"</log-match>
+			<log-match>-e "ssid ${ssid.name} security-object ${security.object}"</log-match>
+			<log-match>-e "interface wifi0 ssid ${ssid.name}"</log-match>
+			<log-match>-e "client-monitor policy ${cmp.name} problem-type association"</log-match>
+			<log-match>-e "client-monitor policy ${cmp.name} problem-type authentication"</log-match>
+			<log-match>-e "ssid ${ssid.name} client-monitor-policy ${cmp.name}"</log-match>			
+		</step>
+<!--		
+		<step no="2.1">
+			<desc>run debug cli</desc>
+			<log-file>step2.1.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_debug auth cmlib"
+				-v "_debug radiusd cmlib"
+				-v "_debug capwap cmlib"
+				-v "_debug capwap itk"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		<step no="2.2">
+			<desc>clear log</desc>
+			<log-file>step2.2.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "cle log all"
+			</telnet>
+			<no-error-check />
+		</step>
+-->		
+		<step no="3.1">
+			<desc>STA up wifi interface</desc>
+			<ssh target="sta1" prompt=">|.*#">-v "ifconfig ${sta1.tif.name} up"</ssh>
+		</step>
+		
+		<step no="3.2">
+			<desc>get mac of sta1's sta1.tif.name</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+		
+		<step no="CM1.0_1">
+			<desc>add STA1 to monitor</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "exec client-monitor ${sta1.tif.mac}"
+			</telnet>
+		</step>
+
+		<step no="CM1.0_2">
+			<desc>check the Client Trace Table</desc>
+			<log-file>check_client_trace_table.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_show client-monitor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Entry\(${sta1.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+		</step>		
+		
+		<step no="3_debug_cli">
+			<desc>run debug cli</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_debug auth cmlib"
+				-v "_debug radiusd cmlib"
+				-v "_debug capwap cmlib"
+				-v "_debug capwap itk"
+				-v "cle log all"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		<step no="3.3">
+			<desc>set paras for connection object</desc>
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.psk=${conn1.psk.incorrect}"
+				echo "conn1.auth_negative_test=true"
+		    </multi-setvar>			
+		</step>
+		
+		<include prefix="3.5" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta1, ap1"/>
+		
+		<step no="3.6">
+			<desc>check if there is problem log</desc>
+			<log-file>step3.6.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-i "check rule for" -i "problem id 10008"</log-match>
+			<log-match>-c -e "Send cm 2\.0 problem\(problem id=" -re</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="3.7">
+			<desc>check if there is problem log</desc>
+			<log-file>step3.7.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered | i flag"
+			</telnet>
+			<log-match bin="${bin.dir}/mlinesearch.pl"> -c -l 'client monitor 2.0 log\(flag' -l '3\)' -i 1 -d -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+<!--		
+		<step no="3.7" delay="10">
+			<desc>check the STA connection status</desc>
+			<log-file>step3.7.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "sh st"
+			</telnet>
+			<log-match>-c -n -e "sta1.tif.mac"</log-match>
+		</step>
+-->		
+		<step no="3.8">
+			<desc>clear log</desc>
+			<log-file>step3.8.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "cle log all"
+			</telnet>
+			<no-error-check />
+		</step>
+<!--		
+		<step no="4.1">
+			<desc>set paras for connection object</desc>
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.psk=${conn1.psk.correct}"
+				echo "conn1.auth_negative_test=false"
+		    </multi-setvar>			
+		</step>
+		
+		<include prefix="4.5" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta1, ap1"/>
+		
+		<step no="4.6" delay="10">
+			<desc>check the STA connection status</desc>
+			<log-file>step4.6.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "sh st"
+			</telnet>
+			<log-match>-c -e "${sta1.tif.mac}"</log-match>
+		</step>
+		
+		<step no="4.7">
+			<desc>clear log</desc>
+			<log-file>step4.7.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "cle log all"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		<step no="5.1">
+			<desc>STA up wifi interface</desc>
+			<ssh target="sta2" prompt=">|.*#">-v "ifconfig ${sta2.tif.name} up"</telnet>
+		</step>
+		
+		<step no="5.2">
+			<desc>get mac of sta2's sta2.tif.name</desc>
+			<setvar name="sta2.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta2.mif.ip} -u ${sta2.user} -p ${sta2.passwd} -i ${sta2.tif.name} -m -width
+			</setvar>
+		</step>
+		
+		<step no="5_debug_cli">
+			<desc>run debug cli</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_debug auth cmlib"
+				-v "_debug radiusd cmlib"
+				-v "_debug capwap cmlib"
+				-v "_debug capwap itk"
+				-v "cle log all"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		<step no="5.3">
+			<desc>set paras for connection object</desc>
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.psk=${conn1.psk.correct}"
+				echo "conn1.auth_negative_test=true"
+		    </multi-setvar>			
+		</step>
+
+		<include prefix="5.5" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta2, ap1"/>
+		
+		<step no="5.6" delay="10">
+			<desc>check if there is problem log</desc>
+			<log-file>step5.6.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-i "check rule for" -i "problem id 0"</log-match>
+			<log-match>-e "Send cm 2\.0 problem\(problem id=" -re</log-match>
+			<no-error-check />
+		</step>	
+-->		
+<!--		
+		<step no="5.7" delay="10">
+			<desc>check the STA connection status</desc>
+			<log-file>step5.7.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "sh st"
+			</telnet>
+			<log-match>-c -n -e "sta2.tif.mac"</log-match>
+		</step>
+		
+		<step no="5.8">
+			<desc>clear log</desc>
+			<log-file>step5.8.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "cle log all"
+			</telnet>
+			<no-error-check />
+		</step>		
+-->	
+	</stage>
+	
+</testcase>

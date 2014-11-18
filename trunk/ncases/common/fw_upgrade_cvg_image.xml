@@ -1,0 +1,179 @@
+<testcase>
+	<brief>Upgrade AP with new image </brief>
+	<description>
+		Upgrade AP with new image
+	</description>
+	<stage>
+		<!-- 1. step 1, get image version -->
+		<step no="1">
+			<desc>Get the version of the image and save to imageversion.txt </desc>
+			<log-file>image_ver.txt</log-file>
+			<script>
+				ident /tftpboot/${cvg.img.name} > ${log.dir}/${log.file}
+			</script>
+		</step>
+	</stage>
+
+	<stage type="child-process" no="cvg1.br_op">
+		<if>${job.numofcvg} > 0</if>
+		<step no="a1.3.1">
+			<desc>dual image process,get the br1.br version detail</desc>
+			<log-file>show_ver_detail_cvg1.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show version detail"
+			</telnet>
+		</step>
+
+		<step no="a1.3.2">
+			<desc>dual image process</desc>
+			<setvar name="cvg1.cvg.verIsNew">
+				${bin.dir}/aerohive/checkif_apBackupver_isnew.sh -v ${log.dir}/show_ver_detail_cvg1.log -i ${log.dir}/image_ver.txt
+			</setvar>
+		</step>
+	</stage>
+
+	<stage type="child-process" no="cvg2.br_op">
+		<if>${job.numofcvg} > 1</if>
+		<step no="a2.3.1">
+			<desc>dual image process,get the br1.br version detail</desc>
+			<log-file>show_ver_detail_cvg2.log</log-file>
+			<telnet target="${cvg2.cvg.cons_ip}" port="${cvg2.cvg.cons_port}" timeout="5">
+				-v "show version detail"
+			</telnet>
+		</step>
+
+		<step no="a2.3.2">
+			<desc>dual image process</desc>
+			<setvar name="cvg2.cvg.verIsNew">
+				${bin.dir}/aerohive/checkif_apBackupver_isnew.sh -v ${log.dir}/show_ver_detail_cvg2.log -i ${log.dir}/image_ver.txt
+			</setvar>
+		</step>
+	</stage>
+
+	<stage type="check-point" />
+	<stage>
+		<step no="remove_ssh_hosts">
+			<desc>rm .ssh/known_hosts file in mpc</desc>
+			<script>
+				rm -rf /root/.ssh/known_hosts
+			</script>
+		</step>
+
+		<step no="get_mgt0_rid">
+			<desc>get sub net value</desc>
+			<setvar name="rid">
+				${bin.dir}/aerohive/handle_br_mgt0_subnet.pl --get
+			</setvar>
+		</step>
+		<include prefix="cvg1_mgt0_setvars" file="subs/cvg_mgt0_setvars.xml" args="${rid}" obj-args="cvg1.cvg">
+			<if>${job.numofcvg} > 0</if>
+		</include>
+		<include prefix="cvg2_mgt0_setvars" file="subs/cvg_mgt0_setvars.xml" args="${rid}" obj-args="cvg2.cvg">
+			<if>${job.numofcvg} > 1</if>
+		</include>
+	</stage>
+	<stage type="child-process" no="br1.br_upgrade">
+		<if>"${cvg1.cvg.verIsNew}" != "yes"</if>
+		<step no="1.3.1">
+			<desc>show interface of eth0 on BR1</desc>
+			<log-file>show_cvg1.cvg_int_eth0.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "interface eth0 mode wan"
+				-v "no interface eth0 mode wan nat"
+				-v "no interface mgt0 dhcp client"
+				-v "no interface eth0 dhcp client"
+				-v "interface mgt0 ip ${cvg1.cvg.mgt0.ip}/${cvg1.cvg.mgt0.netmask}"
+				-v "interface eth0 ip ${cvg1.cvg.wan.ip}/${cvg1.cvg.wan.netmask}"
+				-v "ip route default gateway ${cvg1.cvg.wan.gateway}"
+				-v "exec bypass-wan-hardening"
+				-v ""
+				-v "show system command \"rm -f /etc/rsapublickey.pem\""
+				-v ""
+			</telnet>
+		</step>
+
+	
+		<step no="a1.4">
+			<desc>Upgrade BR1 with new image through console</desc>
+			<log-file>image_${cvg2.cvg.cons_name}.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5" slow="yes">
+				-v "save image tftp://${mpc.tif2.ip}:${cvg.img.name} now"
+			</telnet>
+			<log-match>-n -i "The kernel image currently in flash is the same as the image you are attempting to load"</log-match>
+			<log-match>-n -i "The application image currently in flash is the same as the image you are attempting to load"</log-match>
+		</step>
+
+		<step no="a1.5" delay="300">
+			<desc>Get BR1 version through console</desc>
+			<log-file>image_version_cvg1.cvg.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="300">
+				-v "show version"
+				-v "show license"
+			</telnet>
+		</step>
+		<step no="a1.6">
+			<desc>Search for ERROR message on BR1</desc>
+			<log-match file="image_version_cvg1.cvg.log">-n -e "ERROR"</log-match>
+		</step>
+	</stage>
+
+	<!-- 4.2 step 14-19, upgrade image for br2.br -->
+	<stage type="child-process" no="vpc1.vpc_upgrade">
+		<if>"${cvg2.cvg.verIsNew}" != "yes" &amp;&amp; ${job.numofcvg} > 1 &amp;&amp; ${tb.numofcvg} > 1</if>
+		<step no="2.3.1">
+			<desc>show interface of eth0 on vpc2.vpc</desc>
+			<log-file>show_cvg2.cvg_int_eth0.log</log-file>
+			<telnet target="${cvg2.cvg.cons_ip}" port="${cvg2.cvg.cons_port}" timeout="300" slow="yes">
+				-v "interface eth0 mode wan"
+				-v "no interface eth0 mode wan nat"
+				-v "no interface mgt0 dhcp client"
+				-v "no interface eth0 dhcp client"
+				-v "interface mgt0 ip ${cvg2.cvg.mgt0.ip}/${cvg2.cvg.mgt0.netmask}"
+				-v "interface eth0 ip ${cvg2.cvg.wan.ip}/${cvg2.cvg.wan.netmask}"
+				-v "ip route default gateway ${cvg2.cvg.wan.gateway}"
+				-v "exec bypass-wan-hardening"
+				-v "show system command \"rm -f /etc/rsapublickey.pem\""
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="a2.3">
+			<desc>Verify if cvg2.cvg is reacheable</desc>
+			<script>
+				${bin.dir}/ping.pl -l ${log.dir} -d ${cvg2.cvg.mgt0.ip}
+			</script>
+		</step>
+		<step no="a2.4">
+			<desc>Upgrade br2.br with new image through console</desc>
+			<log-file>image_${cvg2.cvg.cons_name}.log</log-file>
+			<telnet target="${cvg2.cvg.cons_ip}" port="${cvg2.cvg.cons_port}" timeout="20">
+				-v "save image tftp://${mpc.tif2.ip}:${cvg.img.name} now"
+			</telnet>
+			<log-match>-n -i "The kernel image currently in flash is the same as the image you are attempting to load"</log-match>
+			<log-match>-n -i "The application image currently in flash is the same as the image you are attempting to load"</log-match>
+		</step>
+		<step no="a2.5" delay="300">
+			<desc>Get BR1 version through console</desc>
+			<log-file>image_version_cvg2.cvg.log</log-file>
+			<telnet target="${cvg2.cvg.cons_ip}" port="${cvg2.cvg.cons_port}" timeout="20">
+				-v "show version"
+				-v "show license"
+			</telnet>
+		</step>
+		
+		<step no="a2.6">
+			<desc>Search for ERROR message on BR1</desc>
+			<log-match file="image_version_cvg2.cvg.log">-n -e "ERROR"</log-match>
+		</step>
+	</stage>
+
+	<stage type="check-point" />
+		<stage>
+		<step no="relase_mgt0">
+			<desc>release mgt0 subnet</desc>
+			<script>
+				${bin.dir}/aerohive/handle_br_mgt0_subnet.pl --release ${rid}
+			</script>
+		</step>
+	</stage>
+</testcase>

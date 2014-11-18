@@ -1,0 +1,172 @@
+<testcase>
+	<brief>Under default mode connect one 802.3af/802.3at/non-compliance PD to SW, check if PD can work</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<tbtype>linux</tbtype>
+
+	<description></description>
+	<comment></comment>
+	
+	<property name="pub.tclclient1.ip" value="10.155.31.170" />
+	
+	<property name="sw1.user" value="admin" />
+	<property name="sw1.passwd" value="aerohive" />
+	<property name="sw1.sfs_tcl_server" value="10.155.31.32"/>
+	<property name="sw1.sfs_tcl_server.port" value="6900"/>
+	
+	<property name="sw.port.1" value="eth1/2" /> <!-- suggest to test with eth1/1-9 -->
+	<property name="pse.profile.0" value="pse_profile0" />
+	<property name="pse.profile.1" value="pse-at" />
+	<property name="pse.profile.2" value="pse-af" />
+	<property name="power.mode.1" value="AT" />
+	<property name="power.mode.2" value="AF" />
+	<property name="power.limit.1" value="32.0" />
+	<property name="power.limit.2" value="15.4" />
+	<property name="payload.0" value="12" /> <!-- class0, 13 -->
+	<property name="payload.1" value="3.5" /> <!-- class1, 3.8 -->
+	<property name="payload.2" value="6" /> <!-- class2, 6.5 -->
+	<property name="payload.3" value="12" /> <!-- class3, 13 -->
+	<property name="payload.4" value="25" /> <!-- class4, 25.5 -->
+	<property name="payload.delta.1" value="2" />
+	<property name="payload.delta.2" value="4" />
+	<property name="pse.status.1" value="Searching" />
+	<property name="pse.status.2" value="delivering" />
+	<property name="pse.status.3" value="fault" />
+	<property name="pse.status.5" value="disabled" />
+	
+	<property name="led.off" value="00008888" />
+	<property name="led.green" value="00008988" />
+	<property name="led.amber" value="00008889" />
+	
+	<stage>
+	
+		<step no="0.0.1">
+			<desc>
+				Show interface mgt0 to get ip address
+			</desc>
+			<log-file>step0.0.1_mgt0_ip_info.log</log-file>
+			<console target="sw1">
+				-v 'show interface mgt0'
+			</console>
+		</step>
+
+		<step no="0.0.2">
+			<desc>
+				Get mgt0's ip address
+			</desc>
+			<setvar name="sw1.ip">
+				python ${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/step0.0.1_mgt0_ip_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="0.1.1">
+			<desc>
+				check default power mode
+			</desc>
+			<log-file>step0.1.1.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show pse pro'
+			</ssh>
+			<log-match>-c -i "${pse.profile.0}" -i "802.3 *${power.mode.1}" -re</log-match>
+		</step>
+		
+		<step no="0.1.2">
+			<desc>
+				check default power mode
+			</desc>
+			<log-file>step0.1.2.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw.port.1} pse'
+			</ssh>
+			<log-match>-c -e "Port name *${sw.port.1}"</log-match>
+			<log-match>-c -e "Power mode *802.3${power.mode.1}"</log-match>
+			<log-match>-c -e "Profile name *${pse.profile.0}"</log-match>
+		</step>		
+		
+					
+		<step no="1.1">
+			<desc>
+				verify sw pse is enabled by default
+			</desc>
+			<log-file>step1.1_default_pse_state.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show pse'
+			</ssh>
+			<log-match>-i "Max port supported"</log-match>
+			<log-match>-i "Power management type"</log-match>
+		</step>
+		
+		<step no="1.2">
+			<desc>
+				shutdown pse
+			</desc>
+			<log-file>step1.2_PseCfgOfEthPort.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}" timeout="180">
+				-v 'in ${sw.port.1} pse shutdown'
+				-v 'show in ${sw.port.1} pse'
+			</ssh>
+			<log-match>-i "Port name *${sw.port.1}"</log-match>
+			<log-match>-c -i "PSE status" -i "${pse.status.5}"</log-match>
+			<log-match>-c -i "power mode *802.3${power.mode.1}"</log-match>
+			<log-match>-i "Power limit\(W\) *${power.limit.1}0*" -re</log-match>
+			<log-match>-i "Profile name *${pse.profile.0}"</log-match>
+		</step>
+		
+		<step no="1.3.1">
+			<desc>switch led mode to pse</desc>
+			<log-file>step1.3.1.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v '_led button press poe'
+				-v ''
+				-v '_hw i2c chan 0 chip 7f addr 13 width 1'
+			</ssh>
+			<log-match>-c -e "00000013: e0"</log-match>
+		</step>
+		
+		<step no="1.3.2">
+			<desc>
+				get switch port
+			</desc>
+			<setvar name="sw.port">
+				echo "${sw.port.1}" | awk -F '/' '{ print $2 }'
+			</setvar>
+		</step>		
+		
+		<step no="1.3.3">
+			<desc>
+				show led color
+			</desc>
+			<log-file>step1.3.3.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v '_sh switch phy 0x${sw.port} 0x3 0x10'
+			</ssh>
+			<log-match>-c -e "Eth port 0*${sw.port}"</log-match>
+		</step>
+		
+		<step no="1.3.2">
+			<desc>
+				get led color
+			</desc>
+			<setvar name="pse.led">
+				grep "Eth port" ${log.dir}/step1.3.3.log | awk '{ print $8 }'
+			</setvar>
+		</step>
+
+		<step no="1.3.2">
+			<desc>
+				judge led color
+			</desc>
+			<script>
+				echo ${pse.led} ${led.off} | awk '{
+				 if ($1==$2)   
+				 	{exit (0);} 
+				 else 
+				 	{exit (1);} 
+				 }' 
+			</script>
+		</step>
+		
+</stage>		
+	
+</testcase>

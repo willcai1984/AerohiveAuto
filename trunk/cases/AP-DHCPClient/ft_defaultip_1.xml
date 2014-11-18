@@ -1,0 +1,262 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>DHCP enable, no static IP address, DHCP get IP address failed after a timeout interval, verify AP will fallback to use default IP </brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-DHCP enable, no static IP address.
+		-Box to DHCP server traffic is unreachable.
+
+		Test Procedure:
+		1: In default timeout interval(20s), debug dhcpc basic, check how long will
+		fallback to use default IP address.
+		_debug dhcpc basic
+		2: Set DHCP timeout interval to 0, check how long will fallback to use default IP
+		address.
+		interface m0 dhcp client timeout 0
+		3: Set DHCP timeout interval to "x", check how long will fallback to use default IP
+		address.
+		interface m0 dhcp client timeout x
+		4: Check interface mgt0 IP address (show interface mgt0 )
+		5: Check interface mgt0 DHCP client (show interface mgt0 dhcp client)
+		6: Check DHCP packets send out
+		_ff id 1 src-mac xxxx src-port 68 bidirectional
+		_kdebug fe basic
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				-DHCP enable, no static IP address.
+			</desc>
+			<telnet target="ap1">
+				-v "interface mgt0 dhcp client"
+			</telnet>
+		</step>
+		<step no="1.0">
+			<desc>
+				check ap can get ip
+			</desc>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+			<log-match>-i "192.168.${tb.vlan1}"</log-match>
+		</step>
+		
+		<step no="1.1">
+			<desc>
+				show interface
+			</desc>
+			<log-file>step1.1_show_interface.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				get ap's default ip address
+			</desc>
+			<setvar name="ap1.mgt0.mactoip">
+				perl ${case.dir}/bin/getmactoip.pl ${log.dir}/step1.1_show_interface.log mgt0
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				-open debug, config incorrect vlan for mgt0
+				-Box to DHCP server traffic is unreachable.
+			</desc>
+			<console target="ap1">
+				-v "_debug dhcpc basic"
+				-v "clear log all"
+				-v "interface mgt0 vlan 100"
+			</console>
+		</step>
+
+		<step no="3" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check default timeout interval
+			</desc>
+			<log-file>show_defaulttimeout_interval_${loop-check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show logging buffered | in debug"
+			</console>
+			<no-error-check />
+			<log-match>-e "Can not get network setting through DHCP within interval 20"</log-match>
+		</step>
+
+		<step no="3.1" delay="60">
+			<desc>
+				check whether fallback to use default IP address after 20secs
+			</desc>
+			<log-file>show_mgt0_defaulttimeout_fallbacks_defaultip.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "IP addr=192.168.1.1" -e "IP addr=${ap1.mgt0.mactoip}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				- DHCP enable, no static IP address.
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 vlan"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+		<step no="4.1">
+			<desc>
+				check ap can get ip
+			</desc>
+			<telnet target="ap1">
+				-v "show interface mgt0 "
+			</telnet>
+			<log-match>-i "192.168.${tb.vlan1}"</log-match>
+		</step>
+		
+		<step no="4.2">
+			<desc>
+				Set DHCP timeout interval to 0, check how long will fallback to use default IP address.
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client timeout 0"
+				-v "interface mgt0 vlan 100"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				reboot ap
+			</desc>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>		
+		
+		<step no="4.4" >
+			<desc>
+				ip address will Never fallback to use default IP address, always will be 0.0.0.0
+			</desc>
+			<log-file>show_mgt0_timeout0_neverfallbacks_defaultip.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "IP addr=0.0.0.0"</log-match>
+		</step>
+
+		<step no="4.5" delay="5">
+			<desc>
+				make sure always will be 0.0.0.0
+			</desc>
+			<log-file>show_mgt0_timeout0_neverfallbacks_defaultip_always.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "IP addr=0.0.0.0"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				Set DHCP timeout interval to "x", check how long will fallback to use default IP address.
+			</desc>
+			<console target="ap1">
+				-v "_debug dhcpc basic"
+				-v "clear log all"
+				-v "interface mgt0 dhcp client timeout 5"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="5.1" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check timeout interval
+			</desc>
+			<log-file>show_timeout5_interval_${loop-check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show logging buffered | in debug"
+			</console>
+			<no-error-check />
+			<log-match>-e "Can not get network setting through DHCP within interval 5"</log-match>
+		</step>
+
+		<step no="5.2" delay="5">
+			<desc>
+				check whether fallbacks to us default IP address after 5secs
+			</desc>
+			<log-file>show_mgt0_timeout5_fallbacks_defaultip.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "IP addr=192.168.1.1" -e "IP addr=${ap1.mgt0.mactoip}" </log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				Check interface mgt0 IP address (show interface mgt0 )
+			</desc>
+			<log-file>check_interface_mgt0_ip_address.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "IP addr=192.168.1.1" -e "IP addr=${ap1.mgt0.mactoip}"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				Check interface mgt0 DHCP client (show interface mgt0 dhcp client)
+			</desc>
+			<log-file>show_mgt0_dhcp_client_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-e "DHCP client: Enabled"</log-match>
+			<log-match>-e "Get IP address 0.0.0.0"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				get mgt0's mac
+			</desc>
+			<setvar name="ap1_mgt0_mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/check_interface_mgt0_ip_address.log -i mgt0 -o aero -m -width 2
+			</setvar>
+		</step>
+
+		<step no="9">
+			<desc>
+				Check DHCP packets send out
+				_ff id 1 src-mac xxxx src-port 68 bidirectional
+				_kdebug fe basic
+				Debug console
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff id 1 src-mac ${ap1_mgt0_mac} src-port 68 bidirectional"
+			</console>
+		</step>
+
+		<step no="10" type="loop-check" loop-max-times="3" loop-interval="5">
+			<desc>
+				show something
+			</desc>
+			<log-file>show_dhcp_packet_sendout.log</log-file>
+			<console target="ap1">
+				-v "show logging buffered | in debug"
+			</console>
+			<no-error-check />
+			<log-match>-e "(i) mgt0 0.0.0.0->255.255.255.255.*UDP 68->67 DHCP Discover" -c</log-match>
+			<log-match>-e "special handling for DHCP request pkts" -c</log-match>
+			<log-match>-e "(o) eth0 0.0.0.0->255.255.255.255.*UDP 68->67 DHCP Discover" -c</log-match>
+			<log-match>-n -e "receive a DHCP OFFER" -c</log-match>
+		</step>
+	</stage>
+</testcase>

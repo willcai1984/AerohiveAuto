@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that the Broadcast (ARP and DHCP)</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Match the ip-policy of NAT
+
+		Test Procedure:
+		Verify that the Broadcast is NAT then broadcast to all interface
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				check mgt0 mac
+			</desc>
+			<log-file>step0_check_mgt0_mac.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				get mgt0 mac
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step0_check_mgt0_mac.log -p "MAC addr=(\S+);" -t str
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Configure AP1 via console(configure the first ssid)
+			</desc>
+			<console target="ap1">
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile ${conn1.ssid} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				Match the ip-policy of NAT
+			</desc>
+			<log-file>step2_Match_nat.log</log-file>
+			<telnet target="ap1">
+				-v "ip-policy nat-policy"
+				-v "ip-policy nat-policy id 1 service dhcp-server action permit"
+				-v "ip-policy nat-policy id 2 action nat"
+				-v "user-profile ${conn1.ssid} security ip-policy from-access nat-policy to-access nat-policy"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				Open debug switch on AP
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "cons page 0"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="5">
+			<desc>
+				Get sta1 Broadcast address
+			</desc>
+			<multi-setvar>
+				echo "sta1.Broadcast.ip=$(echo ${sta1.tif.ip} | cut -d. -f1,2,3).255"
+			</multi-setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				sta ping Broadcast address
+			</desc>
+			<log-file>step6_sta_ping.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${sta1.Broadcast.ip} -b -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${sta1.Broadcast.ip}" -i "ttl="</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="7" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step7_show_logging_buffered.log" />
+
+		<step no="8">
+			<desc>
+				check log
+			</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(o\) eth0 ${ap1.mgt0.ip}->${sta1.Broadcast.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "(?i)eth0 Tx ${ap1.mgt0.mac} -> ffff:ffff:ffff" p "(?i)\(o\) wifi0.1 ${ap1.mgt0.ip}->${sta1.Broadcast.ip}" p "(?i)wifi0.1 Tx ${ap1.mgt0.mac} -> ffff:ffff:ffff" p "(?i)\(i\) mgt0 ${ap1.mgt0.ip}->${sta1.Broadcast.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" p "(?i)fflow ${sta1.tif.mac}->ffff:ffff:ffff flag" -e "(?i)\(i\) wifi0.1 ${sta1.tif.ip}->${sta1.Broadcast.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

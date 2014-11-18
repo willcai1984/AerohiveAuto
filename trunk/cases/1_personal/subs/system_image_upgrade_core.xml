@@ -1,0 +1,101 @@
+<include arg-names="cons, imagename, dutindex, shellpasswd">
+	<!--check whether need to upgrade image-->
+	<step no="1">
+		<desc>Get the version of the image</desc>
+		<log-file>image_ver_dut${dutindex}.txt</log-file>
+		<script>
+			ident /tftpboot/${imagename} > ${log.dir}/${log.file}
+		</script>
+	</step>
+	<step no="2">
+		<desc>get the version detail of DUT</desc>
+		<log-file>show_ver_${cons}.log</log-file>
+		<console cons-name="${cons}" cons-host="${mpc.mif.ip}">
+			-v "show ver detail"
+		</console>
+	</step>
+
+	<step no="3">
+		<desc>judge what to do next by comparing image and DUT info</desc>
+		<setvar name="action" scope="local">
+			${case.dir}/bin/compare_dut_imgfile.pl \
+			--vfile "${log.dir}/show_ver_${cons}.log" \
+			--ifile "${log.dir}/image_ver_dut${dutindex}.txt"
+		</setvar>
+	</step>
+
+	<step no="4">
+		<if>"${action}" == "NOCHANGE"</if>
+		<desc>No need to upgrade image</desc>
+		<script>
+			echo "DUT is just the version, no need to upgrade"
+		</script>
+	</step>
+	
+	<step no="5">
+		<if>"${action}" == "REBOOTBACKUP"</if>
+		<desc>need reboot to backup image</desc>
+		<console cons-name="${cons}" cons-host="${mpc.mif.ip}">
+			-v "reboot backup"
+		</console>
+	</step>
+	
+	<step no="6.1">
+		<if>"${action}" == "UPGRADE"</if>
+		<desc>remove rsapublickey.pem</desc>
+		<log-file>remove_rsa_${cons}.log</log-file>
+		<console cons-name="${cons}" cons-host="${mpc.mif.ip}" slow="true" prompt="AH.*#|$">
+			<!---v 'show system command "rm -f /etc/rsapublickey.pem"'-->
+			-b -sp "${shellpasswd}"
+			-v "_shell"
+			-v "${shellpasswd}"
+			-v "rm -f /etc/rsapublickey.pem"
+			-v ""
+			-v "exit"
+		</console>
+		<log-match>-i "BusyBox"</log-match>
+		<no-error-check />
+	</step>
+	
+	<step no="6.2">
+		<if>"${action}" == "UPGRADE"</if>
+		<desc>check license</desc>
+		<log-file>show_license_${cons}.log</log-file>
+		<console cons-name="${cons}" cons-host="${mpc.mif.ip}">
+			-v "show license"
+		</console>
+		<log-match>-c -i "Permanent *license"</log-match>
+	</step>
+	<step no="6.3" type="loop-check" loop-max-times="3" loop-interval="5" delay="5">
+		<if>"${action}" == "UPGRADE"</if>
+		<desc>check connection to mpc</desc>
+		<log-file>ping_mpc_${cons}.log</log-file>
+		<console cons-name="${cons}" cons-host="${mpc.mif.ip}">
+			-v "ping ${mpc.tif.ip}"
+		</console>
+		<log-match>-c -i ' from ${mpc.tif.ip}:' -i 'ttl='</log-match>
+	</step>
+	
+	<step no="6.4">
+		<if>"${action}" == "UPGRADE"</if>
+		<desc>need upgrade image</desc>
+		<log-file>image_upgrade_${cons}.log</log-file>
+		<console cons-name="${cons}" cons-host="${mpc.mif.ip}" slow="5">
+			-v "save image tftp://${mpc.tif.ip}:${imagename}"
+		</console>
+		<log-match>-n -i "The kernel image currently in flash is the same as the image you are attempting to load"</log-match>
+		<log-match>-n -i "The application image currently in flash is the same as the image you are attempting to load"</log-match>
+	</step>
+	
+	<step no="6.5">
+		<if>"${action}" == "UPGRADE"</if>
+		<desc>need reboot device</desc>
+		<multi-setvar>
+			if [ "${dutindex}" == "1" ]; then echo "dut1.needreboot=true"; fi
+			if [ "${dutindex}" == "2" ]; then echo "dut2.needreboot=true"; fi
+			if [ "${dutindex}" == "3" ]; then echo "dut3.needreboot=true"; fi
+			if [ "${dutindex}" == "4" ]; then echo "dut4.needreboot=true"; fi
+		</multi-setvar>
+	</step>
+	
+</include>

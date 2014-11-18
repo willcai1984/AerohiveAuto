@@ -1,0 +1,137 @@
+<include obj-arg-names="__AP__, __SO__" arg-names="ssid_name">
+	<step no="init.0">
+		<if>"${img.prodtype}" == "AP1130" || "${img.prodtype}" == "AP230"</if>
+		<desc>Check is img type is AP1130 or AP230</desc>
+		<multi-setvar>
+			echo "ap.is_bc=true"
+		</multi-setvar>
+	</step>
+
+	<step no="init.1">
+		<if>"${ssid_name}" == ""</if>
+		<setvar name="ssid_name">
+			echo "${ssid.name}"
+		</setvar>
+	</step>
+	<step no="init.2">
+		<if>"${__SO__.name}" == ""</if>
+		<setvar name="__SO__.name">
+			echo "autoap"
+		</setvar>
+	</step>
+
+	<step no="ps_init.open_8021x">
+		<if>"${__SO__.proto}" == "open"
+			|| "${__SO__.proto}" == "wpa-tkip-8021x"
+			|| "${__SO__.proto}" == "wpa-aes-8021x"
+			|| "${__SO__.proto}" == "wpa2-tkip-8021x"
+			|| "${__SO__.proto}" == "wpa2-aes-8021x"
+			|| "${__SO__.proto}" == "wpa-auto-8021x"
+		</if>
+		<setvar name="proto_args">
+			echo ""
+		</setvar>
+	</step>
+	<step no="ps_init.wep">
+		<if>"${__SO__.proto}" == "wep-open"
+			|| "${__SO__.proto}" == "wep-shared"
+		</if>
+		<setvar name="proto_args">
+			echo "${__SO__.ps.keyidx} ${__SO__.ps.keytype}-key ${__SO__.ps.keyvalue} default"
+		</setvar>
+	</step>
+
+	<step no="ps_init.psk">
+		<if>"${__SO__.proto}" == "wpa-tkip-psk"
+			|| "${__SO__.proto}" == "wpa-aes-psk"
+			|| "${__SO__.proto}" == "wpa2-tkip-psk"
+			|| "${__SO__.proto}" == "wpa2-aes-psk"
+			|| "${__SO__.proto}" == "wpa-auto-psk"
+		</if>
+		<setvar name="proto_args">
+			echo "${__SO__.ps.keytype}-key ${__SO__.ps.keyvalue}"
+		</setvar>
+	</step>
+
+	<step no="so.set">
+		<desc>setup security object</desc>
+		<telnet target="__AP__">
+			-v "security-object ${__SO__.name}"
+			-v "security-object ${__SO__.name} security protocol-suite ${__SO__.proto} ${proto_args}"
+			-v "save config"
+		</telnet>
+	</step>
+
+	<step no="so.set2">
+		<desc>setup security object for aaa</desc>
+		<if>"${__SO__.proto}" == "wpa-tkip-8021x"
+			|| "${__SO__.proto}" == "wpa-aes-8021x"
+			|| "${__SO__.proto}" == "wpa2-tkip-8021x"
+			|| "${__SO__.proto}" == "wpa2-aes-8021x"
+			|| "${__SO__.proto}" == "wpa-auto-8021x"
+		</if>
+		<telnet target="__AP__">
+			-v "security-object ${__SO__.name} security aaa radius primary ${__SO__.radius.ip} shared-secret ${__SO__.radius.sharesecret}"
+			-v "save config"
+		</telnet>
+	</step>
+
+	<step no="4.1">
+		<if>"${ap.is_bc}" != "true"</if>
+		<desc>check protocol-suite, not broadcom chip</desc>
+		<log-file>show_proto_${apid}.log</log-file>
+		<telnet target="__AP__">
+			-v "show security-object ${__SO__.name} security protocol-suite"
+		</telnet>
+		<log-match>-e "Method=${__SO__.proto}"</log-match>
+	</step>
+
+	<step no="4.2">
+		<if>"${ap.is_bc}" == "true"</if>
+		<if>"${__SO__.proto}" == "wpa-tkip-8021x"
+			|| "${__SO__.proto}" == "wpa-aes-8021x"
+			|| "${__SO__.proto}" == "wpa2-tkip-8021x"
+			|| "${__SO__.proto}" == "wpa2-aes-8021x"
+			|| "${__SO__.proto}" == "wpa-auto-8021x"
+		</if>
+		<desc>check protocol-suite, broadcom chip and 802.1x</desc>
+		<log-file>show_proto_${apid}.log</log-file>
+		<telnet target="__AP__">
+			-v "show security-object ${__SO__.name} security protocol-suite"
+		</telnet>
+		<log-match>-e "Method=wpa-auto-8021x"</log-match>
+	</step>
+
+	<step no="4.3">
+		<if>"${ap.is_bc}" == "true"</if>
+		<if>"${__SO__.proto}" == "wpa-tkip-psk"
+			|| "${__SO__.proto}" == "wpa-aes-psk"
+			|| "${__SO__.proto}" == "wpa-auto-psk"
+		</if>
+		<desc>check protocol-suite, broadcom chip and psk</desc>
+		<log-file>show_proto_${apid}.log</log-file>
+		<telnet target="__AP__">
+			-v "show security-object ${__SO__.name} security protocol-suite"
+		</telnet>
+		<log-match>-e "Method=wpa-auto-psk"</log-match>
+	</step>
+
+	<step no="5">
+		<desc>set so for ssid</desc>
+		<telnet target="__AP__">
+			-v "ssid ${ssid_name}"
+			-v "ssid ${ssid_name} security-object ${__SO__.name}"
+			-v "save config"
+		</telnet>
+	</step>
+
+	<step no="6">
+		<desc>show SSID info</desc>
+		<log-file>show_ssid_${include.prefix}___AP__.log</log-file>
+		<telnet target="__AP__">
+			-v "show ssid ${ssid_name}"
+		</telnet>
+		<log-match>-e "autoap"</log-match>
+	</step>
+
+</include>

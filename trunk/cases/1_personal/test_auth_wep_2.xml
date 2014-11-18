@@ -1,0 +1,124 @@
+<testcase>
+	<brief>
+		When default key index and key value on AP and client are same,
+		check Authentication will succeed if both STA and AP use wep Shared-key authentication
+	</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<description>
+		Topology to use
+		Acceptance
+		Description
+		When default key index and key value on AP and client are same, check Authentication will succeed if both STA and AP use wep Sha
+		red-key authentication
+		Pre-condition
+		- AP works with wep-shared protocol-suite, hex-key, key length 26,default key index is 1
+		- STA configure the same authentication method and encryption method as the AP
+		Test procedure
+		- STA connects to the AP
+		- Ping between STA and AP for 10 minutes
+		Expect result
+		1.Check the config is correct,sh run,sh ssid xxx,sh ssid xxx se pro to make sure
+		2.Check STA can pass the authentication successfully
+		3.Check station can get the IP address normally by DHCP
+		4.Check the connection will not be dropped,we should ping the gateway for 10 minutes,make sure the traffic is not broken abnormal
+	</description>
+
+	<property name="conn.proto" value="wep-shared" />
+	<property name="conn.keyidx" value="3" />
+	<property name="conn.psk_keytype" value="hex" />
+	<property name="conn.psk" value="ffffffffffffffffffffffffff" />
+
+	<stage>
+		<step no="config_ap">
+			<desc>config AP1</desc>
+			<telnet target="ap1">
+				-v "clear log buff"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite ${conn.proto} ${conn.keyidx} ${conn.psk_keytype}-key ${conn.psk} default"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface ${ssid_bind_interface} mode access"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="show_ssid" delay="20">
+			<desc>show ssid on AP1</desc>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+			<log-match>-e "autoap"</log-match>
+		</step>
+		<step no="check_proto">
+			<desc>check protocol-suite</desc>
+			<telnet target="ap1">
+				-v "show security- autoap security protocol-suite"
+			</telnet>
+			<log-match>-e "Method=${conn.proto}"</log-match>
+		</step>
+		
+		<step no="connect_wifi">
+			<log-file>connect_wifi.log</log-file>
+			<ssh target="sta1" timeout="3600">
+				-v "/usr/local/auto/bin/connect_wifi
+				'{
+				\"target\"      : \"sta1\",
+				\"ifname\"      : \"${sta1.tif.name}\",
+				\"bind\"        : \"${ssid_bind_interface}\",
+				\"ssid\"        : \"${ssid.name}\",
+				\"proto\"       : \"${conn.proto}\",
+				\"keyidx\"      : \"${conn.keyidx}\",
+				\"psk_keytype\" : \"${conn.psk_keytype}\",
+				\"psk\"         : \"${conn.psk}\"
+				}'"
+			</ssh>
+			<log-match>-e "&gt;&gt;&gt;&gt; Pass &lt;&lt;&lt;&lt;"</log-match>
+		</step>
+		<step no="get_sta_ip_mac">
+			<desc>parse station IP and MAC from connect wifi log file</desc>
+			<multi-setvar>
+				grep "^&lt;&lt;&lt;&lt;" ${log.dir}/connect_wifi.log | \
+				sed -e 's/^&lt;&lt;&lt;&lt;//g'
+			</multi-setvar>
+		</step>
+		
+		<step no="check_ping_to_sta">
+			<desc>ping from AP to station</desc>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip} count 10"
+			</telnet>
+			<log-match>-c -i " from " -i " ttl="</log-match>
+		</step>
+		
+		<step no="check_auth_info">
+			<desc>check auth info</desc>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-i "${sta1.tif.mac}" -p 7 -i "open" -c</log-match>
+		</step>
+		<step no="check_conn_info">
+			<desc>check station connection info</desc>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-i "${sta1.tif.mac}" -p 11 -i "Yes" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 7 -i "${conn.proto}" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 8 -i "wep" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 2 -i "${sta1.tif.ip}" -c</log-match>
+		</step>
+		<step no="check_roaming_check_info">
+			<desc>check check roaming cache info</desc>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-i "${sta1.tif.mac}" -p 12 -i "YNNN" -c</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Ingress Filtering</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		pre-condition:
+		All devices connect to trunk port which permits VLAN 1, 51, 52, 53
+		All devices are in VLAN 51
+		Macbook 1 connects to AP141, VLAN 51
+		Winbook 1 connects to AP330, VLAN 52
+		AppleTV connects to BR200, VLAN 53
+
+		test procedure:
+		1.	Configure Ingress filter rule 1: all services from VLAN 51 are permitted, Check services on VLAN 52,53
+		2.	Configure Ingress filter rule 2: all services from VLAN 52 are permitted, Check services on VLAN 51,53
+		3.	Modify Ingress filter rule 1: all services from VLAN 51 to VLAN 52 are permitted, Check services on VLAN 52
+		4.	Modify Ingress filter rule 2: all services from VLAN 52 to VLAN 51 are permitted, Check services on VLAN 51
+		5.	Delete filter rule 1, check services on vlan 52
+		6.	Delete filter rule 2, check services on vlan 51
+		
+		expect result:
+		1. all services from vlan 51 can be seen on vlan 52 and 53
+		2. all services from vlan 52 can be seen on vlan 51 and 53
+		3. all services from vlan 51 can be seen on vlan 52
+		4. all services from vlan 52 can be seen on vlan 51
+		5. all services from vlan 51 can not be seen on vlan 52
+		6. all services from vlan 52 can not be seen on vlan 51 
+	</description>
+	<numofap>3</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+
+		<include prefix="0" file="subs/l3swcfg_port_vlan.xml" args="${tb.apple.l3sw.port}, ${tb.vlan1}, ${tb.vlans}" />
+		
+		<step no="1">
+    		<desc>
+       			config ap1
+    		</desc>
+    		<log-file>ap1_config.log</log-file>
+    		<console target="ap1">
+       			-v "interface mgt0 vlan ${tb.vlan1}"
+       			-v "interface mgt0 native-vlan ${tb.vlan1}"
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}"
+       			-v "interface mgt0 hive ${hive.name}"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan1} ${tb.vlan3}"
+    		</console>
+		</step>
+		
+		<include prefix="1.0" file="subs/ap_renew_ip.xml" obj-args="ap1" />
+		
+		<step no="1.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>check bonjour-gateway status on ap1</desc>
+			<log-file>step1.1_show_bonjour_status.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+			<log-match>-re -i "Total +\d+ Local Attached VLANs:" -i "${tb.vlan1}" -i "${tb.vlan2}" -i "${tb.vlan3}"</log-match>
+		</step>
+				
+		<step no="2" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap1</desc>
+			<log-file>step2_show_local_service.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="3">
+    		<desc>
+       			config ap2
+    		</desc>
+    		<log-file>ap2_config.log</log-file>
+    		<console target="ap2">
+       			-v "interface mgt0 vlan ${tb.vlan2}"
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}1"
+       			-v "interface mgt0 hive ${hive.name}1"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan2}"
+    		</console>
+		</step>
+		
+		<include prefix="3.0" file="subs/ap_renew_ip.xml" obj-args="ap2" />
+		
+		<step no="4">
+    		<desc>
+       			config ap3
+    		</desc>
+    		<log-file>ap3_config.log</log-file>
+    		<console target="ap3">
+       			-v "interface mgt0 vlan ${tb.vlan3}"
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}2"
+       			-v "interface mgt0 hive ${hive.name}2"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan3}"
+    		</console>
+		</step>
+		
+		<include prefix="4.0" file="subs/ap_renew_ip.xml" obj-args="ap3" />
+		
+		<step no="5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bonjour-gateway status on bdd</desc>
+			<log-file>step5_show_bon_sta.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="6" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bonjour-gateway status on bdd</desc>
+			<log-file>step6_show_bon_sta.log</log-file>
+			<ssh target="ap3">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="7">
+			<desc>config filter rule on ap1</desc>
+			<log-file>config_filter.log</log-file>
+			<ssh target="ap1">
+				-v "vlan-group 1 ${tb.vlan1}"
+				-v "vlan-group 2 ${tb.vlan2}"
+				-v "vlan-group 3 ${tb.vlan3}"
+				-v "_debug mdnsd raw"
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 from 1 *"
+			</ssh>
+		</step>
+		
+		<step no="8">
+			<desc>restart bgd</desc>
+			<log-file>step8_restart_bgd.log</log-file>
+			<ssh target="ap2">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</ssh>
+		</step>
+		
+		<step no="8.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>step8.1_show_bon_sta.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="9" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the logging buffer</desc>
+			<log-file>ste9_log_buf.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "mDNS\(r\) eth0 192.168.${tb.vlan2}.\d+-&gt;224.0.0.251.*on vlan ${tb.vlan2} vlantag, sent" -ps p "destination allow all" p "vlan group check:1, vlan ${tb.vlan1} in this group, allow relay message" p "source object 1, destination object allow all" p "bonjour filter checking rule 1" p "MDNS:recv respond message" p "source allow all, relaying message" p "source object allow all, destination object 1" p "bonjour filter checking rule 1" -e "MDNS:recv query message" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "mDNS\(r\) eth0 192.168.${tb.vlan3}.\d+-&gt;224.0.0.251.*on vlan ${tb.vlan3} vlantag, sent" -ps p "destination allow all" p "vlan group check:1, vlan ${tb.vlan1} in this group, allow relay message" p "source object 1, destination object allow all" p "bonjour filter checking rule 1" p "MDNS:recv respond message" p "source allow all, relaying message" p "source object allow all, destination object 1" p "bonjour filter checking rule 1" -e "MDNS:recv query message" -f ${log.dir}/${log.file}</log-match>	
+			<no-error-check />
+		</step>
+		
+		<step no="10" type="loop-check" loop-max-times="30" loop-interval="5">
+			<desc>show local service on ap2</desc>
+			<log-file>step10_show_local_service.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="10.1" type="loop-check" loop-max-times="30" loop-interval="5">
+			<desc>show local service on ap3</desc>
+			<log-file>step10.1_show_local_service.log</log-file>
+			<ssh target="ap3">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="11">
+			<desc>modify filter rule 1</desc>
+			<log-file>step11_modify_filter.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 from 1 * to 2"
+			</ssh>
+		</step>
+		
+		<step no="12">
+			<desc>restart bgd</desc>
+			<log-file>step12_restart_bgd.log</log-file>
+			<ssh target="ap2">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</ssh>
+		</step>
+		
+		<step no="12.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>step12.1_show_bon_sta.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="13" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the logging buffer</desc>
+			<log-file>ste13_log_buf.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "mDNS\(r\) eth0 192.168.${tb.vlan2}.\d+-&gt;224.0.0.251.*on vlan ${tb.vlan2} vlantag, sent" -ps p "relay message to vlan group 2" p "going to find vlan group to relay message" p "vlan group check:1, vlan ${tb.vlan1} in this group, allow relay message" p "source object 1, destination object 2" p "bonjour filter checking rule 1" p "MDNS:recv respond message" p "vlan group check:2, vlan ${tb.vlan2} in this group, allow relay message" p "source object 2, destination object 1" p "bonjour filter checking rule 1" -e "MDNS:recv query message" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="14" type="loop-check" loop-max-times="30" loop-interval="5">
+			<desc>show local service on ap2</desc>
+			<log-file>step14_show_local_service.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="15">
+			<desc>delete filter rule 1</desc>
+			<log-file>step15_delete.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "no bonjour-gateway filter rule 1"
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "Notify MDNS to say goodbye for rule 1"</log-match>
+			<log-match>-i "mDNSResponder: Say goodbye"</log-match>
+			<log-match>-re -i "sending goodbye to subnet 192.168.${tb.vlan2}.\d+/255.255.255.0 on vlan ${tb.vlan2}"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="16" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap2</desc>
+			<log-file>step16_show_local_service.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<include prefix="17" file="subs/l3swcfg_port_vlan.xml" args="${tb.apple.l3sw.port}, ${tb.vlan2}, ${tb.vlans}" />
+		
+		<step no="18.1">
+			<desc>restart bgd</desc>
+			<log-file>step18.1_restart_bgd.log</log-file>
+			<ssh target="ap1">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</ssh>
+		</step>
+		
+		<step no="18.2" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>step18.2_show_bon_sta.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+
+		<step no="18" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap1</desc>
+			<log-file>step18_show_local_service.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan2}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan2}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan2}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan2}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan2}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="19">
+			<desc>config filter rule 2</desc>
+			<log-file>step19_config_filter.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 2 from 2 *"
+			</ssh>
+		</step>
+		
+		<step no="20">
+			<desc>restart bgd</desc>
+			<log-file>step20_restart_bgd.log</log-file>
+			<ssh target="ap3">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</ssh>
+		</step>
+		
+		<step no="20.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>step20.1_show_bon_sta.log</log-file>
+			<ssh target="ap3">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="21" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the logging buffer</desc>
+			<log-file>ste21_log_buf.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "mDNS\(r\) eth0 192.168.${tb.vlan3}.\d+-&gt;224.0.0.251.*on vlan ${tb.vlan3} vlantag, sent" -ps p "destination allow all" p "vlan group check:2, vlan ${tb.vlan2} in this group, allow relay message" p "source object 2, destination object allow all" p "bonjour filter checking rule 2" p "MDNS:recv respond message" p "source allow all, relaying message" p "source object allow all, destination object 2" p "bonjour filter checking rule 2" -e "MDNS:recv query message" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="22" type="loop-check" loop-max-times="30" loop-interval="5">
+			<desc>show local service on ap3</desc>
+			<log-file>step22_show_local_service.log</log-file>
+			<ssh target="ap3">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="23">
+			<desc>modify filter rule 2</desc>
+			<log-file>step23_modify.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 2 from 2 * to 3"
+			</ssh>
+		</step>
+		
+		<step no="24">
+			<desc>restart bgd</desc>
+			<log-file>step24_restart_bgd.log</log-file>
+			<ssh target="ap3">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</ssh>
+		</step>
+		
+		<step no="24.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>step24.1_show_bon_sta.log</log-file>
+			<ssh target="ap3">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="25" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the logging buffer</desc>
+			<log-file>ste25_log_buf.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "mDNS\(r\) eth0 192.168.${tb.vlan3}.\d+-&gt;224.0.0.251.*on vlan ${tb.vlan3} vlantag, sent" -ps p "relay message to vlan group 3" p "going to find vlan group to relay message" p "vlan group check:2, vlan ${tb.vlan2} in this group, allow relay message" p "source object 2, destination object 3" p "bonjour filter checking rule 2" p "MDNS:recv respond message" p "vlan group check:3, vlan ${tb.vlan3} in this group, allow relay message" p "source object 3, destination object 2" p "bonjour filter checking rule 2" -e "MDNS:recv query message" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="26" type="loop-check" loop-max-times="30" loop-interval="5">
+			<desc>show local service on ap3</desc>
+			<log-file>step26_show_local_service.log</log-file>
+			<ssh target="ap3">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+
+		<step no="27">
+			<desc>delete filter rule 2</desc>
+			<log-file>step27_delete.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "no bonjour-gateway filter rule 2"
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "Notify MDNS to say goodbye for rule 2"</log-match>
+			<log-match>-i "mDNSResponder: Say goodbye"</log-match>
+			<log-match>-re -i "sending goodbye to subnet 192.168.${tb.vlan3}.\d+/255.255.255.0 on vlan ${tb.vlan3}"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="28" type="loop-check" loop-max-times="15" loop-interval="5">>
+			<desc>show local service on ap3</desc>
+			<log-file>step28_show_local_service.log</log-file>
+			<ssh target="ap3">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-n -p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_airplay._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_raop._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_touch-able._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan2}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+	</stage>
+</testcase>

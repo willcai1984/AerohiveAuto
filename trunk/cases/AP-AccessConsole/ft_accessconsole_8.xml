@@ -1,0 +1,237 @@
+<testcase>
+	<brief>Set a mac filter to access console SSID, after AP losses connections to backhaul network, use laptop to connect to access console SSID, check if can pass</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+
+		TOPO:
+		AP1------SW------DHCP server
+		|
+		AP2
+		Description:
+		Set a mac filter to access console SSID, after AP losses connections to backhaul network, use laptop to connect to access console SSID, check if can pass
+		Pre-condition:
+		Login AP1 and AP2 via console
+		AP1 and AP2 obtain ip address from DHCP server
+
+		Test procedure:
+		1.Set access console with auto mode in AP2(default access console is auto mode)
+		2.Set a mac filter to access console in AP2
+		3.Set track action enable-access-console and set track default-gateway in AP2
+		4.Shutdown interface wifi1 in AP2, or shutdown interface wifi1 of AP1(when do automation)
+		5.Check track result by show track xxx
+		6.Check access console state
+		7.Use a laptop to connect to access console
+
+		Expect result:
+		1.Show access console display mode: auto
+		2.Show access console should display mac filter
+		3.Show running-config should display these two commands:
+		track xxx action enable-access-console
+		track xxx default-gateway
+		4.Show interface can see wifi1 with state “D”
+		5.Track result:
+		targets unreachable
+		6.Access console with running state
+		7.If
+		laptop’s MAC address be permited, can pass mac filter and obtain a ip address; if laptop’s MAC address be denied, cann’t pass mac filter and cann’t obtain ip address.
+
+
+
+	</description>
+	<stage>
+
+		<step no="1">
+			<desc>Set access console with auto mode in AP1</desc>
+			<telnet target="ap1">
+				-v "access-console mode auto"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>Show access console display mode</desc>
+			<log-file>step1.1_show_access_console.log</log-file>
+			<telnet target="ap1">
+				-v "show access-console"
+			</telnet>
+			<log-match>-i "Mode" -i "auto" -c</log-match>
+		</step>
+
+		<step no="2">
+			<desc>Set track config for AP1 via console</desc>
+			<telnet target="ap1" timeout="60">
+				-v "track ${tb.name} enable "
+				-v "track ${tb.name} action enable-access-console"
+				-v "track ${tb.name} default-gateway"
+			</telnet>
+		</step>
+
+		<step no="3" delay="10">
+			<desc>Check track result on AP1 via console</desc>
+			<log-file>step3.1_show_track.log</log-file>
+			<telnet target="ap1" timeout="60">
+				-v "show track"
+			</telnet>
+			<log-match>-c -i "${tb.name} *Reachable"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>Show running-config</desc>
+			<log-file>step3.2_show_running_config.log</log-file>
+			<telnet target="ap1" timeout="60">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "track ${tb.name} default-gateway"</log-match>
+			<log-match>-c -i "track ${tb.name} action enable-access-console"</log-match>
+		</step>
+
+		<step no="4">
+		  <if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>Set interface wifi1 to access mode by CLI on AP1 via console</desc>
+			<telnet target="ap1" timeout="80">
+				-v "interface wifi1 mode access"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+		  <if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>Show interface</desc>
+			<log-file>step4.1_show_interface.log</log-file>
+			<telnet target="ap1" timeout="60">
+				-v "show interface"
+			</telnet>
+			<log-match>-c -i "wifi1" -i "access"</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>Shutdown interface eth0 and eth1 by CLI on AP1 via console</desc>
+			<console target="ap1" timeout="80">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="4.3">
+			<desc>Shutdown interface eth1</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<console target="ap1" timeout="60">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+
+		<step no="5">
+			<desc>Set MAC filter and bind it to access console in AP1 via console</desc>
+			<console target="ap1" timeout="60">
+				-v "security mac-filter ${tb.name} default deny"
+				-v "access-console security mac-filter ${tb.name}"
+				-v "save config"
+			</console>
+		</step>
+
+
+		<step no="6" delay="60">
+			<desc>Check track result should be unreachable or invalid in AP1</desc>
+			<log-file>step6_ap1_track.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show track "
+			</console>
+			<log-match>-e "Unreachable" -e "Invalid" -c</log-match>
+		</step>
+
+		<step no="7" delay="30">
+			<desc>Check access console should be in running status of AP1</desc>
+			<log-file>step7_ap1_ac_state.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show access-console _"
+			</console>
+			<log-match>-i "Current state" -i "running" -c</log-match>
+		</step>
+
+		<step no="8">
+			<desc>Get access console SSID</desc>
+			<setvar name="ap1.ac.ssid">
+				cat ${log.dir}/step7_ap1_ac_state.log | awk -F ':' '/Selected SSID/{split($2,a," "); print a[1]}'
+			</setvar>
+		</step>
+
+		<step no="9">
+			<desc>Show interface wifi0.1 of AP1</desc>
+			<log-file>step9_ap1_wifi0.1_state.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi0.1"
+			</console>
+			<log-match>-e "${ap1.ac.ssid}" -c</log-match>
+		</step>
+
+		<step no="10">
+		  <if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>Show interface wifi1.1 of AP1</desc>
+			<log-file>step10_ap1_wifi1.1_state.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi1.1"
+			</console>
+			<log-match>-e "${ap1.ac.ssid}" -c</log-match>
+		</step>
+
+		<step no="11">
+			<desc>Get access console SSID</desc>
+			<setvar name="sta1.ssid">
+				cat ${log.dir}/step7_ap1_ac_state.log | awk -F ':' '/Selected SSID/{split($2,a," "); print a[1]}'
+			</setvar>
+		</step>
+
+		<step no="pre12.1">
+			<desc>set sta1.status_negative</desc>
+			<setvar name="sta1.status_negative">
+				echo "1"
+			</setvar>
+		</step>
+
+		<property name="sta1.proto" value="wpa-aes-psk" />
+		<property name="sta1.psk" value="aerohive" />
+		<include prefix="12" file="subs/sta_connect_${tb.os}.xml" rargs="sta1" />
+
+		<step no="13" delay="5">
+			<desc>Show auth to check client not connect to access console SSID in AP1</desc>
+			<log-file>step13_ap1_auth.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show station"
+			</console>
+			<log-match>-n -e "${sta1.tif.mac}" -c</log-match>
+		</step>
+
+		<step no="14">
+			<desc>Set MAC filter and make laptop1 to permit in AP1</desc>
+			<console target="ap1" timeout="60">
+				-v "security mac-filter ${tb.name} address ${sta1.tif.mac} permit"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="pre15.1">
+			<desc>set sta1.status_negative</desc>
+			<setvar name="sta1.status_negative">
+				echo "0"
+			</setvar>
+		</step>
+
+		<property name="sta1.proto" value="wpa-aes-psk" />
+		<property name="sta1.psk" value="aerohive" />
+		<include prefix="15" file="subs/sta_connect_${tb.os}.xml" rargs="sta1" />
+
+		<step no="16">
+			<desc>Show auth by CLI on AP1</desc>
+			<log-file>step16_ap1_auth.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show station"
+			</console>
+			<log-match>-e "${sta1.tif.mac}" -c</log-match>
+			<log-match>-e "1.1.1." -e "1.1.101." -c</log-match>
+		</step>
+
+	</stage>
+
+</testcase>

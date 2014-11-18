@@ -1,0 +1,495 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Lan port works with port-based mode, check ingress packet vlan</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+Pre-condition:	
+Laptop1 connect to lan port eth1
+Laptop2 connect to lan port eth4
+BR lan port works with port based mode
+Test procedure
+1.	configure mgt0.1 vlan 10
+2.	enable mgt0.1 dhcp, dns server
+3.	configure mgt0.1 ip address as 10.10.10.1,  ip-pool as 10.10.10.10-10.10.10.99
+
+4.	configure mgt0.2 vlan 20
+5.	enable mgt0.2 dhcp, dns server
+6.	configure mgt0.2 ip address as 20.20.20.1, ip-poop as 20.20.20.20-20.20.20.99
+
+7.	Lan port eth1/eth4 in same vlan with vlan10
+
+8.	laptop1 connect to lan port eth1
+9.	laptop2 connect to lan port eth4
+
+10.	Check laptop1, laptop2’s ip         Result1
+
+11.	Check mac-table        Result2
+#show lan mac-table
+#show interface eth1 mac-learning all
+#show interface eth4 mac-learning all
+
+12.	 Laptop1 send a packet without vlan tag to laptop2. (laptop1 ping laptop2)     
+-check if laptop2 receive the packet.        Result3
+-check if the received packet has vlan tag.      Result4
+
+13.	 Laptop1 send a packet with vlan tag to laptop2, the packet vlan is same with the port default vlan (vlan10)    
+-check if laptop2 receive the packet.       Result5
+-check if the received packet has vlan tag.        Result6
+
+14.	Laptop1 send a packet with vlan tag to laptop2, the packet vlan is different with the port default vlan
+Laptop1 send a packet with vlan tag 20           Result7
+
+Expect result	Result1:   laptop1, laptop2 get ip successfully from mgt0.1 dhcp server
+            
+Result2:   mac-table has entries for laptop1, laptop2
+
+Result3:   laptop1 ping laptop2 successfully, laptop2 can receive the packet
+                    local forwarding by switch chip
+Result4:   the received packet don’t have vlan tag  [vlan tag is stripped when egress]
+
+Result5:   laptop2 receive the packet successfully
+                     local forwarding by switch chip
+Result6:   the received packet don’t have vlan tag [vlan tag is stripped when egress]
+
+Result7:   laptop2 can’t receive the packet
+
+	</description>
+	
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>	
+	<stage>
+
+		<step no="pre_1">
+			<desc>
+				1.2.3 config mgt0.1 dhcp server for vlan ${br1.vlan1}
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vlan1}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v ""
+			</telnet>
+		</step>
+		
+		<step no="pre_2">
+			<desc>
+				4.5.6 config mgt0.2 dhcp server for vlan ${br1.vlan2}
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.2 vlan ${br1.vlan2}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+				-v ""
+			</telnet>
+		</step>	
+		
+		<step no="pre_3">
+			<desc>
+				set tmp ip address for different mgt0.x dhcp server on BR
+			</desc>
+			<multi-setvar>
+				echo "br1.br.tmp1.ip=$(echo ${br1.br.mgt0.1.ip_pool_end} | cut -d. -f1,2,3).$(expr $(echo ${br1.br.mgt0.1.ip_pool_end} | cut -d. -f4) + 4)"
+				echo "br1.br.tmp2.ip=$(echo ${br1.br.mgt0.2.ip_pool_end} | cut -d. -f1,2,3).$(expr $(echo ${br1.br.mgt0.2.ip_pool_end} | cut -d. -f4) + 4)"
+			</multi-setvar>
+		</step>
+		
+		 <step no="1">
+			<desc>
+				7.config lan port eth1/eth4 in same vlan with ${br1.vlan1}
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile ${br1.vlan1} qos-policy def-user-qos vlan-id ${br1.vlan1} attribute ${br1.vlan1}"
+				-v ""
+				-v ""
+				-v "user-profile ${br1.vlan2} qos-policy def-user-qos vlan-id ${br1.vlan2} attribute ${br1.vlan2}"
+				-v ""
+				-v ""
+				-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vlan1}"
+				-v "interface eth3 mode bridge-access user-profile-attribute ${br1.vlan1}"
+				-v "interface eth4 mode bridge-access user-profile-attribute ${br1.vlan1}"
+				-v ""
+			</telnet>
+		 </step>
+		  
+		 <step no="2">
+			<desc>
+				get prefix of BR mgt0.1/mgt0.2 ip address
+			</desc>
+			<multi-setvar>
+				echo "br1.mgt0.1.prefix=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3)"
+				echo "br1.mgt0.2.prefix=$(echo ${br1.br.mgt0.2.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		 </step>
+		 
+		 <step no="3.1">
+			<desc>
+				laptop1 connect to lan port eth1, and laptop1 get ip address
+			</desc>
+			<log-file>ifconfig_vpc1_ip.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>			
+		 </step>
+		 
+		 <step no="3.2">
+			<desc>
+				laptop2 connect to lan port eth4, and laptop4 get ip address
+			</desc>
+			<log-file>ifconfig_vpc4_ip.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "dhclient ${br1.vpc4.tif.name} -r"
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>			
+		 </step>
+
+		 <step no="3.3">
+			<desc>
+				ap1 connect to BR eth3, and ap1 mgt0 get ip address 
+			</desc>
+			
+			<console target="br1.ap1" slow="yes">
+				-v " no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v ""
+			</console>
+		 </step>
+		 
+		 <step no="3.4">
+			<desc>
+				show ap1 mgt0 ip address
+			</desc>
+			<log-file>ap1_mgt0_ip.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>						
+		 </step>
+
+		<step no="3.5">
+			<desc>get ip address of ap1</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/ap1_mgt0_ip.log -t str
+			</setvar>
+		</step>	
+		
+		<step no="3.6">
+			<desc>get mac address of ap1 mgt0</desc>
+			<setvar name="br1.ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "MAC addr=([\da-fA-F:]+)" -f ${log.dir}/ap1_mgt0_ip.log -t str
+			</setvar>
+		</step>
+		
+		 
+		 <step no="4.1">
+			<desc>get raw mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/ifconfig_vpc1_ip.log -t str
+			</setvar>
+		 </step>
+		 
+		 <step no="4.2">
+			<desc>get raw mac of br1.vpc4</desc>
+			<setvar name="br1.vpc4.tif.mac1">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/ifconfig_vpc4_ip.log -t str
+			</setvar>			
+		 </step>		 
+
+		<step no="5.1">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>		
+		</step>	
+		
+		<step no="5.2">
+			<desc>get mac of br1.vpc4</desc>
+			<setvar name="br1.vpc4.tif.mac">
+				echo $(echo $(echo $(echo ${br1.vpc4.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc4.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc4.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc4.tif.mac1} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>			
+		</step>	
+		
+		<step no="6.1">
+			<desc>get ip address of br1.vpc1 </desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>		
+		</step>
+		
+		<step no="6.2">
+			<desc>get ip address of br1.vpc4 </desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>			
+		</step>
+		
+		<step no="7">
+			<desc>
+				get prefix of vpc1/vpc4/ap1.mgt0 ip address
+			</desc>
+			<multi-setvar>
+				echo "br1.vpc1.ip.prefix=$(echo ${br1.vpc1.tif.ip} | cut -d. -f1,2,3)"
+				echo "br1.vpc4.ip.prefix=$(echo ${br1.vpc4.tif.ip} | cut -d. -f1,2,3)"
+				echo "br1.ap1.mgt0.ip.prefix=$(echo ${br1.ap1.mgt0.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+		
+		<step no="8.1">
+			<desc>
+				check if vpc1 retrieve ip address from BR mgt0.1 dhcp server successfully
+			</desc>
+			<script>
+				if [ "${br1.vpc1.ip.prefix}" == "${br1.mgt0.1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+		<step no="8.2">
+			<desc>
+				check if vpc4 retrieve ip address from BR mgt0.1 dhcp server successfully
+			</desc>
+			<script>
+				if [ "${br1.vpc4.ip.prefix}" == "${br1.mgt0.1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+		<step no="8.3">
+			<desc>
+				check if br1.ap1 retrieve ip address from BR mgt0.1 dhcp server successfully
+			</desc>
+			<script>
+				if [ "${br1.ap1.mgt0.ip.prefix}" == "${br1.mgt0.1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+		
+		<step no="9">
+			<desc> check mac-table</desc>
+			<log-file>show_mac_learn.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan mac-table"
+				-v "show interface eth1 mac-learning all"
+				-v "show interface eth3 mac-learning all"
+				-v "show interface eth4 mac-learning all"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 2 -i "${br1.vpc1.tif.mac}"</log-match>
+			<log-match>-p 1 -i "eth4" -p 2 -i "${br1.vpc4.tif.mac}"</log-match>
+			<log-match>-p 1 -i "eth3" -p 2 -i "${br1.ap1.mgt0.mac}"</log-match>
+			<log-match>-i "${br1.vpc1.tif.mac}" -i "${br1.vlan1}"</log-match>
+			<log-match>-i "${br1.vpc4.tif.mac}" -i "${br1.vlan1}"</log-match>
+			<log-match>-i "${br1.ap1.mgt0.mac}" -i "${br1.vlan1}"</log-match>
+		</step>
+		
+		<step no="10">
+			<desc>laptop1 send packet to laptop2(without vlan tag), lapotp1 ping laptop2 successfully </desc>
+			<log-file>step10_ping.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.vpc4.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc4.tif.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="10.1">
+			<desc>
+				set AP1 static ip address
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${br1.ap1.mgt0.ip}/${br.lan.netmask}"
+				-v "ip route default gateway ${br1.br.mgt0.1.ip}"
+				-v ""
+			</console>
+		</step>
+		
+
+		<step no="11">
+			<desc>
+				packet capture on br1.vpc4 (Laptop2)
+			</desc>
+			<log-file>br1_vpc4_packet_capture.log</log-file>
+			<ssh target="br1.vpc4">
+				-v "nohup tshark -l -i ${br1.vpc4.tif.name} > ${job.id}vpc4_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="12">
+			<desc>
+				get vpc4 tshark process
+			</desc>
+			<setvar name="vpc4.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/br1_vpc4_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>		
+	
+		<step no="13.1">
+			<desc>
+				laptop1 send vlan tagged packets to laptop2, the vlan tagged is same with port-based vlan ${br1.vlan1}
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vlan1}"
+				-v ""
+				-v ""
+				-v "clear arp-cache"
+				-v ""
+				-v ""
+				-v "ping ${br1.br.tmp1.ip}"
+			</console>
+		</step>
+		
+		<step no="13.2">
+			<desc>
+				laptop2 will receive the packet which is arp packets sent by ap1 ${br1.ap1.mgt0.ip}
+				[Here has a Bug16470, access port can forward vlan tagged packets. the correct behavior is that laptop2 shouldn't receive the arp packets]
+			</desc>
+			<log-file>Step13.1_capture_packet_check.log</log-file>
+			<ssh target="br1.vpc4">
+				-v "kill -9 ${vpc4.tshark.id_1}"
+				-v "cat ${job.id}vpc4_icmp_1.log | grep "ARP""
+				-v "rm -f ${job.id}vpc4_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "->[\t ]+Broadcast[\t ]+ARP Who has ${br1.br.tmp1.ip}\?[\t ]+Tell ${br1.ap1.mgt0.ip}" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="14.1">
+			<desc>
+				change BR lan port eth4 vlan
+			</desc>
+			<log-file>change_eth4_vlan.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth4 mode bridge-access user-profile-attribute ${br1.vlan2}"
+				-v ""
+				-v ""
+			</telnet>
+		</step>
+		
+		<step no="14.2">
+			<desc>
+				Laptop2(br1.vpc4) get ip address again
+			</desc>
+			<log-file>retrieve_vpc4_ip.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "dhclient ${br1.vpc4.tif.name} -r"
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v ""
+				-v ""
+				-v ""
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+		</step>
+		
+		<step no="14.3">
+			<desc>get ip address of br1.vpc4 </desc>
+			<setvar name="br1.vpc4.tif.ip1">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>			
+		</step>
+		
+		<step no="14.4">
+			<desc>
+				get prefix of vpc4 ip address
+			</desc>
+			<multi-setvar>
+				echo "br1.vpc4.ip1.prefix=$(echo ${br1.vpc4.tif.ip1} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+		
+		<step no="14.5">
+			<desc>
+				check if vpc4 retrieve ip address from BR mgt0.2 dhcp server successfully
+			</desc>
+			
+			<script>
+				if [ "${br1.vpc4.ip1.prefix}" == "${br1.mgt0.2.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="14.6">
+			<desc>
+				packet capture on br1.vpc4 (Laptop2)
+			</desc>
+			<log-file>br1_vpc4_packet_capture2.log</log-file>
+			<ssh target="br1.vpc4">
+				-v "nohup tshark -l -i ${br1.vpc4.tif.name} > ${job.id}vpc4_icmp_2.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="14.7">
+			<desc>
+				get vpc4 tshark process
+			</desc>
+			<setvar name="vpc4.tshark.id_2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/br1_vpc4_packet_capture2.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>				
+		<step no="14.8">
+			<desc>
+				laptop1 (AP1) send vlan tagged packets to laptop2 (vpc4), the vlan tagged is same different with port-based vlan
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vlan2}"
+				-v ""
+				-v ""
+				-v "clear arp-cache"
+				-v ""
+				-v ""
+				-v "ping ${br1.br.tmp2.ip}"
+			</console>
+		</step>
+
+		<step no="14.9">
+			<desc>
+				laptop2(VPC4) can't receive the packet which is arp packets sent by ap1 ${br1.ap1.mgt0.ip}
+				Because hw driver will drop the vlan tagged packets on access port.[ Here has bug16470]
+			</desc>
+			<log-file>Step14.9_capture_packet_check.log</log-file>
+			<ssh target="br1.vpc4">
+				-v "kill -9 ${vpc4.tshark.id_2}"
+				-v "cat ${job.id}vpc4_icmp_2.log | grep "ARP""
+				-v "rm -f ${job.id}vpc4_icmp_2.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "->[\t ]+Broadcast[\t ]+ARP Who has ${br1.br.tmp2.ip}\?[\t ]+Tell ${br1.ap1.mgt0.ip}" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	
+	<post-process>
+		<stage>
+			<include prefix="post_br1_eth2_l2swcfg" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="999, ${br1.vlan2}\,${br1.vlan3}" />
+	   </stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+
+	<failed-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					kill tshark process on br1.vpc4
+				</desc>
+				<ssh target="br1.vpc4">
+					-v "kill -9 ${vpc1.tshark.id_2}"
+					-v "rm -f ${job.id}vpc1_icmp_2.log"
+					-v "kill -9 ${vpc1.tshark.id_1}"
+					-v "rm -f ${job.id}vpc1_icmp_1.log"
+				</ssh>
+				<no-error-check />
+			</step>
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+	</failed-process>		
+	
+</testcase>

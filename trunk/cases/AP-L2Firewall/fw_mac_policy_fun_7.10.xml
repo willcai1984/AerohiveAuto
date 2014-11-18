@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Add/Delete policy while traffic is on-going(from-access permit, two Laptops)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptops has been associated with AP1 and assigned an ip address
+
+		Test Procedure:
+		1) Laptop2 and Laptop1 ping each other continuance
+		2) Configure a L2 policy and bind it to FW:
+		"mac-policy FW"
+		"mac-policy FW from &lt;Laptop1 mac addr&gt; action permit"
+		"user-profile FW security mac-policy from-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Check the ping pkt
+		4) Delete the policy config
+		"no user-profile FW security mac-policy from-access"
+		"no mac-policy FW id [num]"
+		5) Check the ping pkt
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				sta1 ping sta2 in background
+			</desc>
+			<log-file>step3_sta1_start_ping.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ping ${sta2.tif.ip} &gt; /tmp/${job.id}ping_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				get sta1 ping id
+			</desc>
+			<setvar name="sta1.ping.id">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3_sta1_start_ping.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3.2" delay="60">
+			<desc>
+				check sta1 ping result
+			</desc>
+			<log-file>step3.2_check_sta1_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /tmp/${job.id}ping_1.log"
+			</ssh>
+			<log-match>-c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				sta2 ping sta1 in background
+			</desc>
+			<log-file>step3.3_sta2_start_ping.log</log-file>
+			<ssh target="sta2">
+				-v "nohup ping ${sta1.tif.ip} &gt; /tmp/${job.id}ping_2.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				get sta2 ping id
+			</desc>
+			<setvar name="sta2.ping.id">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.3_sta2_start_ping.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				check sta2 ping sta1 result
+			</desc>
+			<log-file>step3.5_check_sta2_ping_result.log</log-file>
+			<ssh target="sta2">
+				-v "tail /tmp/${job.id}ping_2.log"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				- Configure a mac-policy and bind it to FW:
+				"mac-policy FW"
+				"mac-policy FW from &lt;Laptop mac addr&gt; action permit"
+				"user-profile FW security mac-policy from-access FW"
+			</desc>
+			<telnet target="ap1">
+				-v "mac-policy ${user_id}"
+				-v "mac-policy ${user_id} id 1 from ${sta1.tif.mac} action permit"
+				-v "user-profile ${user_id} security mac-policy from-access ${user_id}"
+				-v "clear log all"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear arp-cache"
+				-v "no forwarding-engine proxy-arp enable"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				clear log on sta2
+			</desc>
+			<ssh target="sta2">
+				-v "echo aerohive &gt; /tmp/${job.id}ping_2.log"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				clear log on sta1
+			</desc>
+			<ssh target="sta1">
+				-v "echo aerohive &gt; /tmp/${job.id}ping_1.log"
+			</ssh>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				check sta1 ping result
+			</desc>
+			<log-file>step5.2_check_sta1_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /tmp/${job.id}ping_1.log"
+			</ssh>
+			<log-match>-n -c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				check sta2 ping sta1: unsuccessful
+			</desc>
+			<log-file>step5.3_check_sta2_ping_result.log</log-file>
+			<ssh target="sta2">
+				-v "tail /tmp/${job.id}ping_2.log"
+			</ssh>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.4">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step5.4_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				- Delete the policy config
+				"no mac-policy FW id [num]"
+			</desc>
+			<telnet target="ap1">
+				-v "no mac-policy ${user_id} id 1"
+				-v "clear log all"
+				-v "clear forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<step no="7" delay="10">
+			<desc>
+				clear log on sta2
+			</desc>
+			<ssh target="sta2">
+				-v "echo aerohive &gt; /tmp/${job.id}ping_2.log"
+			</ssh>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				clear log on sta1
+			</desc>
+			<ssh target="sta1">
+				-v "echo aerohive &gt; /tmp/${job.id}ping_1.log"
+			</ssh>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				check sta1 ping result
+			</desc>
+			<log-file>step7.2_check_sta1_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /tmp/${job.id}ping_1.log"
+			</ssh>
+			<log-match>-n -c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7.3">
+			<desc>
+				check sta2 ping sta1: unsuccessful
+			</desc>
+			<log-file>step7.3_check_sta2_ping_result.log</log-file>
+			<ssh target="sta2">
+				-v "tail /tmp/${job.id}ping_2.log"
+			</ssh>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7.4">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step7.4_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>
+					kill sta1 ping process
+				</desc>
+				<ssh target="sta1">
+					-v "kill ${sta1.ping.id}"
+					-v "rm -f /tmp/${job.id}ping_1.log"
+				</ssh>
+			</step>
+
+			<step no="2">
+				<desc>
+					kill sta2 ping process
+				</desc>
+				<ssh target="sta2">
+					-v "kill ${sta2.ping.id}"
+					-v "rm -f /tmp/${job.id}ping_2.log"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

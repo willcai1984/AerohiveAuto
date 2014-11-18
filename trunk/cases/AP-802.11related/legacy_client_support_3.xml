@@ -1,0 +1,176 @@
+<testcase>
+	<brief>Verify that the ssid can support legacy client in 11ng /11na mode</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Description
+		Verify that the ssid can support legacy client in 11ng /11na mode
+		Test procedure
+		1. Verify that the Mgt frame does not include any HT info. Result 1
+		2. Verify that the ssid includes HT info by cmd: no ssid xxxx mode legacy, result 3.
+		Expect result
+		1. The Mgt frame does not include any HT info.
+		2. The mgt frame includes HT info.
+	</description>
+
+	<stage>
+		<if>"${ap1.wifi1.existed}" == "true"</if>
+		<step no="2">
+			<desc>show interface of mgt0 on AP1</desc>
+			<log-file>show_int_mgt0.log</log-file>
+			<telnet target="ap1" timeout="30">
+				-v "interface eth0 manage all"
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+		<step no="3">
+			<desc>get IP of mgt0 on AP1</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_int_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		<step no="4">
+			<desc>Set config for AP1 via telnet to ${ap1.mgt0.ip}</desc>
+			<telnet target="ap1" timeout="80">
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi1 ssid ${ssid.name}1"
+				-v "ssid ${ssid.name}1 mode legacy"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "interface wifi1 radio channel 157"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="5">
+			<desc>Show run config of AP1</desc>
+			<log-file>show_run_config_1.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+		<step no="6">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 "
+				-v "capture save interface wifi1 ws_legacy_HT.pcap"
+				-v "capture interface wifi1 count 200 filter 1"
+			</telnet>
+		</step>
+		<step no="7" delay="60">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1" timeout="80">
+				-v "save capture local ws_legacy_HT.pcap tftp://${mpc.tif.ip}:/ws_legacy_HT.pcap"
+			</telnet>
+		</step>
+		<step no="8">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<script>
+				sleep 100; tshark -r /tftpboot/ws_legacy_HT.pcap -V > ${log.dir}/ts_legacy_HT.log
+			</script>
+			<no-error-check />
+		</step>
+		<step no="9">
+			<desc>Show interface wifi1.1 of AP1</desc>
+			<log-file>show_interface_wifi11.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+			</telnet>
+		</step>
+		<step no="10">
+			<desc>Get_mac of wifi1.1 on AP1</desc>
+			<setvar name="ap1.wifi1_1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi11.log -i wifi1.1 -o aero -m
+			</setvar>
+		</step>
+
+		<step no="11">
+			<desc>Check search result</desc>
+			<script>
+				export legacyht=$(perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_legacy_HT.log -k ${ap1.wifi1_1.mac} -o "HT")
+				echo "Legacy_HT = $legacyht"
+				if [ "$legacyht" != "No_match_packet_found" ]
+				then exit 1
+				fi
+			</script>
+		</step>
+		<step no="12">
+			<desc>Show interface wifi1.2 of AP1</desc>
+			<log-file>show_interface_wifi12.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.2"
+			</telnet>
+		</step>
+		<step no="13">
+			<desc>Get_mac of wifi1.2 on AP1</desc>
+			<setvar name="ap1.wifi1_2.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi12.log -i wifi1.2 -o aero -m
+			</setvar>
+		</step>
+		<step no="14">
+			<desc>Check search result</desc>
+			<script>
+				export nolegacyht=$(perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_legacy_HT.log -k ${ap1.wifi1_2.mac} -o "HT")
+				echo "No_Legacy_HT = $nolegacyht"
+				if [ "$nolegacyht" = "No_match_packet_found" ]
+				then exit 1
+				fi
+			</script>
+		</step>
+		<step no="15">
+			<desc>Set config for AP1 via telnet to ${ap1.mgt0.ip}</desc>
+			<telnet target="ap1">
+				-v "no ssid ${ssid.name}1 mode legacy"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="16">
+			<desc>Show run config of AP1</desc>
+			<log-file>show_run_config_2.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+		<step no="17">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 "
+				-v "capture save interface wifi1 ws_no_mode_legacy.pcap"
+				-v "capture interface wifi1 count 100 filter 1"
+			</telnet>
+		</step>
+		<step no="18" delay="60">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1" timeout="80">
+				-v "save capture local ws_no_mode_legacy.pcap tftp://${mpc.tif.ip}:/ws_no_mode_legacy.pcap"
+			</telnet>
+		</step>
+		<step no="19" delay="100">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<script>
+				tshark -r /tftpboot/ws_no_mode_legacy.pcap -V > ${log.dir}/ts_no_mode_legacy.log
+			</script>
+			<no-error-check />
+		</step>
+		<step no="20">
+			<desc>Search for SSID</desc>
+			<setvar name="nolegacyssid1">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_no_mode_legacy.log -k ${ap1.wifi1_1.mac} -o "HT"
+			</setvar>
+		</step>
+		<step no="21">
+			<desc>Check search result</desc>
+			<script>
+				echo "No_Legacy_SSID1 = $nolegacyssid1"
+				if [ "$nolegacyssid1" = "No_match_packet_found" ]
+				then exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+</testcase>

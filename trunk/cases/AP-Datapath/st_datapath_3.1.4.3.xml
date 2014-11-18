@@ -1,0 +1,115 @@
+<testcase>
+	<brief>DHCP broadcast datapath. Dhcp-server in portal</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+	<description>
+		Topology to use
+		Laptop1-----Portal------Switch
+		Objective
+		DHCP broadcast datapath. Dhcp-server in portal
+		Pre-condition
+		Make sure that Dhcp server can’t receive the broadcast from Portal.
+		Make sure wifi0 and wifi1 are up on portal AP(You can bind a ssid to wifi0 and make a neighbor via wifi1)
+		Test procedure
+		-laptop connects to portal
+		-set mgt0 as dhcp-server. laptop will send dhcp discovery pkt to get ip address
+		check the FE debug to see.
+		Meet result 1,2,3
+		- after get ip address, execute the ipconfig/renew in laptop.
+		- Meet result 4
+		- repeated the above step when dhcp-server is set in mgt0.x
+		Expect result
+		1:Laptop can get ip address
+		2:Portal will do special handle for DHCP discovery/request pkt:
+		Only send this pkt to eth0 and mgt0 interface, pls make sure not send to wifi0 or wifi1.
+		3:Dhcp offer/ack pkt should be sent to specifical wifi0.x only only and not other wifi interfaces
+		4.laptop refreshes ip successfully
+	</description>
+	<stage>
+		<property name="tb.vlan4.dhcp_start" value="192.168.${tb.vlan4}.105" />
+		<property name="tb.vlan4.dhcp_end" value="192.168.${tb.vlan4}.115" />
+		<property name="tb.vlan4.gw" value="192.168.${tb.vlan4}.254" />
+		<property name="tb4.ip.set" value="192.168.${tb.vlan4}.200"/>
+		<step no="set_ap">
+			<desc>Set up interface through sw menu</desc>
+			<console target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"				
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan4} attribute 1"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-f basic_apsetup.cfg
+			</console>
+		</step>
+
+		<step no="set_ssid">
+			<desc>Set SSID for ap1 </desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="set_dhcp_serv">
+			<desc>set ap as a dhcp server </desc>
+			<console target="ap1">
+				-v "interface mgt0.1 vlan ${tb.vlan4}"
+				-v "interface mgt0.1 ip ${tb4.ip.set}/24"
+				-v "interface mgt0.1 dhcp-server ip-pool ${tb.vlan4.dhcp_start} ${tb.vlan4.dhcp_end}"
+				 -v "interface mgt0.1 dhcp-server options default-gateway ${tb.vlan4.gw}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</console>
+		</step>
+
+		<step no="set_ff">
+			<desc>add _ff to AP</desc>
+			<console target="ap1">
+				-v "_ff id 1 dst-port 67 bi"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="13">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>show_log_buffer.log</log-file>
+			<telnet target="ap1" timeout="1000">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-e 'special handling for DHCP request pkts, tx on eth0'</log-match>
+		</step>
+
+		<step no="12" delay="15">
+			<desc>Dump all interfaces data from remote host ${sta1.mif.ip}</desc>
+			<log-file>ipconfig_${sta1.mif.ip}.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ipconfig /release \"${sta1.tif.name}\" " -v "ipconfig /renew \"${sta1.tif.name}\"" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+
+		<step no="13">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>show_log_buffer.log</log-file>
+			<telnet target="ap1" timeout="1000">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-i "(i) wifi0.1 0.0.0.0->255.255.255.255" -i "UDP 68->67 DHCP Discover"</log-match>
+			<log-match>-i "(o) eth0 0.0.0.0->255.255.255.255" -i "UDP 68->67 DHCP Discover"</log-match>
+			<log-match>-i "(u) mgt0.1 0.0.0.0->255.255.255.255" -i "UDP 68->67 DHCP Discover"</log-match>
+			<log-match>-i "(i) mgt0.1 ${tb4.ip.set}" -i "UDP 67->68 DHCP Offer" </log-match>
+			<log-match>-i "(o) wifi0.1 ${tb4.ip.set}" -i "UDP 67->68 DHCP Offer"</log-match>
+			<log-match>-e 'special handling for DHCP request pkts, tx on eth0'</log-match>
+		</step>
+
+	</stage>
+</testcase>

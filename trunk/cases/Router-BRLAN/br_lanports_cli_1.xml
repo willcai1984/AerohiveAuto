@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Configure lan ports mode as bridge-access or bridge-802.1q</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Laptop1 connect to lan port eth1
+		Laptop2 connect to lan port eth4
+		BR connect to switch
+
+		Test Procedure:
+
+		1. check default mode for lan ports eth1/eth2/eth3/eth4 Result1
+		2. configure eth1 with mode bridge-802.1q
+		CLI:
+		Interface eth1 mode bridge-802.1q Result2
+		3. eth1/eth4 with default vlan 1
+		4. laptop1 ping laptop2 Result3
+		5. no eth1 mode brige-802.1q
+		CLI:
+		No interface eth1 mode
+		6. check interface eth1 mode Result4
+		7. laptop1 ping laptop2 Result5
+	</description>
+
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				1. BR lan port works with default config(port based mode)
+			</desc>
+			<log-file>step1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. configure eth2 with mode bridge-802.1q
+				CLI:
+				Interface eth2 mode bridge-802.1q Result2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.3 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.3 ip ${br1.br.mgt0.3.ip}/${br.lan.netmask}"
+				-v "interface mgt0.3 dhcp-server ip-pool ${br1.br.mgt0.3.ip_pool_start} ${br1.br.mgt0.3.ip_pool_end}"
+				-v "interface mgt0.3 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.3 dhcp-server options default-gateway ${br1.br.mgt0.3.ip}"
+				-v "interface mgt0.3 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.3 dhcp-server enable"
+				-v "interface eth2 mode bridge-802.1q"
+			</telnet>
+		</step>
+
+		<step no="2.2" delay="20">
+			<desc>
+				3. check lan ports mode, default vlan ID
+			</desc>
+			<log-file>step2.2_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface"
+			</telnet>
+			<log-match>-p 1 -i "Eth2" -p 3 -i "bridge" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "Eth1" -p 3 -i "access" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "Eth3" -p 3 -i "access" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "Eth4" -p 3 -i "access" -p 6 -i "-"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step2.3_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "1" -p 6 -i "No" </log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				4. Laptop1 connect to lan port eth2
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.1b">
+			<desc>set br1.vpc2.tif.ip var for vpc2 on BR side</desc>
+			<setvar name="br1.vpc2.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc2.mif.ip} -u ${br1.vpc2.user} -p ${br1.vpc2.passwd} -i ${br1.vpc2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+			 use dhclient to get vpc1 ip
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120" slow="yes">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.1b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+
+		<include prefix="4" file="subs/sta_ping.xml" args="br1.vpc2, ${br1.vpc1.tif.ip}, 4" />
+
+		<step no="5">
+			<desc>
+				5. no eth2 mode brige-802.1q
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface eth2 mode"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>
+				6. check interface eth1 mode
+			</desc>
+			<log-file>step6_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "1" -p 6 -i "No" </log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="6.2" delay="20">
+			<desc>
+				check lan ports mode, default vlan ID
+			</desc>
+			<log-file>step6.2_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface"
+			</telnet>
+			<log-match>-p 1 -i "Eth2" -p 3 -i "backhaul" -p 6 -i "1"</log-match>
+			<log-match>-p 1 -i "Eth1" -p 3 -i "access" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "Eth3" -p 3 -i "access" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "Eth4" -p 3 -i "access" -p 6 -i "-"</log-match>
+		</step>
+
+		<include prefix="7" file="subs/sta_ping.xml" args="br1.vpc2, ${br1.vpc1.tif.ip}, 4" />
+
+	</stage>
+
+</testcase>

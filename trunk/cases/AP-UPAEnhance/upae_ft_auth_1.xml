@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>User Profile Reporting when Auth type is 802.1x</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+Auth type is 802.1x
+
+		Test Procedure:
+1: set user profile reporting attribute
+2: start capturing packets in radius server
+3: station connects to AP
+4: check packets captured in radius server
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}new" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />	
+
+	<stage>
+
+		<property name="acct1.uid" value="${tb.vlan2}" />
+		<include prefix="1" file="subs/ldap_add.xml" args="${pub.radius1.username}new, ${pub.radius1.passwd}" obj-args="acct1" />
+
+		<step no="2">
+			<desc>
+				-config mgt0 vlan on AP1
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object ${ssid.name} security protocol-suite wpa2-aes-8021x"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+			</console>
+		</step>
+		
+		<step no="4">
+			<desc>show running config</desc>
+			<log-file>step4_show_running_config.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>show security object of ssid</desc>
+			<log-file>step5_show_security_object.log</log-file>
+			<telnet target="ap1">
+				-v "show security-object ${ssid.name}"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>
+				-show ssid XXX station
+			</desc>
+			<log-file>step7_show_station_info.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "wpa2-8021x" -i "${tb.vlan2} *Yes *${tb.vlan2}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-show roaming cache
+			</desc>
+			<log-file>step8_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YNNN"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				-show auth
+			</desc>
+			<log-file>step9_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${tb.vlan2}" -i "done"</log-match>
+			<log-match>-c -i "${sta1.tif.mac} *${tb.vlan2}" -i "${pub.radius1.username}new"</log-match>
+		</step>
+		
+		<step no="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "00 00 69 30 06 06 00 00 00 c0"</log-match>
+		</step>
+
+		<step no="11">
+			<desc>enable user profile reporting in accounting</desc>
+			<log-file>step11_show_security_object.log</log-file>
+			<telnet target="ap1">
+				-v "show security-object ${ssid.name}"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+		
+		<include prefix="12" file="subs/release_station_wifi.xml" obj-args="sta1" />
+	
+		<include prefix="delete.radius.account" file="subs/ldap_delete.xml" args="${pub.radius1.username}new" />
+				
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

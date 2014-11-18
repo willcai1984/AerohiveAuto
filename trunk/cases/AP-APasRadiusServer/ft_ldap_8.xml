@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>-ldap with ssl support,client verified</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local local radius server must be configed first
+		-setup a ssid using wpa-auto-802.1x,radius server is local
+		- config a minimal ldap
+
+		Test Procedure:
+		-config the ldap-auth,ca-cert,client cert/key
+		-the radius cache is enabled
+		-try all of the verify-server method,the server's url should matched with
+		the cn in the server cert if try or demand is selected
+		-client connect to ssid
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<include prefix="add.host.domain" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${pub.ldap1.url}, ${pub.ldap1.ip}" />
+
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.hive">
+			<desc>set security-object parameters</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security aaa radius primary ${ap1.mgt0.ip}"
+			</console>
+		</step>
+
+		<step no="2" delay="5">
+			<desc>config aaa radius server parameters</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local db-type ldap-server primary server ${pub.ldap1.url}"
+				-v "aaa radius-server local db-type ldap-server primary basedn ${pub.ldap1.basedn}"
+				-v "aaa radius-server local db-type ldap-server primary binddn ${pub.ldap1.binddn} pass ${pub.ldap1.bindpwd}"
+				-v "save radius-server-key ldap-client tftp://${pub.ldap1.url}:certs/cacert.pem"
+				-v "save radius-server-key ldap-client tftp://${pub.ldap1.url}:certs/root_cert.pem"
+				-v "save radius-server-key ldap-client tftp://${pub.ldap1.url}:certs/root_key.pem"
+				-v "aaa radius-server local ldap-auth primary type tls ca-cert cacert.pem client-cert root_cert.pem private-key root_key.pem verify-server never"
+				-v "aaa radius-server local en"
+				-v "aaa radius-server local cache"
+				-v "user-profile ttt vlan-id ${tb.vlan1} attribute 1"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="4">
+			<desc>show status of radius server</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3 -c</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>open debug mode and clear log all</desc>
+			<telnet target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>show logging buffered</desc>
+			<log-file>step6_log_on_ap.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "\[ldap\] starting TLS"</log-match>
+			<log-match>-c -i "RADIUS: SSL connection established"</log-match>
+			<log-match>-c -i "TLS" -i "Handshake" -i "Finished"</log-match>
+		</step>
+
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+		<step no="8">
+			<desc>change verify-server method to try</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local ldap-auth primary type tls ca-cert cacert.pem client-cert root_cert.pem private-key root_key.pem verify-server try"
+			</telnet>
+		</step>
+
+		<include prefix="9" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="9.1">
+			<desc>clear log all</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="10" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="11">
+			<desc>show logging buffered</desc>
+			<log-file>step11_log_on_ap.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "\[ldap\] starting TLS"</log-match>
+			<log-match>-c -i "RADIUS: SSL connection established"</log-match>
+			<log-match>-c -i "TLS" -i "Handshake" -i "Finished"</log-match>
+		</step>
+
+		<include prefix="12" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+		<step no="13">
+			<desc>change verify-server method to demand</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local ldap-auth primary type tls ca-cert cacert.pem client-cert root_cert.pem private-key root_key.pem verify-server demand"
+			</telnet>
+		</step>
+
+		<include prefix="14" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="14.1">
+			<desc>clear log all</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="15" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="16">
+			<desc>show logging buffered</desc>
+			<log-file>step16_log_on_ap.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "\[ldap\] starting TLS"</log-match>
+			<log-match>-c -i "RADIUS: SSL connection established"</log-match>
+			<log-match>-c -i "TLS" -i "Handshake" -i "Finished"</log-match>
+		</step>
+
+		<include prefix="17" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="del.host.domain" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${pub.ldap1.url}, ${pub.ldap1.ip}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

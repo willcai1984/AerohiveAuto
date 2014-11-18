@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Group mac-address test (permit)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop1 and Laptop2's mac-address should be in the same address
+		range, for example their addresses are all in 0019:770e:xxxx range
+
+		Test Procedure:
+		1) Laptop1 and Laptop2 ping each other
+		2) Configure a L2 policy using group mac-address which coveraged Laptop1 and
+		Laptop2 and bind it to user-profile:
+		"mac-policy FW"
+		"mac-policy FW [from/to] &lt;group mac addr&gt; action permit"
+		"user-profile FW security mac-policy from-access FW to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Show the config
+		4) Repeat step 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="test.mac_1" value="AA:BB:CC:11:22:33" />
+	<property name="test.mac_2" value="AA:BB:CC:44:55:66" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Check mac address
+			</desc>
+			<log-file>step0_Check_mac_address.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="0.1">
+			<desc>Get mac addr</desc>
+			<setvar name="sta1.mac">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step0_Check_mac_address.log -p "HWaddr\s+(\w+:\w+:\w+:\w+:\w+:\w+)" -t str
+			</setvar>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				Check mac address
+			</desc>
+			<log-file>step0.2_Check_mac_address.log</log-file>
+			<ssh target="sta2">
+				-v "ifconfig ${sta2.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="0.3">
+			<desc>Get mac addr</desc>
+			<setvar name="sta2.mac">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step0.2_Check_mac_address.log -p "HWaddr\s+(\w+:\w+:\w+:\w+:\w+:\w+)" -t str
+			</setvar>
+		</step>
+
+		<step no="0.4">
+			<desc>
+				Modify mac address on sta1
+			</desc>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name} hw ether ${test.mac_1}"
+				-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="0.5">
+			<desc>
+				Modify mac address on sta2
+			</desc>
+			<ssh target="sta2">
+				-v "ifconfig ${sta2.tif.name} hw ether ${test.mac_2}"
+				-v "ifconfig ${sta2.tif.name} up"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="0.6">
+			<desc>
+				Configure AP1
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile FW qos-policy def-user-qos vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				"_ff id 1 dst-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_ff id 2 dst-ip ${sta2.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4" />
+
+		<step no="5">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step5_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				Check mac address
+			</desc>
+			<log-file>step6_Check_mac_address.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>Get mac addr</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_Check_mac_address.log -p "HWaddr\s+(\w+:\w+:\w+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<multi-setvar>
+				echo "group.mac.addr=${sta1.tif.mac}:00:00:00"
+			</multi-setvar>
+		</step>
+
+		<step no="7">
+			<desc>
+				Configure a mac-policy using group mac-address which coveraged Laptop1 and
+				Laptop2 and bind it to user-profile:
+				"mac-policy FW"
+				"mac-policy FW [from/to] &lt;group mac addr&gt; action permit"
+				"user-profile FW security mac-policy from-access FW to-access FW"
+				"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+			</desc>
+			<telnet target="ap1">
+				-v "mac-policy FW"
+				-v "mac-policy FW id 1 from ${group.mac.addr} action permit"
+				-v "user-profile FW security mac-policy from-access FW to-access FW"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				3) Show the config
+			</desc>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<include prefix="8" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4, negative" />
+
+		<include prefix="9" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4, negative" />
+
+		<step no="10" delay="10">
+			<desc>
+				check log
+			</desc>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[1\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[1\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					Revert mac address on sta1
+				</desc>
+				<ssh target="sta1">
+					-v "ifconfig ${sta1.tif.name} hw ether ${sta1.mac}"
+					-v "ifconfig ${sta1.tif.name} up"
+				</ssh>
+				<no-error-check />
+			</step>
+
+			<step no="0.2">
+				<desc>
+					Revert mac address on sta2
+				</desc>
+				<ssh target="sta2">
+					-v "ifconfig ${sta2.tif.name} hw ether ${sta2.mac}"
+					-v "ifconfig ${sta2.tif.name} up"
+				</ssh>
+				<no-error-check />
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Capture filter without any parameters test(wifi0/wifi1).</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test Procedure:
+
+		1, create a capture filter with any parameters.
+		Ah_test# filter
+		2, verify the new created filter
+		Ah_test#show filter
+		3, setup capture filename, default is in /tmp/wifix.dump
+		Ah_test#save capture local wifi0.dmp
+		tftp://10.190.10.254:/cap/wifi0.pcap
+		4, start capture
+		Ah_test#capture interface wifi0
+		Expectant
+		result
+		Captured all packets through interface wifi0 and
+		write to a file on /tmp/wifix.dump which can parse by
+		ethereal or wireshark.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<stage>
+		<step no="1">
+			<desc>Set config for AP1 via telnet  </desc>
+			<log-file>ap_config.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>Show interface wifi0.1 of AP1 </desc>
+			<log-file>show_interface_wifi01.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+			</telnet>
+		</step>
+		<step no="3">
+			<desc>Get_mac of wifi0.1 on AP1 </desc>
+			<setvar name="wifi01.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi01.log -i wifi0.1 -o aero -m
+			</setvar>
+		</step>
+		<step no="4">
+			<desc>set filter</desc>
+			<log-file>show_filter.log</log-file>
+			<telnet target="ap1">
+				-v "filter"
+				-v "show filter"
+			</telnet>
+			<log-match>-e "filter 1"</log-match>
+		</step>
+		<step no="5">
+			<desc>show filter</desc>
+			<log-file>show_filter_result.log</log-file>
+			<script>
+				${bin.dir}/searchbyrexp.py -p "show filter.*filter.*filter" -f ${log.dir}/show_filter.log >> ${log.dir}/${log.file} ; exit 0;
+			</script>
+			<log-match>-e "fail"</log-match>
+		</step>
+		<step no="6">
+			<desc>set filter</desc>
+			<log-file>set_default_capture_file.log</log-file>
+			<telnet target="ap1">
+				-v "capture save interface wifi0 wifi0.dmp"
+			</telnet>
+		</step>
+		<step no="7">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "capture interface wifi0"
+			</telnet>
+		</step>
+		<step no="8" delay="2">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1" timeout="90">
+				-v "save capture local wifi0.dmp tftp://${mpc.tif.ip}:/wifi0.dmp"
+			</telnet>
+		</step>
+		<step no="9">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>wifi0_log.log</log-file>
+			<script>
+				tshark -r /tftpboot/wifi0.dmp -V > ${log.dir}/${log.file};
+				exit 0
+			</script>
+			<log-match>-e "${wifi01.mac}"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+	
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>remove temporary file</desc>
+				<script>
+					rm -rf /tftpboot/wifi0.dmp
+				</script>
+			</step>
+		</stage>
+		<include file="include/default_post_process.xml" />
+	</post-process>
+
+</testcase>

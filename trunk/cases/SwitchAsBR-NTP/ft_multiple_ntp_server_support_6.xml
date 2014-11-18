@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>When only set the first NTP server by CLI, AP can sync with the first NTP server</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<numofbr>1</numofbr>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+
+		1. Configure the first NTP server by CLI ntp server x.x.x.x (or hostname)
+		2. Check if NTP server be used by show ntp
+		3. Check if time synchronization between AP and NTP server
+		- Check by CLI show clock in AP
+		- Check date time of NTP server
+		4. Reboot then check the above again
+
+	</description>
+
+
+	<stage>
+
+		<step no="0">
+			<desc>
+				-Configure NTP server
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ntp server ${pub.ntp.ip}"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-show ntp status
+			</desc>
+			<log-file>step1_ntp_status.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ntp"
+			</telnet>
+			<log-match>-i "First" -i "${pub.ntp.ip}"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-Disable mgt0 dhcp client and open ntp debug switch
+			</desc>
+			<console target="br1.br">
+				-v "_ff id 1 dst-port 123 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_debug ntp all"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				-Enable mgt0 dhcp client
+			</desc>
+			<console target="br1.br" timeout="50">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				Transport log file to TFTP server (mpc)
+			</desc>
+			<console target="br1.br" delay="50">
+				-v "show logging buffered > tftp://${mpc.tif.ip}:step2.3_check_time_synchronization_log.log"
+			</console>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				move the file to current log dir
+			</desc>
+			<log-file>step2.3_check_time_synchronization_log.log</log-file>
+			<script>
+				mv -f /tftpboot/${log.file} ${log.dir}/
+			</script>
+		</step>
+
+		<step no="2.5">
+			<desc>
+				-show switch mgt0 info
+			</desc>
+			<log-file>step2.5_show_mgt0.log</log-file>
+			<console target="br1.br">
+				-v "show l3 interface "
+			</console>
+		</step>
+
+		<step no="2.6">
+			<desc>
+				-Get switch1's eth1/24 IP
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "${br1.br.wan.int1}\s+(\d+\.\d+\.\d+\.\d+)\s+wan" -t str -f ${log.dir}/step2.5_show_mgt0.log
+			</setvar>
+		</step>
+
+		<step no="2.7">
+			<desc>
+				-Check log info
+			</desc>
+			<log-file>step2.3_check_time_synchronization_log.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) ${br1.br.wan.kport1} ${ap1.mgt0.ip}->${pub.ntp.ip}.*UDP \d+->123" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) ${br1.br.wan.kport1} ${pub.ntp.ip}->${ap1.mgt0.ip}.*UDP 123->\d+" -f ${log.dir}/${log.file}</log-match>
+
+		</step>
+
+		<step no="2.8">
+			<desc>
+				-show ntp status
+			</desc>
+			<log-file>step2.8_ntp_status.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ntp"
+			</telnet>
+			<log-match>-i "First" -i "${pub.ntp.ip}" -i "active"</log-match>
+		</step>
+
+	</stage>
+
+
+</testcase>

@@ -1,0 +1,710 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Roaming with different mgt0 vlan (L3 switch) </brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-Configure two APs in the different subnet(mgt0) but same hive
+		-Configure two APs have same SSID, configure mobility-policy DNXP, -
+		Bind mobility-policy to user-profile
+		-Bind this user-profile to SSID
+		-In AP1,user-profile vlan-id same with user-profile vlan-id of AP2
+		(for example: in AP1 user-profile vlan is 28, in AP2 user-profile vlan
+		is 28 too )
+
+		Test Procedure:
+
+		1. Before client associate to AP1, check roaming neighbor and DNXP
+		neighbor("show roaming neighbor" and "show amrp dnxp neighbor")
+		2. Client associate to AP1, check AP1 send gre-arp to switch (debug fe_arp basic)
+		3. Check AP1 send "DNXP-cache"to AP2 (debug amrp xnxp detail)
+		4. Check AP1 send "roaming-cache "to AP2 "debug auth all"
+		5. Check roaming cache in AP1,AP2 (show roaming cache) check "UPID, VLAN-
+		id"
+		6. Check DNXP cache inAP1,AP2(show amrp dnxp cache) check vlan-id
+		7. Client roaming from AP1 to AP2,check gre-arp send by AP2 (should not send)
+		8. Check AP2 send "DNXP-cache"to AP1 (debug amrp xnxp detail)
+		9.
+		Check ssid station info "show ssid xxxx station"check "UPID VLAN-ID"
+		10. Check roaming cache in AP1 and AP2 check "UPID VLAN-ID"
+		11. Check amrp client info, check "UPID VLAN-ID" show amrp client.
+		12. Check tunnel state "show amrp tunnel "
+		13. Check route state in AP1 and AP2 "show route"
+		14. After client roaming to AP2, client send broadcast pkts
+		15. Client send unicast to local PC/client mgt0
+		16. Client send unicast to remote PC/client mgt0
+		17. Client send DHCP pkts
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<if>"${ap.eth1.existed}" =="true"</if>
+		<if>"${ap.wifi1.existed}" =="true"</if>
+
+		<step no="0.1">
+			<desc>
+				On ap1
+				Configure management vlan ${tb.vlan1}
+				configure mobility-policy
+				AP1 interface eth0 allow vlan ${tb.vlan1}, ${tb.vlan2}
+				user-profile vlan 10, attribute 77,binding mobility-policy sj
+				ssid A security-object sj
+				mobility-policy sj dnxp
+				interface wifi0 ssid A
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid} shutdown"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 77"
+				-v "ssid ${conn1.ssid} security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ${tb.vlan1} qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy FWtest attribute 77"
+				-v "interface eth1 shutdown"
+				-v "interface wifi1 radio channel 165"
+				-v "interface wifi0 radio channel 1"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="0.1.1">
+			<desc>
+				-show interface in ap1
+			</desc>
+			<log-file>step0.1.1_show_interface_ap1.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="0.1.2">
+			<desc>
+				Get mgt0 mac in ap1
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step0.1.1_show_interface_ap1.log -t str
+			</setvar>
+		</step>
+
+		<step no="0.1.2.1">
+			<desc>
+				Get mgt0 mac in ap1
+			</desc>
+			<setvar name="ap1.wifi0.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1 *(\S+) *" -f ${log.dir}/step0.1.1_show_interface_ap1.log -t str
+			</setvar>
+		</step>
+
+		<step no="0.1.3">
+			<desc>
+				-show interface mgt0 in ap2
+			</desc>
+			<log-file>step0.1.3_show_interface_mgt0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-i "IP addr=" -i "192.168.${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="0.1.4">
+			<desc>
+				Get mgt0 ap in ap1
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step0.1.3_show_interface_mgt0_ap1.log -t str
+			</setvar>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				On ap2
+				Configure management vlan ${tb.vlan1}
+				AP1 interface eth0 allow vlan ${tb.vlan1}, ${tb.vlan2}
+				ssid A security-object sj
+				interface wifi0 ssid A
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid} shutdown"
+				-v "interface eth1 shutdown"
+				-v "interface wifi1 radio channel 165"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 77"
+				-v "ssid ${conn1.ssid} security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ${tb.vlan1} qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy FWtest attribute 77"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="0.2.1">
+			<desc>
+				-show interface in ap2
+			</desc>
+			<log-file>step0.2.1_show_interface_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="0.2.2">
+			<desc>
+				Get mgt0 mac in ap2
+			</desc>
+			<setvar name="ap2.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step0.2.1_show_interface_ap2.log -t str
+			</setvar>
+		</step>
+
+		<step no="0.2.2a">
+			<desc>
+				Get mgt0 mac in ap1
+			</desc>
+			<setvar name="ap2.wifi0.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1 *(\S+) *" -f ${log.dir}/step0.2.1_show_interface_ap2.log -t str
+			</setvar>
+		</step>
+
+		<step no="0.2.3">
+			<desc>
+				-show interface mgt0 in ap2
+			</desc>
+			<log-file>step0.2.3_show_interface_mgt0_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-i "IP addr=" -i "192.168.${tb.vlan2}"</log-match>
+		</step>
+
+		<step no="0.2.3">
+			<desc>
+				Get mgt0 ap in ap2
+			</desc>
+			<setvar name="ap2.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step0.2.3_show_interface_mgt0_ap2.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.1" delay="60">
+			<desc>
+				On ap1
+				-show roaming neighbor
+			</desc>
+			<log-file>step1_show_roaming_neighbor_ap1.log</log-file>
+			<console target="ap1">
+				-v "show roaming neighbor"
+			</console>
+			<log-match>-c -i "${ap2.mgt0.mac}" -i "${ap2.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="1.1a">
+			<desc>
+				On ap2
+				-show roaming neighbor
+			</desc>
+			<log-file>step1_show_roaming_neighbor_ap2.log</log-file>
+			<console target="ap2">
+				-v "show roaming neighbor"
+			</console>
+			<log-match>-c -i "${ap1.mgt0.mac}" -i "${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				On ap1
+				-show amrp dnxp neighbor
+			</desc>
+			<log-file>step1_show_amrp_dnxp_neighbor_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp dnxp neighbor"
+			</console>
+			<log-match>-c -i "${ap2.mgt0.mac}" -i "${ap2.mgt0.ip}/24" -i "L3"</log-match>
+		</step>
+
+		<step no="1.2a">
+			<desc>
+				On ap2
+				-show amrp dnxp neighbor
+			</desc>
+			<log-file>step1_show_amrp_dnxp_neighbor_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp dnxp neighbor"
+			</console>
+			<log-match>-c -i "${ap1.mgt0.mac}" -i "${ap1.mgt0.ip}/24" -i "L3"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				On ap1
+				-debug fe_arp basic
+				-debug amrp xnxp detail
+				-debug auth all
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe_arp basic"
+				-v "_debug amrp xnxp detail"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				On ap1
+				no interface wifi0 ssid ${conn1.ssid} shutdown
+			</desc>
+			<telnet target="ap1">
+				-v "no interface wifi0 ssid ${conn1.ssid} shutdown"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="4" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step4_show_logging_buffered.log" />
+
+		<step no="5">
+			<desc>
+				-Client associate to AP1, check AP1 send gre-arp to switch (debug fe_arp basic)
+				-Check AP1 send "DNXP-cache"to AP2 (debug amrp xnxp detail)
+				-Check AP1 send "roaming-cache"to AP2 "debug auth all"
+			</desc>
+			<log-file>step4_show_logging_buffered.log</log-file>
+			<log-match>-c -i "\[nxp_detail\]: export to ${ap2.mgt0.ip} dnxp ${sta1.tif.mac} vlan ${tb.vlan1} upid 77 unroam(0/60)" -i "flag 0x3 homelan${ap1.mgt0.ip}(${ap1.mgt0.mac})"</log-match>
+			<log-match>-c -i "\[nxp_detail\]: tx one CLIENT-INFO to ${ap2.mgt0.ip}"</log-match>
+			<log-match>-c -i "\[auth_info\]: roaming entry (SPA=${sta1.tif.mac}, AA=${ap1.wifi0.mac}, ssid=${conn1.ssid}, cache_timeout=3600, PMK=0000, UID=77, VID=0, auth-timeout"</log-match>
+			<log-match>-c -i "eth0 send gratuitous ARP" -i "${sta1.tif.mac}" -i "vlan ${tb.vlan1}"</log-match>
+			<log-match>-c -i "fe receive gratuitous ARP request" -i "${sta1.tif.mac}" -i "vlan ${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				-Check roaming cache in AP1,(show roaming cache) check "UPID"
+			</desc>
+			<log-file>step6_show_roaming_cache_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap1.wifi0.mac}" -i "77"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-Check roaming cache in AP2 (show roaming cache) check "UPID"
+			</desc>
+			<log-file>step6.1_show_roaming_cache_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap1.wifi0.mac}" -i "77"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				-Check DNXP cache in AP1(show amrp dnxp cache) check vlan-id
+			</desc>
+			<log-file>step6.2_show_amrp_dnxp_cache_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp dnxp cache"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${ap1.mgt0.ip}" -i "${tb.vlan1}" -i "77"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				-Check DNXP cache in AP2(show amrp dnxp cache) check vlan-id
+			</desc>
+			<log-file>step6.3_show_amrp_dnxp_cache_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show amrp dnxp cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap1.mgt0.ip}" -i "${tb.vlan1}" -i "77"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				On ap2
+				-debug fe_arp basic
+				-debug amrp xnxp detail
+				-debug auth all
+			</desc>
+			<telnet target="ap2">
+				-v "_kdebug fe_arp basic"
+				-v "_debug amrp xnxp detail"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				On ap2
+				no interface wifi0 ssid A shutdown
+			</desc>
+			<telnet target="ap2">
+				-v "no interface wifi0 ssid ${conn1.ssid} shutdown"
+			</telnet>
+		</step>
+
+		<step no="11.2">
+			<desc>
+				On ap1
+				interface wifi0 ssid A shutdown
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${conn1.ssid} shutdown"
+			</telnet>
+		</step>
+
+		<step no="11.3" delay="50">
+			<desc>
+				show station on ap2
+			</desc>
+			<log-file>step11.2_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show station"
+			</telnet>
+			<log-match>-c -e "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="11.4" delay="30">
+			<desc>
+				check tunnel build succeed
+			</desc>
+			<log-file>step11.4_show_route.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap2.mgt0.mac}" -i "wifi0.1" -i "77" -i "LTO"</log-match>
+		</step>
+
+		<step no="11.5">
+			<desc>
+				show tunnel build succeed
+			</desc>
+			<log-file>step11.5_show_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap1.mgt0.mac}" -i "mgt0" -i "77" -i "LTO"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				-on ap2
+				-Client roaming from AP1 to AP2,check gre-arp send by AP2 (should not send)
+				-Check AP2 send “DNXP-cache”to AP1 (debug amrp xnxp detail)
+			</desc>
+			<log-file>step12_show_logging_buffered.log</log-file>
+			<telnet target="ap2">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "\[nxp_basic\]: dnxp client ${sta1.tif.mac} attach to tunnel ${ap1.mgt0.ip}"</log-match>
+			<log-match>-c -i "\[nxp_detail\]: tx one CLIENT-INFO to ${ap1.mgt0.ip}"</log-match>
+			<log-match>-n -c -i "eth0 send gratuitous ARP" -i "${sta1.tif.mac}"</log-match>
+			<log-match>-n -c -i "fe receive gratuitous ARP request" -i "${sta1.tif.mac}"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				-on ap2
+				-Check roaming cache in AP2 check “UPID VLAN-ID”
+			</desc>
+			<log-file>step13_show_roaming_cache_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap2.wifi0.mac}" -i "77"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				-on ap1
+				-Check roaming cache in AP1 check “UPID VLAN-ID”
+			</desc>
+			<log-file>step14_show_roaming_cache_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap2.wifi0.mac}" -i "77"</log-match>
+		</step>
+
+		<step no="15">
+			<desc>
+				-on ap2
+				-Check amrp client info, check “UPID VLAN-ID” show amrp client
+			</desc>
+			<log-file>step15_show_amrp_client_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show amrp client"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "wifi0.1" -i "${ap1.mgt0.ip}" -i "77" -i "${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				-on ap2
+				-Check tunnel state “show amrp tunnel”
+			</desc>
+			<log-file>step16_show_amrp_tunel_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show amrp tunnel"
+			</telnet>
+			<log-match>-c -i "${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="17.1">
+			<desc>
+				-on ap2
+				-Check route state in AP2 “show route”
+			</desc>
+			<log-file>step17.1_show_route_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap2.mgt0.mac}" -i "wifi0.1" -i "77" -i "LTO"</log-match>
+		</step>
+
+		<step no="17.2">
+			<desc>
+				-on ap1
+				-Check route state in AP1 “show route”
+			</desc>
+			<log-file>step17.2_show_roaming_cache_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${ap1.mgt0.mac}" -i "mgt0" -i "77" -i "LTO"</log-match>
+		</step>
+
+		<step no="18.0">
+			<desc>
+				On ap1
+				-no _kdebug fe_arp basic
+				-no _debug amrp xnxp detail
+				-no _debug auth all
+				_kdebug fe basic
+				_kdebug fe baic
+			</desc>
+			<telnet target="ap1">
+				-v "no _kdebug fe_arp basic"
+				-v "no _debug amrp xnxp"
+				-v "no _debug auth all"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff id 1 protocol 1"
+				-v "_ff id 2 protocol 47"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="18.1">
+			<desc>
+				On ap2
+				-no _kdebug fe_arp basic
+				-no _debug amrp xnxp detail
+				-no _debug auth all
+				_kdebug fe basic
+				_kdebug fe baic
+			</desc>
+			<telnet target="ap2">
+				-v "no _kdebug fe_arp basic"
+				-v "no _debug amrp xnxp"
+				-v "no _debug auth all"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff id 1 protocol 1"
+				-v "_ff id 2 protocol 47"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="18.2" file="subs/sta_ping.xml" args="sta1, ${tb.vlan1.gw}, 3" />
+
+		<step no="18.3.1">
+			<desc>
+				-check logging buffered in ap1
+			</desc>
+			<log-file>step18.3.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "(i) eth0 ${ap2.mgt0.ip}->${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(u) mgt0 ${ap2.mgt0.ip}->${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(r) mgt0 ${sta1.tif.ip}->${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(o) eth0 ${sta1.tif.ip}->${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) eth0 ${tb.vlan1.gw}->${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap1.mgt0.ip}->${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(o) eth0 ${ap1.mgt0.ip}->${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="18.3.2">
+			<desc>
+				-check logging buffered in ap2
+			</desc>
+			<log-file>step18.3.2_show_logging_buffered.log</log-file>
+			<telnet target="ap2">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}->${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap2.mgt0.ip}->${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(o) eth0 ${ap2.mgt0.ip}->${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(i) eth0 ${ap1.mgt0.ip}->${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(u) mgt0 ${ap1.mgt0.ip}->${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(r) mgt0 ${tb.vlan1.gw}->${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${tb.vlan1.gw}->${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="19.0">
+			<desc>
+				On ap1
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_debug dhcpd basic"
+				-v "_debug dhcpc basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="19.1">
+			<desc>
+				On ap2
+				-clear log all
+			</desc>
+			<telnet target="ap2">
+				-v "_debug dhcpd basic"
+				-v "_debug dhcpc basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="19.2">
+			<desc>
+				on sta1
+				-ipconfig /release
+				-ipconfig /renew
+			</desc>
+			<ssh target="sta1">
+				-v "ipconfig /release"
+				-v "ipconfig /renew"
+			</ssh>
+		</step>
+
+		<step no="19.3.1">
+			<desc>
+				-check logging buffered in ap1
+			</desc>
+			<log-file>step19.3.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "(i) eth0 ${ap2.mgt0.ip}->${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(u) mgt0 ${ap2.mgt0.ip}->${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(r) mgt0 ${sta1.tif.ip}->255.255.255.255" -i "UDP 68->67 DHCP Inform"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${sta1.tif.ip}->255.255.255.255" -i "UDP 68->67 DHCP Inform"</log-match>
+			<log-match>-c -i "(o) eth0 ${sta1.tif.ip}->255.255.255.255" -i "UDP 68->67 DHCP Inform"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="19.3.2">
+			<desc>
+				-check logging buffered in ap2
+			</desc>
+			<log-file>step19.3.2_show_logging_buffered.log</log-file>
+			<telnet target="ap2">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "(i) eth0 ${ap1.mgt0.ip}->${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(u) mgt0 ${ap1.mgt0.ip}->${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(r) mgt0 ${pub.dhcp.ip}->${sta1.tif.ip}" -i "UDP 67->68 DHCP Ack"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${pub.dhcp.ip}->${sta1.tif.ip}" -i "UDP 67->68 DHCP Ack "</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="20.1">
+			<desc>
+				configure debug in Portal1
+			</desc>
+			<telnet target="ap1">
+				-v "no _debug dhcpd basic"
+				-v "no _debug dhcpc basic"
+				-v "_ff id 1 etype 0806 bidirectional"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="20.2">
+			<desc>
+				configure debug in mp1
+			</desc>
+			<console target="ap2">
+				-v "no _debug dhcpd basic"
+				-v "no _debug dhcpc basic"
+				-v "_ff id 3 etype 0806 bidirectional"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="20.3">
+			<desc>
+				sta1 send broadcast packet
+			</desc>
+			<log-file>step20.3_sta1_send_broadcast.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${tb.unreach.ip1} -n 5"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<include prefix="20.4" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step20.4_show_logging_buffered.log" />
+
+		<include prefix="20.5" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step20.5_show_logging_buffered.log" />
+
+		<step no="20.6">
+			<desc>
+				-check logging buffered in ap1
+			</desc>
+			<log-file>step20.4_show_logging_buffered.log</log-file>
+			<log-match>-c -i "(i) eth0 ${ap2.mgt0.ip}->${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(u) mgt0 ${ap2.mgt0.ip}->${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(r) mgt0 ${sta1.tif.mac}->ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "(o) eth0 ${sta1.tif.mac}->ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${sta1.tif.mac}->ffff:ffff:ffff arp"</log-match>
+		</step>
+
+		<step no="20.7">
+			<desc>
+				-show logging buffered in ap2
+			</desc>
+			<log-file>step20.5_show_logging_buffered.log</log-file>
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.mac}->ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})->${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap2.mgt0.ip}->${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(o) eth0 ${ap2.mgt0.ip}->${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+		</step>
+	</stage>
+
+</testcase>

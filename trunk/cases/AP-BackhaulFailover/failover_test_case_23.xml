@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Failover recover</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-AP1 wifi1 is access mode, wifi0 is dual/backhaul mode
+		-AP2 wifi0 is dual/backhaul mode, wifi1 is dual/backhaul mode
+
+		Test Procedure:
+
+		1, open debug: _debug dcd chnl
+		2, show route
+		3,shutdown AP1 ethernet: interface eth0 shutdown
+		4, show amrp neighbor
+		5, show route
+		6, After 10 minutes, up AP1 ethernet: no interface eth0 shutdown
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-AP1 wifi1 is dual/backhaul mode, wifi0 is access mode
+				config hive
+				config radio profile
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 mode dual"
+				-v "radio profile failover_ng"
+				-v "radio profile failover_ng backhaul failover"
+				-v "radio profile failover_ng phymode 11ng"
+				-v "interface wifi0 radio profile failover_ng"
+			</telnet>
+		</step>
+		
+		
+		<step no="1.1">
+		  <if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				-AP1 wifi1 is dual/backhaul mode, wifi0 is access mode
+				config hive
+				config radio profile
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi1 mode dual"
+				-v "radio profile failover_na"
+				-v "radio profile failover_na backhaul failover"
+				-v "radio profile failover_na phymode 11na"
+				-v "interface wifi1 radio profile failover_na"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="2.0">
+			<desc>
+				-AP2 wifi0 is dual/backhaul mode, wifi1 is dual/backhaul mode
+				config hive
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 mode dual"
+			</telnet>
+		</step>
+
+    <step no="2.1">
+      <if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				-AP2 wifi0 is dual/backhaul mode, wifi1 is dual/backhaul mode
+				config hive
+			</desc>
+			<telnet target="ap2">
+				-v "interface wifi1 mode dual"
+				-v "interface wifi1 radio channel 40"
+			</telnet>
+		</step>
+
+
+		<step no="3">
+			<desc>
+				open debug: _debug dcd chnl
+			</desc>
+			<telnet target="ap1">
+				-v "_debug dcd chnl"
+				-v "logging debug"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show route
+			</desc>
+			<log-file>step3.1_show_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-e "0000:0000:0000" -i "eth0"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				shutdown AP1 ethernet: interface eth0 shutdown
+			</desc>
+			<console target="ap1">
+				-v "clear log"
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+
+   <step no="4.0" delay="3">
+		  <if>"${ap1.wifi1.existed}" != "true"</if>
+			<desc>
+				show logging debug
+			</desc>
+			<log-file>step4.0_show_log_debug_failover.log</log-file>
+			<console target="ap1">
+				-v "show logging debug | include failover"
+			</console>
+			<log-match>-e "ACSP failover trigger timer" -i "wifi0"</log-match>
+			<log-match>-e "wifi0" -i "start do failover"</log-match>
+		</step>
+
+		<step no="4.1" delay="3">
+		  <if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				show logging debug
+			</desc>
+			<log-file>step4.1_show_log_debug_failover.log</log-file>
+			<console target="ap1">
+				-v "show logging debug | include failover"
+			</console>
+			<log-match>-e "ACSP failover trigger timer" -i "wifi1"</log-match>
+			<log-match>-e "wifi1" -i "start do failover"</log-match>
+		</step>
+
+		<step no="4.2">
+		  <if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				show interface wifi1
+			</desc>
+			<log-file>step4.2_show_wifi1_mac.log</log-file>
+			<console target="ap2">
+				-v "show interface wifi1"
+			</console>
+		</step>
+		
+		<step no="4.2_1">
+		  <if>"${ap1.wifi1.existed}" != "true"</if>
+			<desc>
+				show interface wifi0
+			</desc>
+			<log-file>step4.2_show_wifi0_mac.log</log-file>
+			<console target="ap2">
+				-v "show interface wifi0"
+			</console>
+		</step>
+
+		<step no="4.3">
+		  <if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				get ap2's wifi1 mac
+			</desc>
+			<setvar name="ap2.wifi1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step4.2_show_wifi1_mac.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+		
+		<step no="4.3_1">
+		  <if>"${ap1.wifi1.existed}" != "true"</if>
+			<desc>
+				get ap2's wifi0 mac
+			</desc>
+			<setvar name="ap2.wifi0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step4.2_show_wifi0_mac.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+		
+    <step no="4.4" delay="120">
+      <if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				3) show ap1 acsp _neighbor
+			</desc>
+			<log-file>show_acsp_neighbor.log</log-file>
+			<console target="ap1">
+				-v "show acsp _nbr | include ${ap2.wifi1.mac}"
+			</console>
+		</step>
+		
+		<step no="4.4_1" delay="120">
+      <if>"${ap1.wifi1.existed}" != "true"</if>
+			<desc>
+				3) show ap1 acsp _neighbor
+			</desc>
+			<log-file>show_acsp_neighbor_1.log</log-file>
+			<console target="ap1">
+				-v "show acsp _nbr | include ${ap2.wifi0.mac}"
+			</console>
+		</step>
+		
+		<step no="4.5">
+			<desc>
+				3) show hive neighbor
+			</desc>
+			<log-file>ap1_hive_neighbor.log</log-file>
+			<console target="ap1">
+				-v "show hive ${hive.name} neighbor"
+			</console>
+		</step>
+		<step no="4.6" delay="60">
+			<desc>
+				3) show amrp neighbor
+			</desc>
+			<log-file>ap1_amrp_neighbor.log</log-file>
+			<console target="ap1">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>-e "TWO-WAY"</log-match>
+		</step>
+		<step no="4.7">
+		  <if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				show route
+			</desc>
+			<log-file>step4.4_show_route_shutdown_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-e "0000:0000:0000" -i "wifi1.1"</log-match>
+		</step>
+		
+		
+		<step no="4.7_1">
+		  <if>"${ap1.wifi1.existed}" != "true"</if>
+			<desc>
+				show route
+			</desc>
+			<log-file>step4.41_show_route_shutdown_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-e "0000:0000:0000" -i "wifi0.1"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				up AP1 ethernet: no interface eth0 shutdown
+			</desc>
+			<console target="ap1">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				show route
+			</desc>
+			<log-file>step5.1_show_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-e "0000:0000:0000" -i "eth0"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				show interface eth0
+			</desc>
+			<log-file>step5.2_show_eth0_mac.log</log-file>
+			<telnet target="ap2">
+				-v "show interface eth0"
+			</telnet>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				get ap2's eth0 mac
+			</desc>
+			<setvar name="ap2.eth0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step5.2_show_eth0_mac.log -i eth0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="5.4">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step5.4_show_amrp_neighbor</log-file>
+			<telnet target="ap1">
+				-v "show amrp neighbor"
+			</telnet>
+			<log-match>-e "${ap2.eth0.mac}"</log-match>
+		</step>
+	</stage>
+</testcase>

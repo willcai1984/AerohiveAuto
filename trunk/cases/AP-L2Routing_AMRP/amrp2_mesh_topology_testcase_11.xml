@@ -1,0 +1,2182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>2 Portal, 1 MP boot up(full mesh), Portal up/down check route failover. Route converge.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-configure three APs in the same subnet and same hive
+		-Boot portal 1 first and then boot portal2
+		-MP1 is mesh point
+
+		Test Procedure:
+
+		1. Show route, check route table in Portal1,Portal2(default route ,node route)
+		2. Show route, check route table in MP1.
+		3. If MP1 selecting Portal1 as Portal, change wifi-link cost of MP1 to
+		Portal1,check route table again,
+		4. Plug out cable of Portal1, Show amrp ethlink, check route table.
+		5. Plug in cable of portal1, Show amrp ethlink , check route table
+		6. Shut down the MP1,check route table
+		7. Client associate MP1
+		Client ping wired pc
+		Client ping ap1,ap2,ap3
+		8. 8. Client associate Portal1
+		Client ping wired pc
+		Client ping ap1,ap2,ap3
+		9. Client associate Portal2
+		Client ping wired pc
+		Client ping ap1,ap2,ap3
+	</description>
+	<numofap>3</numofap>
+	<numofsta>3</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}_1" />
+	<property name="conn2.ssid" value="${ssid.name}_2" />
+	<property name="conn3.ssid" value="${ssid.name}_3" />
+
+	<stage>
+		<step no="pre1.1.0">
+			<desc>
+				-if eth1 exist on AP1,shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+		
+		<step no="pre1.1">
+			<desc>
+				-configure AP1 as MP1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface wifi1 radio channel 40"
+				-v "interface eth0 shutdown"
+				-v "save config"
+			</console>
+		</step>
+		
+		<step no="pre1.1_0">
+			<desc>
+				-configure AP1 as MP1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface eth0 shutdown"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="pre1.1c">
+			<desc>
+				-show interface in mp1
+			</desc>
+			<log-file>step_pre1.1c_show_interface_mp1.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="pre1.1d">
+			<desc>
+				Get mgt0 mac in mp1
+			</desc>
+			<setvar name="mp1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step_pre1.1c_show_interface_mp1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.1e">
+			<desc>
+				Get wifi0 mac in mp1
+			</desc>
+			<setvar name="mp1.wifi0.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1 *(\S+) *" -f ${log.dir}/step_pre1.1c_show_interface_mp1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.1f">
+			<desc>
+				Get wifi1 mac in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="mp1.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1.1 *(\S+) *" -f ${log.dir}/step_pre1.1c_show_interface_mp1.log -t str
+			</setvar>
+		</step>
+		
+		<step no="pre1.1f_0">
+			<desc>
+				Get wifi1 mac in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="mp1.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1 *(\S+) *" -f ${log.dir}/step_pre1.1c_show_interface_mp1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.2.0">
+			<desc>
+				-if eth1 exist on AP2,shutdown eth1
+			</desc>
+			<if>"${ap2.eth1.existed}" == "true"</if>
+			<console target="ap2">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+		
+		<step no="pre1.2">
+			<desc>
+				-configure AP2 as Portal1, make sure it will be select as DA
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${conn2.ssid}"
+				-v "interface wifi0 ssid ${conn2.ssid}"
+				-v "interface wifi1 radio channel 40"
+				-v "amrp interface eth0 priority 100"
+				-v "save config"
+			</console>
+		</step>
+		
+		<step no="pre1.2_0">
+			<desc>
+				-configure AP2 as Portal1, make sure it will be select as DA
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+				-v "ssid ${conn2.ssid}"
+				-v "interface wifi0 ssid ${conn2.ssid}"
+				-v "amrp interface eth0 priority 100"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="pre1.2b">
+			<desc>
+				-show interface in Portal1
+			</desc>
+			<log-file>step_pre1.2b_show_interface_portal1.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="pre1.2c">
+			<desc>
+				Get mgt0 mac in Portal1
+			</desc>
+			<setvar name="portal1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step_pre1.2b_show_interface_portal1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.2d">
+			<desc>
+				Get eth0 mac in Portal1
+			</desc>
+			<setvar name="portal1.eth0.mac">
+				${bin.dir}/getbyrexp.py -p "Eth0 *(\S+) *" -f ${log.dir}/step_pre1.2b_show_interface_portal1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.2e">
+			<desc>
+				Get wifi0 mac in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="portal1.wifi0.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1 *(\S+) *" -f ${log.dir}/step_pre1.2b_show_interface_portal1.log -t str
+			</setvar>
+		</step>
+		
+		<step no="pre1.2e_0">
+			<desc>
+				Get wifi0 mac in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="portal1.wifi0.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.2 *(\S+) *" -f ${log.dir}/step_pre1.2b_show_interface_portal1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.2f">
+			<desc>
+				Get wifi1 mac in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="portal1.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1.1 *(\S+) *" -f ${log.dir}/step_pre1.2b_show_interface_portal1.log -t str
+			</setvar>
+		</step>
+		
+		<step no="pre1.2f_0">
+			<desc>
+				Get wifi1 mac in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="portal1.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1 *(\S+) *" -f ${log.dir}/step_pre1.2b_show_interface_portal1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.3.0">
+			<desc>
+				-if eth1 exist on AP3,shutdown eth1
+			</desc>
+			<if>"${ap3.eth1.existed}" == "true"</if>
+			<console target="ap3">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+		
+		<step no="pre1.3">
+			<desc>
+				-configure AP3 as Portal2, make sure it as BDA
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap3">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${conn3.ssid}"
+				-v "amrp interface eth0 priority 50"
+				-v "interface wifi0 ssid ${conn3.ssid}"
+				-v "interface wifi1 radio channel 40"
+				-v "save config"
+			</console>
+		</step>
+		
+		<step no="pre1.3_0">
+			<desc>
+				-configure AP3 as Portal2, make sure it as BDA
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap3">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+				-v "ssid ${conn3.ssid}"
+				-v "amrp interface eth0 priority 50"
+				-v "interface wifi0 ssid ${conn3.ssid}"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="pre1.3b">
+			<desc>
+				-show interface in Portal2
+			</desc>
+			<log-file>step_pre1.3b_show_interface_portal2.log</log-file>
+			<console target="ap3">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="pre1.3c">
+			<desc>
+				Get mgt0 mac in Portal2
+			</desc>
+			<setvar name="portal2.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step_pre1.3b_show_interface_portal2.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.3d">
+			<desc>
+				Get eth0 mac in Portal2
+			</desc>
+			<setvar name="portal2.eth0.mac">
+				${bin.dir}/getbyrexp.py -p "Eth0 *(\S+) *" -f ${log.dir}/step_pre1.3b_show_interface_portal2.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.3e">
+			<desc>
+				Get wifi0 mac in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="portal1.wifi0.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1 *(\S+) *" -f ${log.dir}/step_pre1.3b_show_interface_portal2.log -t str
+			</setvar>
+		</step>
+		
+		<step no="pre1.3e_0">
+			<desc>
+				Get wifi0 mac in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="portal1.wifi0.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.2 *(\S+) *" -f ${log.dir}/step_pre1.3b_show_interface_portal2.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.3f">
+			<desc>
+				Get wifi1 mac in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="portal2.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1.1 *(\S+) *" -f ${log.dir}/step_pre1.3b_show_interface_portal2.log -t str
+			</setvar>
+		</step>
+		
+		<step no="pre1.3f_0">
+			<desc>
+				Get wifi1 mac in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="portal2.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1 *(\S+) *" -f ${log.dir}/step_pre1.3b_show_interface_portal2.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre2.0">
+			<desc>
+				Make sure MP1 will select portal1 as its portal
+			</desc>
+			<console target="ap1">
+				-v "amrp neighbor ${portal2.mgt0.mac} metric min 1000 max 1200"
+				-v "amrp neighbor ${portal1.mgt0.mac} metric min 100 max 200"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="pre2.1">
+			<desc>
+				-Boot portal 1 first and then boot portal2
+			</desc>
+			<console target="ap2">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="pre2.2" delay="20">
+			<desc>
+				-reboot mp1
+			</desc>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="pre2.3" delay="30">
+			<desc>
+				-reboot Portal12
+			</desc>
+			<console target="ap3">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="pre2.4a" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>
+				Make sure Portal1 is DA
+			</desc>
+			<log-file>step_pre2.4a_show_amrp_interface_eth0_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state[: ]+DA" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="pre2.4b" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				Make sure Portal2 is BDA
+			</desc>
+			<log-file>step_pre2.4b_show_amrp_interface_eth0_${loop_check.idx}.log</log-file>
+			<console target="ap3">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state[: ]+BDA" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="1.1" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				1. Show route, check route table in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step1_show_route_in_portal1_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal1.mgt0.mac} *eth0"</log-match>
+			<log-match>-i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${mp1.wifi0.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${mp1.mgt0.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="1.1_0" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				1. Show route, check route table in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step1_show_route_in_portal1_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal1.mgt0.mac} *eth0"</log-match>
+			<log-match>-i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${mp1.wifi0.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${mp1.mgt0.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="1.2" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				Show route, check route table in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step1.2_show_route_in_portal2.log</log-file>
+			<console target="ap3">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal2.mgt0.mac} *eth0"</log-match>
+			<log-match>-i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${mp1.wifi0.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${mp1.mgt0.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="1.2_0" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				Show route, check route table in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step1.2_show_route_in_portal2.log</log-file>
+			<console target="ap3">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal2.mgt0.mac} *eth0"</log-match>
+			<log-match>-i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${mp1.wifi0.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${mp1.mgt0.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="2" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				2. Show route, check route table in MP1.
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step2_show_route_on_mp1.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal1.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${portal1.wifi1.mac} *${portal1.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${portal1.mgt0.mac} *${portal1.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${portal2.wifi1.mac} *${portal2.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${portal2.mgt0.mac} *${portal2.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="2_0" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				2. Show route, check route table in MP1.
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step2_show_route_on_mp1.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal1.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${portal1.wifi1.mac} *${portal1.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${portal1.mgt0.mac} *${portal1.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${portal2.wifi1.mac} *${portal2.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${portal2.mgt0.mac} *${portal2.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				3. MP1 selecting Portal1 as Portal, change wifi-link cost of MP1 for Portal1,check route table again,
+			</desc>
+			<console target="ap1">
+				-v "amrp neighbor ${portal1.wifi1.mac} metric min 1000 max 1200"
+				-v "amrp neighbor ${portal2.wifi1.mac} metric min 100 max 200"
+			</console>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>
+				3. MP1 will selecting Portal2 as Portal
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>setp3.1_mp1_default_route_change.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal1.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="3.1_0" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>
+				3. MP1 will selecting Portal2 as Portal
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>setp3.1_mp1_default_route_change.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal1.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				4. Plug out cable of Portal1, Show amrp ethlink, check route table.
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="4.2" delay="10">
+			<desc>check if the mp1 default route change</desc>
+			<log-file>setp4.2_show_amrp_ethlink.log</log-file>
+			<console target="ap2">
+				-v "show amrp Ethlink"
+			</console>
+		</step>
+
+		<step no="4.3" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				4. Default route will be changed to wifi1.1,.Portal1 selecting Portal2 as portal
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>setp4.3_show_default_route_change.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal2.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="4.3_0" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				4. Default route will be changed to wifi1.1,.Portal1 selecting Portal2 as portal
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>setp4.3_show_default_route_change.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal2.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="4.3b" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Portal2 will become DA
+			</desc>
+			<log-file>step4.3b_show_amrp_interface_eth0_${loop_check.idx}.log</log-file>
+			<console target="ap3">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state[: ]+DA" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				5. Plug in cable of portal1, Show amrp ethlink , check route table
+			</desc>
+			<console target="ap2">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5.1" delay="10">
+			<desc>show amrp ethlink</desc>
+			<log-file>setp5.1_show_amrp_ethlink.log</log-file>
+			<console target="ap2">
+				-v "show amrp Ethlink"
+			</console>
+		</step>
+
+		<step no="5.2" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				5. Default route will be eth0 again, should not effect other route entry
+			</desc>
+			<log-file>setp5.2_show_default_route_change.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal1.mgt0.mac} *eth0"</log-match>
+		</step>
+
+		<step no="5.3" type="loop-check" loop-max-times="5" loop-interval="10" delay="30">
+			<desc>
+				Show route, check route table in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step5.3_show_route_in_portal2.log</log-file>
+			<console target="ap3">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal2.mgt0.mac} *eth0"</log-match>
+			<log-match>-i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${mp1.wifi0.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${mp1.mgt0.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="5.3_0" type="loop-check" loop-max-times="5" loop-interval="10" delay="30">
+			<desc>
+				Show route, check route table in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step5.3_show_route_in_portal2.log</log-file>
+			<console target="ap3">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal2.mgt0.mac} *eth0"</log-match>
+			<log-match>-i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${mp1.wifi0.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${mp1.mgt0.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="5.4" type="loop-check" loop-max-times="5" loop-interval="10" delay="30">
+			<desc>
+				2. Show route, check route table in MP1.
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step5.4_show_route_on_mp1.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal2.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${portal2.wifi1.mac} *${portal2.wifi1.mac} *wifi1.1"</log-match>
+			<log-match>-i "${portal2.mgt0.mac} *${portal2.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="5.4_0" type="loop-check" loop-max-times="5" loop-interval="10" delay="30">
+			<desc>
+				2. Show route, check route table in MP1.
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step5.4_show_route_on_mp1.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal2.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${portal2.wifi1.mac} *${portal2.wifi1.mac} *wifi0.1"</log-match>
+			<log-match>-i "${portal2.mgt0.mac} *${portal2.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				6. shutdown the MP1,check route table
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap1">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+			</console>
+		</step>
+		
+		<step no="6_0">
+			<desc>
+				6. shutdown the MP1,check route table
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap1">
+				-v "interface wifi0 hive ${hive.name} shutdown"
+			</console>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				6. Amrp should delete the route of MP1 in portal’s route table.
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>setp6.1_show_default_route_change.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-n -i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="6.1_0" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				6. Amrp should delete the route of MP1 in portal’s route table.
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>setp6.1_show_default_route_change.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-n -i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="6.2" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				6. Amrp should delete the route of MP1 in portal’s route table.
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>setp6.2_show_default_route_change.log</log-file>
+			<console target="ap3">
+				-v "show route"
+			</console>
+			<log-match>-n -i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="6.2_0" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				6. Amrp should delete the route of MP1 in portal’s route table.
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>setp6.2_show_default_route_change.log</log-file>
+			<console target="ap3">
+				-v "show route"
+			</console>
+			<log-match>-n -i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				6. no shutdown the MP1,check route table
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap1">
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</console>
+		</step>
+		
+		<step no="6.3_0">
+			<desc>
+				6. no shutdown the MP1,check route table
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap1">
+				-v "no interface wifi0 hive ${hive.name} shutdown"
+			</console>
+		</step>
+
+		<step no="6.4" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				Amrp should not add the route of MP1 in portal1 route table.
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>setp6.4_show_default_route_change.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-n -i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="6.4_0" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				Amrp should not add the route of MP1 in portal1 route table.
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>setp6.4_show_default_route_change.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-n -i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="6.5" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				Amrp should add the route of MP1 in portal2 route table.
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>setp6.5_show_default_route_change.log</log-file>
+			<console target="ap3">
+				-v "show route"
+			</console>
+			<log-match>-i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+		
+		<step no="6.5_0" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				Amrp should add the route of MP1 in portal2 route table.
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>setp6.5_show_default_route_change.log</log-file>
+			<console target="ap3">
+				-v "show route"
+			</console>
+			<log-match>-i "${mp1.wifi1.mac} *${mp1.wifi1.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="7.1b">
+			<desc>
+				open debug on Portal1
+			</desc>
+			<console target="ap2">
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff protocol 1"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="7.1c">
+			<desc>
+				open debug on Portal2
+			</desc>
+			<console target="ap3">
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff protocol 1"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="7.1d">
+			<desc>
+				open debug on mp1
+			</desc>
+			<console target="ap1">
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff protocol 1"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="7.1e" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="7.2" file="subs/sta_ping.xml" args="sta1, ${mpc.tif.ip}, 4" />
+
+		<include prefix="7.2b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step7.2b_show_logging_buffered_portal1.log" />
+
+		<include prefix="7.2c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step7.2c_show_logging_buffered_portal2.log" />
+
+		<step no="7.3">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.3_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi1.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi1.1 ${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.3_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.3_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.2 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi0.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi0.1 ${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.3b">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.2b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) wifi1.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.3b_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.2b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.3c">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.2c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi1.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi1.1 ${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.3c_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.2c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta1.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.3d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="7.3e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="1.2.1" file="subs/get_ap_ip_mac.xml" rargs="ap1" />
+		
+		<include prefix="7.4" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+		<include prefix="7.4b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step7.4b_show_logging_buffered_portal1.log" />
+
+		<include prefix="7.4c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step7.4c_show_logging_buffered_portal2.log" />
+
+		<step no="7.5">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.5_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.5_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.5_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.2 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.5b">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.4b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) wifi1.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.5b_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.4b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.5c">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.4c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-n -i "(i) wifi1.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.5c_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.4c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-n -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.5d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="7.5e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="7.6.0" file="subs/get_ap_ip_mac.xml" rargs="ap2" />
+		
+		<include prefix="7.6" file="subs/sta_ping.xml" args="sta1, ${ap2.mgt0.ip}, 4" />
+
+		<include prefix="7.6b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step7.6b_show_logging_buffered_portal1.log" />
+
+		<include prefix="7.6c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step7.6c_show_logging_buffered_portal2.log" />
+
+		<step no="7.7">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.7_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi1.1 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi1.1 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.7_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.7_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.2 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi0.1 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi0.1 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.7b">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.6b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) eth0 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth0 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.7b_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.6b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) eth0 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth0 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.7c">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.6c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi1.1 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi1.1 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.7c_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.6c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta1.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap2.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.7d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="7.7e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="7.8.0" file="subs/get_ap_ip_mac.xml" rargs="ap3" />
+		
+		<include prefix="7.8" file="subs/sta_ping.xml" args="sta1, ${ap3.mgt0.ip}, 4" />
+
+		<include prefix="7.8b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step7.8b_show_logging_buffered_portal1.log" />
+
+		<include prefix="7.8c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step7.8c_show_logging_buffered_portal2.log" />
+
+		<step no="7.9">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.9_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi1.1 ${sta1.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi1.1 ${ap3.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap3.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.9_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.9_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.2 ${sta1.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi0.1 ${sta1.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi0.1 ${ap3.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${ap3.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.9b">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<log-file>step7.8b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) eth0 ${sta1.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(u) mgt0 ${sta1.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${ap3.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.9c">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step7.8c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi1.1 ${sta1.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta1.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi1.1 ${ap3.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="7.9c_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step7.8c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta1.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap3.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="7.9d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="7.9e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="8.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap2" />
+
+		<include prefix="8.2" file="subs/sta_ping.xml" args="sta2, ${mpc.tif.ip}, 4" />
+
+		<include prefix="8.2b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step8.2b_show_logging_buffered_portal1.log" />
+
+		<include prefix="8.2c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step8.2c_show_logging_buffered_portal2.log" />
+
+		<step no="8.3">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.3_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi1.1 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.3_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.3_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi0.2 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi0.1 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) wifi0.2 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.3b">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.2b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.3b_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.2b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) wifi0.2 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.3c">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.2c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-n -i "(i) wifi1.1 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.3c_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.2c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-n -i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.3d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="8.3e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="8.4.0" file="subs/get_ap_ip_mac.xml" rargs="ap1" />
+		
+		<include prefix="8.4" file="subs/sta_ping.xml" args="sta2, ${ap1.mgt0.ip}, 4" />
+
+		<include prefix="8.4b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step8.4b_show_logging_buffered_portal1.log" />
+
+		<include prefix="8.4c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step8.4c_show_logging_buffered_portal2.log" />
+
+		<step no="8.5">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.5_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi1.1 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi1.1 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.5_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.5_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.5b">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.4b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.5b_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.4b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) wifi0.2 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.5c">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.4c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) eth0 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi1.1 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi1.1 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth0 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.5c_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.4c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) eth0 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi0.1 ${sta2.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth0 ${ap1.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.5d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="8.5e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="8.6.0" file="subs/get_ap_ip_mac.xml" rargs="ap2" />
+		
+		<include prefix="8.6" file="subs/sta_ping.xml" args="sta2, ${ap2.mgt0.ip}, 4" />
+
+		<include prefix="8.6b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step8.6b_show_logging_buffered_portal1.log" />
+
+		<include prefix="8.6c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step8.6c_show_logging_buffered_portal2.log" />
+
+		<step no="8.7">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.7_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi1.1 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi1.1 ${ap2.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${ap2.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.7_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.7_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi0.1 ${ap2.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${ap2.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.7b">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.6b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap2.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap2.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.7b_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.6b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) wifi0.2 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap2.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${ap2.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.7c">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.6c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-n -i "(i) wifi1.1 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${ap2.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.7c_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.6c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-n -i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta2.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${ap2.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.7d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="8.7e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="8.8.0" file="subs/get_ap_ip_mac.xml" rargs="ap3" />
+		
+		<include prefix="8.8" file="subs/sta_ping.xml" args="sta2, ${ap3.mgt0.ip}, 4" />
+
+		<include prefix="8.8b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step8.8b_show_logging_buffered_portal1.log" />
+
+		<include prefix="8.8c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step8.8c_show_logging_buffered_portal2.log" />
+
+		<step no="8.9">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.9_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi1.1 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.9_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.9_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi0.2 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${sta2.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi0.1 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) wifi0.2 ${mpc.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.9b">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.8b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta2.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${ap3.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap3.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.9b_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.8b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) wifi0.2 ${sta2.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta2.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${ap3.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${ap3.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.9c">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step8.8c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) eth0 ${sta2.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta2.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth0 ${ap3.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="8.9c_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step8.8c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) eth0 ${sta2.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta2.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth0 ${ap3.mgt0.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="8.9d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="8.9e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="9.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn3, sta3, ap3" />
+
+		<include prefix="9.2" file="subs/sta_ping.xml" args="sta3, ${mpc.tif.ip}, 4" />
+
+		<include prefix="9.2b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step9.2b_show_logging_buffered_portal1.log" />
+
+		<include prefix="9.2c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step9.2c_show_logging_buffered_portal2.log" />
+
+		<step no="9.3">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.3_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) eth0 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi1.1 ${mpc.tif.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${mpc.tif.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.3_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.3_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) eth0 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi0.1 ${mpc.tif.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${mpc.tif.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.3b">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.2b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) wifi1.1 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${mpc.tif.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.3b_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.2b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) wifi0.1 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${mpc.tif.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.3c">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.2c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${mpc.tif.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${mpc.tif.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.3c_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.2c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.2 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta3.tif.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${mpc.tif.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${mpc.tif.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.3d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="9.3e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="9.4.0" file="subs/get_ap_ip_mac.xml" rargs="ap1" />
+		
+		<include prefix="9.4" file="subs/sta_ping.xml" args="sta3, ${ap1.mgt0.ip}, 4" />
+
+		<include prefix="9.4b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step9.4b_show_logging_buffered_portal1.log" />
+
+		<include prefix="9.4c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step9.4c_show_logging_buffered_portal2.log" />
+
+		<step no="9.5">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.5_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi1.1 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi1.1 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.5_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.5_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.1 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.5b">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.4c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi1.1 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi1.1 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.5b_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.4c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.2 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi0.1 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.5c">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.4b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) eth0 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi1.1 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.5c_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.4b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) eth0 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${sta3.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${ap1.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.5d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="9.5e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="9.6.0" file="subs/get_ap_ip_mac.xml" rargs="ap2" />
+		
+		<include prefix="9.6" file="subs/sta_ping.xml" args="sta3, ${ap2.mgt0.ip}, 4" />
+
+		<include prefix="9.6b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step9.6b_show_logging_buffered_portal1.log" />
+
+		<include prefix="9.6c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step9.6c_show_logging_buffered_portal2.log" />
+
+		<step no="9.7">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.7_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi1.1 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi1.1 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.7_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.7_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi0.1 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi0.1 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.7b">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.6c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.7b_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.6c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.2 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) eth0 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) eth0 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.2 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.7c">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.6b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) eth0 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth0 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.7c_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.6b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-i "(i) eth0 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta3.tif.ip}-&gt;${ap2.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth0 ${ap2.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.7d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="9.7e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="9.8.0" file="subs/get_ap_ip_mac.xml" rargs="ap3" />
+		
+		<include prefix="9.8" file="subs/sta_ping.xml" args="sta3, ${ap3.mgt0.ip}, 4" />
+
+		<include prefix="9.8b" file="subs/save_ap_log.xml" args="show logging buffered, ap2, step9.8b_show_logging_buffered_portal1.log" />
+
+		<include prefix="9.8c" file="subs/save_ap_log.xml" args="show logging buffered, ap3, step9.8c_show_logging_buffered_portal2.log" />
+
+		<step no="9.9">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.9_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi1.1 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi1.1 ${ap3.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${ap3.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.9_0">
+			<desc>
+				-show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.9_show_logging_mp1.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi0.1 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi0.1 ${ap3.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -i "(o) eth0 ${ap3.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.9b">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.8c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.1 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.9b_0">
+			<desc>
+				-check logging buffered in Portal2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.8c_show_logging_buffered_portal2.log</log-file>
+			<log-match>-i "(i) wifi0.2 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(u) mgt0 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.9c">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.8b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) wifi1.1 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${ap3.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="9.9c_0">
+			<desc>
+				-check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.8b_show_logging_buffered_portal1.log</log-file>
+			<log-match>-n -i "(i) wifi0.1 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${sta3.tif.ip}-&gt;${ap3.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${ap3.mgt0.ip}-&gt;${sta3.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="9.9d">
+			<desc>
+				clear log buf on Portal1
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="9.9e">
+			<desc>
+				clear log buf on Portal2
+			</desc>
+			<console target="ap3">
+				-v "clear log all"
+			</console>
+		</step>
+
+	</stage>
+
+</testcase>

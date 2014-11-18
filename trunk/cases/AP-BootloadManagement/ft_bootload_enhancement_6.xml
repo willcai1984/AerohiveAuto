@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify setted boot parameters can boot image via network using TFTP protocol</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description></description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="def_bootload_passwd" value="administrator" />
+	<property name="device_ip" value="0.0.0.0" />
+	<property name="netmask" value="255.255.255.0" />
+	<property name="tftpserver_ip" value="10.155.30.230" />
+	<property name="image_name" value="/newimg/AP350-HiveOS-6-2r1-Hollywood-April-20-2014-20140619-2911.img" />
+	<stage>
+
+		<step no="pre_test">
+			<desc>unset boot password</desc>
+			<console target="ap1">
+				-v "no boot-param boot-password"
+			</console>
+		</step>
+
+		<step no="1">
+			<desc>get bootloader prompt and go into bootloader with default password</desc>
+			<console target="ap1" prompt="[=0-9A-Za-z]+>|AH-[0-9A-Za-z]*#">
+       -bp ${def_bootload_passwd}
+       -v "reboot"
+       -v "version"
+      </console>
+			<no-error-check />
+		</step>
+
+		<step no="2">
+	        <desc>Excuse some CLI in bootloader set-bootparam</desc>
+	        <console target="ap1" prompt="[0-9A-Za-z]*>|IP|ID|File|Netboot|Netdump|Netmask|save">
+	          -v "set_bootparam"
+	          -v "${device_ip}"
+	          -v "${mpc.tif.ip}"
+	          -v ""
+	          -v ""
+	          -v "/${img.name}"
+	          -v "1"
+	          -v "1"
+	          -v "${netdump_file_name}"
+	          -v "Y"
+	        </console>
+			<no-error-check />
+	  </step>
+
+		<step no="3">
+              <desc>Excuse cli print_bootparam and check the configure</desc>
+		      <log-file>boot_param1.log</log-file>
+		      <console target="ap1" prompt="[=0-9A-Za-z]+>|AH-[0-9A-Za-z]*#">
+		       -v "print_bootparam"
+		      </console>
+		      <log-match>-e "TFTP *Server *IP\s*.\s*${mpc.tif.ip}" -re </log-match>
+		      <log-match>-i "Boot *File" -i "${img.name}" -re</log-match>
+		</step>
+		
+		<step no="4.1">
+		<if>"${img.prodtype}" != "AP230" &amp;&amp; "${img.prodtype}" != "AP1130"</if>
+              <desc>image_netboot</desc>
+			  <log-file>step4.1.log</log-file>
+		      <console target="ap1" prompt="[=0-9A-Za-z]+>|AH-[0-9A-Za-z]*#|login" timeout="600">
+	          -v "image_netboot"
+	        </console>
+			<no-error-check />
+			<log-match>-e "DHCP *client *bound *to *address\s*\d*.\d*.\d*.\d*" -re</log-match>
+			<log-match>-c -e "Loading:.*" -re</log-match>
+		</step>
+		
+		<step no="4.2">
+		<if>"${img.prodtype}" == "AP230" || "${img.prodtype}" == "AP1130"</if>
+              <desc>image_netboot</desc>
+			  <log-file>step4.2.log</log-file>
+		      <console target="ap1" prompt="[=0-9A-Za-z]+>|AH-[0-9A-Za-z]*#|login" timeout="600">
+	          -v "image_netboot"
+	        </console>
+			<no-error-check />
+			<log-match>-e "Device IP not set, get via DHCP" -re</log-match>
+		</step>		
+		
+		<step no="5.0">
+			<desc>get bootloader prompt and go into bootloader with default password</desc>
+			<console target="ap1" prompt="[=0-9A-Za-z]+>|AH-[0-9A-Za-z]*#">
+       -bp ${def_bootload_passwd}
+       -v "reboot"
+       -v "version"
+      </console>
+			<no-error-check />
+		</step>
+		
+		<step no="5.1">
+              <desc>recoverage_env</desc>
+		      <console target="ap1" prompt="[0-9A-Za-z]*>|IP|ID|File|Netboot|Netdump|Netmask|save">
+	          -v "set_bootparam"
+	          -v "0.0.0.0"
+	          -v "${mpc.tif.ip}"
+	          -v ""
+	          -v ""
+	          -v ""
+	          -v ""
+	          -v ""
+	          -v ""
+	          -v "Y"
+	        </console>
+			<no-error-check />
+		</step>
+		
+		<step no="6">
+              <desc>reset</desc>
+		      <log-file>reset.log</log-file>
+		      <console target="ap1" prompt="[=0-9A-Za-z]+>|AH-[0-9A-Za-z]*#">
+		       -v "reset"
+		      </console>
+		</step>
+		
+		<step no="upgrade_image">
+			<desc>
+				get the image which is to be upgrade
+			</desc>
+			<script>
+				echo "${img.name}" > ${log.dir}/upgrade_image.log
+			</script>
+		</step>
+		
+		<step no="upgrade_image_cookie">
+			<desc>
+				get cookie of the image which is to be upgrade
+			</desc>
+			<setvar name="upgrade.image.cookie">
+				cat ${log.dir}/upgrade_image.log |grep img|awk -F- '{print $9 $10}'|cut -d'.' -f1
+			</setvar>
+		</step>		
+		
+		<step no="7">
+			<desc>show version and match</desc>
+			<log-file>show_info.log</log-file>
+			<console target="ap1" prompt="[=0-9A-Za-z]+>|AH-[0-9A-Za-z]*#">
+            -v "show version"
+			</console>
+			<no-error-check />
+		</step>
+		
+		<step no="actual_image_cookie">
+			<desc>
+				get cookie of the image which is to be upgrade
+			</desc>
+			<setvar name="actual.image.cookie">
+				cat ${log.dir}/show_info.log | grep cookie|awk '{print $3}'|awk -F- '{print $1 $2}'
+			</setvar>
+		</step>	
+		
+		<step no="8">
+			<desc>
+				check if actual.image.cookie equal to upgrade.image.cookie
+			</desc>
+			<script>
+				echo ${upgrade.image.cookie} ${actual.image.cookie} | awk '{
+				 if ( $1==$2)
+				 	{exit (0);} 
+				 else 
+				 	{exit (1);} 
+				 }'
+			</script>
+		</step>
+		
+	</stage>
+	
+	<failed-process>
+	<stage>
+		<step no="post_1">
+			<desc>go out of bootloader</desc>
+			<console target="ap1" prompt="[=0-9A-Za-z]+>|AH-[0-9A-Za-z]*#">
+			-v "ctrl-c"
+			-v "ctrl-c"
+			-v "reset"
+			</console>
+			<no-error-check />
+		</step>
+	</stage>
+	</failed-process>
+</testcase>

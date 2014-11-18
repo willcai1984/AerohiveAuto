@@ -1,0 +1,333 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Service type filtering</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		pre-condition:
+		All devices connect to trunk port which permits VLAN 1, 51, 52, 53
+		All devices are in VLAN 51
+		Macbook 1 connects to AP141, VLAN 51
+		Winbook 1 connects to AP330, VLAN 52
+		AppleTV connects to BR200, VLAN 53
+
+		test procedure:
+		1.	Configure filter rule 1: all services from VLAN 51 to VLAN 52 are permitted, Check services on VLAN 52
+		2.	Configure filter rule 2: *._ssh._tcp. service from VLAN 51 to VLAN 52 are permitted, Check services on VLAN 52
+		3.	Change the filter order to put 2 before 1, Check services on VLAN 52
+		4.	Delete filter rule 1
+				
+		expect result:
+		1. all services can be seen on vlan 52
+		2. all services can be seen on vlan 52
+		3. all services can be seen on vlan 52
+		4. only services with ._ssh._tcp. can be seen on vlan 52
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+
+		<include prefix="0" file="subs/l3swcfg_port_vlan.xml" args="${tb.apple.l3sw.port}, ${tb.vlan1}, ${tb.vlans}" />
+		
+		<step no="1">
+    		<desc>
+       			config ap1
+    		</desc>
+    		<log-file>ap1_config.log</log-file>
+    		<console target="ap1">
+       			-v "interface mgt0 vlan ${tb.vlan1}"
+       			-v "interface mgt0 native-vlan ${tb.vlan1}"
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}"
+       			-v "interface mgt0 hive ${hive.name}"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan1} ${tb.vlan3}"
+    		</console>
+		</step>
+		
+		<include prefix="1.0" file="subs/ap_renew_ip.xml" obj-args="ap1" />	
+		
+		<step no="1.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>check bonjour-gateway status on ap1</desc>
+			<log-file>step1.1_show_bonjour_status.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+			<log-match>-re -i "Total +\d+ Local Attached VLANs:" -i "${tb.vlan1}" -i "${tb.vlan2}" -i "${tb.vlan3}"</log-match>
+		</step>
+		
+		<step no="2"  type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap1</desc>
+			<log-file>step2_show_local_service.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="3">
+    		<desc>
+       			config ap2
+    		</desc>
+    		<log-file>ap2_config.log</log-file>
+    		<console target="ap2">
+       			-v "interface mgt0 vlan ${tb.vlan2}"
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}1"
+       			-v "interface mgt0 hive ${hive.name}1"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan2}"
+    		</console>
+		</step>
+		
+		<include prefix="3.0" file="subs/ap_renew_ip.xml" obj-args="ap2" />
+		
+		<step no="4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bonjour-gateway status on bdd</desc>
+			<log-file>step4_show_bon_sta.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="5">
+			<desc>config filter rule on ap1</desc>
+			<log-file>config_filter.log</log-file>
+			<ssh target="ap1">
+				-v "vlan-group 1 ${tb.vlan1}"
+				-v "vlan-group 2 ${tb.vlan2}"			
+				-v "_debug bgd all"
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 from 1 * to 2"
+			</ssh>
+		</step>
+		
+		<step no="6">
+			<desc>restart bgd</desc>
+			<log-file>step6_restart_bgd.log</log-file>
+			<ssh target="ap2">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</ssh>
+		</step>
+		
+		<step no="6.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>step6.1_show_bon_sta.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="7" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the logging buffer</desc>
+			<log-file>ste7_log_buf.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered | include \"filter rule\""
+			</ssh>
+			<log-match>-i "entry Apple TV._airplay._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._touch-able._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._appletv-v2._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry 70-35-60-63.1 Apple TV._sleep-proxy._udp. matches filter rule 1"</log-match>
+			<log-match>-i "entry 600308CBE085@Apple TV._raop._tcp. matches filter rule 1"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="8" type="loop-check" loop-max-times="30" loop-interval="5">
+			<desc>show local service on ap2</desc>
+			<log-file>step8_show_local_service.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="9">
+			<desc>config filter rule 2 on ap1</desc>
+			<log-file>step9_config_filter.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 2 from 1 *._appletv-v2._tcp. to 2"
+			</ssh>
+		</step>
+		
+		<step no="10">
+			<desc>restart bgd</desc>
+			<log-file>step10_restart_bgd.log</log-file>
+			<ssh target="ap2">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</ssh>
+		</step>
+		
+		<step no="11" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>step11.1_show_bon_sta.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="12" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the logging buffer</desc>
+			<log-file>step12_log_buf.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered | include \"filter rule\""
+			</ssh>
+			<log-match>-i "entry Apple TV._airplay._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry Apple TV._airplay._tcp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._touch-able._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._touch-able._tcp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._appletv-v2._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._appletv-v2._tcp. matches filter rule 2"</log-match>
+			<log-match>-i "entry 70-35-60-63.1 Apple TV._sleep-proxy._udp. matches filter rule 1"</log-match>
+			<log-match>-i "entry 70-35-60-63.1 Apple TV._sleep-proxy._udp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<log-match>-i "entry 600308CBE085@Apple TV._raop._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry 600308CBE085@Apple TV._raop._tcp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="13" type="loop-check" loop-max-times="30" loop-interval="5">
+			<desc>show local service on ap3</desc>
+			<log-file>step13_show_local_service.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="14">
+			<desc>modify filter rule 2 before 1</desc>
+			<log-file>step14_modify.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 2 before rule 1"
+			</ssh>
+		</step>
+		
+		<step no="15">
+			<desc>restart bgd</desc>
+			<log-file>step15_restart_bgd.log</log-file>
+			<ssh target="ap2">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</ssh>
+		</step>
+		
+		<step no="15.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>step15.1_show_bon_sta.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="16" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the logging buffer</desc>
+			<log-file>ste16_log_buf.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered | include \"filter rule\""
+			</ssh>
+			<log-match>-i "entry Apple TV._airplay._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry Apple TV._airplay._tcp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._touch-able._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._touch-able._tcp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._appletv-v2._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._appletv-v2._tcp. matches filter rule 2"</log-match>
+			<log-match>-i "entry 70-35-60-63.1 Apple TV._sleep-proxy._udp. matches filter rule 1"</log-match>
+			<log-match>-i "entry 70-35-60-63.1 Apple TV._sleep-proxy._udp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<log-match>-i "entry 600308CBE085@Apple TV._raop._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry 600308CBE085@Apple TV._raop._tcp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="17" type="loop-check" loop-max-times="30" loop-interval="5">
+			<desc>show local service on ap2</desc>
+			<log-file>step17_show_local_service.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="18">
+			<desc>delete filter rule 1</desc>
+			<log-file>step18_delete.log</log-file>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "no bonjour-gateway filter rule 1"
+			</ssh>
+		</step>
+		
+		<step no="19">
+			<desc>restart bgd</desc>
+			<log-file>step19_restart_bgd.log</log-file>
+			<ssh target="ap2">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</ssh>
+		</step>
+		
+		<step no="19.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>step19.1_show_bon_sta.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="20" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the logging buffer</desc>
+			<log-file>ste20_log_buf.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered | include \"filter rule\""
+			</ssh>
+			<log-match>-i "service Apple TV._airplay._tcp. doesn't match any filter rule."</log-match>
+			<log-match>-i "entry Apple TV._airplay._tcp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<log-match>-i "service AC37A4A9C4207EE2._touch-able._tcp. doesn't match any filter rule."</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._touch-able._tcp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._appletv-v2._tcp. matches filter rule 2"</log-match>
+			<log-match>-i "service 70-35-60-63.1 Apple TV._sleep-proxy._udp. doesn't match any filter rule."</log-match>
+			<log-match>-i "entry 70-35-60-63.1 Apple TV._sleep-proxy._udp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<log-match>-i "service 600308CBE085@Apple TV._raop._tcp. doesn't match any filter rule."</log-match>
+			<log-match>-i "entry 600308CBE085@Apple TV._raop._tcp. doesn't match filter rule 2 because service is not matched."</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="21" type="loop-check" loop-max-times="30" loop-interval="5">
+			<desc>check service on ap2</desc>
+			<log-file>step21_local_service.log</log-file>
+			<ssh target="ap2">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>check bgscan in dfs channel</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Set wifi1 mode to access
+		Set country code to 826
+		Set wifi1 bgscan interval to 1 minute
+
+		Test Procedure:
+
+		1. enable dfs
+		2. open bgscan debug:
+		_kdebug wifi-driver-wifi1.1 scan
+		Debug console
+		3. check active or passive scan in dfs channel
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	
+	<property name="ap.log.file" value="show_logging_debug.log" />
+	
+	<stage>
+		<if>"${ap1.wifi1.existed}" == "true"</if>
+		<step no="1">
+			<desc>
+				change the region code.
+				"boot-param region world"
+				"boot-param country-code 826"
+				"Note: To apply radio setting for the new country code, you must reboot the HiveAP.
+				Do you want to reboot it now? &lt;Y/N&gt;y"
+			</desc>
+			<console target="ap1" timeout="90">
+				-v "boot-param region world"
+				-v "boot-param country-code 826"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="2">
+			<desc>
+				Initial configuration:
+				"radio profile na"
+				"radio profile na phymode 11na"
+				"interface wifi1 radio profile na"
+				"radio profile ng"
+				"radio profile ng phymode 11ng"
+				"radio profile na dfs"
+				"interface wifi0 radio profile ng"
+				"ssid test"
+			</desc>
+			<log-file>ap_config_1.log</log-file>
+			<console target="ap1">
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "interface wifi1 ssid ${ssid.name}1"
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "radio profile na dfs"
+				-v "interface wifi1 radio profile na"
+				-v "radio profile ng"
+				-v "radio profile ng phymode 11ng"
+				-v "interface wifi0 radio profile ng"
+				-v "interface wifi0 radio channel 6"
+				-v "interface wifi1 radio channel 36"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>
+				7.set the background scan interval of wifi1 to 1 minute.
+				"radio profile na scan access interval 1"
+			</desc>
+			<log-file>ap_config_4.log</log-file>
+			<console target="ap1">
+				-v "radio profile na scan access interval 1"
+			</console>
+
+		</step>
+		<step no="4">
+			<desc>
+				8.open debug mode.
+				"_kdebug wifi-driver wifi1.1 scan"
+			</desc>
+			<log-file>add_debug_2.log</log-file>
+			<console target="ap1">
+				-v "_kdebug wifi-driver wifi1.1 scan"
+			</console>
+
+		</step>
+		<step no="5" delay="180">
+			<desc>
+				9.wait about 4 minute,background scan function will work,it will scan wifi1's
+				channel.the channel value is same with channel list {ch}. the channel information is
+				in the logging buffer printed on screen.
+				"show logging buffer | include self"
+			</desc>
+			<log-file>show_wifi1_bgscan.log</log-file>
+			<console target="ap1">
+				-v "show logging buffer | include \"passive=1\""
+			</console>
+			<no-error-check />
+		</step>
+		
+		<step no="6">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi1_logbuffer.log</log-file>
+			<console target="ap1" timeout="120">
+				-v "show logging buffer | in Skip"
+			</console>
+			<no-error-check />
+		</step>
+		
+		<step no="6.1">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi1_logbuffer.log</log-file>
+			<setvar name="jump-check">
+				cat ${log.dir}/${log.file} |grep "Skip bg-scan due to high load" >/dev/null; 
+				if [ $? -eq 0 ]; then echo true; else echo false; fi
+			</setvar>
+			<no-error-check />
+		</step>
+		
+		
+		<step no="7">
+		  <if>"${jump-check}" != "true"</if>
+			<desc>match all channel	</desc>
+			<log-file>find_wifi1_channel.log</log-file>
+			<script>
+				perl ${case.dir}/bin/check-scan-channel.pl ${log.dir}/show_wifi1_bgscan.log dfswifi140 > ${log.dir}/${log.file}
+			</script>
+		</step>
+	</stage>
+	
+	<post-process>
+        <stage>
+            <step no="10">
+                <desc>
+                change the region code.
+              </desc>
+              <console target="ap1">
+                -v "boot-param region FCC"
+                -v "reset config"
+            </console>
+        </step>
+        </stage>
+        <include prefix="def_post" file="include/default_post_process.xml" />
+  </post-process> 
+	
+</testcase>

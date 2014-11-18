@@ -1,0 +1,336 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Set tunnel to nonsplit mode on AP, nonsplit DNS mode, check DNS </brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Set interface eth0 to wan mode
+		Set interface eth1 to access mode and enable mac-learning
+		Eth0 can obtain ip address from DHCP server
+		Disable dhcp client on mgt0 and configure a static ip address
+		Enable DHCP server on interface mgt0.1
+		Enable DNS server on mgt0.1
+		Set DNS server of mgt0.1 to nonsplit mode
+		Set a SSID and bind it to interface wifi0
+		Connect a client to SSID and make client obtain ip address from mgt0.1
+		Only set one internal DNS server dns1
+		Only set one external DNS server dns1
+		Set internal domain name test.com
+		Use Wireshark to capture packet on client and DNS server
+		Set filter _ff id 1 dst-port 53 bidirectional
+		Open debug _kdebug fe basic/detail and debug console
+
+		Test Procedure:
+
+		1. Ping xxx.test.com from client, verify which DNS server be used, and verify if
+		DNS resolution request will through tunnel
+		2. Ping xxx.yyy.com from client, verify which DNS server be used, and verify if
+		DNS resolution request will through tunnel
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+		
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+		<include prefix="1" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+
+		<step no="2.1">
+			<desc>
+				Set interface eth1 to access mode and enable mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+			        -v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"			
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				Enable DHCP server on interface mgt0.1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+			        -v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				Enable DNS server on mgt0.1
+				Only set one internal DNS server dns1
+				Only set one external DNS server dns1
+				Set internal domain name test.com
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 dns-server int-domain-name ${cvg1.dns1.domain1}"
+				-v "interface mgt0.1 dns-server int-resolve dns1 ${cvg1.dns1.ip}"
+				-v "interface mgt0.1 dns-server ext-resolve dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dns-server mode nonsplit"
+				-v "interface mgt0.1 dns-server enable"
+			</telnet>
+		</step>
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns1.route=$(echo ${cvg1.dns1.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+		
+		<step no="2.4">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		
+		<step no="2.5">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>Check route distribution is correct</desc>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>On GW, will add the tunnel routes according to BR's modification </desc>
+			<log-file>3.1.show_route_cvg_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="15">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="3.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>3.2_show_l3_ip_route_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.dns1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+		</step>	
+
+		<step no="4">
+			<desc>
+				Bind user-profile with l3-tunnel-action all on both wifi radio and wired eth interfaces
+				Enable debug, Check BR connectivities
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "routing match-map mlan1 user-profile lan1 to any"
+				-v "routing route-map rlan1 via encrypted"
+				-v "routing policy plan1 id 1 match-map mlan1 route-map rlan1"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				Set filter _ff id 1 dst-port 53 bidirectional,Open debug _kdebug fe basic/detail and debug console
+			</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "clear log buffered"
+				-v "_ff id 1 dst-port 53 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>
+				packet capture on internal dns1 server
+			</desc>
+			<log-file>step6_dns1_packet_capture.log</log-file>
+			<ssh host="${cvg1.dns1.mip}">
+				-v "nohup tshark -l -i ${cvg1.dns1.tif.name} ip proto 17 and src ${br1.br.mgt0.1.ip} &gt; ${job.id}dns1_ping_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				get cvg1.dns1 tshark process
+			</desc>
+			<setvar name="dns1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_dns1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				packet capture on external dns server
+			</desc>
+			<log-file>step6_pubdns1_packet_capture.log</log-file>
+			<ssh host="${pub.dns1.ip}">
+				-v "nohup tshark -l -i ${pub.dns1.tif.name} ip proto 17 and src ${br1.br.mgt0.1.ip} &gt; ${job.id}extdns_ping_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				get pub.dns1 tshark process
+			</desc>
+			<setvar name="pubdns1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_pubdns1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.4" delay="10">
+			<desc>
+				br1.vpc1 ping internal domain name
+			</desc>
+			<log-file>vpc1_ping_internal_domain.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.dns1.domain1} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.dns1.domain1}" -i "ttl="</log-match>
+		</step>
+
+		<step no="6.5">
+			<desc>
+				check DNS request on internal dns1 server
+			</desc>
+			<log-file>6.5.intdns_check_ping_packet.log</log-file>
+			<ssh host="${cvg1.dns1.mip}">
+				-v "kill -9 ${dns1.tshark.id_1}"
+				-v "cat ${job.id}dns1_ping_1.log | grep ${br1.br.mgt0.1.ip} --color=never"
+				-v "rm -f ${job.id}dns1_ping_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.br.mgt0.1.ip} -&gt; ${cvg1.dns1.ip}.+DNS.+Standard query.+A.+${cvg1.dns1.domain1}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.6">
+			<desc>
+				check DNS request on external dns server
+			</desc>
+			<log-file>6.6.extdns_check_ping_packet_int.log</log-file>
+			<ssh host="${pub.dns1.ip}">
+				-v "kill -9 ${pubdns1.tshark.id_1}"
+				-v "cat ${job.id}extdns_ping_1.log | grep ${br1.br.mgt0.1.ip} --color=never"
+				-v "rm -f ${job.id}extdns_ping_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.br.mgt0.1.ip} -&gt; ${pub.dns1.ip}.+DNS.+Standard query.+A.+${cvg1.dns1.domain1}" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				packet capture on internal dns1 server
+			</desc>
+			<log-file>step7_dns1_packet_capture.log</log-file>
+			<ssh host="${cvg1.dns1.mip}">
+				-v "nohup tshark -l -i ${cvg1.dns1.tif.name} ip proto 17 and src ${br1.br.mgt0.1.ip} &gt; ${job.id}dns1_ping_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				get cvg1.dns1 tshark process
+			</desc>
+			<setvar name="dns1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_dns1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				packet capture on external dns server
+			</desc>
+			<log-file>step7_pubdns1_packet_capture.log</log-file>
+			<ssh host="${pub.dns1.ip}">
+				-v "nohup tshark -l -i ${pub.dns1.tif.name} ip proto 17 and src ${br1.br.mgt0.1.ip} &gt; ${job.id}extdns_ping_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="7.3">
+			<desc>
+				get pub.dns1 tshark process
+			</desc>
+			<setvar name="pubdns1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_pubdns1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="7.4" delay="10">
+			<desc>
+				br1.vpc1 ping pub.dns1.domain1 name
+			</desc>
+			<log-file>7.4.vpc1_ping_internal_domain.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.domain1} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${pub.dns1.domain1}" -i "ttl="</log-match>
+		</step>
+
+		<step no="7.5">
+			<desc>
+				check DNS request on internal dns1 server
+			</desc>
+			<log-file>7.5.intdns_check_ping_packet.log</log-file>
+			<ssh host="${cvg1.dns1.mip}">
+				-v "kill -9 ${dns1.tshark.id_1}"
+				-v "cat ${job.id}dns1_ping_1.log | grep ${br1.br.mgt0.1.ip} --color=never"
+				-v "rm -f ${job.id}dns1_ping_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.br.mgt0.1.ip} -&gt; ${cvg1.dns1.ip}.+DNS.+Standard query.+A.+${pub.dns1.domain1}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7.6">
+			<desc>
+				check DNS request on external dns server
+			</desc>
+			<log-file>7.6.extdns_check_ping_packet_int.log</log-file>
+			<ssh host="${pub.dns1.ip}">
+				-v "kill -9 ${pubdns1.tshark.id_1}"
+				-v "cat ${job.id}extdns_ping_1.log | grep ${br1.br.mgt0.1.ip} --color=never"
+				-v "rm -f ${job.id}extdns_ping_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.br.mgt0.1.ip} -&gt; ${pub.dns1.ip}.+DNS.+Standard query.+A.+${pub.dns1.domain1}" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+	</stage>
+
+	<failed-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					kill tshark process on cvg1.dns1
+				</desc>
+				<ssh host="${cvg1.dns1.mip}">
+					-v "kill -9 ${dns1.tshark.id_1}"
+					-v "rm -f ${job.id}dns1_ping_1.log"
+				</ssh>
+				<no-error-check />
+			</step>
+
+			<step no="0.2">
+				<desc>
+					kill tshark process on pub.dns1
+				</desc>
+				<ssh host="${pub.dns1.ip}">
+					-v "kill -9 ${pubdns1.tshark.id_1}"
+					-v "rm -f ${job.id}extdns_ping_1.log"
+				</ssh>
+				<no-error-check />
+			</step>
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+</testcase>
+

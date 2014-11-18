@@ -1,0 +1,136 @@
+<testcase>
+	<brief> Broadcast traffic between eth0 and wifi interfaces </brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Topology to use
+		Switch——laptop2
+		|
+		Laptop1---------Portal
+		Objective
+		Broadcast traffic between eth0 and wifi interfaces
+		Pre-condition
+		-laptop2 and laptop1 are in same vlan
+		-make sure the wifi1 interface is up on portal
+		Test procedure
+		-laptop1 sends broadcast like ARP request etc, to portal result 1
+		-laptop2 sends broadcast like ARP request etc, to portal result 2
+		Expect result
+		- portal will relay this broadcast to ${ssid_bind_interface},wifi1 and eth0 interface.
+		- portal will relay this broadcast to ${ssid_bind_interface},wifi1
+	</description>
+	<property name="unknow_ip" value="192.168.${tb.vlan1}.199" />
+	<stage>
+		<step no="1">
+			<desc>Set SSID for DUT1 via ssh to</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite open"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile fw qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="3.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>Open debug cli</desc>
+			<ssh target="ap1">
+				-v "_ff src-mac ${sta1.tif.mac} etype 0806 bi"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<include prefix="5" file="subs/sta_ping.xml" args="sta1,  ${unknow_ip}, 4,negative" />
+
+		<step no="6">
+			<desc>show log buffer</desc>
+			<log-file>log_buf.log</log-file>
+			<ssh target="ap1">
+				-v "show log buf"
+			</ssh>
+			<no-error-check />
+			<log-match> -e "\[fe\]: flood the packet out ${ssid_bind_interface}.1"</log-match>
+			<log-match>-e "\[fe\]: dst-ip ${unknow_ip} doesn't match ip device (mgt0) IP, drop pkt"</log-match>
+			<log-match>-e "\[fe\]: flood the packet out eth0"</log-match>
+		</step>
+		<step no="6.1">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>show log buffer</desc>
+			<log-file>log_buf.log</log-file>
+			<log-match> -e "\[fe\]: flood the packet out wifi1.1"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>show Master pc's mac</desc>
+			<log-file>master_info.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name} > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="8">
+			<desc>get Master pc's mac</desc>
+			<setvar name="master_mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/master_info.log -i ${mpc.tif.name} -m -width 4
+			</setvar>
+			<no-error-check />
+		</step>
+
+		<step no="9">
+			<desc>open debug cli</desc>
+			<ssh target="ap1">
+				-v "no _ff id 1"
+				-v "_ff src-mac ${master_mac} etype 0806 bi"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>Ping from Master pc to ${unknow_ip}</desc>
+			<script>
+				sleep 2; arp -d ${unknow_ip}; ping ${unknow_ip} -c 2;exit 0
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="11">
+			<desc>show log buffer</desc>
+			<log-file>Master_log_buf.log</log-file>
+			<ssh target="ap1" timeout="1000">
+				-v "show log buf"
+			</ssh>
+			<no-error-check />
+			<log-match>-e "\[fe\]: flood the packet out ${ssid_bind_interface}.1"</log-match>
+			<log-match>-e "\[fe\]: eth0 no broadcast out from incoming port"</log-match>
+			<log-match>-e "\[fe\]: dst-ip ${unknow_ip} doesn't match ip device (mgt0) IP, drop pkt"</log-match>
+		</step>
+		<step no="11.1">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>show log buffer</desc>
+			<log-file>Master_log_buf.log</log-file>
+			<log-match> -e "\[fe\]: flood the packet out wifi1.1"</log-match>
+		</step>
+
+	</stage>
+</testcase>

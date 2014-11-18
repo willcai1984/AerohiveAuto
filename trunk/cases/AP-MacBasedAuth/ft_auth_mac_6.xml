@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mac format with delimiter dash</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a user on radius server,like AA-BB-CC-DD-EE-FF,passwd is the same
+
+		Test Procedure:
+		-config a security-object, enable mac auth
+		‘security-object xxxx security additional-auth-method mac-based-
+		auth'
+		-config the mac format, choose style delimiter is dash, style is file-
+		delimiter, case-sensitivity is upper-case
+		‘aaa mac-format delimiter dash'
+		-bind the security-object to ssid, bind the ssid to wifi interface, result
+		1,2
+		-STA1 connects to ssid with the right mac on radius server, result 3
+		-STA2 connects to ssid, the mac doesn't exist on radius server, result
+		4,5,6
+		-check the status of STA on AP, result 7
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.auth_negative_test" value="true" />
+	<property name="conn2.dhcp_negative_test" value="true" />
+
+	<stage>
+		<step no="0">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig wlan0 up"
+				-v "ifconfig"
+			</ssh>
+		</step>
+
+		<step no="0.1">
+			<desc>Get sta1's mac with five delimiter</desc>
+			<setvar name="sta1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -o Linux -m -uppercase -dash
+			</setvar>
+		</step>
+
+		<step no="0.2">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>step0.2_ifconfig.log</log-file>
+			<ssh target="sta2">
+				-v "ifconfig wlan0 up"
+				-v "ifconfig"
+			</ssh>
+		</step>
+
+		<step no="0.3">
+			<desc>Get sta2's mac with five delimiter</desc>
+			<setvar name="sta2.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.2_ifconfig.log -i ${sta2.tif.name} -o Linux -m -uppercase -dash
+			</setvar>
+		</step>
+
+		<step no="0.4">
+			<desc>Get sta2's mac with five delimiter</desc>
+			<setvar name="sta2.tif.mac.width5">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.2_ifconfig.log -i ${sta2.tif.name} -o Linux -m -uppercase
+			</setvar>
+		</step>
+
+		<include prefix="1" file="subs/ldap_add.xml" args="${sta1.mac}, ${sta1.mac}" />
+
+		<step no="2">
+			<desc>
+				-config an account on radius server, username and password are both
+				the mac addr of STA1, it will return a vlan id after radius auth success
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object ${ssid.name} security additional-auth-method mac-based-auth"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id ${tb.vlan2} attribute 1"
+				-v "aaa mac-format case-sensitivity upper-case"
+				-v "aaa mac-format delimiter dash"
+				-v "aaa mac-format style five-delimiter"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>step3_show_running_config.log</log-file>
+			<ssh target="ap1">
+				-v "show running-config"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>step3.1_show_rad_srv.log</log-file>
+			<ssh target="ap1">
+				-v "show aaa"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "AAA mac-format example: \S{2}-\S{2}-\S{2}-\S{2}-\S{2}-\S{2}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>show status of radius server on AP1</desc>
+			<ssh target="ap1">
+				-v "_debug auth all"
+				-v "_kde wifi-driver wifi0.1 assoc"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="6">
+			<desc>save debug on AP2</desc>
+			<log-file>show_debug.log</log-file>
+			<ssh target="ap1" timeout="200">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-i "wifi0.1: ACL: add mac ${sta2.tif.mac.width5}" -i "action deny, dynamic" -c</log-match>
+			<log-match>-i "wifi0.1: \[${sta2.tif.mac.width5}\]" -i "auth: disallowed by ACL" -c</log-match>
+			<log-match>-c -i " MAC-based auth: RADIUS server send reject to station ${sta2.tif.mac}"</log-match>
+			<log-match>-i "authentication FAILED, type RADIUS, username ${sta2.mac}"</log-match>
+			<log-match>-c -i "MAC-based auth: ban ${sta2.tif.mac} form dev wifi0.1"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				- 'sh ssid xxx sta',
+			</desc>
+			<log-file>step7_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " ${tb.vlan2} *yes *1"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-'sh roa ca mac xxx'
+			</desc>
+			<log-file>step8_show_roaming.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YNNN"</log-match>
+			<log-match>-n -c -i "${sta2.tif.mac}"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step9_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "open"</log-match>
+			<log-match>-n -c -i "${sta2.tif.mac}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="0" file="subs/ldap_delete.xml" args="${sta1.mac}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Self healing test</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Set the following config in AP:
+		security-object zhhtest
+		security-object zhhtest default-user-profile-attr 1
+		ssid zhhtest
+		ssid zhhtest security-object zhhtest
+		interface wifi0 ssid zhhtest
+		user-profile uu qos-policy def-user-qos vlan-id 1 attribute 1
+		ip-policy xx
+		ip-policy xx id 1 service tftp action permit
+		ip-policy xx id 2 service dhcp-server action permit
+		ip-policy xx id 3 service dhcp-client action permit
+		ip-policy xx id 4 service icmp action permit
+		user-profile uu security ip-policy from-access xx
+		alg tftp enable
+		alg tftp inactive-data-timeout 120
+		Laptop connect to SSID of AP and obtain ip address
+		_debug fe alg_tftp_error
+		_debug fe alg_tftp_fsm
+		_debug fe alg_tftp_gate
+		_debug fe alg_tftp_pkt
+		_ff id 1 src-mac xxxx:yyyy:zzzz bidirectional
+		_kdebug fe basic
+		_kdebug fe detail
+		debug console
+		clear forwarding-engine ip-sessions
+
+		Test Procedure:
+		1. Kill fed process in shell, check if process can restart
+		2. Laptop send data to tftp server, verify if control/data session can be created
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-1" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				security-object zhhtest
+				security-object zhhtest default-user-profile-attr 1
+				ssid zhhtest
+				ssid zhhtest security-object zhhtest
+				interface wifi0 ssid zhhtest
+				user-profile uu qos-policy def-user-qos vlan-id 1 attribute 1
+				ip-policy xx
+				ip-policy xx id 1 service tftp action permit
+				ip-policy xx id 2 service dhcp-server action permit
+				ip-policy xx id 3 service dhcp-client action permit
+				ip-policy xx id 4 service icmp action permit
+				user-profile uu security ip-policy from-access xx
+				alg tftp enable
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${conn1.ssid}"
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "user-profile uu attribute 1"
+				-v "ip-policy xx"
+				-v "ip-policy xx id 1 service tftp action permit"
+				-v "ip-policy xx id 2 service dhcp-server action permit"
+				-v "ip-policy xx id 3 service dhcp-client action permit"
+				-v "ip-policy xx id 4 service icmp action permit"
+				-v "user-profile uu security ip-policy from-access xx"
+				-v "alg tftp enable"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				Kill fed process
+			</desc>
+			<log-file>step3_kill_fed_process.log</log-file>
+			<telnet target="ap1" prompt="AH.*$">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "killall -9 fed"
+				-v "ps"
+				-v "exit 0"
+				-v ""
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "killall -9 fed" -p "fed" -nb -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.1" delay="10">
+			<desc>
+				check if process can restart
+			</desc>
+			<log-file>step3.1_check_process.log</log-file>
+			<telnet target="ap1" prompt="AH.*$">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "ps"
+				-v "exit 0"
+				-v ""
+			</telnet>
+			<log-match>-i "fed"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				_debug fe alg_tftp_error
+				_debug fe alg_tftp_fsm
+				_debug fe alg_tftp_gate
+				_debug fe alg_tftp_pkt
+				_ff id 1 src-mac xxxx:yyyy:zzzz bidirectional
+				_kdebug fe basic
+				_kdebug fe detail
+				debug console
+				clear forwarding-engine ip-sessions
+			</desc>
+			<telnet target="ap1">
+				-v "_debug fe alg_tftp_error"
+				-v "_debug fe alg_tftp_fsm"
+				-v "_debug fe alg_tftp_gate"
+				-v "_debug fe alg_tftp_pkt"
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				- creat file on tftp
+			</desc>
+			<ssh host="${pub.tftp1.ip}">
+				-v "touch /tftpboot/${job.id}newfile"
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				- get file from tftp
+			</desc>
+			<log-file>step4.2_get_file.log</log-file>
+			<ssh target="sta1">
+				-v "tftp ${pub.tftp1.tip} -c get ${job.id}newfile"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				Check control session and data session by show forwarding-engine ip-sessions
+			</desc>
+			<log-file>step5_show_session.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${pub.tftp1.tip}/69 -> ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+ -> ${pub.tftp1.tip}/69" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="6" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step6_show_logging_buffered.log" />
+
+		<step no="6.1">
+			<desc>
+				check log
+			</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "QoS: first pkt IP session action=\d+ qos=\d+" p "QoS: first pkt processing:ALG=\d+" p "create new IP session, id \[\d+\] from-gate ageout \d+ sec" p "matched gate ${pub.tftp1.tip}/\d+ ->${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+	
+	<post-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					clear file
+				</desc>
+				<ssh target="sta1">
+					-v "rm -f ${job.id}newfile"
+				</ssh>
+			</step>
+			
+			<step no="0.2">
+				<desc>
+					clear file on tftp
+				</desc>
+				<ssh host="${pub.tftp1.ip}">
+					-v "rm -f /tftpboot/${job.id}newfile"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Session setup for snmp traffic</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Config the ip-policy that permit snmp traffic between Laptop and Server
+		"ip-policy FW-0"
+		"ip-policy FW-0 service [snmp] [from/to] &lt;Laptop ip addr&gt; action permit"
+		2) Laptop connects to AP1, and uses MIB tool to operate AP1
+		3) Show the ip-session
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="comm_pw" value="aerohivecomm" />
+	<property name="user_id" value="FW" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Laptop uses user-profile "FW"
+			</desc>
+			<telnet target="ap1">
+				-v "snmp reader version v2c community ${comm_pw}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} manage snmp"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</telnet>
+		</step>
+
+		<step no="show.snmp.info">
+			<desc>
+				show snmp info
+			</desc>
+			<log-file>show.snmp.info_snmp_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show snmp"
+			</telnet>
+		</step>
+
+		<step no="get.contact.info">
+			<desc>
+				get snmp contact info
+			</desc>
+			<setvar name="ap1.snmp.contact">
+				${bin.dir}/getbyrexp.py -p "Syscontact:\s*(\S+)\s*" -t str -f ${log.dir}/show.snmp.info_snmp_ap1.log
+			</setvar>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				1) Config the ip-policy that permit snmp traffic between Laptop and Server
+				"ip-policy FW-0"
+				"ip-policy FW-0 service [snmp] [from/to] &lt;Laptop ip addr&gt; action permit"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${sta1.tif.ip} service snmp action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				2) Laptop connects to AP1, and uses MIB tool to operate AP1
+			</desc>
+			<log-file>snmp.hostname_snmp_ap1.log</log-file>
+			<ssh target="sta1" timeout="180">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c ${comm_pw} .1.3.6.1.2.1.1.4 "
+			</ssh>
+			<log-match>-i "SNMPv2-MIB::sysContact.0 = STRING: ${ap1.snmp.contact}"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				3) Show the ip-session
+			</desc>
+			<log-file>step5_show_forwarding_engine_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.ip}" -i "${ap1.mgt0.ip}/161" -i "Proto 17"</log-match>
+		</step>
+
+		<step no="6" delay="30">
+			<desc>
+				check log
+			</desc>
+			<log-file>step6_show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(u\) mgt0 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) UDP" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[${user_id}\] id \[1\] \[permit\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) UDP" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

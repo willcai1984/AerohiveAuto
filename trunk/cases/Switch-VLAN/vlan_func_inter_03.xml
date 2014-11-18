@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=2) Vlan works with link aggregation</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	          
+		IXIA PORT1+++++Switch=====IXIA PORT2(IXIA)
+
+		Description	Vlan works with link aggregation
+		Platform Dependence	SR2024
+		Pre-condition	?	Reset config of switch to factory default
+		?	Create vlan related vlan first on switch
+		?	Switch port2,port3 are works as aggregation port, port-channel1
+		?	The port-channel connect to IXIA or IXIA PORT2
+		?	IXIA PORT1 connect to switch port1
+		?	IXIA PORT1 are in same vlan, 10
+		Test procedure	1.	Config port-channel as access port, pvid is 10         Result1
+		2.	Set IXIA PORT2 to capture frames
+		3.	IXIA PORT1 send broadcast frames to IXIA PORT2           Result2
+		4.	Config port-channel as trunk port, pvid is 20, allow 10,20     Result3
+		5.	IXIA PORT1 send vlan10, vlan 20 tagged broadcast  frames to IXIA PORT2        Result4
+		Expect result	Result1:  port-channel can be configured as access port, switch port2,port3 have the same attributes with port-channel, pvid is 10, mode is access.
+		?pass
+		Result2:  IXIA PORT2 should receive the frames, and the frames are untagged
+		?pass
+		Result3:  port-channel can be configured as trunk port, pvid is 20, allow 10, 20, and the member ports has the same attributes with port-channel
+		?pass
+
+		AH-66e280#show port-channel 13
+		Aggregation ID:  13, Aggregation Type:  Manual
+		Index  Port                 LinkState       if_mode 
+		---------------------------------------------------
+		1      gigabitethernet1/11  up              trunk   
+		2      gigabitethernet1/12  up              trunk   
+		AH-66e280#show int g1/11 sw
+		AH-66e280#show int g1/11 switchport 
+		Name: gigabitethernet1/11 
+		Switchport: enable 
+		Port Mode: trunk 
+		Static Trunking Native VLAN: 1 
+		Static Voice VLAN: 0 
+		Dynamic Voice VLAN: 0 
+		Dynamic Auth VLAN: 0 
+		Trunking VLANs Enabled: 
+		1    10   20   25   30   60   100  
+		sAH-66e280#show int g1/12 sw
+		AH-66e280#show int g1/12 switchport 
+		Name: gigabitethernet1/12 
+		Switchport: enable 
+		Port Mode: trunk 
+		Static Trunking Native VLAN: 1 
+		Static Voice VLAN: 0 
+		Dynamic Voice VLAN: 0 
+		Dynamic Auth VLAN: 0 
+		Trunking VLANs Enabled: 
+		1    10   20   25   30   60   100  
+		sAH-66e280#show int p13 sw
+		AH-66e280#show int p13 switchport 
+		Name: port-channel13 
+		Port Mode: trunk 
+		Trunking Native VLAN: 1 
+		Trunking VLANs Enabled: 
+		1    10   20   25   30   60   100  
+
+		Result4:   IXIA PORT2 should receive the frames, and the frames received are vlan 10 tagged, and untagged frames.
+		?pass
+
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0015"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0016"/>
+	<property name="sw1.port3.ixia_port.mac" value="0000.0000.0017"/>
+
+	<stage>
+		<step no="1">
+			<desc>
+				configure switch, port2 and port3 are aggregation port, all ports are in the same vlan
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "agg 1"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} agg 1"
+				-v "interface ${sw1.port3} agg 1"
+				-v "interface agg1 switchport access vlan ${tb.vlan1}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show agg 1"
+				-v "show interface ${sw1.port2} switchport"
+				-v "show interface ${sw1.port3} switchport"
+			</telnet>
+		</step>
+		<property name="stream1.txport1" value="${sw1.port1.ixia_port}" />
+		<property name="stream1.rxport1" value="${sw1.port2.ixia_port}" />
+		<property name="stream1.rxport2" value="${sw1.port3.ixia_port}" />
+		<property name="stream1.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+		<property name="stream1.rxport1.mac" value="ffff.ffff.ffff" />
+		<property name="stream1.etype" value="0x0800" />
+		<property name="stream1.UDFoffset" value="34" />
+		<property name="stream1.patternOffset2" value="34" />
+		<step no="2.1">
+			<desc>
+				port1 sends broadcast pkt to vlan ${tb.vlan1}
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}" 
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport1},${stream1.rxport2}
+				-mac_dst ${stream1.rxport1.mac}
+				-mac_src ${stream1.txport1.mac}
+				-mac_dst_count 2
+				-eth2_protocol ${stream1.etype}
+				-udf_offset ${stream1.UDFoffset}
+				-patternOffset2 ${stream1.patternOffset2}"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport1},${stream1.rxport2}"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${stream1.txport1} -txStParaList framesSent -rxPortList ${stream1.rxport1},${stream1.rxport2} -rxStParaList userDefinedStat2,userDefinedStat2"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="2.2">
+			<desc>check FDB, mac learned by sr2000</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		<step no="2.3">
+			<desc>
+				analyse statistics on rxport 
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<log-match>-e "sequence 0 check_sum_equal_tx_with_rx ${stream1.txport1} framesSent ${stream1.rxport1},${stream1.rxport2} userDefinedStat2,userDefinedStat2 result is equal"</log-match>
+			<no-error-check />
+		</step>
+		<step no="3">
+			<desc>
+				configure switch, change aggregation port to trunk
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan2}"
+				-v "no interface ${sw1.port1} switchport access vlan"
+				-v "no interface agg1 switchport access vlan"
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface agg1 switchport mode trunk"
+				-v "interface agg1 switchport trunk native vlan ${tb.vlan2}"
+				-v "no interface agg1 switchport trunk allow vlan all"
+				-v "interface agg1 switchport trunk allow vlan ${tb.vlan1}"
+				-v "interface agg1 switchport trunk allow vlan ${tb.vlan2}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show vlan id ${tb.vlan2}"
+				-v "show agg 1"
+				-v "show interface ${sw1.port2} switchport"
+				-v "show interface ${sw1.port3} switchport"
+			</telnet>
+		</step>
+
+		<property name="stream2.txport1" value="${sw1.port1.ixia_port}" />
+		<property name="stream2.rxport1" value="${sw1.port2.ixia_port}" />
+		<property name="stream2.rxport2" value="${sw1.port3.ixia_port}" />
+		<property name="stream2.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+		<property name="stream2.rxport1.mac" value="ffff.ffff.ffff" />
+		<property name="stream2.txvlan" value="${tb.vlan1}" />
+		<property name="stream2.etype" value="0x0800" />
+		<property name="stream2.UDFoffset" value="38" />
+		<property name="stream2.patternOffset2" value="38" />
+		<step no="4.1">
+			<desc>add udf1 to check vlan${stream2.txvlan}</desc>
+			<setvar name="stream2.UDFsignature1">
+				echo "8100`printf %04x ${stream2.txvlan}`"
+			</setvar>
+		</step>
+		<step no="4.2">
+			<desc>
+				port1 sends broadcast pkt to vlan ${tb.vlan1} 
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}" 
+				-v ""
+
+				-v "traffic_configure_eth2 -portListIn ${stream2.txport1},${stream2.rxport1},${stream2.rxport2}
+				-mac_dst ${stream2.rxport1.mac}
+				-mac_src ${stream2.txport1.mac}
+				-mac_dst_count 2
+				-vlan enable
+				-vlan_id ${stream2.txvlan}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-eth2_protocol ${stream2.etype}
+				-udf_offset ${stream2.UDFoffset}
+				-patternOffset2 ${stream2.patternOffset2}
+				-pattern1In 0x${stream2.UDFsignature1}
+				-patternMask1In 0x00000000
+				-patternOffset1 12
+				-userDefinedStat2Pattern pattern1AndPattern2"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${stream2.txport1} -rxPortList ${stream2.rxport1},${stream2.rxport2}"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${stream2.txport1} -txStParaList framesSent -rxPortList ${stream1.rxport1},${stream2.rxport2} -rxStParaList userDefinedStat2,userDefinedStat2"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="4.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		<step no="4.4">
+			<desc>
+				analyse statistics on rxport 
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<log-match>-e "sequence 0 check_sum_equal_tx_with_rx ${stream2.txport1} framesSent ${stream2.rxport1},${stream2.rxport2} userDefinedStat2,userDefinedStat2 result is equal"</log-match>
+		</step>
+
+		<property name="stream3.txport1" value="${sw1.port1.ixia_port}" />
+		<property name="stream3.rxport1" value="${sw1.port2.ixia_port}" />
+		<property name="stream3.rxport2" value="${sw1.port3.ixia_port}" />
+		<property name="stream3.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+		<property name="stream3.rxport2.mac" value="ffff.ffff.ffff" />
+		<property name="stream3.etype" value="0x0800" />
+		<property name="stream3.txvlan" value="${tb.vlan2}" />
+		<property name="stream3.UDFoffset" value="38" />
+		<property name="stream3.patternOffset2" value="34" />
+
+		<step no="5.1">
+			<desc>
+				port1 sends broadcast pkts to vlan${tb.vlan2}
+			</desc>
+			<log-file>eth2test3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}" 
+				-v ""
+				
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${stream3.txport1},${stream3.rxport1},${stream3.rxport2}
+				-mac_dst ${stream3.rxport2.mac}
+				-mac_src ${stream3.txport1.mac}
+				-vlan enable
+				-vlan_id ${stream3.txvlan}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-eth2_protocol ${stream3.etype}
+				-udf_offset ${stream3.UDFoffset}
+				-patternOffset2 ${stream3.patternOffset2}"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${stream3.txport1} -rxPortList ${stream3.rxport1},${stream3.rxport2}"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${stream3.txport1} -txStParaList framesSent -rxPortList ${stream3.rxport1},${stream3.rxport2} -rxStParaList userDefinedStat2,userDefinedStat2"
+				-v ""
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="5.2">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		<step no="5.3">
+			<desc>
+				analyse statistics on rxport 
+			</desc>
+			<log-file>eth2test3.log</log-file>
+			<log-match>-e "sequence 0 check_sum_equal_tx_with_rx ${stream3.txport1} framesSent ${stream3.rxport1},${stream3.rxport2} userDefinedStat2,userDefinedStat2 result is equal"</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

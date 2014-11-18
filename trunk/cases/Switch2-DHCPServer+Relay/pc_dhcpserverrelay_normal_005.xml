@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that DHCP request and dhcp ack.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test procedure
+		1. DHCP server will send unicast dhcp ack packet when dhcp client
+		only send dhcp request and ciaddr is 0.0.0.0.
+		2. DHCP server will send broadcast dhcp ack packet when dhcp client
+		will set flag as 1.
+		3. DHCP server will send NAK to DHCP client when dhcp client ip
+		address is not in ip-pool.
+
+		Test Procedure:
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="mgt0.1_ip" value="192.168.${tb.vlan4}.5" />
+	<property name="dhcp_start" value="192.168.${tb.vlan4}.10" />
+	<property name="dhcp_start_2" value="192.168.${tb.vlan4}.15" />
+	<property name="dhcp_end" value="192.168.${tb.vlan4}.20" />
+	<property name="def_gw_id" value="192.168.${tb.vlan4}.254" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Config mgt0.1
+			</desc>
+			<log-file>step0_config_mgt0.1.log</log-file>
+			<ssh target="ap1">
+				-v "vlan ${tb.vlan4}"
+				-v "interface vlan ${tb.vlan4}"
+				-v "interface vlan${tb.vlan4} ip ${mgt0.1_ip}/24"
+				-v "interface vlan${tb.vlan4} dhcp-server ip-pool ${dhcp_start} ${dhcp_end}"
+				-v "interface vlan${tb.vlan4} dhcp-server enable"
+				-v "interface vlan${tb.vlan4} dhcp-server options default-gateway ${def_gw_id}"
+				-v "interface vlan${tb.vlan4} dhcp-server options lease-time 120"
+				-v "interface ${sta1.sw.if} switchport mode access"
+				-v "interface ${sta1.sw.if} switchport access vlan ${tb.vlan4}"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				clear arp-cache
+				clear log all
+				_ff id 1 dst-port 67 bidirectional
+				_kdebug fe basic
+				_kdebug fe detail
+				_debug dhcpd basic
+			</desc>
+			<ssh target="ap1">
+				-v "clear arp-cache"
+				-v "clear log all"
+				-v "_ff id 1 dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_debug dhcpd basic"
+			</ssh>
+		</step>
+		
+		<step no="1.2">
+			<desc>1. Connect a PC to switch</desc>
+			<log-file>ifconfig_vpc1_1.log</log-file>
+			<ssh target="sta1" timeout="120">
+				-v "dhclient ${sta1.tif.name}"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getinfo_ip.py -d ${sta1.mif.ip} -i ${sta1.tif.name} -v 'ip' -u ${sta1.user} -p ${sta1.passwd}
+			</setvar>
+		</step>
+		
+		<step no="2" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				AP1 show logging buffered
+				DHCP server will send unicast dhcp ack packet when dhcp client
+				only send dhcp request and ciaddr is 0.0.0.0.
+			</desc>
+			<log-file>step2_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) ${sta1.sw.log.if} 0.0.0.0-&gt;255.255.255.255\(\d+\) ttl\(\d+\) UDP 68-&gt;67 DHCP Request \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<!--  <log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 0.0.0.0-&gt;255.255.255.255\(\d+\) ttl\(\d+\) UDP 68-&gt;67 DHCP Request \d+ bytes" -f ${log.dir}/${log.file}</log-match>-->
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(u\) vlan${tb.vlan4} 0.0.0.0-&gt;255.255.255.255\(\d+\) ttl\(\d+\) UDP 68-&gt;67 DHCP Request \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) vlan${tb.vlan4} ${mgt0.1_ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP 67-&gt;68 DHCP Ack \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) mux0 ${mgt0.1_ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP 67-&gt;68 DHCP Ack \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="2.1">
+			<desc>
+				clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="2.2" delay="120" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Check ip address
+			</desc>
+			<log-file>step2.3_ifconfig_wlan0_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" timeout="120">
+				-v "dhclient ${sta1.tif.name} -r"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match>-n -e "inet addr"</log-match>
+		</step>
+		
+		<step no="2.3">
+			<desc>1. Connect a PC to switch</desc>
+			<log-file>ifconfig_vpc1_2.log</log-file>
+			<ssh target="sta1" timeout="120">
+				-v "dhclient ${sta1.tif.name}"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="sta1.tif.ip.1">
+				${bin.dir}/getinfo_ip.py -d ${sta1.mif.ip} -i ${sta1.tif.name} -v 'ip' -u ${sta1.user} -p ${sta1.passwd}
+			</setvar>
+		</step>
+
+		<step no="3" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				client send a broadcast request packet, dhcp server reply broadcast ACK packet
+			</desc>
+			<log-file>step4_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(u\) vlan${tb.vlan4} 0.0.0.0-&gt;255.255.255.255\(\d+\) ttl\(\d+\) UDP 68-&gt;67 DHCP Request \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+		<!--  	<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 0.0.0.0-&gt;255.255.255.255\(\d+\) ttl\(\d+\) UDP 68-&gt;67 DHCP Request \d+ bytes" -f ${log.dir}/${log.file}</log-match>-->
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) ${sta1.sw.log.if} 0.0.0.0-&gt;255.255.255.255\(\d+\) ttl\(\d+\) UDP 68-&gt;67 DHCP Request \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) vlan${tb.vlan4} ${mgt0.1_ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP 67-&gt;68 DHCP Ack \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) mux0 ${mgt0.1_ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP 67-&gt;68 DHCP Ack \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4">
+			<desc>
+				clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				Change ip-pool of dhcp server
+			</desc>
+			<log-file>step5_Change_ip_pool.log</log-file>
+			<ssh target="ap1">
+				-v "no interface vlan${tb.vlan4} dhcp-server enable"
+				-v "no interface vlan${tb.vlan4} dhcp-server ip-pool ${dhcp_start} ${dhcp_end}"
+				-v "interface vlan${tb.vlan4} dhcp-server ip-pool ${dhcp_start_2} ${dhcp_end}"
+				-v "interface vlan${tb.vlan4} dhcp-server enable"
+			</ssh>
+		</step>
+
+		<step no="5.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				DHCP server will send NAK to DHCP client when dhcp client ip address is not in ip-pool.
+			</desc>
+			<log-file>step5.1_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) ${sta1.sw.log.if} ${sta1.tif.ip}-&gt;${mgt0.1_ip}\(\d+\) ttl\(\d+\) UDP 68-&gt;67 DHCP Request \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(u\) vlan${tb.vlan4} ${sta1.tif.ip}-&gt;${mgt0.1_ip}\(\d+\) ttl\(\d+\) UDP 68-&gt;67 DHCP Request \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) vlan${tb.vlan4} ${mgt0.1_ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP 67-&gt;68 DHCP Nak \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) mux0 ${mgt0.1_ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP 67-&gt;68 DHCP Nak \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

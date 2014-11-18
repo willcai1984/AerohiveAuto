@@ -1,0 +1,319 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Match-map is iif eth1~eth4  </brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+	        note:no the usbmodem and no the vpn tunnel can be establish on usb interface on the testbed,so the usbnet replace with the eth0 on the scrips
+		Pre-Condition:
+		1.	Set interface usbnet0 mode wan
+		2.	Establish a tunnel between BR usbnet0 and CVG
+
+		Test procedure:
+		1.	Set interface eth1 mode access
+		2.	Set  match-map the iif is eth1
+		Routing match-map ma iif eth1 to private
+		Routing match-map ma iif eth1 to any
+		3.	Set a route-map, to vpn network traffic via tunnel interface on usbnet0, and to internet traffic via usbnet0 interface
+		routing route-map rb via usbnet0
+		4.	Bind  match-map to routing policy
+		routing policy  pa id 1 match-map ma route-map  ra
+		5.	Laptop connect to the eth1
+		6.	Laptop send traffic to vpn network, check result1
+		7.	Laptop send traffic to internet, check result2
+		8.	Laptop not connect to eth1
+		9.	Laptop send traffic to vpn network, check result3
+		10.	Laptop send traffic to internet, check result3
+		11.	Set interface eth4 mode access
+		12.	Set a match-map the iif is eth4
+		13.	Set a route-map, to vpn network traffic via tunnel interface on usbnet0, and to internet traffic via usbnet0 interface
+		14.	Bind one match-map to routing policy
+		15.	Laptop connect to the eth4
+		16.	Laptop send traffic to vpn network, check result1
+		17.	Laptop send traffic to internet, check result2
+		18.	Laptop not connect to eth4
+		19.	Laptop send traffic to vpn network, check result3
+		20.	Laptop send traffic to internet, check result3
+		
+		Expect result	
+		Result1:traffic to vpn network via usbnet0, data is encapsulated ,laptop can connect to the vpn network 
+		Result2:traffic to internet via usbnet0, data is not encapsulated , laptop can connect to internet webpage.
+		Result3:traffic are forwarded based  the main route table not based the routing policy.
+        
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<include prefix="1" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+
+		<step no="2">
+			<desc>config BR with WAN interface, nat enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "interface mgt0 ip ${br1.br.mgt0.ip}/${cvg1.cvg.wan.netmask}"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="2.1">
+			<desc>configure mgt0.1  and mgt0.2 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.2 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/24"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server enable"
+			</telnet>
+		</step>
+		<step no="2.2">
+			<desc>
+				Set one user-profile and define the attribute x Bind the security-object to the port.
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vpc1.vlan}"
+				-v "interface eth1 mac-learning enable"
+				-v "security-object lan1"
+				-v "security-object lan1 default-user-profile-attr ${br1.vpc1.vlan}"
+				-v "security-object lan2"
+				-v "security-object lan2 default-user-profile-attr ${br1.vpc2.vlan}"
+				-v "interface eth1 security-object lan1"
+				-v "user-profile fw qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute ${br1.vpc1.vlan}"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute ${br1.vpc2.vlan}"
+				-v "interface eth4 mode bridge-access user-profile-attribute ${br1.vpc2.vlan}"
+				-v "interface eth4 mac-learning enable"
+				-v "interface eth4 security-object lan2"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>get ip address</desc>
+			<log-file>step3_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		<step no="3.1">
+			<desc>br1.vpc4 get ip addr from dhcp server of mgt0.2</desc>
+			<log-file>step3.1_ifconfig_vpc4_.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+			    -v "dhclient ${br1.vpc4.tif.name} -r"
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>set br1.vpc4.tif.ip var for vpc4 on BR side</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<multi-setvar>
+				echo "br1.vpc4.ip.range=$(echo ${br1.vpc4.tif.ip} | cut -d. -f1,2,3).254"
+			</multi-setvar>
+		</step>
+		
+		<step no="4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>ping cvg.vpc1</desc>
+			<log-file>step4_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+		<step no="4.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>ping internet</desc>
+			<log-file>step4.1_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.ftp1.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.ftp1.ip}" -i "ttl="</log-match>
+		</step>
+
+
+		<step no="5">
+			<desc>
+				Set match-map the iif is eth1 Set a route-map, to vpn network traffic via tunnel interface on usbnet0, and to internet traffic via usbnet0 interface
+			</desc>
+			<log-file>step5_Set_match_map.log</log-file>
+			<console target="br1.br">
+				-v "Routing match-map ma iif eth1 to private"
+				-v "Routing match-map mb iif eth1 to any"
+				-v "routing route-map ra via encrypted"
+				-v "routing route-map rb via eth0"
+				-v "routing policy pa id 1 match-map ma route-map ra"
+				-v "routing policy pb id 2 match-map mb route-map rb"
+				-v "show ip rule"
+			</console>
+		</step>
+
+		<step no="5.1">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+		<step no="5.2">
+			<desc>
+				open debug
+			</desc>
+			<log-file>step5.2_Set_match_map.log</log-file>
+			<console target="br1.br">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 1"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="6" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>ping cvg.vpc1</desc>
+			<log-file>step6_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 15 &amp;"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				log match for encrypted
+			</desc>
+			<log-file>step6.1_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+			-v "show logging buffered" 
+			</telnet>
+			<log-match> -i "(i) eth1 ${br1.vpc1.tif.ip}->${cvg1.vpc1.tif.ip}.*icmp-echo-req"</log-match>
+			<log-match> -i "(o) tunnel0 ${br1.vpc1.tif.ip}->${cvg1.vpc1.tif.ip}.*icmp-echo-req"</log-match>
+			<log-match> -i "routing done, ${br1.vpc1.tif.ip} -> ${cvg1.vpc1.tif.ip}.*found route in table:Tunnel-Internal"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				ping internet,ping is successful
+			</desc>
+			<log-file>step7_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.ftp1.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.ftp1.ip}" -i "ttl="</log-match>
+		</step>
+		
+		<step no="7.1">
+			<desc>
+				show log buffer,the ping from br1.vcp1 to internet  via eth0 
+			</desc>
+			<log-file>step7.1_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+			-v "show logging buffered" 
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 ${br1.br.wan.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	
+		<step no="8">
+			<desc>
+				Set match-map the iif is eth4 Set a route-map, to vpn network traffic via tunnel interface on eth0, and to internet traffic via eth0 interface
+			</desc>
+			<log-file>step8_Set_match_map.log</log-file>
+			<console target="br1.br">
+			    	-v "no debug console"
+			    	-v "no routing policy pa "
+			    	-v "no routing policy pb "
+			    	-v "no Routing match-map ma "
+			   	-v "no Routing match-map mb "
+			    	-v "no routing route-map ra "
+		           	-v "no routing route-map rb "
+				-v "Routing match-map ma iif eth4 to private"
+				-v "Routing match-map mb iif eth4 to any"
+				-v "routing route-map ra via encrypted"
+				-v "routing route-map rb via eth0"
+				-v "routing policy pa id 1 match-map ma route-map ra"
+				-v "routing policy pb id 2 match-map mb route-map rb"
+				-v "show ip rule"
+			</console>
+		</step>
+
+		<step no="open_debug">
+			<desc>
+				open debug
+			</desc>
+			<console target="br1.br">
+			    	-v "no _ff id 1"
+				-v "_ff id 1 src-ip ${br1.vpc4.tif.ip} protocol 1"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				br1.vpc4 ping cvg.vpc1,ping is successful
+			</desc>
+			<log-file>step9_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 15 &amp;"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				log match for encrypted for step 9 ping traffic
+			</desc>
+			<log-file>step8.1_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging buffered"
+			</telnet>
+			<log-match> -i "(i) eth4 ${br1.vpc4.tif.ip}->${cvg1.vpc1.tif.ip}.*icmp-echo-req"</log-match>
+			<log-match> -i "(o) tunnel0 ${br1.vpc4.tif.ip}->${cvg1.vpc1.tif.ip}.*icmp-echo-req"</log-match>
+			<log-match> -i "routing done, ${br1.vpc4.tif.ip} -> ${cvg1.vpc1.tif.ip}.*found route in table:Tunnel-Internal"</log-match>
+		</step>
+
+		<step no="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				br1.vpc4 ping internet,ping is successful 
+			</desc>
+			<log-file>step10_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ping ${pub.ftp1.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.ftp1.ip}" -i "ttl="</log-match>
+		</step>
+		
+		<step no="10.1">
+			<desc>
+				show log buffer,the ping from br1.vcp1 to internet  via eth0 
+			</desc>
+			<log-file>step10.1_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+			-v "show logging buffered" 
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 ${br1.br.wan.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+</testcase>

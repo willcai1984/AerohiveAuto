@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>For wifi backhaul link, portal forward ip multicast packet when there is any mesh node attached on it</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		On portal:
+		Portal connected to switch on eth0
+		Portal and MP connected on wifi1.1 backhaul link
+		Laptop connected to MP on eth1 access interface, and eth1 enable mac-learning
+		Active multicast stream is: 238.1.1.2
+		Open debug:
+		_ff xx xx
+		_kdebug fe basic
+		Debug console
+
+		Test Procedure:
+		1. Portal ping to mp with 20 counts, check no packet lost and connection is stable
+		2. Laptop report the video on group 238.1.1.2, check capture on laptop and debug
+		on portal.
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>linux</tbtype>
+
+	<property name="capture.packet.result" value="capture.packet.result" />
+	<property name="file.dir" value="/tmp" />
+
+	<stage>
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap2.eth1.existed}" =="true" &amp;&amp; "${ap.wifi1.existed}" =="true"</if>
+
+		<step no="0.1">
+			<desc>
+				ap1 as portal, shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config hive on ap1
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface wifi1 mode backhaul"
+				-v "interface wifi1 radio channel 165"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</console>
+		</step>
+
+		<step no="1.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step1.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config hive on ap2
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 mode backhaul"
+				-v "interface wifi1 radio channel 165"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface eth1 mode bridge-access user-profile-attribute 2"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 2"
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="2.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step2.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="2.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step2.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				show ap2's interface wifi1 info
+			</desc>
+			<log-file>show_ap2_interface_info.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				get ap2's wifi1's mac address
+			</desc>
+			<setvar name="ap2_wifi1_mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_interface_info.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step4_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2_wifi1_mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				-shutdown ap2's eth0
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-up ap2's eth1
+			</desc>
+			<console target="ap2">
+				-v "no interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="6" delay="30" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step6_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2_wifi1_mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="6.1" file="subs/bpc_init.xml" obj-args="bpc1, ap2" args="none" />
+
+		<include prefix="7" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<step no="8">
+			<desc>
+				1. Portal ping to mp with 20 counts, check no packet lost and connection is stable
+			</desc>
+			<log-file>step8_ping.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "ping ${ap2.mgt0.ip} count 20"
+			</telnet>
+			<log-match>-i "0% packet loss"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				2. Laptop report the video on group 238.1.1.2
+			</desc>
+			<log-file>step9_join_group.log</log-file>
+			<ssh target="bpc1">
+				-v "nohup ./mrecv -d ${pub.mtcast1.group1.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				get pid of "mrecv" on bpc1
+			</desc>
+			<setvar name="bpc1.join.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step9_join_group.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="10" delay="5">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff dst-port ${pub.mtcast1.group1.port}"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<console target="ap2">
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff dst-port ${pub.mtcast1.group1.port}"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="11">
+			<desc>
+				check capture on bpc1
+			</desc>
+			<log-file>step11_capture_packet.log</log-file>
+			<ssh target="bpc1">
+				-v "rm -f ${file.dir}/${capture.packet.result}"
+				-v "nohup tshark -i ${bpc1.tif.name} dst port ${pub.mtcast1.group1.port} -V &gt; ${file.dir}/${capture.packet.result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="11.1" delay="10">
+			<desc>
+				get pid of "tshark" on bpc1
+			</desc>
+			<setvar name="bpc1.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step11_capture_packet.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="12" delay="60">
+			<desc>
+				kill process which run in background.
+			</desc>
+			<ssh target="bpc1">
+				-v "kill ${bpc1.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				cat files.
+			</desc>
+			<log-file>step12.1_check_result.log</log-file>
+			<ssh target="bpc1">
+				-v "cat ${file.dir}/${capture.packet.result}"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Internet Protocol, Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)" -ps p1 "(?i)Protocol: ${pub.mtcast1.protocol}" -e "User Datagram Protocol.*Dst Port:.*${pub.mtcast1.group1.port}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step13_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(o) wifi1.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "UDP"</log-match>
+			<log-match>-i "\[fe\]: flood the packet out wifi1.1"</log-match>
+			<log-match>-i "\[fe\]: wifi1.1 Tx" -i "${pub.mtcast1.group1.mac}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					kill process which run in background.
+				</desc>
+				<ssh target="bpc1">
+					-v "killall -q mrecv"
+					-v "rm -f ${file.dir}/${capture.packet.result}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,154 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unit Test 0601: Verify that NAT could be disabled, and clients with non-routable IP address behind BR would not reach the internet without NAT.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		After WANAddressing_UnitTest_ConfigCLI_7
+
+		Test Procedure:
+		disable NAT on eth0
+		CLI commands:
+		no interface eth0 wan nat enable
+		show running-config
+		save config
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>	
+
+	<stage>
+	
+	        <include prefix="pre.1_1" file="subs/br_close_fw.xml" obj-args="br1" />		
+		
+		<step no="pre_1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<console target="br1.br">
+				-v "no interface eth0 dhcp client"				
+				-v "interface eth0 dhcp client"
+				-v "exec bypass-wan-hardening"
+			</console>
+		</step>		
+		
+		<step no="pre_2">
+			<desc>
+				show br wan
+			</desc>
+			<log-file>show_int_eth0_2.log</log-file>
+			<console target="br1.br" slow="yes">
+				-v "show interface eth0"
+			</console>
+		</step>
+
+		<step no="pre_3">
+			<desc>get ip address of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/show_int_eth0_2.log -t str
+			</setvar>
+		</step>	
+		
+		<step no="pre_4">
+			<desc>
+				Login into AP, it can ping domain name
+			</desc>
+			<console target="br1.br">
+				-v "ping ${pub.dns1.domain1}"
+			</console>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>	
+		
+		<step no="1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<console target="br1.br">
+				-v "interface mgt0 vlan ${br1.vlan1}"				
+				-v "user-profile FW qos-policy def-user-qos vlan-id ${br1.vlan1} attribute 1"				
+				-v "no interface eth0 mode wan nat"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				check eth0 with wan mode
+			</desc>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+			<log-match>-c -i "Mode=wan"</log-match>
+		</step>
+
+		<step no="3" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				br1.vpc1 show ip address got from mgt0 dhcp client
+			</desc>
+			<log-file>step3_ifconfig_br1_vpc1_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				it should NOT be able to access domain name.
+			</desc>
+			<log-file>step4_ping_domain.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.domain1} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from " -i "ttl="</log-match>
+		</step>		
+
+		<step no="5">
+			<desc>
+				show running-config include a CLI to disable NAT on eth0
+			</desc>
+			<console target="br1.br">
+				-v "show running-config"
+			</console>
+			<log-match>-c -i "no interface eth0 mode wan nat"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show interface eth0 indicates NAT is disabled
+			</desc>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+			<log-match>-c -i "NAT support=disable;"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				Login into busybox by _shell, command "iptables -t nat -nvL"
+				should NOT include a NAT rule for eth0
+			</desc>
+			<log-file>step7_login_shell_check_nat_eth0.log</log-file>
+			<console target="br1.br" prompt="\$|AH.*#">
+				-b -sp "${br1.br.shellpwd}"
+				-v "_shell"
+				-v "iptables -t nat -nvL"
+				-v "exit 0"
+				-v ""
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)MASQUERADE.*eth0\s+0.0.0.0/0\s+0.0.0.0/0" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+	
+	<post-process>
+		<stage>
+			<include prefix="1" file="subs/br_open_fw.xml" obj-args="br1" />
+	   </stage>
+
+	<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

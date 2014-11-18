@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test Authentication on HM of Enterprise mode</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		- Net join domain success
+
+		Test Procedure:
+		- enter the domain user account, then click Test Authentication
+	</description>
+	<numofap>1</numofap>
+	<numofwpc>1</numofwpc>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<include prefix="start_selenium_server" file="subs/start_selenium_server.xml" args="${wpc1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<step no="1">
+			<desc>
+				config ap1 capwap
+			</desc>
+			<telnet target="ap1">
+				-v "capwap client enable"
+				-v "capwap client server name ${pub.hm1.ip}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="1.1" delay="200">
+			<desc>
+				check the capwap client state
+			</desc>
+			<log-file>step1.1_check_capwap.log</log-file>
+			<telnet target="ap1">
+				-v "show capwap client"
+			</telnet>
+			<log-match>-c -i "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				-config policy
+			</desc>
+			<log-file>config_policy.html</log-file>
+			<script timeout="800">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/new_policy.py -r http://${wpc1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l info --parameters login.server=https://${pub.hm1.ip}/ policy.name=Apasradiusserver_${job.sid}12 dns_assign.name=localdns_${job.sid}12 ntp_assign.name=localntp_${job.sid}12 dns_assign.ip=${pub.dns1.ip} ntp_assign.ip=${pub.ntp.ip}
+			</script>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				-config ntp server and dns server for AP on HM
+				-upload config to AP
+			</desc>
+			<log-file>upload_dns_ntp_config.html</log-file>
+			<script timeout="800">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/upload_config_new.py -r http://${wpc1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l info --parameters login.server=https://${pub.hm1.ip}/ upload.policy=Apasradiusserver_${job.sid}12 upload.type=complete ap.mgt0_ip=${ap1.mgt0.ip}
+			</script>
+		</step>
+
+		<step no="2" delay="50" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				check the capwap client state
+			</desc>
+			<log-file>step2_check_capwap_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show capwap client"
+			</console>
+			<log-match>-c -i "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step2.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "interface eth0 manage all"
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="2.2">
+			<desc>Get ap1's ip of mgt0</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step2.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				get ap name
+			</desc>
+			<log-file>get_ap1_name.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				get ap name
+			</desc>
+			<setvar name="ap1name">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/get_ap1_name.log -p "(.*?)#show" -t str
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				config ap loggin
+			</desc>
+			<telnet target="ap1">
+				-v "console page 0"
+				-v "clear log all"
+				-v "_debug capwap info"
+				-v "_debug scd ldap_lib"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				-select a ap to act as a radius server
+				-enter full domain name on HM and click Retrieve Directory Information
+			</desc>
+			<log-file>test_authentication.html</log-file>
+			<script timeout="800">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/policy_config.py -r http://${wpc1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l info --parameters login.server=https://${pub.hm1.ip}/ policy.name=aaa_user_dir aaa_user_dir.ap_name=${ap1name} aaa_user_dir.domain=${pub.ad1.realm} aaa_user_dir.domain_admin=${pub.ad1.admin} aaa_user_dir.admin_passwd=${pub.ad1.adminpwd} aaa_user_dir.domain_user=${pub.ad1.username} aaa_user_dir.user_passwd=${pub.ad1.passwd}
+			</script>
+		</step>
+
+		<step no="6">
+			<desc>
+				check out log
+			</desc>
+			<log-file>check_log_buffer.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					-upload config to AP
+				</desc>
+				<log-file>recovery_config.html</log-file>
+				<script timeout="800">
+					export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/upload_config_new.py -r http://${wpc1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l info --parameters login.server=https://${pub.hm1.ip}/ upload.policy=QuickStart-Wireless-Only upload.type=complete ap.mgt0_ip=${ap1.mgt0.ip}
+				</script>
+			</step>
+
+			<step no="1">
+				<desc>
+					remove network policy
+				</desc>
+				<log-file>remove_policy.html</log-file>
+				<script timeout="800">
+					export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/tools.py -r http://${wpc1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l info --parameters login.server=https://${pub.hm1.ip}/ tool.name=remove_policy remove_policy.name=Apasradiusserver_${job.sid}12 dns_assign.name=localdns_${job.sid}12 ntp_assign.name=localntp_${job.sid}12
+				</script>
+			</step>
+
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${wpc1.mif.ip}, ${job_selenium_workload}" />
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

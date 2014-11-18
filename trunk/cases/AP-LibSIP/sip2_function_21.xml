@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the default sip2 rule base on response message</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Test procedure:
+		1.Setup open+cwp authentication
+		2.Login with sip2
+		Expect result:
+		1.Can login successfully
+		2.Check the default rule has normal function
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="securityObject" value="autoap" />
+	<property name="psk" value="12qwaszx" />
+	<property name="sipPolicy1" value="sip1" />
+	<property name="user1_1" value="11111" />
+	<property name="user1_1Password" value="12qwaszx" />
+	<property name="user2_1" value="3" />
+	<property name="user2_1Password" value="siptest3" />
+	<property name="user2_2" value="4" />
+	<property name="user2_2Password" value="siptest4" />
+	<property name="userGroup1" value="sip1" />
+	<property name="userGroup2" value="sip2" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<include prefix="start_selenium_server1" file="subs/start_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<step no="config.vlan">
+			<desc>
+				-set vlan and native-vlan
+				-open debug mode
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="show.interface.info" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="get.mgt0.ip">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="SetRadiusServer.1">
+			<desc>Setup radius server</desc>
+			<telnet target="ap1">
+				-v "security-object ${securityObject}"
+				-v "security-object ${securityObject} default-user-profile-attr 1"
+				-v "security-object ${securityObject} security aaa radius-server primary ${ap1.mgt0.ip}"
+				-v "security-object ${securityObject} security additional-auth-method captive-web-portal timer-display"
+				-v "security-object ${securityObject} web-server"
+				-v "security-object ${securityObject} security additional-auth-method captive-web-portal timer-display alert 10"
+				-v "security-object ${securityObject} security additional-auth-method captive-web-portal internal-servers"
+				-v "security-object ${securityObject} security additional-auth-method captive-web-portal failure-redirect login-page"
+				-v "user-group ${userGroup1}"
+				-v "user-group ${userGroup2}"
+				-v "user-group ${userGroup1} user-attribute 1"
+				-v "user-group ${userGroup2} user-attribute 2"
+			</telnet>
+		</step>
+
+		<step no="SetRadiusServer.2">
+			<desc>config users</desc>
+			<telnet target="ap1">
+				-v "user ${user1_1}"
+				-v "user ${user1_1} password ${user1_1Password}"
+				-v "user ${user1_1} group ${userGroup2}"
+				-v "user ${user2_1}"
+				-v "user ${user2_1} password ${user2_1Password}"
+				-v "user ${user2_1} group ${userGroup2}"
+				-v "user ${user2_2}"
+				-v "user ${user2_2} password ${user2_2Password}"
+				-v "user ${user2_2} group ${userGroup2}"
+			</telnet>
+		</step>
+
+		<step no="SetRadiusServer.3">
+			<desc>Setup radius server</desc>
+			<telnet target="ap1">
+				-v "library-sip-policy ${sipPolicy1} default user-group ${userGroup1}"
+				-v "library-sip-policy ${sipPolicy1} id 1 field AA starts-with 22 user-group ${userGroup2}"
+				-v "aaa radius-server local library-sip-policy ${sipPolicy1}"
+				-v "aaa radius-server local db-type library-sip-server primary server ${pub.libsip1.ip}"
+				-v "aaa radius-server local db-type library-sip-server primary login-user ${pub.libsip1.username} password ${pub.libsip1.passwd}"
+				-v "aaa radius-server local db-type library-sip-server primary institution-id ${pub.libsip1.institutionID}"
+				-v "aaa radius-server local db-type library-sip-server primary login-enable"
+				-v "aaa radius-server local enable"
+			</telnet>
+		</step>
+
+		<step no="SetRadiusServer.3.1">
+			<desc>config user-profile info,open debug mode and clear log all</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local user-group ${userGroup1}"
+				-v "aaa radius-server local user-group ${userGroup2}"
+				-v "user-profile ${userGroup1} qos-policy def-user-qos vlan-id ${tb.vlan2} attribute 1"
+				-v "user-profile ${userGroup2} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 2"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${securityObject}"
+				-v "ssid ${ssid.name} user-group ${userGroup1}"
+				-v "ssid ${ssid.name} user-group ${userGroup2}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<include prefix="connect_wifi" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug.mode">
+			<desc>open debug mode and clear log all</desc>
+			<telnet target="ap1">
+				-v "_debug radiusd verbose"
+				-v "_debug radiusd sip-lib"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="0" delay="10">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>first_log_in.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} visit.pre_url=www.test${job.sid}.com login.username=${user1_1} login.password=${user1_1Password} -t ff -f ${log.dir}/${log.file} -l info --preserve-session &gt; ${log.dir}/first_session_id.log
+			</script>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="first.session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/first_session_id.log
+			</setvar>
+		</step>
+
+		<step no="0.2">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>step0.2_show_ip.log</log-file>
+			<staf target="sta1">
+				-v "ipconfig /all"
+			</staf>
+		</step>
+
+		<step no="0.3">
+			<desc>Get laptop1's ip after authentication</desc>
+			<setvar name="sta1.tif.ip.second">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.2_show_ip.log -i ${sta1.tif.name} -o win -nomask
+			</setvar>
+		</step>
+
+		<step no="1" delay="20">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step1_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *wifi0.1 04 *${sta1.tif.ip.second}"</log-match>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step1.1_show_roam.log</log-file>
+			<telnet target="ap1">
+				-v "show roam cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YYNN"</log-match>
+		</step>
+
+		<step no="CheckLibSipLog.1">
+			<desc>Check LibSip log</desc>
+			<log-file>CheckLibSipLog.1.log</log-file>
+			<telnet target="ap1" timeout="120">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "LIBSIP:extract AA: ${user1_1}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Found Auth-Type = PAP" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Sending Access-Accept of id [0-9]+ to ${ap1.mgt0.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "login attempt with password \"1\*\*\*\"" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "User-Password = 1\*\*\*" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "RADIUS: user ${user1_1} successfully queried the library SIP server" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "LIBSIP:mapping default user group \"${userGroup1}\", action:\"permit\"" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Add user-profile attribute 1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "not match" -ps p "respond field AA: 11111" p "rule 1: \"AA\" \"starts-with\" \"22\"" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				do log out operate
+			</desc>
+			<log-file>first_log_out.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} visit.pre_url=www.test${job.sid}.com login.username=${user1_1} login.password=${user1_1Password} -t ff -f ${log.dir}/${log.file} -l info --session-id ${first.session.id}
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="stop_selenium_server1" file="subs/stop_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_workload}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

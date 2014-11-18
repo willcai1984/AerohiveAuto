@@ -1,0 +1,994 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that the facility of the log message should obey the setting by user's setting.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Default setting
+
+		Test Procedure:
+		1.change the facility of the log message(auth/authpriv/local0/local1/
+		local2/local3/local4/local5/local7/security/user)
+		2.Use Ethereal to capture packet of syslog in log server to verify that the
+		facility is that you have set
+	</description>
+	<numofbr>1</numofbr>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="packets_send_result" value="packets_send_result" />
+	<property name="log_file_dir" value="/tmp" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Config logging host ip address and severity level to syslog server
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging server ${tb.syslog_server} level emergency"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				delete tmp files
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step3_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step3.1_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step3.2_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "local6"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="4">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<log-file>step4_check_file.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="local6.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${local6.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step4.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "LOCAL6.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				change the facility of the log message(auth)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility auth"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step5.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "auth"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step5.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="5.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step5.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="auth.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${auth.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step6.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "AUTH.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				change the facility of the log message(authpriv)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility authpriv"
+			</telnet>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step7.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "authpriv"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step7.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="7.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step7.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="authpriv.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${authpriv.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="8.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step8.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "AUTHPRIV.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				change the facility of the log message(local0)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility local0"
+			</telnet>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step9.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "local0"</log-match>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step9.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="9.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step9.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="local0.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step9.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${local0.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="10.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step10.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "LOCAL0.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				change the facility of the log message(local1)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility local1"
+			</telnet>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step11.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "local1"</log-match>
+		</step>
+
+		<step no="11.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step11.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="11.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step11.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="local1.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step11.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="12.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${local1.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="12.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step12.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "LOCAL1.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				change the facility of the log message(local2)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility local2"
+			</telnet>
+		</step>
+
+		<step no="13.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step13.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "local2"</log-match>
+		</step>
+
+		<step no="13.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step13.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="13.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step13.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="14.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="local2.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step13.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="14.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${local2.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="14.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step14.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "LOCAL2.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="15">
+			<desc>
+				change the facility of the log message(local3)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility local3"
+			</telnet>
+		</step>
+
+		<step no="15.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step15.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "local3"</log-match>
+		</step>
+
+		<step no="15.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step15.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="15.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step15.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="16.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="local3.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step15.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="16.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${local3.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="16.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step16.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "LOCAL3.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="17">
+			<desc>
+				change the facility of the log message(local4)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility local4"
+			</telnet>
+		</step>
+
+		<step no="17.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step17.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "local4"</log-match>
+		</step>
+
+		<step no="17.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step17.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="17.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step17.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="18">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="18.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="local4.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step17.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="18.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${local4.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="18.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step18.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "LOCAL4.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="19">
+			<desc>
+				change the facility of the log message(local5)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility local5"
+			</telnet>
+		</step>
+
+		<step no="19.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step19.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "local5"</log-match>
+		</step>
+
+		<step no="19.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step19.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="19.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step19.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="20">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="20.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="local5.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step19.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="20.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${local5.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="20.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step20.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "LOCAL5.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="21">
+			<desc>
+				change the facility of the log message(local7)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility local7"
+			</telnet>
+		</step>
+
+		<step no="21.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step21.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "local7"</log-match>
+		</step>
+
+		<step no="21.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step21.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="21.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step21.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="22">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="22.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="local7.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step21.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="22.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${local7.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="22.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step22.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "LOCAL7.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="23">
+			<desc>
+				change the facility of the log message(security)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility security"
+			</telnet>
+		</step>
+
+		<step no="23.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step23.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "security"</log-match>
+		</step>
+
+		<step no="23.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step23.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="23.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step23.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="24">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="24.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="security.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step23.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="24.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${security.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="24.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step24.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "AUTH.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+
+		<step no="25">
+			<desc>
+				change the facility of the log message(user)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "logging facility user"
+			</telnet>
+		</step>
+
+		<step no="25.1">
+			<desc>
+				show logging to check falility
+			</desc>
+			<log-file>step25.1_show_logging.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "Facility:" -i "user"</log-match>
+		</step>
+
+		<step no="25.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step25.2_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+				-v "nohup tshark -i eth0 udp port 514 &gt; ${log_file_dir}/${packets_send_result} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="25.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				check "tshark" run in backgroud.
+			</desc>
+			<log-file>step25.3_tshark_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "ps aux | grep tshark"
+			</ssh>
+			<log-match>-e "tshark" -i "udp"</log-match>
+		</step>
+
+		<step no="26">
+			<desc>
+				Let the log message run in device
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test log-case emergency"
+			</telnet>
+		</step>
+
+		<step no="26.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="user.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step25.2_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="26.2">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${user.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="26.3">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step26.3_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip} -&gt; ${tb.syslog_server}" -i "Syslog" -i "USER.EMERG" -i "log case test: emergency!!!"</log-match>
+		</step>
+	</stage>
+</testcase>

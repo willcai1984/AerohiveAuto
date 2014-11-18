@@ -1,0 +1,187 @@
+<testcase>
+	<brief>packet can be drop when in-if is ethx</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+
+		TOPO:
+		AP-----Switch-----AP
+		Description:
+		packet can be drop when in-if is ethx
+		Pre-condition:
+		Test procedure:
+		1. Set the action as drop
+		2. Set the in-if as eth1
+		3. When the pkt match the in-if and src-mac and dst-mac then result 1
+		4. Repeated the upper step in eth1 result 1(ignored in the script)
+		Expect result:
+		1. The Pkt is dropped
+	</description>
+	<stage>
+		<if>"${tb.bridge_support}" != "true" &amp;&amp; "${ap1.eth1.existed}" == "true"</if>
+
+		<!-- setup config on AP -->
+		<step no="1.1">
+			<desc>set mgt0 vlan ${tb.vlan1}</desc>
+			<console target="ap1" timeout="80">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.2" delay="10">
+			<desc>show mgt0</desc>
+			<log-file>show_mgt0.log</log-file>
+			<console target="ap1" timeout="80">
+				-v "show interface mgt0"
+			</console>
+			<log-match> -c -e "IP addr=192.168.${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>Get the mgt0 ip of AP1</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.4">
+			<desc>show interface for AP1</desc>
+			<log-file>show_interface_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="1.5">
+			<desc>get mgt0 mac of ap1</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap1.log -k "Mgt0" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.6" delay="10">
+			<desc>show mgt0</desc>
+			<log-file>show_mgt0_ap2.log</log-file>
+			<console target="ap2" timeout="80">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.7">
+			<desc>Get the mgt0 ip of AP2</desc>
+			<setvar name="ap2.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_mgt0_ap2.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.8">
+			<desc>show interface to get ap's oui</desc>
+			<log-file>show_int_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="1.9">
+			<desc>Get the oui of AP2</desc>
+			<setvar name="ap2.oui">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_int_ap2.log -K Mgt0 -p 2 | awk 'BEGIN {FIELDWIDTHS="2 1 2 1 1" }{print $1 $2 $3 $4 $5 }'
+			</setvar>
+		</step>
+
+		<!-- enable virtual connection to drop packet -->
+		<step no="2.1">
+			<desc>enable virtual connection to drop 0100:5e01:0101 in AP1:ignore source mac</desc>
+			<log-file>enable_vr_ap_1.log</log-file>
+			<telnet target="ap1">
+				-v "forwarding-engine static-rule xx action drop in-if eth1 dst-mac 0100:5e01:0101"
+				-v "console page 0"
+				-v "_ff id 1 protocol 1 bidirection"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>generate dst-mac: 0100:5e01:0101 in AP2</desc>
+			<log-file>ping_1.log</log-file>
+			<telnet target="ap2">
+				-v "ping 224.1.1.1 count 5"
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>get log buffer from AP1</desc>
+			<log-file>ap1_drop_1.log</log-file>
+			<telnet target="ap1">
+				-v "show log buffer"
+			</telnet>
+			<log-match> -c -i "(i) eth1 ${ap2.mgt0.ip}->224.1.1.1"</log-match>
+			<log-match> -c -i "vconnection rule(xx), drop pkt"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.1">
+			<desc>enable virtual connection to drop 0100:5e01:0102 in AP1:enable source mac</desc>
+			<log-file>enable_vr_ap_2.log</log-file>
+			<telnet target="ap1">
+				-v "forwarding-engine static-rule mm action drop in-if eth1 dst-mac 0100:5e01:0102"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>generate dst-mac: 0100:5e01:0102 in AP2</desc>
+			<log-file>ping_2.log</log-file>
+			<telnet target="ap2">
+				-v "ping 224.1.1.2 count 5"
+			</telnet>
+		</step>
+
+		<step no="3.3">
+			<desc>get log buffer from AP1</desc>
+			<log-file>ap1_drop_2.log</log-file>
+			<telnet target="ap1">
+				-v "show log buffer"
+			</telnet>
+			<log-match> -c -i "(i) eth1 ${ap2.mgt0.ip}->224.1.1.2"</log-match>
+			<log-match> -c -i "vconnection rule(mm), drop pkt"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.1">
+			<desc>enable virtual connection to drop 0100:5e01:0103 in AP1:enable source oui</desc>
+			<log-file>enable_vr_AP_3.log</log-file>
+			<telnet target="ap1">
+				-v "forwarding-engine static-rule ss action drop in-if eth1 src-oui ${ap2.oui} dst-mac 0100:5e01:0103"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>generate dst-mac: 0100:5e01:0103 in AP2</desc>
+			<log-file>ping_3.log</log-file>
+			<telnet target="ap2">
+				-v "ping 224.1.1.3 count 5"
+			</telnet>
+		</step>
+
+		<step no="4.3">
+			<desc>get log buffer from AP1</desc>
+			<log-file>AP1_drop_3.log</log-file>
+			<telnet target="ap1">
+				-v "show log buffer"
+			</telnet>
+			<log-match> -c -i "(i) eth1 ${ap2.mgt0.ip}->224.1.1.3"</log-match>
+			<log-match> -c -i "vconnection rule(ss), drop pkt"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

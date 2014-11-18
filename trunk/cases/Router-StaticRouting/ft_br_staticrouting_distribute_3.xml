@@ -1,0 +1,226 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check static routing set on br manually be aggregated to one route then distribute to cvg</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		BR:
+		Mgt0.x : 10.2.3.1/24
+		Network1: 192.168.40.0/24
+		L3sw (connecting to br of vpn client):
+		Ip: 10.2.3.11/24, gateway: 10.2.3.1/32
+		Network2: 192.168.20.0/25 Network3: 192.168.20.128/25
+		CVG:
+		Mgt0.x: 10.2.4.1/24
+		L3sw (connecting to br of vpn server)
+		Ip: 10.2.4.11/24, gateway: 10.2.4.1/32
+
+		Test Procedure:
+		1. CVG4 ping br to verify
+		2. Set static routing to network2 and networkt3 on br, and push the static
+		route to cvg
+		CLI: ip route net 192.168.20.0 255.255.255.128 gateway 10.2.3.11
+		routing route-request enable
+		ip route net 192.168.20.128 255.255.255.128 gateway 10.2.3.11
+		routing route-request enable
+		routing internal-sub-network 192.168.20.0/24
+		3. Check static route be learned on cvg by "show ip route"
+		4. CVG ping network2 to verify
+		5. CVG ping network3 to verify
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>
+
+	<property name="route.netmask" value="255.255.255.0" />
+	<property name="forward.file.path" value="/proc/sys/net/ipv4/ip_forward" />
+
+	<stage>
+		<include prefix="0" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+
+		<step no="1">
+			<desc>
+				config br1 eth4
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface eth4 mode bridge-access user-profile-attribute 1"
+				-v "interface eth4 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				br1.vpc4 get ip address
+			</desc>
+			<log-file>step2.1_ifconfig_vpc1.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ifconfig ${br1.vpc4.tif.name} down"
+				-v "ifconfig ${br1.vpc4.tif.name} up"
+			        -v "dhclient ${br1.vpc4.tif.name} -r"
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.1a">
+			<desc>set br1.vpc4.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<multi-setvar>
+				echo "cvg1.vpc1.net=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="2.3">
+			<multi-setvar>
+				echo "br1.vpc4.trip.net=$(echo ${br1.vpc4.trip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="2.5">
+			<multi-setvar>
+				echo "br1.vpc5.trip.test=$(echo ${br1.vpc5.trip} | cut -d. -f1,2,3).128"
+			</multi-setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				-add static route to ${cvg1.vpc1.net} on br1.vpc5
+			</desc>
+			<ssh target="br1.vpc5" timeout="120">
+				-v "ifconfig eth1 ${br1.vpc5.trip.test}"
+				-v "route add -net ${cvg1.vpc1.net}/24 gw ${br1.vpc4.trip}"
+				-v "route -n"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-open route forward on br1.vpc4
+			</desc>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "echo 1 &gt; ${forward.file.path}"
+			</ssh>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>
+				cvg1.vpc1 ping br1.vpc4.trip,ping is failed
+			</desc>
+			<log-file>step4_vpc_ping_pc2.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ping ${br1.vpc4.trip} -c 10"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.vpc4.trip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4.1" delay="10">
+			<desc>
+				cvg1.vpc1 ping br1.vpc5,ping is failed
+			</desc>
+			<log-file>step4.1_vpc_ping_pc2.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ping ${br1.vpc5.trip.test} -c 10"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.vpc5.trip.test}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				config br1
+				add the static route to br1.vpc4.trip.net and br1.vpc5.trip.test on br
+				enable routing route-request and distribute static route br1.vpc4.trip.net and br1.vpc5.trip.test to cvg
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip route net ${br1.vpc4.trip.net} 255.255.255.128 gateway ${br1.vpc4.tif.ip}"
+				-v "ip route net ${br1.vpc5.trip.test} 255.255.255.128 gateway ${br1.vpc4.tif.ip}"
+				-v "routing route-request enable"
+				-v "routing internal-sub-network ${br1.vpc4.trip.net}/25"
+				-v "routing internal-sub-network ${br1.vpc5.trip.test}/25"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>
+				-show ip route on br,there are the static route to br1.vpc4.trip.net and br1.vpc5.trip.test on br
+			</desc>
+			<log-file>step6_show_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-c -i "${br1.vpc4.trip.net} *${br1.vpc4.tif.ip}" -i "255.255.255.128" -i "mgt0"</log-match>
+			<log-match>-c -i "${br1.vpc5.trip.test} *${br1.vpc4.tif.ip}" -i "255.255.255.128" -i "mgt0"</log-match>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				cvg1 check route,there are the 2 static route from br on cvg1
+			</desc>
+			<log-file>step6.1_show_ip_route.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "show ip route"
+			</telnet>
+			<log-match>-c -i "${br1.vpc4.trip.net} *${br1.br.mgt0.ip}" -i "255.255.255.128" -i "tunnel0"</log-match>
+			<log-match>-c -i "${br1.vpc5.trip.test} *${br1.br.mgt0.ip}" -i "255.255.255.128" -i "tunnel0"</log-match>
+		</step>
+
+		<step no="7" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				cvg1.vpc1 ping br1.vpc4.trip,ping is successful
+			</desc>
+			<log-file>step7_vpc_ping_pc2_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ping ${br1.vpc4.trip} -c 10"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc4.trip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7.1" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				cvg1.vpc1 ping br1.vpc5,ping is successful
+			</desc>
+			<log-file>step7.1_vpc_ping_pc2_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ping ${br1.vpc5.trip.test} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc5.trip.test}: " -i "ttl="</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					-delete route
+					-close route forward
+				</desc>
+				<ssh target="br1.vpc5">
+					-v "ifconfig eth1 ${br1.vpc5.trip}"
+					-v "route del -net ${cvg1.vpc1.net}/24 gw ${br1.vpc4.trip}"
+					-v "route -n"
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					-close route forward
+				</desc>
+				<ssh target="br1.vpc4">
+					-v "echo 0 &gt; ${forward.file.path}"
+					-v "route -n"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

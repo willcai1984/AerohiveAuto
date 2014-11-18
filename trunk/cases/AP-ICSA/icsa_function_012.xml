@@ -1,0 +1,294 @@
+<testcase>
+	<brief>Process the non-management/management traffic in enable mode</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		TOPO:
+		SW++++pc
+		|
+		laptop1-----ap-----laptop2
+		Description:
+		Process the non-management/management traffic in enable mode
+		Pre-condition:
+		Mac/ip policy is set
+		Test procedure:
+		1. Pc and laptop1 send non-management traffic to ap, result 1
+		Expect result:
+		Result 1: All non-management/management traffic destined to the HiveAP itself is dropped
+	</description>
+	<stage>
+		<step no="1" delay="50">
+			<desc>cfg AP-1</desc>
+			<log-file>cfg_ap.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "security-object icsa"
+				-v "security-object icsa default-user-profile-attr 1"
+				-v "security-object client"
+				-v "security-object client default-user-profile-attr 2"
+				-v "interface wifi0 radio channel 11"
+				-v "interface wifi0 radio power 20"
+				-v "clock time-zone 8"
+				-v "user-profile icsa qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "user-profile client qos-policy def-user-qos vlan-id 1 attribute 2"
+				-v "forwarding-engine log firewall-dropped-packets"
+				-v "forwarding-engine log to-self-sessions"
+				-v "user-profile icsa mac-policy-default-action permit"
+				-v "user-profile client mac-policy-default-action permit"
+				-v "user-profile client ip-policy-default-action permit"
+				-v "user-profile icsa ip-policy-default-action permit"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>setup ssid for ap-1</desc>
+			<log-file>set_ap_ssid.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object icsa"
+				-v "ssid ${ssid.name}-2"
+				-v "ssid ${ssid.name} security-object icsa"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}-2"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="11" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="18">
+			<desc>show ip route in AP</desc>
+			<log-file>ip_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "L"</log-match>
+		</step>
+
+		<step no="19">
+			<desc>open the fe debug in AP1</desc>
+			<log-file>set_ap_fedebug.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "forwarding-engine drop to-self-non-management-traffic"
+				-v "_ff id 1 dst-port 6000 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffer"
+				-v "console page 0"
+			</telnet>
+		</step>
+
+		<step no="20">
+			<desc>send no-mgmt traffic to AP</desc>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 6000 -d 200";exit 0
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="21" delay="20">
+			<desc>get fe drop no-mgmt traffic log from log buffer</desc>
+			<log-file>drop_no-mgmt_1.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -e "invalid mgt traffic, drop pkt"</log-match>
+		</step>
+
+		<step no="22">
+			<desc>clear log buffer in AP1</desc>
+			<log-file>set_ap_fedebug.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 3000 bidirection"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+		<step no="23" delay="5">
+			<desc>send mgmt traffic 3000 to AP</desc>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 3000 -k -d 200 ";exit 0
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="24" delay="5">
+			<desc>get fe log about mgmt-3000 traffic from log buffer</desc>
+			<log-file>mgmt_3000.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(u) mgt0" -i "5000->3000"</log-match>
+		</step>
+		<step no="25">
+			<desc>clear log buffer in AP1</desc>
+			<log-file>set_ap_fedebug.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 3007 bidirection"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+		<step no="26" delay="5">
+			<desc>send mgmt traffic to AP</desc>
+			<ssh target="sta1">
+				-v " hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 3007 -k -d 200 ";exit 0
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="27" delay="5">
+			<desc>get fe log about mgmt-3007 traffic from log buffer</desc>
+			<log-file>mgmt_3007.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(u) mgt0" -i "5000->3007"</log-match>
+		</step>
+		<step no="28">
+			<desc>clear log buffer in AP1</desc>
+			<log-file>set_ap_fedebug.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "no _ff id 1"
+				-v "_ff id 1 protocol 1 bidirection"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+		<step no="29" delay="5">
+			<desc>send mgmt traffic-ping to AP</desc>
+			<log-file>mgmt_ping.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${ap1.mgt0.ip} -c 3"
+			</ssh>
+			<log-match>-c -i "bytes from ${ap1.mgt0.ip}"</log-match>
+		</step>
+
+
+		<step no="31">
+			<desc>clear log buffer in AP1</desc>
+			<log-file>set_ap_fedebug.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 2002 bidirection"
+				-v "exec capture remote-sniffer"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="32" delay="5">
+			<desc>send mgmt traffic remote-sniffer 2002 to AP</desc>
+			<log-file>hping3_2002.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 2002 -k -d 200 ";exit 0
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="33" delay="5">
+			<desc>get fe log about mgmt-2002 traffic from log buffer</desc>
+			<log-file>mgmt_2002.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(u) mgt0" -i "5000->2002"</log-match>
+		</step>
+
+
+		<step no="34">
+			<desc>clear log buffer in AP1</desc>
+			<log-file>set_ap_fedebug.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v " "
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 80 bidirection"
+				-v "clear log buffer"
+			</ssh>
+		</step>
+		<step no="35" delay="5">
+			<desc>send mgmt traffic http 80 to AP</desc>
+			<log-file>hping3_80.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 80 -k -d 200 ";exit 0
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="36" delay="5">
+			<desc>get fe log about mgmt-http 80 traffic from log buffer</desc>
+			<log-file>mgmt_80.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(u) mgt0" -i "5000->80"</log-match>
+		</step>
+		<step no="37">
+			<desc>clear log buffer in AP1</desc>
+			<log-file>set_ap_fedebug.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "no _ff id 1"
+				-v "roaming port 6000"
+				-v "_ff id 1 dst-port 6000 bidirection"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+		<step no="38" delay="5">
+			<desc>send mgmt traffic register roaming port 6000 to AP</desc>
+			<log-file>hping3_6000.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 6000 -k -d 200 ";exit 0
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="39" delay="5">
+			<desc>get fe log about mgmt traffic register roaming port 6000 from log buffer</desc>
+			<log-file>mgmt_6000.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(u) mgt0" -i "5000->6000"</log-match>
+		</step>
+		<step no="40">
+			<desc>clear log buffer in AP1</desc>
+			<log-file>set_ap_fedebug.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 6007 bidirection"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+		<step no="41" delay="5">
+			<desc>send mgmt traffic register roaming port 6007 to AP</desc>
+			<log-file>hping3_6007.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 6007 -k -d 200 ";exit 0
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="42" delay="5">
+			<desc>get fe log about mgmt traffic register roaming port 6007 from log buffer</desc>
+			<log-file>mgmt_6007.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(u) mgt0" -i "5000->6007"</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,836 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Vpn tunnel should be recreated after wan ip changed on br</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>	
+Pre-condition:
+-config a remote CVG, there are several LANs behind it
+-there are some services in CVG’s LANs
+-BR setup VPN connection with CVG
+-setup all wifi radio and eth interfaces as access mode
+-BR have several LANs behind it
+-STA1 connected to BR’s LAN
+-vpn tunnel setup success
+Test procedure:	
+1.	BR wan is static ip address and establish l3vpn tunnel between br and cvg.the ip route on br and cvg are normal
+2.	Change the wan static ip on br,check the vpn tunnel,result 1
+3.	After tunnel refresh, check the ip route table on BR and cvg,result2
+
+4.	 Config the br wan dhcp  get ip ,and the  ip is different with the step2,check the vpn tunnel ,result 1
+5.	After tunnel refresh, check the ip route table on BR and cvg,result2
+
+6.	Config the br wan pppoe get ip , check the vpn tunnel ,result 1
+7.	After tunnel refresh, check the ip route table on BR and cvg,result2
+
+8.	Br pppoe get a different ip with the step6, check the vpn tunnel ,result 1
+9.	After tunnel refresh, check the ip route table on BR and cvg,result2
+
+10.	The wan interface is usb and establish l3vpn tunnel between br and cvg.the ip route on br and cvg are normal
+11.	Disable and enable the usb,make the  usb ppp get a different  ip ,check the vpn tunnel,result 1
+12.	After tunnel refresh, check the ip route table on BR and cvg,result2
+Expect result:
+1.	BR will break all tunnel on it, and recreate vpn tunnel ,the log of tunnel down is before on  the tunnel up 
+2.	The br can get route from cvg and  br can send the local route to cvg.
+The ip route are both normal on br and cvg
+
+
+	</description>
+	<numofcvg>1</numofcvg>
+	<numofbr>2</numofbr>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="vpn.client.list" value="clientList1" />
+	<property name="vpn.server.name" value="vpnServer1" />
+	<property name="br.pppoe.nat.ip" value="192.168.10.217" />
+
+	<stage>
+		<step no="pre_1">
+			<desc>CVG.cvg.tunnel.ip.generate</desc>
+			<setvar name="cvg1.cvg.tunnel.ip">
+				if [ "yes" == "${cvg1.cvg.fw_existed}" ]; then
+				echo "${cvg1.cvg.tunnel.ip}"
+				else
+				echo "${cvg1.cvg.wan.ip}"
+				fi
+			</setvar>
+		</step>
+		
+		<step no="1">
+			<desc>Config CVG act as l3 VPN server;
+				declare supper-net for br1.mgt0, mgt0.1, mgt0.2
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:certs/server_cert.pem"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:certs/server_key.pem"
+				-v ""
+				-v "vpn xauth-client-list ${vpn.client.list} local"
+				-v "vpn xauth-client-list ${vpn.client.list} client-name ${br1.br.name} password aerohive"
+				-v "vpn server-ipsec-tunnel ${vpn.server.name} vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${vpn.server.name} client-list ${vpn.client.list}"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel ${vpn.server.name}"
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.mgt0.supermask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.2.ip}/${br.mgt0.supermask}"
+			</telnet>		
+		</step>
+		
+		<step no="2">
+			<desc>enable ospf on eth0 if it has one arms</desc>
+			<if>"one" == "${cvg1.cvg.arm_type}"</if>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "routing protocol ospf advertise eth0"
+				-v "routing protocol ospf router-id ${cvg1.cvg.wan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+			</telnet>
+		</step>
+		
+		<step no="3">
+			<desc>Enable OSPF on eth1 if it has two arms</desc>
+			<if>"two" == "${cvg1.cvg.arm_type}"</if>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "routing protocol ospf advertise eth1"
+				-v "routing protocol ospf router-id ${cvg1.cvg.lan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+				-v "_debug brd basic"
+				-v ""
+				-v "_debug brd info"
+				-v ""
+			</telnet>
+		</step>		
+		<!-- descard test procedure 1,2,3 which is related to eth0 wan static ip changes. this is same as eth0 wan dhcp get ip changes -->
+		
+		
+		<!-- Below steps is for test procedure 4,5. wan port ip changed when open fw and close fw, check vpn tunnel refresh -->
+		
+		<step no="4.1">
+			<desc>eth0 dhcp</desc>
+			<console target="br1.br" slow="yes">
+				-v "no interface eth0 dhcp client"
+				-v ""
+				-v "interface eth0 dhcp client"
+				-v ""
+			</console>
+		</step>
+		
+		<step no="4.2">
+			<desc>show ip address of eth0</desc>
+			<log-file>show_int_eth0_1.log</log-file>
+			<console target="br1.br" slow="yes">
+				-v "show interface eth0"
+				-v ""
+			</console>
+		</step>
+		
+		<step no="4.3">
+			<desc>get ip address of br wan port eth0</desc>
+			<setvar name="br1.br.wan.ip1">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/show_int_eth0_1.log -t str
+			</setvar>
+		</step>
+		
+		<step no="4.4">
+			<desc>config mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip1}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask ${br.route.netmask}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="4.5">
+			<desc>config mgt0.2 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip1}">
+				-v "interface mgt0.2 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask ${br.route.netmask}"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+			</telnet>
+		</step>	
+
+		<step no="4.6">
+			<desc>get prefix of br mgt0.1/mgt0.2 ip address</desc>
+			<multi-setvar>
+				echo "br1.mgt0.1.prefix=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3)"
+				echo "br1.mgt0.2.prefix=$(echo ${br1.br.mgt0.2.ip} | cut -d. -f1,2,3)"				
+			</multi-setvar>
+		</step>		
+		
+		<step no="4.7">
+			<desc>config BR as l3 VPN client</desc>
+			<telnet target="${br1.br.wan.ip1}">
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "vpn client-ipsec-tunnel ${br1.br.name}_ipsec_1 vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${br1.br.name}_ipsec_1 gateway ${cvg1.cvg.tunnel.ip} client-name ${br1.br.name} password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel ${br1.br.name}_ipsec_1 primary"
+				-v "routing route-request enable"
+				-v "_debug brd basic"
+				-v ""
+				-v "_debug brd info"
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.lan.netmask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+			</telnet>			
+		</step>
+		<step no="4.8" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check gre tunnel on br side  when FW open
+			</desc>
+			<log-file>step4.8_show_gre_tunnel_br1.log</log-file>
+			<telnet target="${br1.br.wan.ip1}">
+				-v "show vpn layer-3-tunnel"
+				-v "show vpn ipsec-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.tunnel.ip}"</log-match>
+			<log-match>-i "${br1.br.wan.ip1}\[4500\]" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+		</step>		
+
+		
+		<step no="4.9">
+			<desc>check vpn ike sa on BR side when FW open</desc>
+			<log-file>step4.9_ike_sa_vpn1_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip1}">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+			<log-match>-n -p 8 -i "0"</log-match>
+		</step>
+
+
+
+		<step no="4.10" delay="10" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				check gre tunnel on cvg side
+			</desc>
+			<log-file>show_gre_tunnel_cvg1.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show vpn layer-3-tunnel"
+				-v "show vpn ipsec-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+			<log-match>-i "${cvg1.cvg.wan.ip}\[4500\]" -i "${br1.br.nat.ip}"</log-match>
+		</step>	
+
+		
+		<step no="4.11">
+			<desc>
+				check vpn ike sa on CVG side
+			</desc>
+			<log-file>ike_sa_cvg1.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "R" -i "${br1.br.nat.ip}"</log-match>
+			<log-match>-n -p 8 -i "0"</log-match>
+		</step>	
+
+
+		<!--close fw, then br eth0 wan port will change ip address-->
+
+		<include prefix="4.12" file="subs/br_close_fw.xml" obj-args="br1" />
+
+		<step no="4.13">
+			<desc>close FW, retrieve br eth0 ip address again,  eth0 ip address changed</desc>
+			<console target="br1.br" slow="yes">
+				-v "no interface eth0 dhcp client"
+				-v ""
+				-v "clear log buffered"
+				-v "_debug vpn all"
+				-v "_debug vpn packet"
+				-v ""
+				-v "interface eth0 dhcp client"
+				-v ""	
+			</console>
+		</step>		
+		
+		<step no="4.14">
+			<desc>show ip address of eth0</desc>
+			<log-file>show_int_eth0_2.log</log-file>
+			<console target="br1.br" slow="yes">
+				-v "show interface eth0"
+				-v ""
+			</console>		
+		</step>
+		
+		<step no="4.15">
+			<desc>get ip address of br wan port eth0</desc>
+			<setvar name="br1.br.wan.ip2">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/show_int_eth0_2.log -t str
+			</setvar>
+		</step>
+		
+		<step no="4.16" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check gre tunnel on br side when eth0 ip address changed
+			</desc>
+			<log-file>step4.16_show_gre_tunnel_br2.log</log-file>
+			<telnet target="${br1.br.wan.ip2}">
+				-v "show vpn layer-3-tunnel"
+				-v "show vpn ipsec-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.tunnel.ip}"</log-match>
+			<log-match>-i "${br1.br.wan.ip2}\[4500\]" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+		</step>				
+		
+		<step no="4.17">
+			<desc>check vpn ike sa on BR side when eth0 ip address changed</desc>
+			<log-file>step4.17_ike_sa_vpn2_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip2}">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+			<log-match>-n -p 8 -i "0"</log-match>
+		</step>
+		
+		<step no="4.18" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check vpn ike sa on CVG side
+			</desc>
+			<log-file>ike_sa_cvg2.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "R" -i "${br1.br.wan.ip2}"</log-match>
+			<log-match>-n -p 8 -i "0"</log-match>
+		</step>	
+
+		<step no="4.19">
+			<desc>
+				check gre tunnel on cvg side
+			</desc>
+			<log-file>show_gre_tunnel_cvg2.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show vpn layer-3-tunnel"
+				-v "show vpn ipsec-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+			<log-match>-i "${cvg1.cvg.wan.ip}\[4500\]" -i "${br1.br.wan.ip2}\[4500\]"</log-match>
+		</step>	
+
+		<step no="4.20">
+			<desc> show log	buffer to check the vpn establish process when mgt0 ip address changed</desc>
+			<log-file>step4.20_show_log_buff.log</log-file>
+			<telnet target="${br1.br.wan.ip2}">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+	
+		<step no="5.1">
+			<desc>set var to descript CVG lan route</desc>
+			<setvar name="cvg1.cvg.lan.route">
+				echo $(echo ${cvg1.cvg.lan.ip} | cut -d. -f1,2,3).0
+			</setvar>
+		</step>
+
+		<step no="5.2" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>CVG will push its mgt0 ip address and lans to BR</desc>
+			<log-file>step5.2_show_route_br_01.log</log-file>
+			<telnet target="${br1.br.wan.ip2}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.cvg.mgt0.ip}" -p 3 -i "255.255.255.255" -p 8 -i "tunnel0"</log-match>
+			<log-match>-p 1 -i "${cvg1.cvg.lan.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<step no="5.3">
+			<desc>set var to descript CVG lan route</desc>
+			<setvar name="br1.br.mgt0.route">
+				echo $(echo ${br1.br.mgt0.ip} | cut -d. -f1,2,3).0
+			</setvar>
+		</step>
+
+		<step no="5.4" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>BR will push its mgt0 ip address to CVG, BR will announce LANs under it, check the route table on CVG </desc>
+			<log-file>step5.4_show_route_cvg_01.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.ip}" -p 3 -i "255.255.255.255" -p 8 -i "tunnel0"</log-match>
+			<log-match>-p 1 -i "${br1.br.mgt0.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+		
+		<step no="5.5">
+			<desc>configure br1.vpc1 connect port as access mode and assign vlan</desc>
+			<log-file>step5.5_br_port.log</log-file>
+			<telnet target="${br1.br.wan.ip2}">
+				-v "interface eth1 mode bridge-access"
+				-v "user-profile ${br1.vpc1.vlan} vlan ${br1.vpc1.vlan} attribute ${br1.vpc1.vlan}"
+				-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vpc1.vlan}" 
+			</telnet>
+		</step>		
+		
+		<step no="5.6">
+			<desc>br1.vpc1 get ip address</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-e "inet addr"</log-match>			
+		</step>
+		
+		<step no="5.7">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+		
+		<step no="5.8">
+			<desc>get prefix of br1.vpc1 ip address</desc>
+			<multi-setvar>
+				echo "br1.vpc1.ip.prefix=$(echo ${br1.vpc1.tif.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+		
+		<step no="5.9">
+			<desc>check br1.vpc1 get ip address from BR mgt0.1 dhcp server successfully</desc>
+			<script>
+				if [ "${br1.vpc1.ip.prefix}" == "${br1.mgt0.1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>	
+
+		<step no="5.10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>br1.vpc1 ping cvg.vpc1 to check the pkts forwarding</desc>
+			<log-file>brvpc1_ping_cvgvpc1_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v " ping ${cvg1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="5.11" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>BR ping cvg.vpc1 to check pkts forwarding</desc>
+			<telnet target="${br1.br.wan.ip2}">
+				-v "ping ${cvg1.vpc1.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+			
+		<step no="5.12" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>cvg.vpc1 ping br1.vpc1 to check pkts forwawrding</desc>
+			<log-file>cvgvpc1_ping_brvpc1_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v " ping ${br1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<!-- Below steps is for test procedure 6,7. wan port change to pppoe to get ip address, check vpn tunnel refresh -->
+		 
+		<include prefix="5.13" file="subs/br_open_fw.xml" obj-args="br1" /> 
+
+		<!--open fw to make sure br and pppoe server in same subnet-->
+		
+		
+		<step no="6.1">
+			<desc>
+				Open debug pppoe debug on BR
+			</desc>
+			<console target="br1.br">
+				-v "_debug brd ppp"
+				-v "_debug brd pppdebug"
+				-v "_debug brd pppoe"
+				-v "clear log all"
+				-v "console page 0"
+			</console>
+		</step>
+
+		<step no="6.2">
+			<desc>enable pppoe on wan port</desc>
+			<console target="br1.br">
+				-v "interface eth0 mode wan"
+				-v "interface eth0 pppoe username ${pub.pppoe1.username} password ${pub.pppoe1.passwd}"
+				-v "interface eth0 pppoe enable"
+			</console>
+		</step>
+
+		<step no="6.3" delay="10" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				show interface eth0 pppoe
+			</desc>
+			<log-file>step6.3_show_interface_pppoe_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0 pppoe"
+			</console>
+			<log-match>-c -i "Remote IP: ${pppoe.Remote.ip}"</log-match>
+			<log-match>-c -i "PPPoE status: enabled"</log-match>
+			<log-match>-c -i "Username: ${pub.pppoe1.username}"</log-match>
+			<log-match>-c -i "Connection status: connected"</log-match>
+		</step>
+
+		<step no="6.4" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step6.4_show_logging_buffered.log</log-file>
+			<console target="br1.br" timeout="500">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "PPPoE request to start:" -i 'user \"${pub.pppoe1.username}\" password \"${pub.pppoe1.passwd}\"'</log-match>
+		</step>
+		
+		<step no="6.5">
+			<desc>get BR pppoe ip address from pppoe server</desc>
+			<log-file>step6.5_get_pppoe_ip.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0 pppoe"
+			</console>
+			<setvar name="br.pppoe.ip">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6.5_get_pppoe_ip.log -p "Local IP: ([\d.]+)" -t str
+			</setvar>
+		</step>
+		
+		<step no="6.6" delay="10" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				check gre tunnel on br side, remote to CVG wan address, local mgt0 address ,gateway CVG public address
+			</desc>
+			<log-file>step6.6_chk_gre_tunnel_br1.log</log-file>
+			<console target="br1.br">
+				-v "show vpn layer-3-tunnel"
+				-v "show vpn ipsec-tunnel"
+			</console>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.tunnel.ip}"</log-match>
+			<log-match>-i "${br.pppoe.ip}\[4500\]" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>			
+		</step>		
+
+		<step no="6.7">
+			<desc>
+				check vpn ike sa on BR side, destination to CVG public address
+			</desc>
+			<log-file>step6.7_chk_ike_sa_br_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "show vpn ike sa"
+			</console>
+			<log-match>-p 4 -i "I" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+			<log-match>-n -p 8 -i "0"</log-match>
+		</step>
+		
+
+		<step no="6.8" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				check vpn ike sa on CVG side, destionation to BR public address
+			</desc>
+			<log-file>chk_ike_sa_CVG_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 4 -i "R" -i "${br.pppoe.nat.ip}"</log-match>
+			<log-match>-n -p 8 -i "0"</log-match>
+		</step>
+
+
+		<step no="6.9">
+			<desc>
+				check gre tunnel on cvg side, local to CVG wan address</desc>
+			<log-file>step6.9_chk_gre_tunnel_CVG.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show vpn layer-3-tunnel"
+				-v "show vpn ipsec-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+			<log-match>-i "${cvg1.cvg.wan.ip}\[4500\]" -i "${br.pppoe.nat.ip}"</log-match>			
+		</step>
+		
+
+		<step no="7.1">
+			<desc>CVG will push its mgt0 ip address and lans to BR</desc>
+			<log-file>step7.1_show_route_br_01.log</log-file>
+			<console target="br1.br">
+				-v "show ip route"
+			</console>
+			<log-match>-p 1 -i "${cvg1.cvg.mgt0.ip}" -p 3 -i "255.255.255.255" -p 8 -i "tunnel0"</log-match>
+			<log-match>-p 1 -i "${cvg1.cvg.lan.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>BR will push its mgt0 ip address to CVG, BR will announce LANs under it, check the route table on CVG </desc>
+			<log-file>step7.2_show_route_cvg_01.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.ip}" -p 3 -i "255.255.255.255" -p 8 -i "tunnel0"</log-match>
+			<log-match>-p 1 -i "${br1.br.mgt0.route}" -p 8 -i "tunnel0"</log-match>
+		</step>		
+			
+		<step no="7.3" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>br1.vpc1 ping cvg.vpc1 to check the pkts forwarding</desc>
+			<log-file>brvpc1_ping_cvgvpc1_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v " ping ${cvg1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="7.4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>BR ping cvg.vpc1 to check pkts forwarding</desc>
+			<console target="br1.br">
+				-v "ping ${cvg1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+			
+		<step no="7.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>cvg.vpc1 ping br1.vpc1 to check pkts forwawrding</desc>
+			<log-file>cvgvpc1_ping_brvpc1_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v " ping ${br1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>		
+		
+		<!--br1 get different ip via pppoe-->
+		<step no="8.1">
+			<desc>disable pppoe on wan port</desc>
+			<console target="br1.br">
+				-v "no interface eth0 pppoe enable"
+				-v ""
+			</console>
+		</step>
+		
+		<!--br2 use pppoe to get ip address-->
+		
+		<step no="8.2">
+			<desc>
+				Open debug pppoe debug on BR
+			</desc>
+			<console target="br2.br">
+				-v "_debug brd ppp"
+				-v "_debug brd pppdebug"
+				-v "_debug brd pppoe"
+				-v "clear log all"
+				-v "console page 0"
+			</console>
+		</step>
+
+		<step no="8.3">
+			<desc>enable pppoe on wan port</desc>
+			<console target="br2.br">
+				-v "interface eth0 mode wan"
+				-v "interface eth0 pppoe username ${pub.pppoe1.username} password ${pub.pppoe1.passwd}"
+				-v "interface eth0 pppoe enable"
+			</console>
+		</step>
+
+		<step no="8.4" delay="10" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				show interface eth0 pppoe
+			</desc>
+			<log-file>step8.4_show_interface_pppoe_${loop_check.idx}.log</log-file>
+			<console target="br2.br">
+				-v "show interface eth0 pppoe"
+			</console>
+			<log-match>-c -i "Remote IP: ${pppoe.Remote.ip}"</log-match>
+			<log-match>-c -i "PPPoE status: enabled"</log-match>
+			<log-match>-c -i "Username: ${pub.pppoe1.username}"</log-match>
+			<log-match>-c -i "Connection status: connected"</log-match>
+		</step>
+
+		<step no="8.5" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8.5_show_logging_buffered.log</log-file>
+			<console target="br2.br" timeout="500">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "PPPoE request to start:" -i 'user \"${pub.pppoe1.username}\" password \"${pub.pppoe1.passwd}\"'</log-match>
+		</step>
+		
+		<step no="8.6">
+			<desc>get BR pppoe ip address from pppoe server</desc>
+			<log-file>step8.6_get_pppoe_ip.log</log-file>
+			<console target="br2.br">
+				-v "show interface eth0 pppoe"
+			</console>
+			<setvar name="br2.pppoe.ip">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step8.6_get_pppoe_ip.log -p "Local IP: ([\d.]+)" -t str
+			</setvar>
+		</step>
+		
+		<step no="8.7">
+			<desc>check br2 pppoe get ip should be same with br1 get pppoe ip, because disable br pppoe, will release the ip address on pppoe server</desc>
+			<script>
+				if [ "${br.pppoe.ip}" != "${br2.pppoe.ip}" ]; then exit 0; else exit 1; fi
+			</script>			
+		</step>
+		
+		
+	<!--enable br1 pppoe to get a new ip address -->	
+		<step no="8.8">
+			<desc>enable pppoe on wan port</desc>
+			<console target="br1.br">
+				-v "interface eth0 pppoe username ${pub.pppoe1.username} password ${pub.pppoe1.passwd}"
+				-v "interface eth0 pppoe enable"
+			</console>
+		</step>
+
+		<step no="8.9" delay="10" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				show interface eth0 pppoe
+			</desc>
+			<log-file>step8.9_show_interface_pppoe_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0 pppoe"
+			</console>
+			<log-match>-c -i "Remote IP: ${pppoe.Remote.ip}"</log-match>
+			<log-match>-c -i "PPPoE status: enabled"</log-match>
+			<log-match>-c -i "Username: ${pub.pppoe1.username}"</log-match>
+			<log-match>-c -i "Connection status: connected"</log-match>
+		</step>
+		
+		<step no="8.10">
+			<desc>get BR pppoe ip address from pppoe server</desc>
+			<log-file>step8.10_get_pppoe_ip.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0 pppoe"
+			</console>
+			<setvar name="br.pppoe.ip2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step8.10_get_pppoe_ip.log -p "Local IP: ([\d.]+)" -t str
+			</setvar>
+		</step>
+		
+		<!--check br1 get the new ip address and the old ip address-->
+		
+
+		<step no="8.11">
+			<desc>check br1 pppoe get ip should be different with br2 get pppoe ip</desc>
+			<script>
+				if [ "${br.pppoe.ip2}" != "${br.pppoe.ip}" ]; then exit 0; else exit 1; fi
+			</script>			
+		</step>
+		
+		<step no="8.12" delay="10" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				check gre tunnel on br side, remote to CVG wan address, local mgt0 address ,gateway CVG public address
+			</desc>
+			<log-file>step8.12_chk_gre_tunnel_br1.log</log-file>
+			<console target="br1.br">
+				-v "show vpn layer-3-tunnel"
+				-v "show vpn ipsec-tunnel"
+			</console>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.tunnel.ip}"</log-match>
+			<log-match>-i "${br.pppoe.ip2}\[4500\]" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>			
+		</step>		
+		
+		<step no="8.13">
+			<desc>
+				check vpn ike sa on BR side, destination to CVG public address
+			</desc>
+			<log-file>step8.13_chk_ike_sa_br_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "show vpn ike sa"
+			</console>
+			<log-match>-p 4 -i "I" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+			<log-match>-n -p 8 -i "0"</log-match>
+		</step>
+		
+
+		<step no="8.14" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				check vpn ike sa on CVG side, destionation to BR public address
+			</desc>
+			<log-file>chk_ike_sa_CVG_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 4 -i "R" -i "${br.pppoe.nat.ip}"</log-match>
+			<log-match>-n -p 8 -i "0"</log-match>
+		</step>
+
+
+		<step no="8.15">
+			<desc>
+				check gre tunnel on cvg side, local to CVG wan address</desc>
+			<log-file>step8.15_chk_gre_tunnel_CVG.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show vpn layer-3-tunnel"
+				-v "show vpn ipsec-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+			<log-match>-i "${cvg1.cvg.wan.ip}\[4500\]" -i "${br.pppoe.nat.ip}"</log-match>			
+		</step>
+		
+
+		<step no="9.1">
+			<desc>CVG will push its mgt0 ip address and lans to BR</desc>
+			<log-file>step9.1_show_route_br_01.log</log-file>
+			<console target="br1.br">
+				-v "show ip route"
+			</console>
+			<log-match>-p 1 -i "${cvg1.cvg.mgt0.ip}" -p 3 -i "255.255.255.255" -p 8 -i "tunnel0"</log-match>
+			<log-match>-p 1 -i "${cvg1.cvg.lan.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<step no="9.2" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>BR will push its mgt0 ip address to CVG, BR will announce LANs under it, check the route table on CVG </desc>
+			<log-file>step9.2_show_route_cvg_01.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.ip}" -p 3 -i "255.255.255.255" -p 8 -i "tunnel0"</log-match>
+			<log-match>-p 1 -i "${br1.br.mgt0.route}" -p 8 -i "tunnel0"</log-match>
+		</step>		
+			
+		<step no="9.3" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>br1.vpc1 ping cvg.vpc1 to check the pkts forwarding</desc>
+			<log-file>brvpc1_ping_cvgvpc1_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v " ping ${cvg1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="9.4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>BR ping cvg.vpc1 to check pkts forwarding</desc>
+			<console target="br1.br">
+				-v "ping ${cvg1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+			
+		<step no="9.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>cvg.vpc1 ping br1.vpc1 to check pkts forwawrding</desc>
+			<log-file>cvgvpc1_ping_brvpc1_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v " ping ${br1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>		
+		
+		
+		
+		
+		
+		
+	</stage>
+	
+	<failed-process>
+		<stage>
+			<include prefix="0.1" file="subs/br_open_fw.xml" obj-args="br1" />
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>	
+
+</testcase>

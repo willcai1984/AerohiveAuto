@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>VLAN configuration mgmt test</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use
+		Switch
+
+		Pre-condition:
+		Reset config of switch to factory default
+
+		Test procedure:
+		1. create vlan 100 and create vlan 200 name local, show vlan brief, result1 (19650);
+		2. reserverd-vlan 1000, create vlan 4094, show vlan brief, result2 (19625);
+		3. vlan-reserved 3967, show vlan-reserved, result3(19627);
+		4. create vlan 3967, show vlan brief, result4(19629);
+		5. port1 switchport mode trunk, port1 switchport voice vlan 3967, show int port1 switchport,
+		port1 voice vlan 2000,result5(19643);
+		6. port2 mode wan, show vlan-entry chip, result6(19927);
+		7. change vlan-reserved to 100, show vlan-reserved, result7(19954);
+		8. save config, reboot, show vlan brief, show vlan-reserved, result8(bug 19921,20161,20208);
+
+		Expect result:
+		result1: vlan 100 and vlan 200 create succeed, and vlan 200 is named local;
+		result2: vlan 4094 create succeed;
+		result3: vlan-reserved succeed;
+		result4: new created vlan should not be reserved-vlan;
+		result5: voice vlan should not be reserved-vlan;
+		result6: port2 pvid
+		changed to 1000;
+		result7: can't create reserved-vlan to exist vlan;
+		result8: vlan 1, 100, 200,1000, 4094 still exist, port2 reserved-vlan is 3967, port1 voice vlan 2000;
+
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<comment>
+		sw1.port1=eth1/5;
+		sw1.port1.phytype=copper;
+		sw1.port2=eth1/6;
+		sw1.port2.phytype=copper;
+		sw1.port3=eth1/7;
+		sw1.port3.phytype=copper;
+		sw1.port4=eth1/8;
+		sw1.port4.phytype=copper;
+		sw1.mgt0.port=eth1/1;
+		sw1.mgt0.vlan=121;
+		sw1.port1.ixia_port=1/1/5;
+		sw1.port2.ixia_port=1/1/6;
+		sw1.port3.ixia_port=1/1/3;
+		sw1.port4.ixia_port=1/1/4;
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclclient1.ip=10.155.40.10;
+		pub.tclserver1.ip=10.155.30.178;
+		tb.conserver.ip=10.155.32.228;
+		tb.conserver.user=root;
+		tb.conserver.passwd=aerohive;
+		sw1.cons_name=tb1-SR2024-3;
+		sw1.user=admin;
+		sw1.passwd=aerohive;
+		sw1.prompt="AH-[a-z0-9A-Z_]*#";
+		mpc.mif.ip=10.155.32.228;
+		mpc.tif.ip=10.68.136.252;
+		mpc.user=root;
+		mpc.passwd=aerohive;
+		mpc.prompt=".*#";
+		mpc.tif.name=eth1;
+		tb.nvlan=100;
+		tb.vlans=100,200,300;
+		tb.vlan1=100;
+		tb.vlan2=200;
+		tb.vlan3=300;
+	</comment>
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<step no="1">
+			<desc>
+				create vlan 100 and create vlan 200 name local
+			</desc>
+			<log-file>vlan_create_1.log</log-file>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2} name local"
+				-v "show vlan brief"
+				-v "show vlan summary"
+			</telnet>
+			<log-match>-c -i "100" -i "VLAN100"</log-match>
+			<log-match>-c -i "200" -i "local"</log-match>
+			<log-match>-c -i "Number of existing VLANs: 4"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				change reserverd-vlan 1000 and create vlan 4094
+			</desc>
+			<log-file>vlan_create_2.log</log-file>
+			<telnet target="sw1">
+				-v "vlan-reserve 1000"
+				-v "vlan 4094"
+				-v "show vlan brief"
+				-v "show vlan summary"
+			</telnet>
+			<log-match>-c -i "4094" -i "VLAN4094"</log-match>
+			<log-match>-c -i "Reserved VLAN range:" -i "1000 - 1382"</log-match>
+			<log-match>-c -i "Number of existing VLANs:" "5"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				restore reserverd-vlan 3967
+			</desc>
+			<log-file>vlan_create_3.log</log-file>
+			<telnet target="sw1">
+				-v "no vlan 4094"
+				-v "vlan-reserve 3712"
+				-v "show vlan summary"
+			</telnet>
+			<log-match>-c -i "Reserved VLAN range:" -i "3712 - 4094"</log-match>
+			<log-match>-c -i "Number of existing VLANs:" "4"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				new created vlan can't be reserved-vlan;
+			</desc>
+			<log-file>vlan_create_4.log</log-file>
+			<telnet target="sw1">
+				-v "vlan 3967"
+				-v "show vlan summary"
+			</telnet>
+			<log-match>-c -i "Number of existing VLANs:" "4"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5">
+			<desc>
+				voice vlan can't be reserved-vlan;
+			</desc>
+			<log-file>vlan_create_5.log</log-file>
+			<telnet target="sw1">
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port1} switchport trunk voice-vlan 3967"
+				-v "no interface ${sw1.port1} switchport trunk allow vlan all"
+				-v "show interface ${sw1.port1} switchport"
+			</telnet>
+			<log-match>-c -i "Static Voice VLAN:" -i "0"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				voice vlan should be exist vlan;
+			</desc>
+			<log-file>vlan_create_6.log</log-file>
+			<telnet target="sw1">
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port1} switchport trunk voice-vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport trunk voice-vlan 1000"
+				-v "show interface ${sw1.port1} switchport"
+			</telnet>
+			<log-match>-c -i "Static Voice VLAN:" -i "${tb.vlan1}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7">
+			<desc>
+				wan port pvid is in reserved-vlan
+			</desc>
+			<log-file>vlan_create_7.log</log-file>
+			<telnet target="sw1">
+				-v "interface ${sw1.port2} mode wan"
+				-v "show vlan-entry chip"
+			</telnet>
+			<log-match>-c -i "${sw1.port2}" -i "3712"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>
+				change reserved-vlan, wan port pvid will be change at the same time;
+			</desc>
+			<log-file>vlan_create_8.log</log-file>
+			<telnet target="sw1">
+				-v "vlan-reserve 2000"
+				-v "show vlan-entry chip"
+			</telnet>
+			<log-match>-c -i "${sw1.port2}" -i "2000"</log-match>
+		</step>		
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

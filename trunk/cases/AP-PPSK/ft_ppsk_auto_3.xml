@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the index-range works</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config PSK-generation-method to username-password
+		-config a concatenated-characters
+		-config the password-generation-method to auto
+
+		Test Procedure:
+		-config the index range to 1 1024
+		-check the result 1
+		-bind the group to ssid
+		-bind the ssid to wifi0
+		-check result 2
+		-client connect to AP with PPSK
+		-check result 3
+		-change the index
+		-check result 4
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="default.psk" value="aerohive" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-config the password-generation-method to auto
+				-Config security-object parameters
+			</desc>
+			<ssh target="ap1">
+				-v "_debug auth info"
+				-v "clear log all"
+				-v "user-group userGroup"
+				-v "user-group userGroup password-generation-method auto"
+				-v "user-group userGroup psk-generation-method username-and-password"
+				-v "no user-group userGroup psk-format character-pattern special-characters"
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key ${default.psk}"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "security-object ppsk security private-psk"
+				-v "security-object ppsk security private-psk default-psk-disabled"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config a user-profile
+				-config a ssid default-attribute 1
+				-bind the group to ssid
+				-bind the ssid to wifi0
+			</desc>
+			<ssh target="ap1">
+				-v "user-profile ttt vlan-id 1 attribute 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-group userGroup auto-generation index-range 1 2"
+			</ssh>
+		</step>
+
+		<step no="2.1" delay="10">
+			<desc>
+				check logging result
+			</desc>
+			<log-file>step2.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "generated *for *user *(userGroup0002)"</log-match>
+		</step>
+
+		<step no="2.1a" var-type="s1">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup0002\)" --script "m.group(1)" -s none -g-1
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show user
+			</desc>
+			<log-file>step2.2_show_user.log</log-file>
+			<ssh target="ap1">
+				-v "show user"
+			</ssh>
+			<log-match>-c -i "userGroup0002" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step2.3_show_user_group.log</log-file>
+			<ssh target="ap1">
+				-v "show user-group"
+			</ssh>
+			<log-match>-c -i "userGroup" -p 6 -i "AU"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				show running-config users
+			</desc>
+			<log-file>step2.4_show_running_config_users.log</log-file>
+			<ssh target="ap1">
+				-v "show running-config users"
+			</ssh>
+			<log-match>-c -i "user-group userGroup auto-generation index-range 1 2"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step3_show_auth_private_psk.log</log-file>
+			<ssh target="ap1">
+				-v "show auth private-psk"
+			</ssh>
+			<log-match>-c -i "userGroup0002" -i "Yes"</log-match>
+		</step>
+
+		<step no="3.a">
+			<desc>Get the pmk value of userGroup0001</desc>
+			<setvar name="pmk.value">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3_show_auth_private_psk.log -p "userGroup0002\s*userGroup\s*(.*)\s*Yes" -t str
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-show ssid XXX user-group
+			</desc>
+			<log-file>step3_show_ssid_user_group.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} user-group"
+			</ssh>
+			<log-match>-c -i "userGroup"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show ap1's interface wifi0 info
+			</desc>
+			<log-file>show_ap1_interface_info.log</log-file>
+			<ssh target="ap1">
+				-v "show interface wifi0.1"
+			</ssh>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				get ap1's wifi0.1's mac address
+			</desc>
+			<setvar name="ap1.wifi0.1.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_interface_info.log -i wifi0.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="pre.conn1.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn1.psk" type="special">
+				echo userGroup0002${ppsk.auto.value}
+			</setvar>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="wpa-tkip-psk" />
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="5" delay="10">
+			<desc>
+				-check the logging result
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.1.mac} thru SSID ${ssid.name}"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) login to SSID(wifi0.1) by user_name=userGroup0002"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step6_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step6.1_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step6.2_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup0002" -i "done"</log-match>
+		</step>
+
+		<include prefix="7" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="8">
+			<desc>
+				-clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log b"
+			</console>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				-Change the index
+			</desc>
+			<ssh target="ap1">
+				-v "user-group userGroup auto-generation index-range 2 3"
+				-v "show clock"
+			</ssh>
+		</step>
+		<step no="8.2" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				-show logging buffered
+			</desc>
+			<log-file>step8.2_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show logging buffered"
+				-v "sh clock"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "ah_auth_add_users_by_auto_index: add 1 user/password for group(userGroup) to share-memory"</log-match>
+			<log-match>-c -i "ah_auth_add_users_by_auto_index: generate 1 password for new users in group(userGroup)"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				show user
+			</desc>
+			<log-file>step9_show_user.log</log-file>
+			<ssh target="ap1">
+				-v "show user"
+			</ssh>
+			<log-match>-c -i "userGroup0002" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step10_show_auth_private_psk_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show auth private-psk"
+			</ssh>
+			<log-match>-c -i "userGroup0002" -i "Yes"</log-match>
+		</step>
+
+		<step no="pre.conn2.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn2.psk" type="special">
+				echo userGroup0002${ppsk.auto.value}
+			</setvar>
+		</step>
+
+		<property name="conn2.ssid" value="${ssid.name}" />
+		<property name="conn2.proto" value="wpa-tkip-psk" />
+
+		<include prefix="11" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="12" delay="10">
+			<desc>
+				-check the logging result
+			</desc>
+			<log-file>step12_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="200">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.1.mac} thru SSID ${ssid.name}"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) login to SSID(wifi0.1) by user_name=userGroup0002"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step13_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="13.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step13.1_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="13.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step13.2_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup0002" -i "done"</log-match>
+		</step>
+	</stage>
+</testcase>

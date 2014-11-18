@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>portal send gratuitous arp</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		- ap1 and ap2 are L2 neighbors, ap2's eth port is shutdown at the
+		beginning
+		- Laptop associates with ap2, result 1
+		- bring up eth port ap2, result 2
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}_1" />
+	<stage>
+		<if>"${ap2.wifi1.existed}" == "true" &amp;&amp; "${ap1.wifi1.existed}" =="true"</if>
+		<step no="pre0.1">
+			<desc>
+				-shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="pre0.1a">
+			<desc>
+				-shutdown interface eth1
+			</desc>
+			<if>"${ap2.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="pre1.1">
+			<desc>
+				-configure AP1 as portal1
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+			</console>
+		</step>
+
+		<step no="pre1.2">
+			<desc>
+				-configure AP2 as Portal2
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 40"
+			</console>
+		</step>
+
+		<step no="pre1.2a">
+			<desc>
+				show ap2's interface wifi1 info
+			</desc>
+			<log-file>show_ap2_interface_info.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="pre1.2b">
+			<desc>
+				get ap2's wifi1's mac address
+			</desc>
+			<setvar name="ap2.wifi1.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_interface_info.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="pre1.3">
+			<desc>shutdown interface wifi1 and then up it (it's aimed to clear wifi1's neighbor list)</desc>
+			<telnet target="ap1">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface wifi1 radio channel 40"
+			</telnet>
+		</step>
+
+		<step no="pre1.3a" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>pre1.3a_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="pre1.4" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				On ap2
+				-show roaming neighbor
+			</desc>
+			<log-file>step_pre1.4_show_roaming_neighbor_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-c -i "${ap1.mgt0.mac}" -i "${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="pre1.4a" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>
+				On ap1
+				-show amrp dnxp neighbor
+			</desc>
+			<log-file>step_pre1.4a_show_amrp_dnxp_neighbor_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2.mgt0.mac}" -i "${ap2.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="pre1.5">
+			<desc>
+				shutdown interface eth0 on MP
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="pre1.5a" delay="35" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>pre1.5a_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="pre2.1">
+			<desc>
+				enable debug
+			</desc>
+			<console target="ap1">
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="pre2.2">
+			<desc>
+				enable debug
+			</desc>
+			<console target="ap2">
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="pre3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="translate_mac">
+			<multi-setvar>
+				echo "sta1.tif.mac=$(echo ${sta1.tif.mac} | tr "A-F" "a-f")"
+			</multi-setvar>
+		</step>
+
+		<step no="1.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				portal2 insert arp entry into arp table
+			</desc>
+			<log-file>step1.1_arp_clear.log</log-file>
+			<console target="ap1">
+				-v "show arp-cache"
+			</console>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="1.2" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				portal2 insert route for laptop
+			</desc>
+			<log-file>step1.2_show_route.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-i "${sta1.tif.mac} *${ap1.mgt0.mac} *wifi0.1"</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				portal1 insert route for laptop
+			</desc>
+			<log-file>step1.3_show_route.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				portal2 send gratuitous arp
+			</desc>
+			<log-file>step2.1_show_log_buff.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\[fe_arp\]: eth0 send gratuitous ARP ${sta1.tif.mac} vlan 1" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="2.2">
+			<desc>
+				portal1 does not send gratuitous arp
+			</desc>
+			<log-file>step2.2_show_log_buff.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\[fe_arp\]: eth0 send gratuitous ARP ${sta1.tif.mac} vlan 1" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				-configure AP1 as portal1
+			</desc>
+			<console target="ap1">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<include prefix="4" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="5">
+			<desc>
+				clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7" delay="15">
+			<desc>
+				portal1 send gratuitous arp
+			</desc>
+			<log-file>step7_show_log_buff.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show logging buffered"
+			</console>
+			<log-match>-c -i "\[fe_arp\]: eth0 send gratuitous ARP ${sta1.tif.mac} vlan 1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>
+				portal2 send gratuitous arp
+			</desc>
+			<log-file>step7.1_show_log_buff.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -n -i "\[fe_arp\]: eth0 send gratuitous ARP ${sta1.tif.mac} vlan 1"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

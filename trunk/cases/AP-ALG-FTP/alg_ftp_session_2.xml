@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>The data session will be deleted immediately once see the data RST packet.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP and assigned an ip address
+		- Configure ip-policy and bind it to the userprofile of the laptop on AP
+		"ip-policy fw"
+		"ip-policy fw from &lt;LaptopIPaddr&gt; service ftp action permit"
+		"ip-policy fw service dhcp-server action permit"
+		"ip-policy fw service dhcp-client action permit"
+		"user-profile &lt;AP-profile&gt; security ip-policy from-acces fw to-access fw"
+
+		Test Procedure:
+		1.Enable ALG-FTP and open FE debug;
+		"alg ftp enable"
+		"_kdebug fe basic"
+		"_kdebug fe detail"
+		"debug console"
+		2.Laptop connect to server and download files(PORT/PASV/EPRT/EPSV)
+		3.Look up ip-sessions and logs
+		"show forwarding-engine ip-sessions"
+		4.Interrupt the connection by execute command on laptop(TCP RST)
+		"ctrl+c"
+		5. Look up ip-sessions and logs
+		"show forwarding-engine ip-sessions"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="ftp_test_file_local_dir" value="/tmp" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				clear sta1 tmp firstly
+			</desc>
+			<log-file>step0_clear_tmp.log</log-file>
+			<ssh target="sta1">
+				-v "rm -f -r /${ftp_test_file_local_dir}/*"
+			</ssh>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config ssid and bind it to interface
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface eth0 native-vlan ${tb.vlan1}"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "interface wifi0 radio channel 1"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				- Configure ip-policy and bind it to the userprofile of the laptop on AP
+				"ip-policy fw"
+				"ip-policy fw from &lt;LaptopIPaddr&gt; service ftp action permit"
+				"user-profile &lt;AP-profile&gt; security ip-policy from-acces fw to-access fw"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy fw"
+				-v "ip-policy fw from ${sta1.tif.ip} service ftp action permit"
+				<!-- -v "ip-policy fw from ${sta1.tif.ip} service ftp-data action permit" -->
+				-v "user-profile ttt security ip-policy from-acces fw to-access fw"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				1.Enable ALG-FTP and open FE debug;
+				"alg ftp enable"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"debug console"
+			</desc>
+			<telnet target="ap1">
+				-v "alg ftp enable"
+				-v "_ff dst-ip ${tb.ftp} protocol 6 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe session"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				"clear forwarding-engine ip-sessions"
+			</desc>
+			<telnet target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				clear local file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f ${ftp_test_file_local_dir}/${tb.ftp.file3_small}"
+			</ssh>
+		</step>
+
+		<step no="6">
+			<desc>
+				-Get file from ftp server
+			</desc>
+			<log-file>step6_curl_pid.log</log-file>
+			<ssh target="sta1">
+				-v "nohup curl -u ${tb.ftp.user}:${tb.ftp.passwd} ftp://${tb.ftp}/${tb.ftp.file3_small} -o ${ftp_test_file_local_dir}/${tb.ftp.file3_small} -P ${sta1.tif.ip} --disable-eprt --limit-rate 1k --connect-timeout 200 &amp;"
+			</ssh>
+		</step>
+
+		<include prefix="6.1" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step6.1_show_logging_buffered.log" />
+
+		<step no="6.2" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				-Check "curl get" alive
+			</desc>
+			<log-file>step6.2_curl_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep curl"
+			</ssh>
+			<log-match>-i "ftp"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				get pid of "curl get""
+			</desc>
+			<setvar name="curl.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_curl_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="7">
+			<desc>
+				"show forwarding-engine ip-sessions"
+			</desc>
+			<log-file>step7_show_forwarding_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<!-- <log-match bin="${bin.dir}/searchblocks.py">-ps p1 "${sta1.tif.ip}/\d+ -&gt; ${tb.ftp}/21;" -f ${log.dir}/${log.file}</log-match> -->
+			<!-- <log-match bin="${bin.dir}/searchblocks.py">-ps p1 "${tb.ftp}/21 -&gt; ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match> -->
+			<!-- <log-match bin="${bin.dir}/searchblocks.py">-ps p2 "${sta1.tif.ip}/\d+ -&gt; ${tb.ftp}/\d+" -f ${log.dir}/${log.file}</log-match> -->
+			<!-- <log-match bin="${bin.dir}/searchblocks.py">-ps p2 "${tb.ftp}/\d+ -&gt; ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match> -->
+		</step>
+
+		<step no="7.1">
+			<desc>
+				-Look up log info on ap1
+			</desc>
+			<log-file>step6.1_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${tb.ftp}.*TCP \d+-&gt;20 *\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "\(o\) wifi0.1 ${tb.ftp}-&gt;${sta1.tif.ip}.*TCP 20-&gt;\d+ *\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				-Get data session id
+			</desc>
+			<setvar name="data_session_id">
+				${bin.dir}/getbyrexp.py -p "Id:(\d+); Ageout" -e "${tb.ftp}/20 -&gt; ${sta1.tif.ip}/\d+; Proto 6" -s none -g-1 -t str -f ${log.dir}/step7_show_forwarding_ip_sessions.log
+			</setvar>
+		</step>
+
+		<step no="8">
+			<desc>
+				kill curl process
+			</desc>
+			<log-file>step8_check_file.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep curl"
+			</ssh>
+			<log-match>-i "curl" -i "ftp"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				kill curl process
+			</desc>
+			<log-file>step9_check_file.log</log-file>
+			<ssh target="sta1">
+				-v "kill ${curl.pid}"
+				-v "ps aux | grep curl"
+			</ssh>
+			<log-match>-n -i "curl" -i "ftp"</log-match>
+		</step>
+
+		<include prefix="9.1" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step9.1_show_logging_buffered.log" />
+
+		<step no="9.2">
+			<desc>
+				-Look up log info on ap1
+			</desc>
+			<log-file>step9.1_show_logging_buffered.log</log-file>
+			<log-match>-i "\[fe\]:" -i "tcp RST pkt, *invalidate IP sess id \[${data_session_id}\]"</log-match>
+		</step>
+
+		<step no="9.3">
+			<desc>
+				"clear log all"
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="10">
+			<desc>
+				"show forwarding-engine ip-sessions"
+			</desc>
+			<log-file>step10_show_forwarding_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p0 "${sta1.tif.ip}/\d+ -&gt; ${tb.ftp}/21;" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p0 "${tb.ftp}/21 -&gt; ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p0 "${sta1.tif.ip}/\d+ -&gt; ${tb.ftp}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p0 "${tb.ftp}/\d+ -&gt; ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<!-- <include prefix="10.1" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step10.1_show_logging_buffered.log" /> -->
+
+		<!-- <step no="10.2"> -->
+		<!-- <desc> -->
+		<!-- -Look up log info on ap1 -->
+		<!-- </desc> -->
+		<!-- <log-file>step10.1_show_logging_buffered.log</log-file> -->
+		<!-- <log-match bin="${bin.dir}/searchblocks.py">-ps p0 "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${tb.ftp}.*TCP \d+-&gt;\d+ *\d+" -f ${log.dir}/${log.file}</log-match> -->
+		<!-- <log-match bin="${bin.dir}/searchblocks.py">-ps p0 "\(o\) wifi0.1 ${tb.ftp}-&gt;${sta1.tif.ip}.*TCP \d+-&gt;\d+ *\d+" -f ${log.dir}/${log.file}</log-match> -->
+		<!-- </step> -->
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					kill curl process and clear local file
+				</desc>
+				<ssh target="sta1">
+					-v "killall curl -q"
+					-v "rm -f ${ftp_test_file_local_dir}/${tb.ftp.file3_small}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

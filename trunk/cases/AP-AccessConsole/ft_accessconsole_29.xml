@@ -1,0 +1,271 @@
+<testcase>
+	<brief>Self healing test (dcd module)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+		Login AP1 via console
+		AP1 can obtain ip address from DHCP server
+
+		Test procedure:
+		1. Set corresponding configuration of access console in AP1
+		access-console custom-ssid ac_ssid
+		access-console max-client 1
+		access-console mode auto(default is auto)
+		access-console security protocol-suite wpa-auto-psk ascii-key testtest
+		2. Enter shell and kill dcd process in AP1
+		3. After dcd process restart, check running config in AP1
+		4. Set track action enable-access-console and set track default-gateway in AP1
+		5. Set interface wifi1 to access mode and shutdown interface eth0 and eth1 in AP1
+		6. Check track result by show track xxx
+		7. Check access console state by show access console _
+		8. Use a laptop to connect to access console SSID
+		9. When access console in running state, kill dcd process in shell
+		10. After dcd restart, check access console SSID and status
+		11. Use a laptop to connect to access console SSID
+
+		Expect result:
+		1. Show running-config should contain these commands
+		2. Use ps to check
+		dcd process not exist
+		3. Access console set not change
+		4. Show running-config can see the following commands:
+		track xxx action enable-access-console
+		track xxx default-gateway
+		5. Show interface can see wifi1 with access mode
+		6. Track result: targets unreachable
+		7. Access console with running state
+		8. Laptop can connect to access console SSID and obtain a ip address, can login AP via access console in laptop
+		9. Use ps to check dcd process not exist(or show system process to check)
+		10. Access console SSID didn’t change
+		11. Laptop can connect to access console SSID
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.proto" value="wpa2-aes-psk" />
+	<property name="conn1.psk" value="testtest" />
+
+	<stage>
+		<step no="1">
+			<desc>Set access-console config to AP</desc>
+			<console target="ap1" timeout="80">
+				-v "access-console custom-ssid ${ssid.name}"
+				-v "access-console security protocol-suite wpa2-aes-psk ascii-key testtest"
+				-v "access-console max-client 1"
+				-v "access-console mode auto"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>Set track config for AP1 via console</desc>
+			<console target="ap1" timeout="60">
+				-v "track ${tb.name} enable "
+				-v "track ${tb.name} action enable-access-console"
+				-v "track ${tb.name} default-gateway"
+			</console>
+		</step>
+
+		<step no="3" delay="30">
+			<desc>Check track result on AP1 via console</desc>
+			<log-file>step3_show_track.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show track "
+			</console>
+			<log-match>-c -i "${tb.name} *Reachable"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>Enter shell and kill dcd process, then exit shell</desc>
+			<console target="ap1" prompt="AH.*#|$" slow="true">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v ""
+				-v ""
+				-v "killall -9 ah_dcd"
+				-v "exit"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="4.1" delay="30">
+			<desc>Check system process</desc>
+			<console target="ap1" timeout="60">
+				-v "show system process"
+			</console>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				check if ah_dcd recover
+			</desc>
+			<log-file>step4.2_check_ah_dcd_recover.log</log-file>
+			<console target="ap1" prompt="AH.*#|$" slow="true">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v ""
+				-v ""
+				-v "ps"
+				-v "exit"
+			</console>
+			<log-match>-c -i "ah_dcd"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>Check running config by CLI</desc>
+			<log-file>step5_show_running_config.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show running-config"
+			</console>
+			<log-match>-c -i "track ${tb.name} default-gateway"</log-match>
+			<log-match>-c -i "track ${tb.name} action enable-access-console"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>Set interface wifi1 to access mode by CLI on AP1 via console</desc>
+			<if>"${ap1.wifi1.existed}" =="true"</if>
+			<console target="ap1" timeout="80">
+				-v "interface wifi1 mode access"
+			</console>
+		</step>
+
+		<step no="6.1">
+			<desc>Shutdown interface eth0 and eth1 by CLI on AP1 via console</desc>
+			<console target="ap1" timeout="80">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="6.2">
+			<desc>Shutdown interface eth1</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<console target="ap1" timeout="60">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="7" delay="60">
+			<desc>Check track result by CLI via console on AP1</desc>
+			<log-file>step7_show_track.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show track "
+			</console>
+			<log-match>-c -i "${tb.name} *Unreachable"</log-match>
+		</step>
+
+		<step no="8" delay="30">
+			<desc>Check access console state of AP1</desc>
+			<log-file>step8_show_access_console.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show access-console _"
+			</console>
+			<log-match>-c -i "Current state: *running"</log-match>
+		</step>
+
+		<step no="9" delay="5">
+			<desc>Show interface wifi0.1 of AP1</desc>
+			<log-file>step9_show_interface_wifi0.1.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi0.1"
+			</console>
+			<log-match>-c -i "SSID=\\\&quot;${ssid.name}\\\&quot;"</log-match>
+		</step>
+
+		<step no="10" delay="5">
+			<desc>Show interface wifi1.1 of AP1</desc>
+			<if>"${ap1.wifi1.existed}" =="true"</if>
+			<log-file>step10_show_interface_wifi1.1.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi1.1"
+			</console>
+			<log-match>-c -i "SSID=\\\&quot;${ssid.name}\\\&quot;"</log-match>
+		</step>
+
+		<include prefix="11" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="12">
+			<desc>Show ssid station</desc>
+			<log-file>step12_show_sta.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show ssid ${ssid.name} station"
+			</console>
+			<log-match>-c -i "${sta1.tif.mac}"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>Enter shell and kill dcd process, then exit shell</desc>
+			<console target="ap1" prompt="AH.*#|$" slow="true">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v ""
+				-v ""
+				-v "killall -9 ah_dcd"
+				-v "exit"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="14" delay="30">
+			<desc>Check system process</desc>
+			<console target="ap1" timeout="60">
+				-v "show system process"
+			</console>
+		</step>
+
+		<step no="15">
+			<desc>
+				check if ah_dcd recover
+			</desc>
+			<log-file>step15_check_ah_dcd_recover.log</log-file>
+			<console target="ap1" prompt="AH.*#|$" slow="true">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v ""
+				-v ""
+				-v "ps"
+				-v "exit"
+			</console>
+			<log-match>-c -i "ah_dcd"</log-match>
+		</step>
+
+		<step no="16" delay="30">
+			<desc>Check access console state of AP1</desc>
+			<log-file>step16_show_access_console.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show access-console _"
+			</console>
+			<log-match>-c -i "Current state: *running"</log-match>
+		</step>
+
+		<step no="17" delay="5">
+			<desc>Show interface wifi0.1 of AP1</desc>
+			<log-file>step17_show_interface_wifi0.1.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi0.1"
+			</console>
+			<log-match>-c -i "SSID=\\\&quot;${ssid.name}\\\&quot;"</log-match>
+		</step>
+
+		<step no="18" delay="5">
+			<desc>Show interface wifi1.1 of AP1</desc>
+			<if>"${ap1.wifi1.existed}" =="true"</if>
+			<log-file>step18_show_interface_wifi1.1.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi1.1"
+			</console>
+			<log-match>-c -i "SSID=\\\&quot;${ssid.name}\\\&quot;"</log-match>
+		</step>
+
+		<include prefix="19" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="20">
+			<desc>Show ssid station</desc>
+			<log-file>step20_show_sta.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show ssid ${ssid.name} station"
+			</console>
+			<log-match>-c -i "${sta1.tif.mac}"</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,200 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>After change vlan and ip address of dhcp server, the corresponding config file should change</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		BR100:
+		Set vlan to interface mgt0.1
+		Set ip address to interface mgt0.1
+		Enable DHCP server on interface mgt0.1
+		Set ip-pool to dhcp-server mgt0.1
+		Enable DNS server on mgt0.1
+		interface mgt0.1 vlan 100
+		interface mgt0.1 ip 100.100.100.1/24
+		interface mgt0.1 dhcp-server options default-gateway 100.100.100.1
+		interface mgt0.1 dhcp-server options dns1 100.100.100.1
+		interface mgt0.1 dhcp-server ip-pool 100.100.100.10 100.100.100.100
+		interface mgt0.1 dhcp-server enable
+		interface mgt0.1 dns-server enable
+
+		Test Procedure:
+		1. Check DNS config file of mgt0.1 in shell
+		2. Change vlan of interface mgt0.1, disable dhcp-server of mgt0.1, change ip
+		address of mgt0.1, remove ip-pool of mgt0.1, enable dhcp-server again, set
+		new ip-pool, gateway, dns, check DNS config file in shell
+		AH-671940#show running-config | in mgt0.1
+		interface mgt0.1 vlan 200
+		interface mgt0.1 ip 200.200.200.1/24
+		interface mgt0.1 dhcp-server options default-gateway 200.200.200.1
+		interface mgt0.1 dhcp-server options dns1
+		200.200.200.1
+		interface mgt0.1 dhcp-server ip-pool 200.200.200.100 200.200.200.200
+		interface mgt0.1 dhcp-server enable
+		interface mgt0.1 dns-server enable
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+	<property name="br1.vpc1.mask" value="255.255.255.0" />
+	<stage>
+
+		<include prefix="1" file="subs/vpn_setup_one_sw.xml" obj-args="cvg1, br1" />
+
+		<step no="2.2">
+			<desc>
+				config mgt0.1 with dhcp service enable,dns service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask ${br1.vpc1.mask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc1.vlan} dns-server int-domain-name ${cvg1.dns1.domain1}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server int-resolve dns1 ${cvg1.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server ext-resolve dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server enable"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="2.3">
+			<desc>
+				Set interface eth0 to wan mode,eth1 to access mode and enable mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<!-- <step no="2.4"> <desc> config BR as l3 VPN client </desc> <console target="br1.br"> -v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem" -v "vpn client-ipsec-tunnel ${br1.br.name}_client_ipsec_1 vpn-mode layer-3" -v "vpn ipsec-tunnel ${br1.br.name}_client_ipsec_1 gateway ${cvg1.cvg.mip.ip} client-name ${br1.br.name} password aerohive" -v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel ${br1.br.name}_client_ipsec_1 primary" -v "routing route-request enable" -v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}" -v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${cvg1.cvg.wan.netmask}" </console> </step> -->
+
+		<step no="2.5">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.6">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				Set filter _ff id 1 dst-port 53 bidirectional
+				Open debug _kdebug fe basic/detail and debug console
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+
+				-v "_ff id 1 dst-port 53 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				verify process
+			</desc>
+			<log-file>step8.1_check_process_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" prompt="\$|AH.*#">
+				-b -sp "${br1.br.shellpwd}"
+				-v "_shell"
+				-v "ps"
+				-v "exit"
+				-v ""
+			</telnet>
+			<log-match>-i "dnsmasq_vlan${br1.vpc1.vlan}"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Check DNS config file of mgt0.1 in shell
+			</desc>
+			<log-file>step6.1_check_config_file.log</log-file>
+			<telnet target="${br1.br.wan.ip}" prompt="\$|AH.*#">
+				-b -sp "${br1.br.shellpwd}"
+				-v "_shell"
+				-v "cat /etc/dnsmasq/dnsmasq_vlan${br1.vpc1.vlan}.conf"
+				-v "exit"
+				-v ""
+			</telnet>
+			<no-error-check />
+			<log-match>-i "listen-address=${br1.br.mgt0.1.ip}"</log-match>
+			<log-match>-i "outgoing-bind-address=${br1.br.mgt0.1.ip}"</log-match>
+			<!-- <log-match>-i "resolv-file=/etc/resolv.conf"</log-match> -->
+		</step>
+
+		<step no="6">
+			<desc>
+				Change vlan of interface mgt0.1, disable dhcp-server of mgt0.1,
+				change ip address of mgt0.1, remove ip-pool of mgt0.1,
+				enable dhcp-server again, set new ip-pool, gateway, dns,
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface vlan${br1.vpc1.vlan} dns-server enable"
+				-v "no interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v "no interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "vlan ${br1.vpc2.vlan}"
+				-v "interface vlan ${br1.vpc2.vlan}"
+				-v "interface vlan${br1.vpc2.vlan} ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options netmask ${br1.vpc1.mask}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options dns1 ${br1.br.mgt0.2.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc2.vlan} dns-server enable"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="6.1">
+			<desc>
+				verify if config still exist
+			</desc>
+			<log-file>step6.1_check_config.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show running-config"
+			</telnet>
+			<log-match>-i "interface vlan ${br1.vpc2.vlan}"</log-match>
+			<log-match>-i "interface vlan${br1.vpc2.vlan} ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"</log-match>
+			<log-match>-i "interface vlan${br1.vpc2.vlan} dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"</log-match>
+			<log-match>-i "interface vlan${br1.vpc2.vlan} dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"</log-match>
+			<log-match>-i "interface vlan${br1.vpc2.vlan} dhcp-server options dns1 ${br1.br.mgt0.2.ip}"</log-match>
+		</step>
+
+		<step no="6.2" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				Check DNS config file of mgt0.1 in shell
+			</desc>
+			<log-file>step6.2_check_config_file_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" prompt="\$|AH.*#">
+				-b -sp "${br1.br.shellpwd}"
+				-v "_shell"
+				-v "cat /etc/dnsmasq/dnsmasq_vlan${br1.vpc2.vlan}.conf"
+				-v "exit"
+				-v ""
+			</telnet>
+			<log-match>-i "listen-address=${br1.br.mgt0.2.ip}"</log-match>
+			<log-match>-i "outgoing-bind-address=${br1.br.mgt0.2.ip}"</log-match>
+			<!-- <log-match>-i "resolv-file=/etc/resolv.conf"</log-match> -->
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,167 @@
+<testcase>
+	<brief>The thirty-seven test case of Access Console</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Description: Plug out eth0 cable, check if portal and mp will both trigger access console
+		Pre-condition
+		Login AP1 and AP2 via console
+		AP1 and AP2 obtain ip address from DHCP server
+		Set access console with auto mode in AP1 and AP2
+		Set track action enable-access-console and set track default-gateway in AP1 and AP2
+		Test procedure
+		1.Plug out eth0 cable of AP1
+		2.Check track result in two AP2
+		3.Check access console state by show access console _ in two AP2
+		Expect result
+		1.No cable connect between eth0 and switch
+		2.Track result: targets unreachable
+		3.Access console with running state
+		Comment: Automation could not plug cable by manual, so I only shutdown port that AP connect to Switch
+		TOPO:
+		AP1------SW------DHCP server
+		|
+		AP2
+
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+
+		<step no="1">
+			<desc>Set config for AP1 via console to ${ap1.mgt0.ip}</desc>
+			<console target="ap1" timeout="60">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 44"
+				-v "track ${tb.name} enable "
+				-v "track ${tb.name} action enable-access-console"
+				-v "track ${tb.name} ip ${ap1.mgt0.gw}"
+				-v "access-console mode auto"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>Shutdown interface eth0 and eth1 of AP2</desc>
+			<console target="ap2" timeout="60">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 44"
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+    <step no="2.a">
+      <if>"${ap1.eth1.existed}" =="true"</if>
+			<desc>Shutdown interface eth0 and eth1 of AP2</desc>
+			<console target="ap2" timeout="60">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>Set config for AP2 via console to ${ap2.mgt0.ip}</desc>
+			<console target="ap2" timeout="60">
+				-v "track ${tb.name} enable "
+				-v "track ${tb.name} action enable-access-console"
+				-v "track ${tb.name} ip ${ap2.mgt0.gw}"
+				-v "access-console mode auto"
+			</console>
+		</step>
+
+		<step no="4" delay="60">
+			<desc>Check track result on AP1</desc>
+			<console target="ap2" timeout="60">
+				-v "show amrp nei"
+			</console>
+		</step>
+
+		<include prefix="5.eth0" file="subs/l2sw_updown_cfg.xml" args="${ap1.eth0.swport}, down" />
+
+  </stage>
+  
+  <stage>
+		<if>"${ap1.eth1.existed}" == "true"</if>
+
+	  <include prefix="5.eth1" file="subs/l2sw_updown_cfg.xml" args="${ap1.eth1.swport}, down" />
+	</stage>
+
+  <stage>
+		<step no="6" delay="60">
+			<desc>Check track result on AP1</desc>
+			<log-file>ap1_show_track.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show track "
+			</console>
+			<log-match>-c -i "${tb.name} *Unreachable"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>Check track result on AP2</desc>
+			<log-file>ap2_show_track.log</log-file>
+			<console target="ap2" timeout="60">
+				-v "show track "
+			</console>
+			<log-match>-c -i "${tb.name} *Unreachable"</log-match>
+		</step>
+
+		<step no="7" delay="30">
+			<desc>Check ap1 access console state</desc>
+			<log-file>ap1_show_access_console.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show access-console _"
+			</console>
+			<log-match>-c -i "Current state: *running"</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>Check ap2 access console state</desc>
+			<log-file>ap2_show_access_console.log</log-file>
+			<console target="ap2" timeout="60">
+				-v "show access-console _"
+			</console>
+			<log-match>-c -i "Current state: *running"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>Get access console SSID</desc>
+			<setvar name="conn1.ssid">
+				cat ${log.dir}/ap1_show_access_console.log | awk -F ':' '/Selected SSID/{split($2,a," "); print a[1]}'
+			</setvar>
+		</step>
+
+		<step no="8.1">
+			<desc>Get access console SSID</desc>
+			<setvar name="conn2.ssid">
+				cat ${log.dir}/ap2_show_access_console.log | awk -F ':' '/Selected SSID/{split($2,a," "); print a[1]}'
+			</setvar>
+		</step>
+
+		<step no="9">
+			<desc>AP1 Show interface wifi0.1</desc>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi0.1"
+			</console>
+			<log-match>-c -i "SSID=\\\&quot;${conn1.ssid}\\\&quot;"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>AP2 Show interface wifi0.1</desc>
+			<console target="ap2" timeout="60">
+				-v "show interface wifi0.1"
+			</console>
+			<log-match>-c -i "SSID=\\\&quot;${conn2.ssid}\\\&quot;"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<include prefix="1" file="subs/l2sw_updown_cfg.xml" args="${ap1.eth0.swport}, up" />
+
+		<include prefix="2" file="subs/l2sw_updown_cfg.xml" args="${ap1.eth1.swport}, up" />
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

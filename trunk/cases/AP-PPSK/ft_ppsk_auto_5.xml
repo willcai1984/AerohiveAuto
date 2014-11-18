@@ -1,0 +1,355 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the password-length</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a user-group
+		-config the password-generation-method to auto
+		-config a concatenated-characters
+		-config PSK-generation-method to username-password
+
+		Test Procedure:
+		-config a password-length
+		-check result 1, 2
+		-bind the group to ssid
+		-bind the ssid to wifi0
+		-check result 3
+		-change the password-length
+		-check result 4
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="default.psk" value="aerohive" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-config the password-generation-method to auto
+				-Config security-object parameters
+			</desc>
+			<telnet target="ap1">
+				-v "_debug auth info"
+				-v "clear log all"
+				-v "user-group userGroup"
+				-v "user-group userGroup password-generation-method auto"
+				-v "user-group userGroup psk-generation-method username-and-password"
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key ${default.psk}"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "security-object ppsk security private-psk"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config a user-profile
+				-config a ssid default-attribute 1
+				-bind the group to ssid
+				-bind the ssid to wifi0
+			</desc>
+			<telnet target="ap1">
+				-v "user-profile ttt vlan-id 1 attribute 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-group userGroup auto-generation index-range 1"
+				-v "user-group userGroup auto-generation password-length 8"
+			</telnet>
+		</step>
+
+		<step no="2.1" delay="10">
+			<desc>
+				-check the logging result
+			</desc>
+			<log-file>step2.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "generated *for *user *(userGroup0001)"</log-match>
+		</step>
+
+		<step no="2.1a" var-type="s1">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1_show_logging_buffered.log -p "password \((\S{8})\) generated for user \(userGroup0001\)" --script "m.group(1)" -s none -g-1
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show user
+			</desc>
+			<log-file>step2.2_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup0001" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step2.3_show_user_group.log</log-file>
+			<telnet target="ap1">
+				-v "show user-group"
+			</telnet>
+			<log-match>-c -i "userGroup" -p 6 -i "AU" -p 13 -i "8"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				show running-config users
+			</desc>
+			<log-file>step2.4_show_running_config_users.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config users"
+			</telnet>
+		</step>
+
+		<step no="3" delay="5">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step3_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup0001" -i "Yes"</log-match>
+		</step>
+
+		<step no="3.a">
+			<desc>Get the pmk value of userGroup0001</desc>
+			<setvar name="pmk.value">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3_show_auth_private_psk.log -p "userGroup0001\s*userGroup\s*(.*)\s*Yes" -t str
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show ap1's interface wifi0.1 info
+			</desc>
+			<log-file>show_ap1_interface_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				get ap1's wifi0's mac address
+			</desc>
+			<setvar name="ap1.wifi0.1.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_interface_info.log -i wifi0.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="pre.conn1.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn1.psk" type="special">
+				echo userGroup0001${ppsk.auto.value}
+			</setvar>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="wpa-tkip-psk" />
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="5" delay="10">
+			<desc>
+				-check the logging result
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.1.mac} thru SSID ${ssid.name}"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) login to SSID(wifi0.1) by user_name=userGroup0001"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step6_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step6.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step6.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup0001" -i "done"</log-match>
+		</step>
+
+		<include prefix="7" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="8">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8.1" delay="5">
+			<desc>
+				-Change the password-length
+			</desc>
+			<telnet target="ap1">
+				-v "user-group userGroup auto-generation password-length 10"
+			</telnet>
+		</step>
+
+		<step no="8.2" delay="5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				-show logging buffered
+			</desc>
+			<log-file>step8.2_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "generated *for *user *(userGroup0001)"</log-match>
+			<log-match>-n -c -i "password *(${ppsk.auto.value}) *generated *for *user *(userGroup0001)"</log-match>
+		</step>
+
+		<step no="8.3" var-type="s1">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value.second" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step8.2_show_logging_buffered.log -p "password \((\S{10})\) generated for user \(userGroup0001\)" --script "m.group(1)" -s none -g-1
+			</setvar>
+		</step>
+
+		<step no="9">
+			<desc>
+				show user
+			</desc>
+			<log-file>step9_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup0001" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step9.1_show_user_group.log</log-file>
+			<telnet target="ap1">
+				-v "show user-group"
+			</telnet>
+			<log-match>-c -i "userGroup" -p 6 -i "AU" -p 13 -i "10"</log-match>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				show running-config users
+			</desc>
+			<log-file>step9.2_show_running_config_users.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config users"
+			</telnet>
+		</step>
+
+		<step no="9.3">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step9.3_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup0001" -i "Yes"</log-match>
+			<log-match>-n -c -i "userGroup0001" -i "${pmk.value}" -i "Yes"</log-match>
+		</step>
+
+		<step no="pre.conn2.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn2.psk" type="special">
+				echo userGroup0001${ppsk.auto.value.second}
+			</setvar>
+		</step>
+
+		<property name="conn2.ssid" value="${ssid.name}" />
+		<property name="conn2.proto" value="wpa-tkip-psk" />
+
+		<include prefix="10" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="11" delay="10">
+			<desc>
+				-check the logging result
+			</desc>
+			<log-file>step11_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.1.mac} thru SSID ${ssid.name}"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) login to SSID(wifi0.1) by user_name=userGroup0001"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step12_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step12.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="12.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step12.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup0001" -i "done"</log-match>
+		</step>
+	</stage>
+</testcase>

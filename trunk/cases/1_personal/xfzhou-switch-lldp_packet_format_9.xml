@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+
+	<brief>(IxPort: CoF=3) LLDP packets management address should be mgt0s IPaddr.</brief>
+	<priority>low</priority>
+	<automated>yes</automated>
+	<description>
+	Test Produce:
+		L3SW is H3C router
+		-Configure on AP1
+		“lldp” 
+		-Configure on AP2
+		“lldp”
+		AP1 and AP2 is in the same vlan
+		1.Open LLDP debug switch on AP1 
+		“_debug dcd LLDP_packet”
+		“debug console”
+		2.Capture the LLDP packets on AP1
+		3.Modify mgt0’IP to fixed IP(X.X.X.X) on AP2
+		4.Capture the LLDP packets on AP1
+
+
+        </description>
+
+	<numofsw>1</numofsw>
+
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+
+	</pre-process>
+
+
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="tx_port1.phytype" value="${sw1.port1.ixia_port.phytype}" />
+	<property name="tx_port2" value="${sw1.port2.ixia_port}" />
+	<property name="tx_port2.phytype" value="${sw1.port2.ixia_port.phytype}" />
+	<property name="tx_port3" value="${sw1.port3.ixia_port}" />
+	<property name="tx_port3.phytype" value="${sw1.port3.ixia_port.phytype}" />
+	<property name="correct_vlan" value="101" />
+
+	<property name="min" value="5" />
+        <property name="mid" value="200" />
+	<property name="max" value="65534" />
+	<property name="def" value="30" />
+
+	<property name="name1" value="systemname1" />
+	<property name="name2" value="systemname2" />
+
+	<stage>
+		<step no="1.1">
+			<desc>
+			     Enable LLDP on swith
+		     </desc>
+		     <log-file>1.1.log</log-file>
+			<telnet target="sw1" prompt="AH.*#|systemname#">
+				-v "lldp enable"
+				-v "lldp timer 5"
+				-v "show running-config"
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="1.2">
+			<desc>Check LLDP is enable </desc>
+			<log-file>1.2.log</log-file>
+			<telnet target="sw1">
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Enabled: yes"</log-match>
+		</step>
+
+
+
+        	<step no="2.1">
+			<desc>
+				Enable lldp packet log
+			</desc>
+			<log-file>2.1.log</log-file>
+			<telnet target="sw1">
+				-v "clear log buffered"
+				-v "_debug dcd lldp_adjacency"   
+				-v "_debug dcd lldp_error"
+				-v "_debug dcd lldp_packet"
+				-v "_debug dcd info"
+				-v "debug  consol"		
+			</telnet>
+		</step>
+
+        	<step no="3.1">
+			<desc>
+				Show interface mgt0 to get mgt0 ip
+			</desc>
+			<log-file>3.1.log</log-file>
+			<telnet target="sw1">
+				-v "show interface mgt0"
+				-v ""		
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>Get switch mgt0 ip add. </desc>
+			<log-file>1.3.log</log-file>
+			<setvar name="mgt0">
+				echo $(cat  ${log.dir}/3.1.log |sed -n -e '/IP addr/p' |sed -e 's/^.*r=//g' -e 's/;.*$//g')
+
+   			</setvar>
+		</step>
+
+
+
+		<step no="4.1">
+            		<desc>
+               		 Connect to ixia, capture packets
+            		</desc>
+           		 <log-file>step_ixia_capture_packets.log</log-file>
+			 <ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+                                <!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${tx_port3} -phyList ${tx_port1.phytype},${tx_port2.phytype},${tx_port3.phytype}"
+				-v ""
+				-v ""
+				<!-- start transmit  -->
+
+                                <!-- stop  transmit  -->
+
+
+                                <!-- port1 start capture  -->
+				-v "start_capture -portList ${tx_port1}"
+				-v "start_capture -portList ${tx_port2}"
+				-v "start_capture -portList ${tx_port3}"
+               		        -v ""
+                	        -v "wait_time -second 30"
+                	        -v ""
+                	        <!-- stop port1 capture -->
+				-v "stop_capture -portList ${tx_port1}"
+				-v "stop_capture -portList ${tx_port2}"
+				-v "stop_capture -portList ${tx_port3}"
+                	        -v ""
+                	        <!-- save port1 capture -->
+				-v "save_capture -onePort ${tx_port1} -fileName ${job.id}_packet1.enc"  
+				-v "save_capture -onePort ${tx_port2} -fileName ${job.id}_packet2.enc"
+				-v "save_capture -onePort ${tx_port3} -fileName ${job.id}_packet3.enc"		
+            		</ssh>
+            		<no-error-check />
+		</step>  
+
+        	<step no="4.2">
+            		<desc>Tftp the capture file to MPC</desc>                              
+            		<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+                		-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_packet1.enc"
+				-v "rm -f ${job.id}_packet1.enc"  
+			      -v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_packet2.enc"
+			      -v "rm -f ${job.id}_packet2.enc" 
+			    -v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_packet3.enc"
+			    -v "rm -f ${job.id}_packet3.enc" 
+            		</ssh>
+        	</step>                    
+        	<step no="4.3">
+            		<desc>Move the capture file to log dir</desc>
+            		<script> 
+				mv /tftpboot/${job.id}_packet1.enc ${log.dir}  
+				mv /tftpboot/${job.id}_packet2.enc ${log.dir}
+				mv /tftpboot/${job.id}_packet3.enc ${log.dir}		
+            		</script>
+        	</step>        
+        	<step no="4.4">
+			<desc>Format the captured packets </desc>
+	    		<!-- 1 fail;0 pass -->
+			<script>
+			tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -R '(lldp )' -w  ${log.dir}/${job.id}_packet1.enc
+			tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -R '(frame.number == 1)' -w  ${log.dir}/${job.id}_packet1.enc
+			tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -V 
+
+			tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -R '(lldp )' -w  ${log.dir}/${job.id}_packet2.enc
+			tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -R '(frame.number == 1)' -w  ${log.dir}/${job.id}_packet2.enc
+			tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -V 
+
+			tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -R '(lldp )' -w  ${log.dir}/${job.id}_packet3.enc
+			tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -R '(frame.number == 1)' -w  ${log.dir}/${job.id}_packet3.enc
+			tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -V 
+	    		</script>
+		</step>
+
+		<step no="5.1">
+   			<desc>Get LLDP packet of interface port1 for Management Address. </desc>
+			<multi-setvar>
+			echo "p1=$(tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -V| sed -n '/Management Address/p' |sed '1,2d' |sed  -e 's/^.*Address: //g' -e 's/ (.*$//g')"
+
+			</multi-setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>Check the LLDP packet port1 for Management Address is correct.</desc>
+	    		<!-- 1 fail;0 pass -->
+            		<script>
+			if   [ "${mgt0}" != "${p1}" ];   then exit 1
+			<!--
+			elif [ "Router" != "${p2}" ];   then exit 1
+			elif [ "Bridge" != "${p3}" ];   then exit 1
+			elif [ "" != "${p4}" ];         then exit 1
+			-->
+			fi 
+	    		</script>
+		</step>
+
+
+		<step no="6.1">
+   			<desc>Get LLDP packet of interface port2 for Management Address. </desc>
+			<multi-setvar>
+			echo "p2=$(tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -V| sed -n '/Management Address/p' |sed '1,2d' |sed  -e 's/^.*Address: //g' -e 's/ (.*$//g')"
+
+			</multi-setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>Check the LLDP packet port2 for Management Address is correct.</desc>
+	    		
+            		<script>
+			if   [ "${mgt0}" != "${p2}" ];   then exit 1
+			fi 
+	    		</script>
+		</step>
+
+		<step no="7.1">
+   			<desc>Get LLDP packet of interface port3 for Management Address. </desc>
+			<multi-setvar>
+			echo "p3=$(tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -V| sed -n '/Management Address/p' |sed '1,2d' |sed  -e 's/^.*Address: //g' -e 's/ (.*$//g')"
+
+			</multi-setvar>
+		</step>
+
+		<step no="7.2">
+			<desc>Check the LLDP packet port3 for Management Address is correct.</desc>
+	    	
+            		<script>
+			if   [ "${mgt0}" != "${p3}" ];   then exit 1
+			fi 
+	    		</script>
+		</step>
+
+
+
+               <step no="8.1">
+                     <desc>Check LLDP packet send log</desc>
+                     <log-file>8.1.log</log-file>
+		     <telnet target="sw1">
+			     -v "show log buffered" 
+			     -v "clear log buffered"
+		     </telnet>
+               <no-error-check/>
+               </step>
+
+	       <step no="8.2">
+                     <desc>Check LLDP packet send log</desc>
+                     <log-file>8.2.log</log-file>
+		     <telnet target="sw1">
+			     -v "no hostname" 
+			     -v ""
+		     </telnet>
+               <no-error-check/>
+       </step>
+
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

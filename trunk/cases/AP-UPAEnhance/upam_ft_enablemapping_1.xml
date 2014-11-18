@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>First Enable mapping and then disable mapping</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+Auth type is 802.1x
+User group and upid attribute mapping is defined
+user-group student user-attribute 10
+User group mapping is not configured before
+User group mapping attribute is not defined before
+User group name attribute is defined in radius server, 
+user1 belongs to group student
+radius attribute private group id is configured as 2
+User profile with attribute equals user group’s attribute is defined
+user-profile any qos-policy def-user-qos vlan-id 11 attribute 1
+user-profile no-mapping qos-policy def-user-qos vlan-id 12 attribute 2
+user-profile student qos-policy def-user-qos vlan-id 110 attribute 10
+security-object test_so default-user-profile-attr 1
+
+		Test Procedure:
+1: Check default mapping configuration in AP
+2: Enable user group attribute mapping
+security-object test_so security aaa user-profile-mapping enable
+3: Station(user1) connected to AP and check the user profile id
+4: Disable user group attribute mapping
+no security-object test_so security aaa user-profile-mapping enable
+5: Station(user1) connected to AP and check the user profile id 
+6: Enable user group attribute mapping again
+7: Station(user1) connected to AP and check the user profile id 
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}new" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />	
+
+	<stage>
+
+		<property name="acct1.filter_id" value="student" />
+		<property name="acct1.uid" value="${tb.vlan1}" />
+		<include prefix="1" file="subs/ldap_add.xml" args="${pub.radius1.username}new, ${pub.radius1.passwd}" obj-args="acct1" />
+
+		<step no="2">
+			<desc>
+				-config mgt0 vlan on AP1
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object ${ssid.name} security protocol-suite wpa2-aes-8021x"
+				-v "security-object ${ssid.name} security aaa user-profile-mapping enable"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+				-v "user-profile auto1 qos-policy def-user-qos vlan-id ${tb.vlan1} attribute ${tb.vlan1}"
+				-v "user-group student"
+				-v "user-group student user-attribute ${tb.vlan2}"
+			</console>
+		</step>
+		
+		<step no="4">
+			<desc>show running config</desc>
+			<log-file>step4_show_running_config.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>show security object of ssid</desc>
+			<log-file>step5_show_security_object.log</log-file>
+			<telnet target="ap1">
+				-v "show security-object ${ssid.name}"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>
+				-show ssid XXX station
+			</desc>
+			<log-file>step7_show_station_info.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "wpa2-8021x" -i "${tb.vlan2} *Yes *${tb.vlan2}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-show roaming cache
+			</desc>
+			<log-file>step8_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YNNN"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				-show auth
+			</desc>
+			<log-file>step9_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${tb.vlan2}" -i "done"</log-match>
+			<log-match>-c -i "${sta1.tif.mac} *${tb.vlan2}" -i "${pub.radius1.username}new"</log-match>
+		</step>
+		
+		<step no="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			
+		</step>
+
+		<include prefix="11" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="12">
+			<desc>
+				-Disable Mapping
+			</desc>
+			<telnet target="ap1">
+				-v "no security-object ${ssid.name} security aaa user-profile-mapping enable"
+			</telnet>
+		</step>
+
+		<include prefix="13" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="14">
+			<desc>
+				-show ssid XXX station
+			</desc>
+			<log-file>step14_show_station_info.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta2.tif.mac} *${sta2.tif.ip}" -i "wpa2-8021x" -i "${tb.vlan1} *Yes *${tb.vlan1}"</log-match>
+		</step>
+
+		<include prefix="15" file="subs/release_station_wifi.xml" obj-args="sta2" />
+
+		<step no="16">
+			<desc>
+				-Disable Mapping
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name} security aaa user-profile-mapping enable"
+			</telnet>
+		</step>
+
+		<include prefix="17" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="18">
+			<desc>
+				-show ssid XXX station
+			</desc>
+			<log-file>step18_show_station_info.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "wpa2-8021x" -i "${tb.vlan2} *Yes *${tb.vlan2}"</log-match>
+		</step>
+		
+		<include prefix="delete.radius.account" file="subs/ldap_delete.xml" args="${pub.radius1.username}new" />
+				
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

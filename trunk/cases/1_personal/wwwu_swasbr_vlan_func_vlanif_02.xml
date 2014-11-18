@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check vlan interface function in same vlan</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	
+	<description>
+Topology to use	
+PC1++++switch +++++PC2
+
+Description:	Check vlan interface function in same vlan
+Platform Dependence:	SR2024
+Pre-condition:
+•	Reset config to factory default
+•	Create vlan related vlan first on switch
+•	PC1 connect to switch port1, pvid 10
+•	PC2 connect to switch port2, pvid 10
+Test procedure:
+1.	Create vlan interface on vlan 10
+CLI:  interface vlan10 ip 10.10.10.1/24
+interface vlan10 dhcp-server options default-gateway 10.10.10.1 
+interface vlan10 dhcp-server options dns1 10.10.10.1
+interface vlan10 dhcp-server ip-pool 10.10.10.10 10.10.10.100
+interface vlan10 dhcp-server enable
+interface vlan10 dns-server enable
+2.	Check PC1,PC2 ip address            Result1
+3.	Check l2 forwarding success        Result2
+PC1 ping PC2
+4.	PC1 ping vlan interface ip         Result3
+PC1 ping 10.10.10.1
+PC2 ping 10.10.10.1
+5.	Set PC2 to capture frames
+6.	PC1 send unicast to PC2 with dst mac of interface vlan10 mac, dst ip 10.10.10.11              Result4
+
+Expect result:
+Result1:   PC1 get ip address from  vlan 10, such as 10.10.10.10
+               PC2 get ip address from vlan 10 too, such as ip 10.10.10.11
+Result2:  PC1 ping PC2 success
+Result3:   PC1,PC2 ping 10.10.10.1 success
+Result4:   PC2 should receive the unicast frames sent by PC1
+
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+	
+	<property name="br.route.netmask" value="255.255.255.0" />
+	
+	<stage>
+		<step no="1.1">
+			<desc>config pc connected port mode</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "vlan ${br1.vpc2.vlan}"
+				-v ""
+				-v ""
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+				-v "interface ${br1.br.lan.int4} switchport mode access"
+				-v "interface ${br1.br.lan.int4} switchport access vlan ${br1.vpc1.vlan}"
+				-v ""
+			</telnet>	
+		</step>
+		
+		<step no="1.2">
+			<desc>create vlan and vlan interface first</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v ""
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v ""
+			</telnet>
+		</step>		
+		
+		<step no="1.3">
+			<desc>get ip prefix of created vlan interfaces</desc>
+			<multi-setvar>
+				echo "br1.vlanint1.prefix=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>	
+	
+		<step no="2.1">
+			<desc>retreive vpc1 ip address</desc>
+			<log-file>step2.1_vpc1_ip.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"			
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		
+		<step no="2.2">
+			<desc>show ip address of vpc1 ip</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>get prefix of vpc1 ip address</desc>
+			<multi-setvar>
+				echo "br1.vpc1.ip.prefix=$(echo ${br1.vpc1.tif.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+		
+		<step no="2.4">
+			<desc>check if br1.vpc1 get ip address from switch vlan interface ${br1.vpc1.vlan} successfully </desc>
+			<script>
+				if [ "${br1.vpc1.ip.prefix}" == "${br1.vlanint1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>		
+
+		<step no="2.5">
+			<desc>	-set interface down,then up </desc>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ifconfig ${br1.vpc4.tif.name} down"
+				-v "ifconfig ${br1.vpc4.tif.name} up"
+				-v "dhclient ${br1.vpc4.tif.name} -r"
+			</ssh>
+		</step>
+		
+		<step no="2.6">
+			<desc>show vpc4 ip address</desc>
+			<log-file>step5.4_vpc4_ip.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v ""
+				-v "ifconfig ${br1.vpc4.tif.name}"			
+				-v ""
+			</ssh>
+			<log-match>-i "inet addr"</log-match>			
+		</step>
+		
+		<step no="2.7">
+				<desc>show ip address of vpc4 ip</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>	
+		</step>
+		
+		<step no="2.8">
+			<desc>get prefix of vpc4 ip address</desc>
+			<multi-setvar>
+				echo "br1.vpc4.ip.prefix=$(echo ${br1.vpc4.tif.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>		
+		</step>
+		
+		<step no="2.9">
+			<desc>check if br1.vpc4 get ip address from switch vlan interface ${br1.vpc1.vlan} successfully </desc>
+			<script>
+				if [ "${br1.vpc4.ip.prefix}" == "${br1.vlanint1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>		
+		</step>
+		
+		<step no="3.1">
+			<desc>Check l2 forwarding success:vpc1 ping vpc4</desc>
+			<log-file>step3.1_ping.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.vpc4.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc4.tif.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="4.1">
+			<desc>vpc1 ping vlan interface ip(gateway)</desc>
+			<log-file>step4.1_ping.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.br.mgt0.1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>	
+
+		<step no="4.2">
+			<desc>vpc4 ping vlan interface ip(gateway)</desc>
+			<log-file>step4.2_ping.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ping ${br1.br.mgt0.1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>	
+		
+		<step no="5.1a">
+			<desc>show vlan interface ${br1.vpc1.vlan}</desc>
+			<log-file>step5.1_vlan_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show l3 interface | in vlan${br1.vpc1.vlan}"
+			</telnet>
+		</step>
+		
+		<step no="5.1b">
+			<desc>get mac of vlan interface ${br1.vpc1.vlan}</desc>
+			<setvar name="br1.vlan.int.mac">
+				${bin.dir}/getbyrexp.py -p "([\da-fA-F]{4}:[\da-fA-F]{4}:[\da-fA-F]{4})" -f ${log.dir}/step5.1_vlan_interface.log -t str
+			</setvar>
+		</step>
+		
+		<step no="5.1c">
+			<desc>get raw mac of vlan interface ${br1.vpc1.vlan}</desc>
+			<setvar name="br1.vlan.int.raw.mac">
+				echo $(echo ${br1.vlan.int.mac} | cut -b 1-2):$(echo ${br1.vlan.int.mac} | cut -b 3-4):$(echo ${br1.vlan.int.mac} | cut -b 6-7):$(echo ${br1.vlan.int.mac} | cut -b 8-9):$(echo ${br1.vlan.int.mac} | cut -b 11-12):$(echo ${br1.vlan.int.mac} | cut -b 13-14)
+			</setvar>
+		</step>		
+		
+		<step no="5.2a">
+			<desc>get raw mac of br1.vpc1 ${br1.vpc1.tif.name}</desc>
+			<setvar name="br1.vpc1.tif.raw.mac">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step2.1_vpc1_ip.log -t str
+			</setvar>		
+		</step>
+		
+		<step no="5.2b">
+			<desc>get mac of br1.vpc1 ${br1.vpc1.tif.name}</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo $(echo ${br1.vpc1.tif.raw.mac} | cut -d : -f1)$(echo ${br1.vpc1.tif.raw.mac} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.raw.mac} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.raw.mac} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>	
+		</step>
+		
+		<step no="5.3a">
+			<desc>get raw mac of br1.vpc4 ${br1.vpc4.tif.name}</desc>
+			<setvar name="br1.vpc4.tif.raw.mac">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step5.4_vpc4_ip.log -t str
+			</setvar>				
+		</step>
+
+		<step no="5.3b">
+			<desc>get mac of br1.vpc4 ${br1.vpc4.tif.name}</desc>
+			<setvar name="br1.vpc4.tif.mac">
+				echo $(echo $(echo $(echo ${br1.vpc4.tif.raw.mac} | cut -d : -f1)$(echo ${br1.vpc4.tif.raw.mac} | cut -d : -f2,3)$(echo ${br1.vpc4.tif.raw.mac} | cut -d : -f4,5)$(echo ${br1.vpc4.tif.raw.mac} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>				
+		</step>
+		
+		<step no="6.1">
+			<desc>
+				packet capture on br1.vpc4 
+			</desc>
+			<log-file>step6.1_vpc4_packet_capture.log</log-file>
+			<ssh target="br1.vpc4">
+				-v "nohup tshark -l -i ${br1.vpc4.tif.name} > ${job.id}vpc4_pkt_capture_1.log &amp;"
+			</ssh>
+		</step>		
+		
+		<step no="6.2">
+			<desc>
+				get vpc4 tshark process
+			</desc>
+			<setvar name="vpc4.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6.1_vpc4_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>	
+		
+		
+		<step no="6.3">
+			<desc>generate a packet to vpc4 from vpc4</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "packit -t icmp -i ${br1.vpc1.tif.name} -e ${br1.vpc1.tif.raw.mac} -E ${br1.vlan.int.raw.mac} -s ${br1.vpc1.tif.ip} -d ${br1.vpc4.tif.ip} -c 3"
+			</ssh>
+		</step>		
+		
+		<step no="6.4" delay="10">
+			<desc>
+				vpc4 can receive the pkts sent by vpc1
+			</desc>
+			<log-file>step6.4_capture_packet_check.log</log-file>
+			<ssh target="br1.vpc4">
+				-v "kill -9 ${vpc4.tshark.id_1}"
+				-v "cat ${job.id}vpc4_pkt_capture_1.log | grep --color=never ICMP"
+				-v "rm -f ${job.id}vpc4_pkt_capture_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.ip} -> ${br1.vpc4.tif.ip}\s*ICMP" -c 3 -f ${log.dir}/${log.file}</log-match>			
+		</step>		
+		
+		
+	</stage>
+	
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/br_default_process.xml" />
+	</post-process>
+	
+	
+</testcase>

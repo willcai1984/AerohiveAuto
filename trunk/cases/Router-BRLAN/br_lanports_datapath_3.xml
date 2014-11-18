@@ -1,0 +1,398 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check broadcast packet forwarding path with port based mode</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		PC1 connect to switch
+		Laptop1 connect to lan port eth1
+		Laptop2 connect to lan port eth2
+		Station1 connect to wifi
+		BR lan port works with port based mode
+		Lan ports are in same vlan
+
+		Test Procedure:
+
+		1. Pc1 send broadcast packet, like arp request. Result1
+		2. Station1 send broadcast packet, like arp request. Result2
+		3. Laptop1/laptop2 send broadcast packet, like arp request. Result3
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-${tb.name}" />
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="eth.broadcast.mac" value="ff-ff-ff-ff-ff-ff" />
+
+	<stage>
+
+		<step no="set_tmp_IP01">
+			<multi-setvar>
+				echo "br1.br.tmp1.ip=$(echo ${br1.br.mgt0.ip_pool_end} | cut -d. -f1,2,3).$(expr $(echo ${br1.br.mgt0.ip_pool_end} | cut -d. -f4) + 4)"
+				echo "br1.mgt0.route=$(echo ${br1.br.mgt0.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="pre1_1" file="subs/br_close_fw.xml" obj-args="br1" />
+
+		<step no="pre1_2">
+			<desc>eth0 dhcp</desc>
+			<console target="br1.br" slow="yes">
+			        -v "no interface eth0 mode wan nat"
+				-v "no interface eth0 dhcp client"
+				-v ""
+				-v "interface eth0 dhcp client"				
+				-v ""
+			</console>
+		</step>
+
+		<step no="pre1_3a" delay="5" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check traffic through wan on BR</desc>
+			<console target="br1.br">
+				-v "ping ${pub.dns1.ip}"
+			</console>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="pre1_3b" delay="10">
+			<desc>show interface eth0 on BR</desc>
+			<log-file>show_br1.br__eth0_2.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+		</step>
+
+		<step no="pre1_3c">
+			<desc>get eth0 ip of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_br1.br__eth0_2.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.4">
+			<desc>1. Enable mgt0 dhcp/dns server</desc>
+			<log-file>step_pre1.4_mgt0_status.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show run | in mgt0"
+			</telnet>
+			<log-match>-i "interface mgt0 ip ${br1.br.mgt0.ip}"</log-match>
+			<log-match>-i "interface mgt0 dhcp-server ip-pool ${br1.br.mgt0.ip_pool_start}"</log-match>
+			<log-match>-i "interface mgt0 dhcp-server enable"</log-match>
+			<log-match>-i "interface mgt0 dns-server enable"</log-match>
+		</step>
+
+		<step no="pre1.6">
+			<desc>
+				config mgt0 vlan
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0 vlan ${br1.vlan2}"
+			</telnet>
+		</step>
+		
+		<include prefix="pre2.1" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="${br1.vpc2.vlan},${br1.vpc2.vlan},access" />
+
+		<step no="1.1">
+			<desc>
+				PC1 connect to switch
+				Laptop1 connect to lan port eth3
+				Laptop2 connect to lan port eth4
+				Station1 connect to wifi
+				BR lan port works with port based mode
+				Lan ports are in same vlan
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth0 mode wan nat"
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vlan2} attribute 1"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vlan2} attribute 3"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth3 mode bridge-access user-profile-attribute 3"						
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				AP1 as Laptop1 connect to lan port eth3
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vlan2}"
+				-v "interface mgt0 native-vlan ${br1.vlan2}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="1.2b" delay="20">
+			<desc>
+				show AP1 mgt0
+			</desc>
+			<log-file>step1.2b_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.2c">
+			<desc>get ip address of ap1</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step1.2b_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				vpc1 connect to lan port eth1
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.3b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+		
+		<step no="1.4">
+			<desc>
+				set AP1 Static ip address
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${br1.ap1.mgt0.ip}/${br.lan.netmask}"
+				-v "ip route default gateway ${br1.br.mgt0.ip}"
+				-v ""
+			</console>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				set vpc1 static ip address
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} ${br1.vpc1.tif.ip}/${br.lan.netmask}"				
+			</ssh>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				ap1 ping mgt0
+			</desc>
+			<log-file>step1.7_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.br.mgt0.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.br.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="1.7">
+			<desc>
+				vpc1 ping mgt0
+			</desc>
+			<log-file>step1.8_ping.log</log-file>
+			<ssh target="br1.vpc1" slow="yes">
+				-v "ping ${br1.br.mgt0.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.br.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="1.8">
+			<desc>
+				open FF debug on BR
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear forwarding-engine mac-sessions"
+				-v "_ff id 1 protocol 1 bidirectional"
+				-v "_ff id 2 etype 0806 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buf"
+			</telnet>
+		</step>
+
+		<step no="1.9">
+			<desc>
+				open FF debug on BR.AP1 (laptop1)
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "_ff id 1 protocol 1 bidirectional"
+				-v "_ff id 2 etype 0806 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buf"
+			</console>
+		</step>
+		
+
+		<step no="2.0">
+			<desc>PC1 add route for br1.mgt0 IP</desc>
+			<script>
+				route add -net ${br1.mgt0.route} netmask ${br.route.netmask} gw ${br1.br.wan.ip}
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="2.1">
+			<desc>
+				1. Pc1 send broadcast packet, like arp request: PC1 ping an unexist ip address
+			</desc>
+			<log-file>Step3_ping.log</log-file>
+			<script>
+				nohup ping ${br1.br.tmp1.ip} -c 10 &amp; </script>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				result: the broadcast packet from pc1 will be dropped
+			</desc>
+			<log-file>Step3.3_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buf"
+				-v ""
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) eth0.+ffff:ffff:ffff[\t ]+arp[\t ]+${mpc.tif.ip}.+>[\t ]*${br1.br.tmp1.ip}" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "iptables FORWARD pkt ${mpc.tif.ip}\(eth0\)->${br1.br.tmp1.ip}\(mgt0\) proto\(1\)[\t\d ]+bytes: DROP" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="2.3a" file="subs/save_ap_log.xml" args="show log buff,br1.ap1,step3.4a_ap1_show_log_buf.log" />
+
+		<step no="2.3b">
+			<desc>
+				laptop1 cannot receive the broadcast packet.
+			</desc>
+			<log-file>step3.4b_check_packet.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) eth0.+ffff:ffff:ffff[\t ]+arp[\t ]+${mpc.tif.ip}.+>[\t ]*${br1.br.tmp1.ip}" -c 0 -f ${log.dir}/step3.4a_ap1_show_log_buf.log</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				clear log buf
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "clear log buff"
+			</console>
+		</step>
+		
+		<step no="2.5">
+			<desc>
+				3. Laptop1 (AP1) send broadcast packet, like arp request.
+			</desc>
+			<log-file>step5.2_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.br.tmp1.ip}"
+			</console>
+		</step>
+
+		<step no="2.6">
+			<desc>
+				Result3: BR100 result: the broadcast packet from laptopx will relay to wifix, lan ports(up)
+			</desc>
+			<log-file>Step5.2b_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buf"
+				-v ""
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0.+ffff:ffff:ffff[\t ]+arp[\t ]+${br1.ap1.mgt0.ip}.+>[\t ]*${br1.br.tmp1.ip}" -c 0 -f ${log.dir}/${log.file}</log-match>			
+			<no-error-check />
+		</step>
+
+		<step no="2.7">
+			<desc>
+				clear log buf
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "clear log buff"
+			</console>
+		</step>
+
+		<step no="2.8">
+			<desc>
+				3. vpc1 (AP2) send broadcast packet, like arp request.
+			</desc>
+			<log-file>step6.2_ping.log</log-file>
+			<ssh target="br1.vpc1" slow="yes">
+				-v "ping ${br1.br.tmp1.ip} -c 4"
+			</ssh>
+		</step>
+
+		<step no="2.9">
+			<desc>
+				Result3: BR100 result: the broadcast packet from laptopx will relay to wifix, lan ports(up)
+			</desc>
+			<log-file>Step6.2b_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buf"
+				-v ""
+				-v ""
+				-v ""
+				-v "clear log buf"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0.+ffff:ffff:ffff[\t ]+arp[\t ]+${br1.vpc1.tif.ip}.+>[\t ]*${br1.br.tmp1.ip}" -c 0 -f ${log.dir}/${log.file}</log-match>			
+			<no-error-check />
+		</step>
+
+		<include prefix="3.0a" file="subs/save_ap_log.xml" args="show log buff,br1.ap1,step6.3a_ap1_show_log_buf.log" />
+
+		<step no="3.0b">
+			<desc>
+				laptop1 can receive the broadcast packet.
+			</desc>
+			<log-file>step6.3b_check_packet.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) eth0.+ffff:ffff:ffff[\t ]+arp[\t ]+${br1.vpc1.tif.ip}.+>[\t ]*${br1.br.tmp1.ip}" -f ${log.dir}/step6.3a_ap1_show_log_buf.log</log-match>
+		</step>
+
+		<step no="4">
+			<desc>delete route on MPC</desc>
+			<script>
+				route del -net ${br1.mgt0.route} netmask ${br.route.netmask} gw ${br1.br.wan.ip}
+			</script>
+			<no-error-check />
+		</step>
+
+		<include prefix="open_FW" file="subs/br_open_fw.xml" obj-args="br1" />
+
+	</stage>
+	
+	<post-process>
+		<stage>
+			<include prefix="post_br1_eth2_l2swcfg" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="999, ${br1.vlan2}\,${br1.vlan3}" />
+	   </stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+
+	<failed-process>
+		<stage>
+			<step no="0.1">
+				<desc>delete route</desc>
+				<script>
+					route del -net ${br1.mgt0.route} netmask ${br.route.netmask} gw ${br1.br.wan.ip}
+				</script>
+				<no-error-check />
+			</step>
+			<include prefix="0.2" file="subs/br_open_fw.xml" obj-args="br1" />
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+	</failed-process>
+</testcase>

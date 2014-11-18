@@ -1,0 +1,77 @@
+<include obj-arg-names="__AP__">
+	<!--<property name="__AP__.showtech" value="__AP___${case.name}_${case.feature}_${job.id}_show_tech.tar.gz" /> -->
+	<step no="0_1">
+		<desc>get show tech file name</desc>
+		<setvar name="__AP__.showtech">
+			echo "__AP___${case.name}_${case.feature}_${job.id}_show_tech.tar.gz"
+		</setvar>
+	</step>
+
+	<step no="1_1">
+		<desc>check connection between AP and TFTP server(mpc)</desc>
+		<log-file>_fp___AP___ping.log</log-file>
+		<console target="__AP__">
+			-v "ping ${mpc.tif.ip}"
+		</console>
+	</step>
+	<step no="1_2">
+		<desc>set ping result to variable</desc>
+		<setvar name="__AP__.ping.re" scope="local">
+			searchoperation.pl -c -i ', 0% packet loss,' -f ${log.dir}/_fp___AP___ping.log; echo $?
+		</setvar>
+	</step>
+
+	<step no="2_1">
+		<desc>Transport tech log file to TFTP server</desc>
+		<if>"${__AP__.ping.re}" == "0"</if>
+		<console target="__AP__">
+			-v "show tech > tftp://${mpc.tif.ip}:${__AP__.showtech}"
+			-v ""
+		</console>
+	</step>
+	<step no="2_2">
+		<desc>cp the file to current log dir</desc>
+		<log-file>${__AP__.showtech}</log-file>
+		<script>
+			cd /tftpboot/; mv ${__AP__.showtech} ${log.dir}/
+		</script>
+	</step>
+
+	<step no="3_1">
+		<desc>check if AP have core dump</desc>
+		<log-file>_fp___AP___show_core.log</log-file>
+		<console target="__AP__">
+			-v "show _core"
+			-v ""
+		</console>
+	</step>
+	<step no="3_2">
+		<desc>check if AP have kernel dump</desc>
+		<log-file>_fp___AP___show_ker.log</log-file>
+		<console target="__AP__">
+			-v "show _ker"
+			-v ""
+		</console>
+	</step>
+	<step no="3_3">
+		<desc>set show _core result</desc>
+		<setvar name="__AP__.showcore.re" scope="local">
+			${bin.dir}/searchblocks.py -b "^AH.*#show _core$" -e "^AH.*#$" -ps p0 "." -nb -ne -f ${log.dir}/_fp___AP___show_core.log; exit 0
+		</setvar>
+	</step>
+	<step no="3_4">
+		<desc>set show _ker result</desc>
+		<setvar name="__AP__.showker.re" scope="local">
+			searchoperation.pl -c -i 'no kdump file' -f ${log.dir}/_fp___AP___show_ker.log; echo $?
+		</setvar>
+	</step>
+	<step no="3_5">
+		<desc>reset config AP to make it clear</desc>
+		<if>"${__AP__.showcore.re}" != "success" || "${__AP__.showker.re}" != "0"</if>
+		<console target="__AP__">
+			-v "clear _ker all"
+			-v "reset config"
+			-v ""
+		</console>
+	</step>
+</include>

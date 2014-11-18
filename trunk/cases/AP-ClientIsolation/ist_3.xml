@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Proxy-ARP from laptop1 to laptop2 on same ssid.</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use
+		Switch______PC
+		|
+		Laptop1---------AP--------laptop2
+		Description
+		Proxy-arp from laptop1 to laptop2 on the same ssid.
+		Pre-condition
+		-laptop1 and laptop2 connect with ssid1 on AP, pass authentication
+		-PC connect with switch
+		-all laptops and PC are in same vlan
+		-AP has arp-entrance of laptop2 and PC
+		-inter-station-traffic is disabled on ssid1.
+		Test procedure
+		-disable IST on AP
+		AH-000120#no ssid ssid1 inter-station-traffic
+		-laptop1 sends arp request to laptop2 R1
+		-PC sends arp request to laptop2 R2
+		Expect result
+		R1:AP should not give arp-reply
+		R2:AP should give arp-reply
+		Test result
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" =="true"</if>
+
+		<include prefix="0" file="subs/bpc_reboot.xml" obj-args="ap1.bpc" />
+
+		<step no="1">
+			<desc>
+				AP config ssid1
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id 1 attribute 1"
+			</ssh>
+		</step>
+
+		<include prefix="2" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="ap1.bpc" />
+
+		<step no="3.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="3.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4.1">
+			<multi-setvar>
+				echo "conn2.ssid=${ssid.name}"
+				echo "conn2.proto=open"
+				echo "conn2.pif=wifi0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="4.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="5">
+			<desc>
+				Inter-station-traffic is disabled on ssid1.
+				- no forwarding-engine proxy-arp enable
+			</desc>
+			<ssh target="ap1">
+				-v "no ssid ${ssid.name} inter-station-traffic"
+				-v "clear forwarding-engine mac-sessions"
+				-v "forwarding-engine proxy-arp enable"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Set the ff and clear log all on AP
+			</desc>
+			<ssh target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_ff id 2 src-mac ${ap1.bpc.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				laptop1 sends arp-request for laptop2
+			</desc>
+			<log-file>step6_sta1_ping_sta2.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${sta2.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${sta2.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="6.1" delay="5">
+			<desc>
+				Check log buffered
+			</desc>
+			<log-file>step6.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log all"
+			</ssh>
+			<!-- <log-match>-c -i "traffic is from station, inter-station traffic is disabled, don't flood on eth1"</log-match> -->
+			<log-match>-c -i " inter station traffic not allowed on wifi0.1, drop pkt"</log-match>
+			<!-- <log-match>-c -i "flood the packet out eth0"</log-match> -->
+			<!-- <log-match>-c -i "flood the packet out wifi1.1"</log-match> -->
+			<log-match>-c -i "proxy-ARP, reinject ARP reply pak back to flow"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) wifi0.1 ${sta1.tif.mac}->ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)->${sta2.tif.ip}\(0000:0000:0000\) \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<!-- PC sends arp-request for laptop2 -->
+		<include prefix="7" file="subs/sta_ping.xml" args="${ap1.bpc.mif.ip}, ${sta2.tif.ip}, 5, negative" />
+
+		<step no="8" delay="5">
+			<desc>
+				Check log buffered
+			</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="600">
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-c -i "inter station traffic not allowed on wifi0.1, drop pkt"</log-match>
+			<!-- <log-match>-c -i "flood the packet out eth0"</log-match> -->
+			<!-- <log-match>-c -i "flood the packet out wifi1.1"</log-match> -->
+			<log-match>-c -i "proxy-ARP, reinject ARP reply pak back to flow"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth1 ${ap1.bpc.tif.mac}->ffff:ffff:ffff arp ${ap1.bpc.tif.ip}\(${ap1.bpc.tif.mac}\)->${sta2.tif.ip}\(0000:0000:0000\) \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

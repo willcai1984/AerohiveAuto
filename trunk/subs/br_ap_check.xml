@@ -1,0 +1,117 @@
+<include obj-arg-names="__AP__, __BRTOPO__">
+	<step no="1">
+		<desc>check console</desc>
+		<log-file>__AP___cons_check.log</log-file>
+		<console target="__AP__">
+			-v ""
+			-v "show version"
+			-v ""
+			-v "show hw-info"
+			-v ""; exit 0
+		</console>
+		<no-error-check />
+	</step>
+	<step no="1b">
+		<setvar name="cons_check_result" scope="local">
+			grep "show version" ${log.dir}/__AP___cons_check.log >/dev/null; echo $?
+		</setvar>
+	</step>
+	<step no="1c">
+		<if>"${cons_check_result}" != "0"</if>
+		<log-file>rmpts___AP__.log</log-file>
+		<script>
+			${bin.dir}/rmtps.pl ${__BRTOPO__.rmps.ip} ${__BRTOPO__.rmps.user}:${__BRTOPO__.rmps.passwd} ${__AP__.rmps_port}\pulse >> ${log.dir}/${log.file}
+			echo `date` >> ${log.dir}/${log.file}
+			sleep 150
+		</script>
+		<no-error-check />
+	</step>
+
+	<step no="2">
+		<desc>show run to ensure no any CLI</desc>
+		<log-file>show_run___AP___result.log</log-file>
+		<console target="__AP__">
+			-v ""
+			-v "show run"
+			-v ""
+		</console>
+	</step>
+	
+	<step no="2.1">
+		<desc>grep -v capwap cli in the show_run___AP___result.log  </desc>
+		<script>
+			grep -v "capwap" ${log.dir}/show_run___AP___result.log >${log.dir}/show_run__AP__.Empty.log
+		</script>
+	</step>
+	
+	<step no="3a">
+		<desc>judge if the show run result is clear</desc>
+		<log-file>show_run___AP___result_is_clear.log</log-file>
+		<setvar name="env.is_clean_in_reset" scope="local">
+			${bin.dir}/searchblocks.py -b "^AH.*#show run$" -e "^AH.*#$" -ps p0 "." -nb -ne -f ${log.dir}/show_run__AP__.Empty.log; exit 0
+		</setvar>
+	</step>
+
+	<step no="debug">
+		<script>
+			echo "env.is_clean_in_reset=${env.is_clean_in_reset}"
+		</script>
+	</step>
+
+	<step no="clear.1">
+		<if>"${env.is_clean_in_reset}" != "success"</if>
+		<desc>Reset AP to default </desc>
+		<console target="__AP__" timeout="180">
+			-v "boot-param region fcc"
+			-v ""
+			-v "reset config"
+		</console>
+	</step>
+	<step no="clear.2" delay="120">
+		<if>"${env.is_clean_in_reset}" != "success"</if>
+		<desc>temporary solution to avoid previous console issue</desc>
+		<console target="__AP__">
+			-v ""
+			-v "show version"
+			-v ""
+		</console>
+		<failed>next</failed>
+	</step>
+
+	<step no="4">
+		<desc>show run after reset config</desc>
+		<log-file>show_run___AP__.log</log-file>
+		<console target="__AP__">
+			-v ""
+			-v "show run"
+			-v ""
+		</console>
+		
+	</step>
+
+	<step no="4.1">
+		<desc>grep -v capwap cli in the show_run___AP__.log  </desc>
+		<script>
+			grep -v "capwap" ${log.dir}/show_run___AP__.log >${log.dir}/show_run___AP__.Empty.log
+		</script>
+	</step>
+
+	<step no="4.2">
+		<desc>Check show run whether it is empty</desc>
+		<log-match bin="${bin.dir}/searchblocks.py">-b "^AH.*#show run$" -e "^AH.*#$" -ps p0 "." -nb -ne -f ${log.dir}/show_run___AP__.Empty.log</log-match>
+	</step>
+
+	<step no="5" type="loop-check" loop-max-times="6" loop-interval="10">
+		<desc>check ap1 eth0,eth1 if status is up</desc>
+		<log-file>show_int___AP___${loop_check.idx}.log</log-file>
+		<console target="__AP__">
+			-v "console page 0"
+			-v ""
+			-v "show int"
+			-v ""
+			-v "console page 22"
+		</console>
+		<failed>next</failed>
+	</step>
+
+</include>

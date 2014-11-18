@@ -1,0 +1,385 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Opportunistic key caching support</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition
+		-two Aps,they are roming neighbours
+		-config the same ssid with WPA2 802.1x auth method
+		-STA connect to one AP,with correct credence
+		-make sure the STA supports PMK caching
+		Test procedure
+		-STA roaming to other AP,check the pmk regenerated
+		-then roaming back to the previous AP
+		-the AP has a local cache related to the STA
+		Expect result
+		1.When STA roaming back to the previous AP,
+		it will contain a pmkid in (re)associate request,
+		then both sides start 4 way hankshake using the cached PMK,
+		omit the process of full eap auth
+		2.Sh auth,sh roa ca,sh ssid xxx st to make sure
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>Set up vlan and native vlan on DUT1 via console ${ap1.cons_name}</desc>
+			<console target="ap1" timeout="30">
+				-v "interface mgt0 vlan ${tb.nvlan}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+			</console>
+		</step>
+		<step no="2">
+			<desc>Set up vlan and native vlan on DUT2 via console ${ap2.cons_name}</desc>
+			<console target="ap2" timeout="30">
+				-v "interface mgt0 vlan ${tb.nvlan}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+			</console>
+		</step>	
+		
+			<include prefix="2.1" file="subs/ap_renew_ip.xml" obj-args="ap1" />
+			<include prefix="2.2" file="subs/ap_renew_ip.xml" obj-args="ap2" />
+		
+		<step no="7">
+			<desc>enable telnet on DUT1 via console ${ap1.cons_name}</desc>
+			<console target="ap1" timeout="30">
+				-v "interface eth0 manage all"
+			</console>
+		</step>
+		
+		<step no="8">
+			<desc>Ping to DUT to check if AP1 is reacheable</desc>
+			<script>
+				perl ${bin.dir}/ping.pl -l ${log.dir} -d ${ap1.mgt0.ip}
+			</script>
+		</step>
+		<step no="9">
+			<desc>Set up DUT 1 through sw menu via telnet</desc>
+			<telnet target="ap1" timeout="10">
+				-v "ntp server ${pub.ntp}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "int wifi0 radio power 20"
+				-v "no interface eth0 shutdown"
+				-v "security-object autoap"
+				-v "user-pro aaa"
+				-v "user-pro aaa attr 1"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="10">
+			<desc>Set SSID for DUT1 ${ap1.mgt0.ip} via telnet</desc>
+			<telnet target="ap1" timeout="10">
+				-v "cle log bu"
+				-v "ssid ${tb.name}-ROAMING"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${tb.name}-ROAMING security-object autoap"
+				-v "user-profile vlan${tb.vlan2}"
+				-v "user-profile vlan${tb.vlan2} vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+				-v "interface wifi0 ssid ${tb.name}-ROAMING"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="11">
+			<desc>show running config on AP1</desc>
+			<log-file>show_run_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show run"
+			</telnet>
+		</step>
+		<step no="12">
+			<desc>show protocol suite on AP1</desc>
+			<log-file>show_proto_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show security- autoap security protocol-suite"
+			</telnet>
+			<log-match>-i "Method=wpa2-aes-8021x"</log-match>
+		</step>
+		<step no="13">
+			<desc>show ssid on AP1</desc>
+			<log-file>show_ssid_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show ssid ${tb.name}-ROAMING"
+			</telnet>
+			<log-match>-i "autoap"</log-match>
+		</step>
+		<step no="14">
+			<desc>enable telnet on DUT2 via console ${ap2.cons_name}</desc>
+			<console target="ap2" timeout="30">
+				-v "interface eth0 manage all"
+			</console>
+		</step>
+		<step no="15">
+			<desc>Ping to DUT2 to check if AP2 is reacheable </desc>
+			<script>
+				perl ${bin.dir}/ping.pl -l ${log.dir} -d ${ap2.mgt0.ip}
+			</script>
+		</step>
+		<step no="16">
+			<desc>Set up DUT2 through via telnet </desc>
+			<telnet target="ap2" timeout="10">
+				-v "ntp server ${pub.ntp}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "int wifi0 radio power 20"
+				-v "no interface eth0 shutdown"
+				-v "security-object autoap"
+				-v "user-pro aaa"
+				-v "user-pro aaa attr 1"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="17">
+			<desc>Set SSID for DUT2 ${ap2.mgt0.ip} via telnet</desc>
+			<telnet target="ap2" timeout="10">
+				-v "cle log bu"
+				-v "ssid ${tb.name}-ROAMING"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${tb.name}-ROAMING security-object autoap"
+				-v "user-profile vlan${tb.vlan2}"
+				-v "user-profile vlan${tb.vlan2} vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+				-v "interface wifi0 ssid ${tb.name}-ROAMING"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="18">
+			<desc>show running config on AP2</desc>
+			<log-file>show_run_ap2.log</log-file>
+			<telnet target="ap2" timeout="10">
+				-v "show run"
+			</telnet>
+		</step>
+		<step no="19">
+			<desc>show protocol suite on AP2</desc>
+			<log-file>show_proto_ap2.log</log-file>
+			<telnet target="ap2" timeout="10">
+				-v "show security-o autoap security protocol-suite"
+			</telnet>
+			<log-match>-i "Method=wpa2-aes-8021x"</log-match>
+		</step>
+		<step no="20">
+			<desc>show ssid on AP2</desc>
+			<log-file>show_ssid_ap2.log</log-file>
+			<telnet target="ap2" timeout="10">
+				-v "show ssid ${tb.name}-ROAMING"
+			</telnet>
+			<log-match>-i "autoap"</log-match>
+		</step>
+		<step no="21">
+			<desc>transport a ssid profile to client</desc>
+			<ssh target="sta1" timeout="10">
+				-v "rm -fr /tmp/wpa_supplicant.cfg"
+				-v "echo ctrl_interface=/var/run/wpa_supplicant>/tmp/wpa_supplicant.cfg"
+				-v "ifconfig ${sta1.tif.name} down"
+			</ssh>
+		</step>
+		<step no="22">
+			<desc>start the wpa_supplicant on client side</desc>
+			<ssh target="sta1" timeout="10">
+				-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+		</step>
+		<step no="23" delay="5">
+			<desc>start the wpa_supplicant on client side</desc>
+			<ssh target="sta1" timeout="10">
+				-v "killall wpa_supplicant"
+				-v "wpa_supplicant -i ${sta1.tif.name} ${sta1.wpa_flag} -c /tmp/wpa_supplicant.cfg -B"
+			</ssh>
+		</step>
+		<step no="24">
+			<desc>config the laptop to apply the ssid profile,then start to associate</desc>
+			<ssh target="sta1" timeout="10" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 proactive_key_caching \"1\""
+				-v "set_network 0 ssid \"${tb.name}-ROAMING\""
+				-v "set_network 0 key_mgmt WPA-EAP"
+				-v "set_network 0 proto RSN"
+				-v "set_network 0 pairwise CCMP"
+				-v "set_network 0 group CCMP"
+				-v "set_network 0 eap PEAP"
+				-v "set_network 0 phase2 \"auth=MSCHAPV2\""
+				-v "set_network 0 priority 1000"
+				-v "set_network 0 identity \"${pub.radius1.username}_uid${tb.vlan2}\""
+				-v "set_network 0 anonymous_identity \"${pub.radius1.username}_uid${tb.vlan2}\""
+				-v "set_network 0 password \"${pub.radius1.passwd}\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+		<step no="25" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check if the client was associated successfully</desc>
+			<log-file>wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-i "wpa_state=COMPLETED"</log-match>
+		</step>
+		<step no="26">
+			<desc>client gets IP by dhclient</desc>
+			<ssh target="sta1" timeout="30">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+		<step no="27" delay="10">
+			<desc>ifconfig to show the ip adrr</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1" timeout="10">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		<step no="28">
+			<desc>get mac from client</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width 2
+			</setvar>
+		</step>
+		<step no="29">
+			<desc>get ip from client</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+		<step no="30">
+			<desc>show auth on AP1</desc>
+			<log-file>show_auth_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show auth"
+			</telnet>
+			<log-match>-i "done" -i "${sta1.tif.mac}" -p 7 -c</log-match>
+			<log-match>-i "WPA2/CCMP" -i "${sta1.tif.mac}" -p 9 -c</log-match>
+		</step>
+		<step no="31">
+			<desc>show station on AP1</desc>
+			<log-file>show_station_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show ssid ${tb.name}-ROAMING station"
+			</telnet>
+			<log-match>-i "Yes" -i "${sta1.tif.mac}" -p 12 -c</log-match>
+			<log-match>-i "wpa2-8021x" -i "${sta1.tif.mac}" -p 7 -c</log-match>
+			<log-match>-i "aes" -i "${sta1.tif.mac}" -p 8 -c</log-match>
+			<log-match>-i "${sta1.tif.ip}" -i "${sta1.tif.mac}" -p 2 -c</log-match>
+		</step>
+		<step no="32">
+			<desc>show roaming cache on AP1</desc>
+			<log-file>show_roaming_cache_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-i "YNNN" -i "${sta1.tif.mac}" -p 12 -c</log-match>
+			<log-match>-i "0" -i "${sta1.tif.mac}" -p 11 -c</log-match>
+		</step>
+		<step no="33">
+			<desc>Ping from client ${sta1.tif.ip} to master Server</desc>
+			<log-file>pingmaster_${sta1.tif.ip}.log</log-file>
+			<ssh target="sta1" timeout="10">
+				-v "ping ${mpc.tif.ip} -c 4"
+			</ssh>
+			<log-match>-n -i "Lost = 0 (100\% loss)"</log-match>
+		</step>
+		<step no="34">
+			<desc>get pmk of client on AP1</desc>
+			<setvar name="pmk">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_roaming_cache_ap1.log -p 6 -k ${sta1.tif.mac}
+			</setvar>
+		</step>
+		<step no="35">
+			<desc>get bssid on AP1</desc>
+			<setvar name="ap1.bssid">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_auth_ap1.log -k SSID=${tb.name}-ROAMING -k1 AA= -k2 \;|sed 's/://g;s/../&amp;:/g;s/.$//'
+			</setvar>
+		</step>
+		<step no="36">
+			<desc>show auth on AP2</desc>
+			<log-file>show_auth_ap2.log</log-file>
+			<telnet target="ap2" timeout="10">
+				-v "show auth"
+			</telnet>
+			<log-match>-i "YNN" -i "${sta1.tif.mac}" -p 12 -c</log-match>
+		</step>
+		<step no="37">
+			<desc>get bssid on AP2</desc>
+			<setvar name="ap2.bssid">
+				getstring.pl -f ${log.dir}/show_auth_ap2.log -k SSID= -k1 AA= -k2 \;|sed 's/://g; s/../&amp;:/g;s/.$//'
+			</setvar>
+		</step>
+		<step no="38">
+			<desc>enable auth debug on AP2</desc>
+			<telnet target="ap2" timeout="10">
+				-v "_de auth all"
+			</telnet>
+		</step>
+		<step no="39">
+			<desc>client roams to AP2</desc>
+			<ssh target="sta1" timeout="10" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "set_network 0 bssid ${ap2.bssid}
+				-v "reass"
+				-v "quit"
+			</ssh>
+		</step>
+		<step no="40" delay="10">
+			<desc>check if the client was associated successfully</desc>
+			<script>
+				perl ${bin.dir}/aerohive/check_wpa_connec.sh ${sta1.mif.ip} ${log.dir} wpa_stat_AP2_tmp.log ${sta1.user} ${sta1.passwd}
+			</script>
+		</step>
+		<step no="41">
+			<desc>save debug on AP2</desc>
+			<telnet target="ap2" timeout="10">
+				-v "show logging buffered > tftp://${mpc.tif.ip}:/auth_debug_ap2.log"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="41.2">
+			<desc>check log buffer</desc>
+			<script>
+				mv -f /tftpboot/auth_debug_ap2.log ${log.dir}
+			</script>
+			<log-match file="auth_debug_ap2.log">-i "Number of PMKIDs provided by station ${sta1.tif.mac} = 1"</log-match>
+		</step>
+		<step no="42">
+			<desc>show roaming cache on AP2</desc>
+			<log-file>show_roaming_cache_ap2.log</log-file>
+			<telnet target="ap2" timeout="10">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-i "YNNN" -i "${sta1.tif.mac}" -p 12 -c</log-match>
+			<log-match>-i "0" -i "${sta1.tif.mac}" -p 11 -c</log-match>
+			<log-match>-i "${pmk}" -i "${sta1.tif.mac}" -p 11 -c</log-match>
+		</step>
+		<step no="43">
+			<desc>Ping from client ${sta1.tif.ip} to master Server </desc>
+			<log-file>pingmaster_${sta1.tif.ip}.log</log-file>
+			<ssh target="sta1" timeout="10">
+				-v "ping ${mpc.tif.ip} -c 4"
+			</ssh>
+			<log-match>-n -i "Lost = 0 (100\% loss)"</log-match>
+		</step>
+		<step no="44">
+			<desc>release dhcp lease</desc>
+			<ssh target="sta1" timeout="10">
+				-v "dhclient -r ${sta1.tif.name}"
+			</ssh>
+		</step>
+		<step no="45">
+			<desc>terminate wpa_supplicant</desc>
+			<ssh target="sta1" timeout="10" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v "ter"
+				-v "quit"
+			</ssh>
+		</step>
+	</stage>
+</testcase>

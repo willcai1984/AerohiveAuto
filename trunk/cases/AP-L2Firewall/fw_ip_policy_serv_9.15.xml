@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Session setup for snmp-trap traffic</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+
+		1) Config the ip-policy that permit snmp-trap traffic between Laptop and Server
+		"ip-policy FW-0"
+		"ip-policy FW-0 service [snmp-trap] [from/to] &lt;Laptop ip addr&gt; action permit"
+		2) Config the snmp-trap
+		"snmp trap-host &lt;ip_addr&gt;"
+		"snmp trap-info over-snmp"
+		"_test trap-case &lt;level&gt; &lt;trap_event&gt;"
+		3) Show the ip-session
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FW" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Laptop uses user-profile "FW"
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} manage snmp"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				1) Config the ip-policy that permit snmp-trap traffic between Laptop and Server
+				"ip-policy FW-0"
+				"ip-policy FW-0 service [snmp-trap] [from/to] &lt;Laptop ip addr&gt; action permit"
+				"snmp trap-host &lt;ip_addr&gt;"
+				"snmp trap-info over-snmp"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 to ${sta1.tif.ip} service snmp-trap action permit"
+				-v "user-profile ${user_id} security ip-policy to-access ${user_id}"
+				-v "no snmp trap-info over-capwap"
+				-v "snmp trap-host v2c ${sta1.tif.ip}"
+				-v "snmp trap-info over-snmp"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				2) Config the snmp-trap
+				"_test trap-case &lt;level&gt; &lt;trap_event&gt;"
+				3) Show the ip-session
+			</desc>
+			<log-file>step4_show_forwarding_engine_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "_test trap-case alert failure"
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match>-c -i "${ap1.mgt0.ip}" -i "${sta1.tif.ip}" -i "Proto 17"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				check log
+			</desc>
+			<log-file>step5_show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP" -ps p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] group \[${user_id}\] id \[1\] \[permit\]" -e "\(i\) mgt0 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

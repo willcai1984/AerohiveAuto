@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>local-check-period is working</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configed first
+		-AP's clock should be sync to the AD server via a ntp server
+		-config a primary AD server,valid
+		-config all backup AD servers,unreachable
+		-enable cache
+		-config a user in local database
+		-both the servers contain four domains
+		-the primary server and backup server are in the different domain
+		-setup a ssid using wpa-tkip-802.1x,radius server is local
+
+		Test Procedure:
+		-client connect to ssid using a user in AD,check result
+		-client connect to ssid using a user in local database
+		-primary server is down
+		-client connect to ssid using the AD user above
+		-client connect to ssid using the user in local DB
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-aes-8021x" />
+	<property name="conn1.username" value="${pub.ad1.username}" />
+	<property name="conn1.passwd" value="${pub.ad1.passwd}" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.proto" value="wpa-aes-8021x" />
+	<property name="conn2.username" value="123auto" />
+	<property name="conn2.passwd" value="123aerohive" />
+
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-aes-8021x" />
+
+		<step no="1.1">
+			<desc>set local radius server parameters</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type active-directory primary server ${pub.ad1.ip}"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				-v "aaa radius-server local db-type active-directory primary login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local db-type active-directory backup1 server 1.1.1.1"
+				-v "aaa radius-server local db-type active-directory backup1 domain ${pub.ad1.name}1 fullname ${pub.ad1.realm}1 default"
+				-v "aaa radius-server local db-type active-directory backup1 domain ${pub.ad1.name}1 binddn ${pub.ad1.binddn}1 password ${pub.ad1.bindpwd}1"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set local radius server parameters</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local db-type active-directory backup1 login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local db-type active-directory backup2 server 2.2.2.2"
+				-v "aaa radius-server local db-type active-directory backup2 domain ${pub.ad1.name}2 fullname ${pub.ad1.realm}2 default"
+				-v "aaa radius-server local db-type active-directory backup2 domain ${pub.ad1.name}2 binddn ${pub.ad1.binddn}2 password ${pub.ad1.bindpwd}2"
+				-v "aaa radius-server local db-type active-directory backup2 login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local db-type active-directory backup3 server 3.3.3.3"
+				-v "aaa radius-server local db-type active-directory backup3 domain ${pub.ad1.name}3 fullname ${pub.ad1.realm}3 default"
+				-v "aaa radius-server local db-type active-directory backup3 domain ${pub.ad1.name}3 binddn ${pub.ad1.binddn}3 password ${pub.ad1.bindpwd}3"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>config user in local radius</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local db-type active-directory backup3 login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local cache"
+				-v "user-group autotest"
+				-v "user 123auto"
+				-v "user 123auto pass 123aerohive"
+				-v "user 123auto group autotest"
+				-v "aaa radius-server local user-group autotest"
+				-v "clear log all"
+				-v "aaa radius-server local db-type local"
+				-v "aaa radius-server local enable"
+				-v "user-profile ttt vlan-id 1 attribute 1"
+				-v "aaa radius-server local local-check-period 80"
+				-v "aaa radius-server local remote-check-period 80"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-aes-8021x" />
+
+		<step no="4">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>step4_show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-c -i "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-c -i "primary active-directory (active)"</log-match>
+			<log-match>-c -i "Local Check Period: *80 secs"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>open debug mode and clear log all</desc>
+			<telnet target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa-aes-8021x, WPA/CCMP, wpa-8021x, aes" />
+
+		<include prefix="8" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta2, wpa-aes-8021x, WPA/CCMP, wpa-8021x, aes" />
+
+		<include prefix="9" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<include prefix="10" file="subs/release_station_wifi.xml" obj-args="sta2" />
+
+		<step no="11">
+			<desc>clear log all</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11.1">
+			<desc>shutdown ad server</desc>
+			<telnet target="ap1">
+				-v "ip route host ${pub.ad1.ip} gateway ${tb.unreach.ip1}"
+			</telnet>
+		</step>
+
+		<include prefix="12" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="13" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa-aes-8021x, WPA/CCMP, wpa-8021x, aes" />
+
+		<step no="test" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>test_show_rad_srv_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-c -i "primary active-directory (active)"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="14" delay="20">
+			<desc>check if failover successful</desc>
+			<log-file>step14_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "switch to primary active directory"</log-match>
+			<log-match>-i "switch to backup3 active directory"</log-match>
+		</step>
+
+		<step no="14.1">
+			<desc>Get the first times of sending message to primary active directory</desc>
+			<setvar name="switch.primary.sending.times">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step14_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*switch to primary active directory" -e "switch to backup3 active directory" -t str -g-1 -s none
+			</setvar>
+		</step>
+
+		<step no="14.2">
+			<desc>Get the first times of sending messages to backup3 directory</desc>
+			<setvar name="switch.backup3.sending.times">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step14_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*switch to backup3 active directory" -t str -g0 -s none
+			</setvar>
+		</step>
+
+		<step no="14.3">
+			<desc>
+				check if the interval is between 60 to 100.
+			</desc>
+			<log-file>step14.3_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${switch.primary.sending.times}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${switch.backup3.sending.times}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt;= 60.0 and (mktime(datetime.strptime('${switch.primary.sending.times}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${switch.backup3.sending.times}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt;= 100.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<include prefix="15" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<include prefix="16" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta2, wpa-aes-8021x, WPA/CCMP, wpa-8021x, aes" />
+	</stage>
+</testcase>

@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>The pkt is permitted when oif is eth0/eth1(backhual), ignore step5(because tx rx mac is for wifi)</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+		Test Procedure:
+		1. Set the action as permit.
+		2. Set the in-if as eth1.
+		3. Set the eth0 as oif.
+		4. When the pkt match the in-if and src-mac and dst-mac then result 1
+		5. Based step 3, change the tx-mac, rx-mac to invalid value then result 1
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${tb.bridge_support}" != "true" &amp;&amp; "${ap1.eth1.existed}" == "true"</if>
+
+		<!-- setup config on AP -->
+		<step no="pre_1">
+			<desc>set ap1 mgt0 vlan ${tb.vlan1}</desc>
+			<console target="ap1" timeout="80">
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+		
+		<step no="pre_2">
+			<desc>set ap2 mgt0 vlan ${tb.vlan1}</desc>
+			<console target="ap2" timeout="80">
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>		
+
+		<step no="pre_3" delay="10">
+			<desc>show mgt0 on ap1</desc>
+			<log-file>show_mgt0_ap1.log</log-file>
+			<console target="ap1" timeout="80">
+				-v "show interface mgt0"
+			</console>
+			<log-match> -c -e "IP addr=192.168.${tb.vlan2}"</log-match>
+		</step>
+		<step no="pre_3">
+			<desc>get ip address of ap1</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/show_mgt0_ap1.log -t str
+			</setvar>
+		</step>	
+		<step no="pre_4" delay="10">
+			<desc>show mgt0 on ap2</desc>
+			<log-file>show_mgt0_ap2.log</log-file>
+			<console target="ap2" timeout="80">
+				-v "show interface mgt0"
+			</console>
+			<log-match> -c -e "IP addr=192.168.${tb.vlan2}"</log-match>
+		</step>		
+		<step no="pre_5">
+			<desc>get ip address of ap1</desc>
+			<setvar name="ap2.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/show_mgt0_ap2.log -t str
+			</setvar>
+		</step>			
+		<step no="pre_6">
+			<desc>show interface for AP1</desc>
+			<log-file>show_interface_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="pre_7">
+			<desc>get mgt0 mac of ap1</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap1.log -k "Mgt0" -p 2
+			</setvar>
+		</step>
+
+		<!-- enable virtual connection to drop packet -->
+		<step no="1">
+			<desc>enable virtual connection rule: action is permit, in-if is eth1, o-if is eth0, and dst-mac 0100:5e01:0101 in AP1 (ignore source mac)</desc>
+			<log-file>enable_vr_ap_1.log</log-file>
+			<telnet target="ap1">
+				-v "forwarding-engine static-rule xx action pass in-if eth1 dst-mac 0100:5e01:0101 out-if eth0"
+				-v "forwarding-engine static-rule yy action drop in-if eth0 dst-mac 0100:5e01:0101"
+				-v "console page 0"
+				-v "_ff id 1 incoming-interface eth1 protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>generate dst-mac: 0100:5e01:0101 in AP2</desc>
+			<log-file>ping_1.log</log-file>
+			<console target="ap2">
+				-v "ping 224.1.1.1 count 1"; exit 0
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="1.3">
+			<desc>get log buffer from AP1</desc>
+			<log-file>ap1_drop_1.log</log-file>
+			<console target="ap1">
+				-v "show log buffer tail 100"
+			</console>
+			<log-match> -c -e "(i) eth1 ${ap2.mgt0.ip}-&gt;224.1.1.1"</log-match>
+			<log-match> -c -i "forward vconnection data to interface eth0 by rule" -i "xx"</log-match>
+			<log-match>-c -e "(o) eth0 ${ap2.mgt0.ip}-&gt;224.1.1.1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="2.1">
+			<desc>enable virtual connection to permit 0100:5e01:0102 out-if is eth0 in AP1:enable source mac</desc>
+			<log-file>enable_vr_ap_2.log</log-file>
+			<telnet target="ap1">
+				-v "no forwarding-engine static-rule xx"
+				-v ""
+				-v "forwarding-engine static-rule mm action pass in-if eth1 src-mac ${ap2.mgt0.mac} dst-mac 0100:5e01:0102 out-if eth1"
+				-v "forwarding-engine static-rule nn action drop in-if eth0 src-mac ${ap2.mgt0.mac} dst-mac 0100:5e01:0102"
+				-v ""
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>ap2 send pkts with dst-mac: 0100:5e01:0102</desc>
+			<log-file>ping_2.log</log-file>
+			<console target="ap2">
+				-v "ping 224.1.1.2 count 1" ;exit 0
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="2.3">
+			<desc>get log buffer from AP1</desc>
+			<log-file>ap1_drop_2.log</log-file>
+			<telnet target="ap1">
+				-v "show log buffer tail 100"
+			</telnet>
+			<log-match> -c -e "(i) eth1 ${ap2.mgt0.ip}-&gt;224.1.1.2"</log-match>
+			<log-match> -c -i "forward vconnection data to interface eth1 by rule" -i "mm"</log-match>
+			<log-match> -c -e "(o) eth1 ${ap2.mgt0.ip}-&gt;224.1.1.2"</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+</testcase>

@@ -1,0 +1,101 @@
+<include obj-arg-names="__DUT__">
+	<step no="1">
+		<desc>get the version detail of __DUT__</desc>
+		<log-file>show_ver___DUT__.log</log-file>
+		<console target="__DUT__">
+			-v "show ver detail"
+		</console>
+	</step>
+
+	<step no="2">
+		<desc>judge what to do next by comparing image and __DUT__ info</desc>
+		<setvar name="action" scope="local">
+			${bin.dir}/aerohive/compare_dut_imgfile.pl \
+			--vfile "${log.dir}/show_ver___DUT__.log" \
+			--ifile "${log.dir}/image_ver.txt"
+		</setvar>
+	</step>
+
+	<step no="3">
+		<if>"${action}" == "NOCHANGE"</if>
+		<desc>No need to upgrade image</desc>
+		<script>
+			echo "__DUT__ is just the version, no need to upgrade"
+		</script>
+	</step>
+	
+	<step no="4">
+		<if>"${action}" == "REBOOTBACKUP"</if>
+		<desc>need reboot to backup image</desc>
+		<console target="__DUT__">
+			-v "reboot backup"
+		</console>
+	</step>
+	
+	<step no="5.1">
+		<if>"${action}" == "UPGRADE"</if>
+		<desc>remove rsapublickey.pem</desc>
+		<log-file>remove_rsa___DUT__.log</log-file>
+		<console target="__DUT__" slow="true" prompt="AH.*#|$">
+			<!---v 'show system command "rm -f /etc/rsapublickey.pem"'-->
+			-b -sp "${__DUT__.shellpwd}"
+			-v "_shell"
+			-v ""
+			-v "rm -f /etc/rsapublickey.pem"
+			-v ""
+			-v "exit"
+		</console>
+		<log-match>-i "BusyBox"</log-match>
+		<no-error-check />
+	</step>
+	
+	<step no="5.2">
+		<if>"${action}" == "UPGRADE"</if>
+		<desc>check license</desc>
+		<log-file>show_license___DUT__.log</log-file>
+		<console target="__DUT__">
+			-v "show license"
+		</console>
+		<log-match>-c -i "Permanent *license"</log-match>
+	</step>
+	
+	<step no="6.3" type="loop-check" loop-max-times="3" loop-interval="10">
+		<if>"${action}" == "UPGRADE"</if>
+		<desc>check connection to mpc</desc>
+		<log-file>ping_mpc_from___DUT__.log</log-file>
+		<console target="__DUT__">
+			-v "ping ${mpc.tif.ip}"
+		</console>
+		<log-match>-c -i ' from ${mpc.tif.ip}:' -i 'ttl='</log-match>
+	</step>
+	
+	<step no="6.4">
+		<if>"${action}" == "UPGRADE"</if>
+		<desc>need upgrade image</desc>
+		<log-file>image_upgrade___DUT__.log</log-file>
+		<console target="__DUT__" timeout="300">
+			-v "save image tftp://${mpc.tif.ip}:${img.name}"
+		</console>
+		<log-match>-n -i "The kernel image currently in flash is the same as the image you are attempting to load"</log-match>
+		<log-match>-n -i "The application image currently in flash is the same as the image you are attempting to load"</log-match>
+	</step>
+	
+
+	<step no="4.2">
+		<if>"${action}" == "UPGRADE"</if>
+		<desc>reboot __DUT__ after upgrade image</desc>
+		<log-file>reboot___DUT__.log</log-file>
+		<console target="__DUT__" timeout="300">
+			-v "reboot"
+		</console>
+	</step>
+	<step no="5">
+		<desc>Get AP1 version through console</desc>
+		<log-file>image_version___DUT__.log</log-file>
+		<console target="__DUT__">
+			-v "show version"
+			-v "show license"
+		</console>
+		<log-match>-n -c -e "ERROR"</log-match>
+	</step>
+</include>

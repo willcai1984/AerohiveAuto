@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Known unicast between mgt0 and other interfaces</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-laptop1 is connected to portal, pass authentication
+		-laptop2 connects with switch, laptop3 connects ap through wired
+		-all laptops are in same vlan
+
+		Test Procedure:
+		-ap sends unicast like ping etc, to laptop1/laptop2/laptop3.
+		-laptop1/ laptop2/laptop3 sends unicast like ping etc, to ap
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" =="true"</if>
+
+		<include prefix="0" file="subs/bpc_reboot.xml" obj-args="ap1.bpc" />
+
+		<step no="1">
+			<desc>
+				config ap1 eth1 as bridge-access, enable mac-learning
+			</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 mac-learning enable"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="2.3" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="ap1.bpc" />
+
+		<step no="3.1">
+			<desc>
+				AP ping laptop1
+			</desc>
+			<log-file>step3.1_ping.log</log-file>
+			<ssh target="ap1">
+				-v "ping ${sta1.tif.ip}"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				AP ping mpc (laptop2)
+			</desc>
+			<log-file>step3.2_ping.log</log-file>
+			<ssh target="ap1">
+				-v "ping ${mpc.tif.ip}"
+			</ssh>
+			<log-match>-c -i "from ${mpc.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				AP ping bpc1 (laptop3)
+			</desc>
+			<log-file>step3.3_ping.log</log-file>
+			<ssh target="ap1">
+				-v "ping ${ap1.bpc.tif.ip}"
+			</ssh>
+			<log-match>-c -i "from ${ap1.bpc.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<include prefix="4.1" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+		<step no="4.2">
+			<desc>
+				laptop2 ping AP2 should be successful
+			</desc>
+			<log-file>step4.2_ping.log</log-file>
+			<script>
+				nohup ping ${ap1.mgt0.ip} -c 4 &gt; ${log.dir}/step4.2_ping.log
+			</script>
+			<log-match>-c -i "from ${ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<include prefix="4.3" file="subs/sta_ping.xml" args="${ap1.bpc.mif.ip}, ${ap1.mgt0.ip}, 4" />
+	</stage>
+</testcase>

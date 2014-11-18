@@ -1,0 +1,162 @@
+<testcase>
+	<brief>(IxPort: CoF=0)Maximum session members is (23 interface and 255vlans)</brief>
+	<priority>low</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+	<description>
+		Maximum session members is (23 interface and 255vlans)
+	</description>
+	<comment>
+		Test procedure 1. Configure source is vlan 1-255, direction is ingress, destination is interface 24 and source is interface 1-23, direction is both, destination is interface 24 in one session and enable it, result1
+		2. IXIA port1-23 send broadcast/multicast/unicast pkts(mix tagged and untagged pkts), capture pkts on IXIA port 24, result 2
+		Expect result Result 1: Can configure successfully
+		Result 2: Can capture all pkts
+	</comment>
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="rx_port1" value="${sw1.port2.ixia_port}" />
+	<property name="tx_port2" value="${sw1.port3.ixia_port}" />
+	<property name="rx_port2" value="${sw1.port4.ixia_port}" />
+
+	<property name="vlan_range" value="101-354" />
+	<property name="vlan_range_monitor" value="101 - 354" />
+	<property name="add_vlan_id" value="355" />
+	<property name="interface_range_monitor" value="eth1/1 - eth1/27" />
+	<property name="destination.interface" value="eth1/28" />
+	<property name="correct_vlan" value="101" />
+	<property name="incorrect_vlan" value="102" />
+
+	<stage>
+		<step no="1.0.1">
+			<desc>
+				Show interface mgt0 to get ip address
+			</desc>
+			<log-file>step1.0.1_mgt0_ip_info.log</log-file>
+			<console target="sw1">
+				-v 'show interface mgt0'
+			</console>
+		</step>
+
+
+		<step no="1.0.2">
+			<desc>
+				Get mgt0's ip address
+			</desc>
+			<setvar name="sw1.ip">
+				python ${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/step1.0.1_mgt0_ip_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Configure 255 vlans 101-355
+			</desc>
+			<log-file>step1.1_config.log</log-file>
+			<script timeout="180">
+				python ${bin.dir}/ssh_execute_cli.py -cli 'vlan (l1)' -list '${vlan_range}' -d ${sw1.ip} -debug -l ${log.dir} -z ${log.file}
+			</script>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				Show running-config to confirm
+			</desc>
+			<log-file>step1.2_config.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				Show vlan summary
+			</desc>
+			<log-file>step1.3_show_vlan_summary.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show vlan summary'
+			</ssh>
+			<log-match>-e 'Number of existing VLANs: 255'</log-match>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				Add one more vlan
+			</desc>
+			<log-file>step1.4_add_one_more_vlan.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'vlan ${add_vlan_id}'
+			</ssh>
+			<!-- need no error check -->
+			<no-error-check />
+			<log-match>-e 'VLAN number already reach the maximum(255)'</log-match>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				Configure source vlan
+			</desc>
+			<if>"${sw1.platform}" == "SR2012" || "${sw1.platform}" == "SR2012P" || "${sw1.platform}" == "SR2012T"</if>
+			<log-file>step1.5_configure.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'monitor session 1'
+				-v 'monitor session 1 source interface eth1/1 - eth1/11 both'
+				-v 'monitor session 1 source vlan ${vlan_range_monitor} ingress'
+				-v 'monitor session 1 destination interface eth1/12'
+				-v 'monitor session 1 enable'
+			</ssh>
+		</step>
+		
+		<step no="1.5.1">
+			<desc>
+				Configure source vlan
+			</desc>
+			<if>"${sw1.platform}" != "SR2012"</if>
+			<log-file>step1.5_configure.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'monitor session 1'
+				-v 'monitor session 1 source interface ${interface_range_monitor} both'
+				-v 'monitor session 1 source vlan ${vlan_range_monitor} ingress'
+				-v 'monitor session 1 destination interface ${destination.interface}'
+				-v 'monitor session 1 enable'
+			</ssh>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				Show running config to confirm vlan
+			</desc>
+			<log-file>step1.6_configure.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show running-config | include monitor'
+			</ssh>
+			<log-match>-e 'monitor session 1 enable'</log-match>
+			<log-match>-e 'monitor session 1 source vlan ${vlan_range_monitor} ingress'</log-match>
+		</step>
+
+		<step no="1.7">
+			<desc>
+				Show monitor session to confirm interface due to two versions's shown is not the same
+			</desc>
+			<if>"${sw1.platform}" == "SR2012" || "${sw1.platform}" == "SR2012P" || "${sw1.platform}" == "SR2012T"</if>
+			<log-file>step1.7_show_monitor.log</log-file>
+			<telnet target="sw1">
+				-v 'show monitor session 1'
+			</telnet>
+			<log-match>-e "eth1/1-eth1/12" -re</log-match>
+		</step>
+		
+		<step no="1.7.1">
+			<desc>
+				Show monitor session to confirm interface due to two versions's shown is not the same
+			</desc>
+			<if>"${sw1.platform}" != "SR2012"</if>
+			<log-file>step1.7_show_monitor.log</log-file>
+			<telnet target="sw1">
+				-v 'show monitor session 1'
+			</telnet>
+			<log-match>-e "eth1/1-eth1/24 eth1/25-eth1/27|eth1/1-eth1/27" -re</log-match>
+		</step>
+
+	</stage>
+
+</testcase>

@@ -1,0 +1,223 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>3g connection status</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		1) Config usbmodem mode as primary-wan
+		2) The 3g service is activated and available
+		3) Configured the dialup username/ passwd/ number if the modem is PPPoE required
+		4) ${br1.br.wan.int1} WAN is available and healthy
+		AH-8c66c0#sh ru
+		interface ${br1.br.wan.int1} mode wan
+		interface eth1 mode bridge-access
+		interface eth1 mac-learning enable
+		interface eth2 mode bridge-access
+		interface eth2 mac-learning enable
+		interface eth3 mode bridge-access
+		interface eth3 mac-learning enable
+		interface eth4 mode bridge-access
+		interface eth4 mac-learning enable
+		report statistic period 1
+		interface mgt0 ip 192.168.85.1 ${br1.vpc1.mask}
+		no interface mgt0 dhcp client
+		interface mgt0 dhcp-server options default-gateway 192.168.85.1
+		interface mgt0 dhcp-server options dns1 192.168.85.1
+		interface mgt0 dhcp-server ip-pool 192.168.85.10 192.168.85.99
+		interface mgt0 dhcp-server enable
+		interface mgt0 dns-server enable
+		track wan_failover_test default-gateway
+		track wan_failover_test interval 5
+		track wan_failover_test
+		use-for-wan-testing
+		capwap
+		client server name 10.155.33.220
+		capwap client vhm-name JingLi-VHM
+		vpn client-ipsec-tunnel 0019778C66C0_client_ipsec_1 vpn-mode layer-3
+		vpn ipsec-tunnel 0019778C66C0_client_ipsec_1 gateway 115.236.187.186 client-
+		name 7FJRFnPmu9LA894kZB7GSKzJGWZtNLwJ password ***
+		vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel
+		0019778C66C0_client_ipsec_1 primary
+		routing route-request enable
+		routing internal-sub-network 192.168.85.0/24
+		usbmodem mode primary-wan
+		usbmodem modem-id huawei_e220 apn 3gnet
+
+		Test Procedure:
+		1) Check the usbmodem status while WAN is usbmodem by default
+		2) Trigger failover to ${br1.br.wan.int1} WAN via shut usbmodem
+		3) Check the WAN and usbmodem status
+		4) Trigger failback to ${br1.br.wan.int1} WAN via enable usbmodem
+		5) Repeat step 3)
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+	<br-opt-modem>1</br-opt-modem>
+
+	<property name="apn.name" value="3gnet" />
+	<property name="des.addr" value="0.0.0.0" />
+	<property name="gw.addr" value="192.168.10.254" />
+	<property name="gw.addr.1" value="8.8.8.8" />
+
+	<stage>
+		<step no="init_env">
+			<desc>
+			</desc>
+			<telnet host="${br1.br.wan.ip}">
+				-v "track-wan use-for-wan-${br1.br.wan.int1}"
+				-v "track-wan use-for-wan-${br1.br.wan.int1} ip ${gw.addr}"
+				-v "track-wan use-for-wan-${br1.br.wan.int1} interface ${br1.br.wan.int1}"
+				-v "track-wan use-for-wan-${br1.br.wan.int1} enable"
+				-v "track-wan use-for-wan-usbnet0"
+				-v "track-wan use-for-wan-usbnet0 ip ${gw.addr}"
+				-v "track-wan use-for-wan-usbnet0 interface usbnet0"
+				-v "track-wan use-for-wan-usbnet0 enable"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="0" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show usbmodem info
+			</desc>
+			<log-file>step0_show_usbmodem_info_${loop_check.idx}.log</log-file>
+			<telnet host="${br1.br.wan.ip}">
+				-v "show usbmodem info"
+			</telnet>
+			<log-match>-c -i "Manufacturer"</log-match>
+			<log-match>-c -i "Model:"</log-match>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				show usbmodem info
+			</desc>
+			<log-file>step0.1_show_usbmodem_info.log</log-file>
+			<telnet host="${br1.br.wan.ip}">
+				-v "show usbmodem info"
+			</telnet>
+			<log-match>-c -i "Manufacturer"</log-match>
+			<log-match>-c -i "Model:"</log-match>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				get dns server tshark process
+			</desc>
+			<setvar name="modem.name_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step0.1_show_usbmodem_info.log -p "Manufacturer:\s+(\w+)" -t str
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				get dns server tshark process
+			</desc>
+			<setvar name="modem.name_2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step0.1_show_usbmodem_info.log -p "Model:\s+(\S+)" -t str
+			</setvar>
+		</step>
+
+		<step no="0.4">
+			<desc>
+				get dns server tshark process
+			</desc>
+			<setvar name="modem.name">
+				echo "${modem.name_1}_${modem.name_2}" | tr "A-Z" "a-z"
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				Config parameters for usbmodem (mode, apn)
+				Config track ip parameters for wan failover test
+			</desc>
+			<telnet host="${br1.br.wan.ip}">
+				-v "no track-wan use-for-wan-usbnet0 ip ${gw.addr}"
+				-v "no track-wan use-for-wan-${br1.br.wan.int1} ip ${gw.addr}"
+				-v "track-wan use-for-wan-${br1.br.wan.int1} default-gateway"
+				-v "track-wan use-for-wan-usbnet0 default-gateway"
+				-v "usbmodem reset-device"
+				-v "usbmodem mode primary-wan"
+				-v "usbmodem modem-id ${modem.name} apn ${apn.name}"
+				-v "usbmodem enable"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				Check the usbmodem status while WAN is ${br1.br.wan.int1} by default
+			</desc>
+			<log-file>step4_check_default_usbmodem.log</log-file>
+			<telnet host="${br1.br.wan.ip}">
+				-v "show usbmodem modem-id ${modem.name}"
+			</telnet>
+			<log-match>-c -i "Enabled: yes"</log-match>
+			<log-match>-c -i "Mode: primary-wan"</log-match>
+			<log-match>-c -i "APN: *${apn.name}"</log-match>
+		</step>
+
+		<step no="4.1" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				Check the usbmodem status
+			</desc>
+			<log-file>step4.1_check_usbmodem_status_${loop_check.idx}.log</log-file>
+			<telnet host="${br1.br.wan.ip}" timeout="300">
+				-v "show usbmodem status"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "PPP Interface Status:" -ps p "State: up" -e "(?i)Connection closed" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				show wan interface
+			</desc>
+			<log-file>step4.2_show_wan_interface.log</log-file>
+			<telnet host="${br1.br.wan.ip}" timeout="300">
+				-v "show wan interface"
+			</telnet>
+			<!-- p "priority: 1" -->
+			<log-match bin="${bin.dir}/searchblocks.py">-b "ifname: ${br1.br.wan.int1}" -ps p "kifname: ${br1.br.wan.kport1}" p "is_wan: 1" p "is_default_wan: 0" -e "dft_ifmon_down_time" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "ifname: usbnet0" -ps p "kifname: ppp0" p "priority: 0" p "is_wan: 1" p "is_default_wan: 1" -e "dft_ifmon_down_time" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				show wan failover
+			</desc>
+			<log-file>step4.4_show_wan_failover.log</log-file>
+			<telnet host="${br1.br.wan.ip}">
+				-v "show wan failover"
+			</telnet>
+			<log-match>-c -i "curr_state: CONNECTED"</log-match>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				show l3 interface
+			</desc>
+			<log-file>step4.4_show_l3_interface.log</log-file>
+			<telnet host="${br1.br.wan.ip}">
+				-v "show l3 interface"
+			</telnet>
+			<log-match>-c -p 1 -i "${br1.br.wan.int1}" -p 3 -i "wan" -p 6 -i "U"</log-match>
+			<log-match>-c -p 1 -i "ppp0" -p 3 -i "wan" -p 6 -i "U"</log-match>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				show ip route
+			</desc>
+			<log-file>step4.5_show_ip_route.log</log-file>
+			<telnet host="${br1.br.wan.ip}" timeout="300">
+				-v "show ip route"
+			</telnet>
+			<!-- p "1" -->
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "${des.addr}" p "0" p "ppp0" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "${des.addr}" p "${br1.br.wan.kport1}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+	</stage>
+</testcase>

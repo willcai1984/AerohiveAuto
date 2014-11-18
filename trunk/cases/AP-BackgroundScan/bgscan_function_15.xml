@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>set scan interval to 1 minute, check client stability</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test Procedure:
+		1.enable bgscan on wifi0
+		2.set scan interval to 1 nimute
+		3.connect laptop to AP and generate ping traffic
+		4.check if the connection is stable.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+	<stage>
+		<step no="1">
+			<desc>
+				configure ap1 wifi0 set bgscan interval to 1 and enable bgscan client
+			</desc>
+			<log-file>ap_config_1.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "radio profile ng"
+				-v "radio profile ng phymode 11ng"
+				-v "radio profile ng scan access client"
+				-v "radio profile ng scan access interval 1"
+				-v "interface wifi0 radio profile ng"
+				-v "interface wifi0 radio channel 6"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>
+				2.show wifi0's channel,save in channel list {ch}.
+				"show interface wifi0 channel"
+				and Check whether all FCC 840 wifi0 channels are in channel list
+			</desc>
+			<log-file>show_in_wifi0_channel.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 channel"
+			</telnet>
+			<log-match loop-values="2412,2417,2422,2427,2432,2437,2442,2447,2452,2457,2462">-e "${loop.v}"</log-match>
+		</step>
+			
+    <property name="conn1.ssid" value="${ssid.name}1" />
+	  <property name="conn1.proto" value="open" />
+    <include prefix="3" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta1, ap1" />
+		
+		<step no="16">
+			<desc>
+				show interface
+			</desc>
+			<log-file>show_interface_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+		<step no="17">
+			<desc>
+				4.open debug mode.
+				"_kdebug wifi-driver wifi0.1 scan"
+			</desc>
+			<log-file>add_debug_1_info.log</log-file>
+			<telnet target="ap1">
+				-v "_kdebug wifi-driver wifi0.1 scan"
+			</telnet>
+		</step>
+		<step no="18">
+			<desc>Ping from remote host ${sta1.mif.ip} to master Server </desc>
+			<log-file>pingmaster_${sta1.mif.ip}.log</log-file>
+			<ssh target="sta1" timeout="400">
+				-v "ping ${mpc.tif.ip} -c 300"
+			</ssh>
+		</step>
+		<step no="19">
+			<desc>Get packet loss</desc>
+			<setvar name="packet.loss">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/pingmaster_${sta1.mif.ip}.log -p "received.*(\d+).*% packet loss"
+			</setvar>
+		</step>
+		<step no="20">
+			<desc>Compare packet loss  </desc>
+			<script>
+				if [ ${packet.loss} -gt 5 ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="21" delay="150">
+		  <if>"${img.prodtype}" != "AP230" &amp;&amp; "${img.prodtype}" != "AP1130"</if>
+			<desc>
+				5.wait about 5 minute,background scan function will work,it will scan wifi0's
+				channel.the channel value is same with channel list {ch}.the channel information is
+				in the logging buffer printed on screen.
+				"show logging buffer | include self"
+			</desc>
+			<log-file>show_wifi0_bgscan.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffer | in self"
+			</telnet>
+		</step>
+		
+		<step no="21" delay="150">
+		  <if>"${img.prodtype}" == "AP230" || "${img.prodtype}" == "AP1130"</if>
+			<desc>
+				5.wait about 5 minute,background scan function will work,it will scan wifi0's
+				channel.the channel value is same with channel list {ch}.the channel information is
+				in the logging buffer printed on screen.
+				"show logging buffer | include self"
+			</desc>
+			<log-file>show_wifi0_bgscan.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffer | in \"wl0: wlc_scan: scan channels\""
+			</telnet>
+		</step>
+		
+		<step no="21.1">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi0_logbuffer.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffer"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="21.2">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi0_logbuffer.log</log-file>
+			<setvar name="jump-check">
+				cat ${log.dir}/${log.file} |grep "Skip bg-scan due to high load" >/dev/null; 
+				if [ $? -eq 0 ]; then echo true; else echo false; fi
+			</setvar>
+			<no-error-check />
+		</step>
+		<step no="22">
+		  <if>"${jump-check}" != "true"</if>
+			<desc>match all channel	</desc>
+			<script>
+				perl ${case.dir}/bin/check-scan-channel.pl ${log.dir}/show_wifi0_bgscan.log 840wifi0
+			</script>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>device onboarding create a new netpolicy </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		device onboarding create a new netpolicy 
+	</description>
+	<numofap>1</numofap>
+	<tbtype>winlin</tbtype>
+		
+	<property name="policy.name" value="network_policy" />
+	<property name="job_selenium_port" value="${cloud.selenium.port}" />
+	<property name="job_selenium_log" value="/tmp/selenium-${job.id}.log" />
+	<property name="need_connect_capwap" value="false" />
+	<stage>
+		<include prefix="start_selenium_server1" file="subs/start_selenium_server_${tb.os}.xml" args="${job_selenium_jar}, ${job_selenium_port}, ${job_selenium_log}, ${tb.browser_type},${tb.browser_path}" />
+		<step no="debug.0" >
+			<desc>print The environment variable </desc>
+			<script>
+				echo "${ap1.selenium.port}"
+				echo "{$job_selenium_port}"
+			</script>
+		</step>
+		<step no="pre.0">
+			<desc>
+				get access addr
+			</desc>
+			<setvar name="access_addr">
+				echo "${tb.http_server}"
+			</setvar>
+		</step>
+		
+		<step no="pre.1">
+			<desc>
+				get login addr
+			</desc>
+			<setvar name="login_addr">
+				echo "${tb.http_server}/login"
+			</setvar>
+		</step>
+		
+		<step no="pre.2">
+			<desc>
+				get random number
+			</desc>
+			<setvar name="random.number">
+				echo $RANDOM
+			</setvar>
+		</step>
+		<step no="pre.3">
+			<desc>
+				create ssid name
+			</desc>
+			<setvar name="case.ssid.name">
+				echo ${job.sid}-$RANDOM
+			</setvar>
+		</step>
+		<step no="1">
+			<desc>
+				access cloud3.0
+			</desc>
+			<log-file>login_cloud.html</log-file>
+			<file>session_id.log</file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/cloud_login_positive.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info --preserve-session --parameters visit.pre_url=${login_addr} visit.url=${access_addr} &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="2">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log -t str
+			</setvar>
+		</step>
+		
+		<step no="5">
+			<desc>
+				add device
+			</desc>
+			<log-file>device_onboarding_create_new_policy.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/device_onboarding_create_new_policy.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --parameters device.sn_number=${ap1.sn} device.network_policy_name=${policy.name}-${random.number} device.ssid_name=${case.ssid.name}  visit.url=${access_addr} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info --session-id=${session.id} --preserve-session
+			</script>
+		</step>
+		
+		<step no="6">
+			<desc>
+				HiveAPs and HM are in capwap communication.
+			</desc>
+			<console target="ap1">
+				-v "capwap client server name ${tb.capwap.ip}"
+				-v "capwap client enable"
+			</console>
+		</step>
+		 
+		<step no="7" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				Check the HiveAPs capwap state.
+			</desc>
+			<console target="ap1">
+				-v "show capwap client"
+			</console>
+			<log-match>-e "RUN state: Connected securely to the CAPWAP server"</log-match>
+			<log-match>-n -i "CAPWAP server IP: *${tb.capwap.ip}"</log-match>
+		</step>
+		
+		<step no="4" delay="300">
+			<desc>
+				show run config after autoprivision
+			</desc>
+			<log-file>check_hiveaps_capwap_state.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-i "no bonjour-gateway enable"</log-match>
+			<!-- <log-match>-i "security mac-filter hive0 default permit"</log-match> -->
+			<log-match>-i "security mac-filter ${case.ssid.name} default permit"</log-match>
+			<log-match>-i "security-object ${case.ssid.name}"</log-match>
+			<log-match>-i "security-object ${case.ssid.name} security protocol-suite wpa-auto-psk ascii-key ***"</log-match>
+			<log-match>-i "security-object ${case.ssid.name} default-user-profile-attr "</log-match>
+			<log-match>-i "ssid ${case.ssid.name}"</log-match>
+			<log-match>-i "ssid ${case.ssid.name} security-object ${case.ssid.name}"</log-match>
+			<log-match>-i "ssid ${case.ssid.name} security mac-filter ${case.ssid.name}"</log-match>
+			<log-match>-i "interface wifi1 mode access"</log-match>
+			<log-match>-i "interface wifi0 ssid ${case.ssid.name}"</log-match>
+			<log-match>-i "interface wifi1 ssid ${case.ssid.name}"</log-match>
+			<log-match>-i "config rollback enable"</log-match>
+			<log-match>-i "snmp location change-me"</log-match>
+			<log-match>-i "capwap client vhm-name "</log-match>
+			<log-match>-i "user-profile User-Profile-[0-9]* qos-policy def-user-qos vlan-id 1 attribute "</log-match>
+			<log-match>-i "no bonjour-gateway enable"</log-match>
+			<log-match>-i "application reporting auto"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				remove device by serial number
+			</desc>
+			<log-file>remove_serial_number.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/remove_device_sn.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --parameters devices.sn_number=${ap1.sn} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>	
+		
+				
+	</stage>
+	<post-process>
+		<stage>
+			<include prefix="stop_selenium_server1" file="subs/stop_selenium_server_${tb.os}.xml"  args="${job_selenium_log}"/>
+		</stage>
+	</post-process>
+</testcase>

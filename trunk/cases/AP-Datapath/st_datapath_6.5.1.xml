@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>pkt process for L3 roaming (one laptop roaming)</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-construct this topology
+		-ap1 and ap2 in different subnet
+		-disable proxy-arp on all ap
+
+		Test Procedure:
+		-laptop1 links to ap1 first, then roaming to ap2(change the power or
+		shutdown the interface)
+		- laptop1 ping laptop2, should meet result 1.
+		- laptop2 ping laptop1, should meet result 2.
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+	<stage>
+		<step no="1">
+			<desc>
+				-Config ap1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object cw-330-1"
+				-v "security-object cw-330-1 default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object cw-330-1"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "mobility-policy roaming dnxp"
+				-v "user-profile cw-330-1 qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy roaming attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="3" delay="30">
+			<desc>
+				1)Confirm station state on AP1
+			</desc>
+			<log-file>step3_show_station_info.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-Config AP2
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object cw-330-1"
+				-v "security-object cw-330-1 default-user-profile-attr 1"
+				-v "security-object cw-330-2"
+				-v "security-object cw-330-2 default-user-profile-attr 2"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object cw-330-1"
+				-v "ssid ${ssid.name}_1"
+				-v "ssid ${ssid.name}_1 security-object cw-330-2"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}_1"
+				-v "mobility-policy roaming dnxp"
+				-v "user-profile cw-330-1 qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy roaming attribute 1"
+				-v "user-profile cw-330-2 qos-policy def-user-qos vlan-id ${tb.vlan2} mobility-policy roaming attribute 2"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show ap2's interface mgt0 info
+			</desc>
+			<log-file>step3.2_show_ap2_interface_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				get ap2's mgt0's ip address
+			</desc>
+			<setvar name="ap2.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step3.2_show_ap2_interface_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<property name="conn2.ssid" value="${ssid.name}_1" />
+		<property name="conn2.proto" value="open" />
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn2, sta2, ap2" />
+
+		<step no="4" delay="20">
+			<desc>
+				1)Confirm station state on AP2
+			</desc>
+			<log-file>step4_show_station_info.log</log-file>
+			<telnet target="ap2">
+				-v "show station"
+			</telnet>
+		</step>
+
+		<step no="5" delay="100">
+			<desc>
+				show roaming cache
+			</desc>
+			<log-file>show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				show amrp dnxp neighbor
+			</desc>
+			<log-file>show_amrp_dnxp_neighbor.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>
+				5) Shutdown SSID on AP1
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="6.1" delay="60">
+			<desc>
+				show route
+			</desc>
+			<log-file>step6.1_show_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-e "mgt0" -i "LTO"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				show route
+			</desc>
+			<log-file>step6.2_show_route.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-e "wifi0.1" -i "LTO"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				clear log on AP1
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff src-ip ${sta1.tif.ip} bidirectional"
+			</telnet>
+		</step>
+
+		<step no="6.4">
+			<desc>
+				clear log on AP2
+			</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff src-ip ${sta1.tif.ip} bidirectional"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				-laptop1 ping laptop2
+			</desc>
+			<ssh target="sta1">
+				-v "ping ${sta2.tif.ip} -c 5"
+			</ssh>
+		</step>
+
+		<step no="7.1" delay="60">
+			<desc>
+				show logging buffered on ap1
+			</desc>
+			<log-file>step7.1_show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="120">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(r\) mgt0 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				show logging buffered on ap2
+			</desc>
+			<log-file>step7.2_show_log_buffered.log</log-file>
+			<telnet target="ap2" timeout="120">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) bgd0\.(\d+) ${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 ${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) wifi0.2 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth0 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				clear log on AP1
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				-laptop2 ping laptop1
+			</desc>
+			<log-file>step8_ping.log</log-file>
+			<ssh target="sta2">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+		</step>
+
+		<step no="8.2" delay="120">
+			<desc>
+				show logging buffered on ap1
+			</desc>
+			<log-file>step8.2_show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth0 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) bgd0\.(\d+) ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.3">
+			<desc>
+				show logging buffered on ap2
+			</desc>
+			<log-file>step8.3_show_log_buffered.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) wifi0.2 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(r\) mgt0 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

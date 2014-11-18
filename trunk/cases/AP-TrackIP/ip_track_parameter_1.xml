@@ -1,0 +1,587 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Modify multi-group-logic of track IP</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP1 IP_addr is IP1, AP2 IP_addr
+		is IP2 (IP1 and IP2 is in
+		the same subnet)
+		-Connect 2 laptops to the AP1
+		,and get IP3-4
+		-Configure AP1
+		"hive tracktest"
+		"interface mgt0 hive
+		tracktest"
+		-Configure AP2
+		"hive tracktest"
+		"interface mgt0 hive
+		tracktest"
+		"track group1 ip IP3"
+		"track group1 ip IP4"
+		"track group1
+		action start-mesh-failover"
+
+		Test Procedure:
+		1)Show ip track information
+		on AP2
+		" show track group1"
+		2)Remove the laptop of IP3
+		3)Recover
+		4)Remove
+		the laptop of IP4
+		5)Recover
+		6)Modify the value of multi-group-logic
+		"track group1 multi-dst-logic and"
+		7)Repeat step 1-5
+		8)Remove all the
+		laptops
+		9)Recover
+		Expectant result
+		1. Information can be displayed
+		correctly
+		2. Group1 trigger failover action
+		3. Action can be recovered
+		4. The same as step 2
+		5. The same as step 3
+		7. Group1 cannot trigger
+		failover action
+		8. Group1 trigger failover action
+		9. The same as step 3
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Creat ssid and bind it to wifi0
+				-Show ip track logs
+				"_debug
+				monitor all"
+				-Configure AP1
+				"hive tracktest"
+				"interface mgt0 hive
+				tracktest"
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid
+				${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive
+				${hive.name}"
+				-v "interface wifi1 rad cha 161"
+
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-Creat ssid and bind it to wifi0
+				-Show ip track logs
+				"_debug
+				monitor all"
+				-Configure AP1
+				"hive tracktest"
+				"interface mgt0 hive
+				tracktest"
+			</desc>
+			<telnet target="ap2">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid
+				${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive
+				${hive.name}"
+				-v "interface wifi1 rad cha 161"
+				-v "interface wifi0 ssid ${ssid.name} sh"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="4">
+			<desc>
+				-Configure AP2
+				"hive tracktest"
+				"interface mgt0 hive tracktest"
+				"track group1 ip IP3"
+				"track group1 ip IP4"
+				"track group1 action
+				enable-access-console"
+			</desc>
+			<telnet target="ap2">
+				-v "clear log buf"
+				-v "_debug monitor all"
+				-v "track group1 ip ${sta1.tif.ip}"
+				-v "track
+				group1 ip ${sta2.tif.ip}"
+				-v "track group1 action
+				enable-access-console"
+
+			</telnet>
+		</step>
+
+
+		<step no="testa" delay="10" type="loop-check" loop-max-times="20" loop-interval="20">
+			<log-file>show_track_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+
+		<step no="5">
+			<desc>
+				-Show track state on AP2
+				"show track group1"
+				-Information can be
+				displayed correctly
+			</desc>
+			<log-file>show_track_group1_5.log</log-file>
+			<telnet target="ap2">
+				-v "show track group1"
+			</telnet>
+			<log-match>-i "Track Group Name: *group1"</log-match>
+			<log-match>-i "Multi-group-logic: *OR"</log-match>
+			<log-match>-i "Group Interval: 6 seconds"</log-match>
+			<log-match>-i "Group Retry: *2"</log-match>
+			<log-match>-i "Group Action: enable-access-console "</log-match>
+		</step>
+
+
+
+
+		<step no="7">
+			<desc>
+				-Remove the laptop of IP3
+			</desc>
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+				-v "killall
+				wpa_supplicant"
+			</ssh>
+		</step>
+
+
+
+		<step no="test1" delay="3" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Unreachable"</log-match>
+		</step>
+
+
+
+		<step no="8" delay="30">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<telnet target="ap2">
+				-v "show logging buffered | in \"ready for sending packet\"" ; exit 0;
+			</telnet>
+			<no-error-check />
+			<log-match>-i "number of times: 2" </log-match>
+		</step>
+
+		<include prefix="9" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track1_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2" delay="20">
+			<log-file>show_arp_cache1.log</log-file>
+			<telnet target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="10" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 1"
+			</log-match>
+			<log-match>-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 3"
+			</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				-Remove the laptop of IP4
+			</desc>
+			<ssh target="sta2">
+				-v "dhclient -r ${sta2.tif.name}"
+				-v "killall
+				wpa_supplicant"
+			</ssh>
+		</step>
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track2_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Unreachable"</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache2.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="12" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step12_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match loop-values="1">-n -i "\[monitor_basic\]: detect
+				group(group1) is ready for sending packet, number of times:
+				${loop.v}(all_IFs)"
+			</log-match>
+		</step>
+
+		<include prefix="13" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track3_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache3.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="14" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step14_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="120">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "detect group(group1) is ready for sending packet, number of times: 1"
+			</log-match>
+			<log-match>-n -i "detect group(group1) is ready for sending packet, number of times: 3"
+			</log-match>
+		</step>
+
+		<step no="15.1">
+			<desc>show ap2's mgt0</desc>
+			<log-file>ap2_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="15.2">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ap2_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="15.3">
+			<desc>
+				-Modify the value of multi-group-logic
+				"track group1
+				multi-dst-logic and"
+			</desc>
+			<telnet target="ap2">
+				-v "track group1 multi-dst-logic and"
+			</telnet>
+		</step>
+
+		<step no="16">
+			<desc>
+				-Repeat step 1-5
+				-Show ip track information on AP2
+				" show track
+				group1"
+				-Information can be displayed correctly
+			</desc>
+			<log-file>show_track_group1_16.log</log-file>
+			<telnet target="ap2">
+				-v "show track group1"
+			</telnet>
+			<log-match>-i "Track Group Name: *group1"</log-match>
+			<log-match>-i "Multi-group-logic: *AND"</log-match>
+			<log-match>-i "Group Interval: 6 seconds"</log-match>
+		
+			<log-match>-i "Group Retry: *2"</log-match>
+			
+		</step>
+
+		<step no="17">
+			<desc>
+				Repeat: Remove the laptop of IP3
+			</desc>
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+				-v "killall
+				wpa_supplicant"
+			</ssh>
+		</step>
+
+		<step no="18">
+			<desc>
+				-clear log
+			</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="19" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step19_show_logging_buffered.log</log-file>
+			<telnet target="ap2">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "detect group(group1) is ready for sending packet, number of times: 1"
+			</log-match>
+			<log-match>-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 3"
+			</log-match>
+		</step>
+
+		<include prefix="20" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track4_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache4.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="21" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step21_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="120">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "detect group(group1) is ready for sending packet, number of times: 1"
+			</log-match>
+			<log-match>-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 3"
+			</log-match>
+		</step>
+
+		<step no="22">
+			<desc>
+				Repeat: Remove the laptop of IP4
+			</desc>
+			<ssh target="sta2">
+				-v "dhclient -r ${sta2.tif.name}"
+				-v "killall
+				wpa_supplicant"
+			</ssh>
+		</step>
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track5_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache5.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="23" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step23_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="120">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "detect group(group1) is ready for sending packet, number of times: 1"
+			</log-match>
+			<log-match>-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 3"
+			</log-match>
+		</step>
+
+		<include prefix="24" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track6_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Reachable"</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache6.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="25" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step25_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="120">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "detect group(group1) is ready for sending packet, number of times: 1"
+			</log-match>
+			<log-match>-n -i "\[monitor_basic\]: detect group(group1) is ready for sending packet, number of times: 3"
+			</log-match>
+		</step>
+
+		<step no="26">
+			<desc>
+				Repeat: Remove sta1
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v "ter"
+				-v "quit"
+				-v "dhclient ${sta1.tif.name} -r"
+			</ssh>
+		</step>
+
+		<step no="27">
+			<desc>
+				Repeat: Remove sta2
+			</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v "ter"
+				-v "quit"
+				-v "dhclient ${sta2.tif.name} -r"
+			</ssh>
+		</step>
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track7_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-i "Unreachable"</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache7.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="28" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step28_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="120">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-n -i "detect group(group1) is ready for sending packet, number of times: 1(all_IFs"
+			</log-match>
+		</step>
+
+		<include prefix="29" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="30" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="test1" delay="10" type="loop-check" loop-max-times="10" loop-interval="20">
+			<log-file>show_track8_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>
+				-i "Reachable"
+			</log-match>
+		</step>
+
+		<step no="test2">
+			<log-file>show_arp_cache8.log</log-file>
+			<console target="ap2">
+				-v "show arp-cache"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="31" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step31_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="120">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "detect group(group1) is ready for sending packet, number of times: 1"
+			</log-match>
+			<log-match>-n -i "detect group(group1) is ready for sending packet, number of times: 3"
+			</log-match>
+		</step>
+	</stage>
+</testcase>

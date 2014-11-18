@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>When to DHCP server traffic recovered, verify the DHCP can get an IP address again</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+		-DHCP enable, no static IP address.
+		-The traffic between AP and DHCP server is unreachable
+
+		Test procedure:
+		1: Check interface mgt0 IP (show interface mgt0 )
+		2: Check interface mgt0 DHCP client (show interface mgt0 dhcp client)
+		3: Box to DHCP server traffic recovered again, check interface mgt0 IP
+		4: Check interface mgt0 DHCP client (show interface mgt0 dhcp client)
+
+		Expect result:
+		1: Interface mgt0 should default IP.
+		2: DHCP client: enabled, no IP address obtained.
+		3: Interface mgt0 IP should change to an IP obtain from DHCP server.
+		4: DHCP client: enabled, IP address obtained from DHCP server
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				- shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				- config hive,vlan info
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<include prefix="modify.vlan" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth0.swport}, ${tb.vlan7}, ${tb.vlan7}" />
+
+		<step no="2" delay="60">
+			<desc>
+				1: Check interface mgt0 IP (show interface mgt0 )
+			</desc>
+			<log-file>step2_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-c -i "IP addr=192.168."</log-match>
+			<log-match>-n -c -i "IP addr=192.168.${tb.vlan7}."</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				2: Check interface mgt0 DHCP client (show interface mgt0 dhcp client)
+			</desc>
+			<log-file>step2.1_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-i "Get IP address 0.0.0.0 from the server"</log-match>
+			<log-match>-c -i "DHCP client: *Enabled"</log-match>
+		</step>
+
+		<include prefix="recover.vlan" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth0.swport}, ${tb.nvlan}, ${tb.vlans}" />
+
+		<step no="3.1" delay="60">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step3.1_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "IP addr=192.168.${tb.vlan1}.\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step4_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-c -i "DHCP client: *Enabled"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "Get IP address 192.168.${tb.vlan1}.\d+ from the server ${pub.dhcp.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="1" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth0.swport}, ${tb.nvlan}, ${tb.vlans}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,225 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Eth0 with CWP mode, check wired station</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Set interface eth0 to access mode and enable mac-learning:
+		Interface eth0 mode bridge-access
+		Interface eth0 mac-learning enable
+		Set a security-object and with CWP mode:
+		Security-object xx
+		Security-object xx security additional-auth-method captive-web-portal
+		Bind security-object to interface eth0:
+		Interface eth0 security-object xx
+		AP connect with HM
+		_debug auth basic
+		_debug auth info
+		_debug auth comm
+		Debug console
+
+		Test Procedure:
+		1. Connect a PC to switch, show interface eth0 mac-learning all to check client
+		info
+		2. Show auth to check if PC be learned by eth0, check PC info (vlan, upid, MAC,
+		Interface)
+		3. Show route to check if corresponding route be added, check if upid is correct
+		(free arp)
+		4. Check if connected client be reported to HM
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				show interface
+			</desc>
+			<log-file>step0_show_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface ${br1.br.lan.int1}"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>get br1 eth1 raw mac</desc>
+			<setvar name="br1.eth1.mac">
+				${bin.dir}/getbyrexp.py -p "MAC address:\s*([\da-fA-F:]+)" -f ${log.dir}/step0_show_interface.log -t str | tr "A-F" "a-f"
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>config BR with WAN interface, nat enable, config mgt0.1</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask 255.255.255.0"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v "exec bypass-wan-hardening"
+				-v "roaming cache update-interval 60 ageout 2"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>HTTP enable and connect to HM</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "alg http enable"
+				-v "capwap client enable"
+				-v "capwap client server name ${pub.hm1.ip}"
+			</telnet>
+		</step>
+
+		<step no="1.2" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				AP connect with HM
+			</desc>
+			<log-file>show_capwap_client_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show capwap client"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "RUN state: Connected securely to the CAPWAP server" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				eth1 access br1.vpc1.vlan
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "security-object lan"
+				-v "security-object lan default-user-profile-attr 1"
+				-v "security-object lan security additional-auth-method captive-web-portal auth-user-profile-attr 1"
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+				-v "interface ${br1.br.lan.int1} security-object lan"
+			</telnet>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				enable debug
+			</desc>
+			<console target="br1.br">
+				-v "_debug auth basic"
+				-v "_debug auth info"
+				-v "_debug auth comm"
+				-v "_debug capwap basic"
+				-v "_debug capwap trap"
+				-v "clear log buf"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>1. Connect a PC to switch</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.1c">
+			<desc>get eth1 ip of br</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/ifconfig_vpc1_.log -t str
+			</setvar>
+		</step>
+
+		<step no="2.1c">
+			<desc>get eth1 ip of br</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="2.1b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>vpc ping br</desc>
+			<log-file>vpc1_ping_br.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.br.wan.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.br.wan.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Show interface eth1 mac-learning all to check PC
+			</desc>
+			<log-file>step4_show_intreface_mac_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show mac-address-table interface ${br1.br.lan.int1}"
+			</telnet>
+			<log-match>-p 3 -i "${br1.vpc1.tif.mac}" -p 2 -i "${br1.vpc1.vlan}"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				Show auth to check PC
+			</desc>
+			<log-file>step5_show_auth_bind_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth"
+			</telnet>
+			<log-match>-p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "1" -p 5 -i "open"</log-match>
+			<log-match>-c -i "${br1.vpc1.tif.mac} *${br1.br.lan.int1}"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show roaming cache
+			</desc>
+			<log-file>step6_show_roaming_cache.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "${br1.eth1.mac}" -p 5 -i "1" -p 12 -i "YNNN"</log-match>
+		</step>
+
+		<comment>
+			<step no="7">
+				<desc>
+					Show route to check if exist corresponding route of PC
+				</desc>
+				<log-file>step7_show_route.log</log-file>
+				<telnet target="${br1.br.wan.ip}">
+					-v "show route"
+				</telnet>
+				<log-match>-p 1 -i "${br1.vpc1.tif.mac}" -p 3 -i "${br1.br.lan.kport1}" -p 5 -i "1" -p 6 -i "L"</log-match>
+			</step>
+		</comment>
+
+		<step no="8" type="loop-check" loop-max-times="12" loop-interval="10">
+			<desc>
+				Check if connected client be reported to HM(?)
+			</desc>
+			<log-file>step8_show_debug_info_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-i "trap ifname :${br1.br.lan.int1}"</log-match>
+			<log-match>-i "trap client channel :0"</log-match>
+			<log-match>-i "trap user profile id :1"</log-match>
+			<log-match>-i "trap client vlan id :${br1.vpc1.vlan}"</log-match>
+			<!-- <log-match>-i "trap client ip:${br1.vpc1.tif.ip}"</log-match> -->
+			<log-match>-i "trap remote id:${br1.vpc1.tif.mac}"</log-match>
+			<log-match>-i "Station ${br1.vpc1.tif.mac} is authenticated to ${br1.eth1.mac} thru SSID lan"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

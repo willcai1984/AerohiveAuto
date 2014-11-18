@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Fragments are sent to mgt0</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Configure a ip-policy and bind it to FW:
+		"ip-policy FW"
+		"ip-policy FW [from/to] &lt;Laptop ip addr&gt; action permit"
+		"user-profile FW security ip-policy [from/to]-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Server sends the fragment packets to mgt0 of AP1 by using hping2 or other tools
+		3) Check the the packets on AP1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FW" />
+
+	<stage>
+		<step no="open.debug">
+			<desc>
+				open debug mode and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${tb.ftp} dst-ip ${ap1.mgt0.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 to ${tb.ftp} action permit"
+				-v "ip-policy ${user_id} id 2 from ${tb.ftp} action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id} to-access ${user_id}"
+			</telnet>
+		</step>
+
+		<step no="0" delay="15">
+			<desc>
+				-Server sends the fragment packets to mgt0 of AP1 by using hping2 or other tools
+			</desc>
+			<log-file>step0_server_ping.log</log-file>
+			<ssh host="${tb.ftp}" timeout="300">
+				-v "hping2 ${ap1.mgt0.ip} -d 2500 -c 10 -1"
+			</ssh>
+		</step>
+
+		<step no="1" delay="10">
+			<desc>
+				show logging buffered an ap1
+			</desc>
+			<log-file>step1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(o) *eth0 *${ap1.mgt0.ip}-&gt;${tb.ftp}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(i) *mgt0 *${ap1.mgt0.ip}-&gt;${tb.ftp}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(i) *eth0 *${tb.ftp}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(u) *mgt0 *${tb.ftp}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+		</step>
+	</stage>
+</testcase>

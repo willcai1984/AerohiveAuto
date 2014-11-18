@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that dhcp relay can transfer dhcp packet in dhcp server
+		and dhcp client.
+	</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test procedure
+		1. Verify that dhcp relay can
+		transfer DHCP packet between dhcp client and
+		dhcp server(two dhcp
+		servers.).
+		2. Verify that dhcp relay transfer packet as follows:
+
+		Test
+		Procedure:
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				Test procedure
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface eth0 native-vlan ${tb.vlan1}"
+				-v "security-object FWtest"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				Test procedure
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0.1 vlan ${tb.vlan2}"
+				-v "interface mgt0.1 ip 192.168.${tb.vlan2}.111/24"
+				-v "interface mgt0.1 ip-helper address ${pub.dhcp.ip}"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan2} attribute 100"
+				-v "security-object FWtest default-user-profile-attr 100"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>Get laptop1's ip after authentication</desc>
+			<setvar name="sta1.tif.mac">
+				python ${bin.dir}/getinfo_ip.py -d '${sta1.mif.ip}' -i '${sta1.tif.name}' -v 'mac' -u 'root'
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				Test procedure
+			</desc>
+			<console target="ap1">
+				-v "mac-policy xx"
+				-v "mac-policy xx id 1 from ${tb.vlan2.gw.mac} to ${sta1.tif.mac} action deny"
+				-v "mac-policy xx id 2 from ${tb.vlan2.gw.mac} to ffff:ffff:ffff action deny"
+				-v "mac-policy xx id 3 action permit"
+				-v "user-profile ttt security mac-policy from-access xx to-access xx"
+			</console>
+		</step>
+
+		<step no="5">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step1.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="6">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="7">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff dhcp-client ${sta1.tif.mac}"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="8.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="9" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step4_check_buffer.log" />
+
+		<step no="10">
+			<desc>
+				-check the log info on AP
+			</desc>
+			<log-file>step4_check_buffer.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(u\) mgt0.1 0.0.0.0-&gt;255.255.255.255.*?UDP.*?DHCP Request" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) mgt0 ${ap1.mgt0.ip}-&gt;${pub.dhcp.ip}\(\d+\) ttl\(\d+\) UDP.*-&gt;67" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) eth0 ${ap1.mgt0.ip}-&gt;${pub.dhcp.ip}\(\d+\) ttl\(\d+\) UDP.*-&gt;67" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) eth0 ${pub.dhcp.ip}-&gt;192.168.${tb.vlan2}.111\(\d+\) ttl\(\d+\) UDP 67-&gt;67 " -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(u\) mgt0.1 ${pub.dhcp.ip}-&gt;192.168.${tb.vlan2}.111\(\d+\) ttl\(\d+\) UDP 67-&gt;67" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) mgt0.1 192.168.${tb.vlan2}.111-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP 67-&gt;68 DHCP Ack" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) wifi0.1 192.168.${tb.vlan2}.111-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP 67-&gt;68 DHCP Ack" -f ${log.dir}/${log.file}</log-match>
+			<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "\[dhcp_helper\]: Add giaddr 192.168.${tb.vlan2}.111 to packet from ${sta1.tif.mac} thro interface mgt0.1" -f ${log.dir}/${log.file}</log-match> <log-match bin="${bin.dir}/searchbyrexp.py">-p "\[dhcp_helper\]: Interface mgt0.1 forward DHCP DISCOVER from ${sta1.tif.mac} to server ${pub.dhcp.ip}" -f ${log.dir}/${log.file}</log-match> <log-match bin="${bin.dir}/searchbyrexp.py">-p "\[dhcp_helper\]: Interface mgt0.1 forward DHCP OFFER to client ${sta1.tif.mac}" -f ${log.dir}/${log.file}</log-match> <log-match bin="${bin.dir}/searchbyrexp.py">-p "\[dhcp_helper\]: Interface mgt0.1 forward DHCP REQUEST from ${sta1.tif.mac} to server ${pub.dhcp.ip}" -f ${log.dir}/${log.file}</log-match> <log-match bin="${bin.dir}/searchbyrexp.py">-p "\[dhcp_helper\]: Interface mgt0.1 forward DHCP ACK to client ${sta1.tif.mac}" -f ${log.dir}/${log.file}</log-match> -->
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,248 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify the radius traffic can be routed via VPN tunnel successfully</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a remote CVG, there is several LANs behind it
+		-there are some services in CVG's LANs
+		-BR setup VPN connection with the CVG
+		-BR acts as a radius client(NAS), the radius server is behind CVG
+		-setup a ssid using this radius client
+
+		Test Procedure:
+		-STA connects to ssid, trigger the 802.1x auth
+		-check the radius msg by fe debug, should go through vpn tunnel
+		-check the server side, msg should be received by syslog server cor
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<property name="radius.username" value="${job.sid}_auto" />
+	<property name="radius.passwd" value="aerohive" />
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="path_messages" value="/var/log/messages" />
+
+	<stage>
+		<include prefix="0" file="subs/vpn_setup_one_sw.xml" obj-args="cvg1, br1" />
+
+		<step no="pre_step">
+			<desc>configure mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				1. Set one security-object with radius-server
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object lan1"
+				-v "security-object lan1 security protocol-suite 802.1x"
+				-v "security-object lan1 security aaa radius primary ${cvg1.cvg.lan.ip} shared-secret aerohive"
+				-v "security-object lan1 default-user-profile-attr 20"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Set one user-profile and define the attribute x,
+				3. Set the eth1 mode as bridge-access and bind the attribute to it
+				4. Bind the security-object to the eth1.
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 20"
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+				-v "interface ${br1.br.lan.int1} security-object lan1"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>config cvg as a radius server</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="10">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "user-group autotest"
+				-v "user ${radius.username}"
+				-v "user ${radius.username} pass ${radius.passwd}"
+				-v "user ${radius.username} group autotest"
+				-v "aaa radius-server local db local"
+				-v "aaa radius-server local user-group autotest"
+				-v "aaa radius-server local nas ${br1.br.mgt0.ip} shared-key aerohive"
+				-v "aaa radius-server local enable"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step3_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.br.mgt0.1.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-kill process
+			</desc>
+			<ssh target="br1.vpc1" timeout="200">
+				-v "killall -9 wpa_supplicant -q"
+				-v "killall dhclient -q"
+			</ssh>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				prepare config file with correct username and wrong password
+			</desc>
+			<log-file>step3.2_auth_log.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "echo -e \&quot; ctrl_interface=DIR=/var/run/wpa_supplicant \\n ap_scan=0 \\n network={ \\n key_mgmt=IEEE8021X \\n eap=MD5 \\n identity=\\x22${radius.username}\\x22 \\n password=\\x22${radius.passwd}\\x22 \\n eapol_flags=0 \\n } \&quot; &gt; /tmp/wpa_supplicant.conf"
+			</ssh>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				-Laptop auth
+			</desc>
+			<log-file>step3.3_auth_log.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "wpa_supplicant -B -i ${br1.vpc1.tif.name} -c /tmp/wpa_supplicant.conf -D wired"
+			</ssh>
+		</step>
+
+		<step no="3.3a" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				-check connect status
+			</desc>
+			<log-file>step3.3a_check_connection_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" prompt=">|.*#" timeout="200">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-c -i "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step3.4_ifconfig_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.4a">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.4b">
+			<desc>get raw mac of vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step3.4_ifconfig_vpc1.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.4c">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<!--  <step no="3.5" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show 802.1x-mac-table
+			</desc>
+			<log-file>step3.5_show_8021x_mac_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}[\t ]+${br1.vpc1.vlan}[\t ]+${br1.br.lan.int1}[\t ]+CLOSE[\t ]+N/A" -f ${log.dir}/${log.file}</log-match>
+		</step>-->
+
+		<step no="3.5a" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step3.5a_check_auth_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface ${br1.br.lan.int1}"
+			</telnet>
+			<log-match>-c -i "Protocol-suite=802.1X" </log-match>
+			<log-match>-c -i "Dynamic-VLAN=${br1.vpc1.vlan}"</log-match>
+			<log-match>-c -i "${br1.vpc1.tif.mac} *20" -i "done" -i "${radius.username}"</log-match>
+		</step>
+
+		<step no="3.5b" delay="15">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step3.5b_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "Station ${br1.vpc1.tif.mac} is authenticated to" -i "thru SSID lan1"</log-match>
+			<log-match>-c -i "IEEE 802.1X: ${br1.vpc1.tif.mac} BE_AUTH entering state SUCCESS"</log-match>
+			<log-match>-c -i "STA(${br1.vpc1.tif.mac}) login to SSID(${br1.br.lan.kport1}) by user_name=${radius.username}"</log-match>
+			<log-match>-c -i "Station is authenticated: SPA=${br1.vpc1.tif.mac}" -i "if=${br1.br.lan.kport1}"</log-match>
+			<log-match>-c -i "VLAN-ID=${br1.vpc1.vlan}/0" -i "ssid=lan1"</log-match>
+		</step>
+
+		<step no="3.6" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping pub dns
+			</desc>
+			<log-file>step3.6_ping_log_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Check the file /f/etc/err_messages
+			</desc>
+			<log-file>step4_show_err_messages.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" prompt="AH.*#|$" timeout="500">			
+				-b -sp "${cvg1.cvg.shell_passwd}"
+				-v "_shell"
+				-v ""
+				-v ""
+				-v "cat ${path_messages}"
+				-v ""
+				-v ""
+				-v "exit"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "RADIUS: eap auth for STA=${br1.vpc1.tif.mac} user=${radius.username} successfully with type md5"</log-match>
+			<log-match>-c -i "RADIUS: The RADIUS server accepted user '${radius.username}' through the NAS at ${br1.br.mgt0.ip}"</log-match>
+		</step>
+	</stage>
+</testcase>

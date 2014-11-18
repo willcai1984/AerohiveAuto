@@ -1,0 +1,164 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Configure bridge-802.1q lan ports native-vlan</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Laptop1 connect to lan port eth2
+		Laptop2 connect to lan port eth4
+		BR connect to switch
+
+		Test Procedure:
+
+		1. Lan port eth2/eth4 work with bridge-802.1q mode
+		2. Configure native-vlan for eth2/eth4 mapped from mgt0 native-vlan, such as native-vlan 10
+		CLI:
+		Interface mgt0 native-vlan 10
+		3. Show lan port-config, check default vlan for eth2/eth4 Result1
+		4. Laptop1 ping laptop2 Result2
+		5. Confingure native-vlan for eth2/eth4 mapped from eth2/eth4 native-vlan, such as native-
+		vlan is 1 Result3
+		CLI:
+		Interface eth2 native-vlan 1
+		Interface eth4 native-vlan 1
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>winlin</tbtype>
+	<stage>
+
+		<step no="1">
+			<desc>Enable mgt0 dhcp/dns server</desc>
+			<log-file>step1_mgt0_status.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show run | in mgt0"
+			</telnet>
+			<log-match>-i "interface mgt0 ip ${br1.br.mgt0.ip}"</log-match>
+			<log-match>-i "interface mgt0 dhcp-server ip-pool ${br1.br.mgt0.ip_pool_start}"</log-match>
+			<log-match>-i "interface mgt0 dhcp-server enable"</log-match>
+			<log-match>-i "interface mgt0 dns-server enable"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				1. Lan port eth2/eth3 work with bridge-802.1q mode
+				2. Configure native-vlan for eth2/eth4 mapped from mgt0 native-vlan, such as native-vlan 10
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth2 mode bridge-802.1q"
+				-v "interface eth3 mode bridge-802.1q"
+				-v "interface mgt0 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0 native-vlan ${br1.vpc2.vlan}"
+			</telnet>
+		</step>
+
+                <include prefix="pre2.1" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="${br1.vlan2}, ${br1.vlan2}\,${br1.vlan3}" />
+
+		<step no="3">
+			<desc>
+				3. Show lan port-config, check default vlan for eth2/eth4
+			</desc>
+			<log-file>step3_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth2" -p 4 -i "trunk" -p 5 -i "${br1.vpc2.vlan}"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc2.vlan}"</log-match>
+		</step>
+
+		<step no="4.1a">
+			<desc>
+				Laptop1 connect to lan port eth2
+			</desc>
+			<log-file>ifconfig_vpc2_.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4.1b">
+			<desc>set br1.vpc2.tif.ip var for vpc2 on BR side</desc>
+			<setvar name="br1.vpc2.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc2.mif.ip} -u ${br1.vpc2.user} -p ${br1.vpc2.passwd} -i ${br1.vpc2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4.2a">
+			<desc>
+				AP1 connect to lan port eth4
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0 native-vlan ${br1.vpc2.vlan}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="4.2b">
+			<desc>
+				show AP1 mgt0
+			</desc>
+			<log-file>step4.2b_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="4.2c">
+			<desc>get ip address of ap1</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step4.2b_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="4.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				4. Laptop1 ping laptop2
+			</desc>
+			<ssh target="br1.vpc2">
+				-v "ping ${br1.ap1.mgt0.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				5. Confingure native-vlan for eth2/eth3 mapped from eth2/eth3 native-vlan, such as native-vlan is 1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth2 native-vlan 1"
+				-v "interface eth3 native-vlan 1"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Show lan port-config, check default vlan for eth2/eth3
+			</desc>
+			<log-file>step5.1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth2" -p 4 -i "trunk" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "1"</log-match>
+		</step>
+
+	</stage>
+        <post-process>
+		<stage>
+			<include prefix="post_br1_eth2_l2swcfg" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="999, ${br1.vlan2}\,${br1.vlan3}" />
+	   </stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

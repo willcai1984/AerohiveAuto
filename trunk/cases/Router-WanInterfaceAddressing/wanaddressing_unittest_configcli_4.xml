@@ -1,0 +1,140 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unit Test 0104: Manual insertion of static routes should work, and BR should route packets correctly, provided the static route is accurate and reachable</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		After WANAddressing_UnitTest_ConfigCLI_3
+
+		Test Procedure:
+		CLI commands:
+		One more AP (AP2) is needed for this case (we just use AP to simulate a L2 VLAN
+		switch for convenience). Orginal testing AP is denoted by AP1, the new extra AP is
+		AP2.
+		After WANAddressing_UnitTest_ConfigCLI_3, change AP1 eth1 mode to bridge-
+		802.1q, connect AP2 eth0 to AP1 eth1, connect PC to AP2 eth1, set AP2 eth1 in
+		bridge-access mode and associate VLAN 2.
+		CLI commands:
+		(on AP1)
+		interface eth1 mode bridge-802.1q
+		interface eth1 allowed-vlan all
+		interface mgt0.2 vlan 2
+		interface mgt0.2 ip &lt;MGT2_IP/MASK&gt;
+		interface mgt0.2 dhcp-server enable
+		interface mgt0.2 dhcp-server ip-pool &lt;MGT2_START_IP&gt; &lt;MGT2_END_IP&gt;
+		interface mgt0.2 dhcp-server options default-gateway &lt;MGT2_IP&gt;
+		interface mgt0.2 dhcp-server options dns1 218.108.248.200
+		save config
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+	
+        <property name="forward.file.path" value="/proc/sys/net/ipv4/ip_forward" />
+        
+	<stage>
+		<step no="1">
+			<desc>
+				config br1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface eth4 mode bridge-access user-profile-attribute 1"
+				-v "interface eth4 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-set interface down,then up
+			</desc>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ifconfig ${br1.vpc4.tif.name} down"
+				-v "ifconfig ${br1.vpc4.tif.name} up"
+				-v "dhclient ${br1.vpc4.tif.name} -r"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step2.1_ifconfig_vpc1.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.1a">
+			<desc>set br1.vpc4.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>
+		</step>	
+		
+		<step no="3.1">
+			<desc>
+				-open route forward
+			</desc>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "echo 1 &gt; ${forward.file.path}"
+			</ssh>
+		</step>
+		
+		<step no="3.2">
+			<multi-setvar>
+				echo "br1.vpc4.trip.net=$(echo ${br1.vpc4.trip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+		
+		<step no="3.3">
+			<desc>
+				config br1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip route net ${br1.vpc4.trip.net} 255.255.255.128 gateway ${br1.vpc4.tif.ip}"
+			</telnet>
+		</step>
+
+                <step no="4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				-show ip route
+			</desc>
+			<log-file>step4_show_ip_route_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-c -i "${br1.vpc4.trip.net} *${br1.vpc4.tif.ip}" -i "255.255.255.128" -i "mgt0"</log-match>
+		</step>		
+
+		<step no="5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				vpc ping vpc
+			</desc>
+			<log-file>step5_vpc4_ping_pc2_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>
+					-close route forward
+				</desc>
+				<ssh target="br1.vpc4">
+					-v "echo 0 &gt; ${forward.file.path}"
+					-v "route -n"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

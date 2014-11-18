@@ -1,0 +1,517 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>IP-session setup/delete.(through MP)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop2 has been associated with AP1 and assigned an ip address
+
+		Test Procedure:
+		1) Config ip-policy on MP which permit Laptop's ip_address
+		"ip-policy FW"
+		"ip-policy FW from/to &lt;Laptop ip addr&gt; action permit"
+		"user-profile FW security ip-policy from/to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Laptop1 ping Laptop2
+		3) Check the ip-session table on MP
+		4) Shutdown the wifi backhoul of AP1
+		"intface wifi[num] shutdown"
+		5) Check the ip-session table on MP
+		6) Up the wifi backhaul of AP1, repeat step 1
+		7) Check the ip-session table on MP
+		8) Shutdown the wifi backhaul of MP
+		"intface wifi[num] shutdown"
+		9) Check the ip-session table on MP
+		10) Up the wifi backhoul of MP, repeat step 1
+		11) Check the ip-session table on MP
+		12) Change the wifi backhaul to access on AP1
+		"intface wifi[num] mode access"
+		13) Check the ip-session table on MP
+		14) Change the wifi to backhaul on AP1, repeat step 1
+		15) Check the ip-session table on MP
+		16) Change the wifi backhaul to
+		access on MP
+		"intface wifi[num] mode access"
+		17) Check the ip-session table on MP
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="hive.passwd" value="12345678" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn2.ssid" value="ap2-${ssid.name}" />
+	<property name="ftp_test_file_local_dir" value="/tmp" />
+
+	<stage>
+		<if>"${ap.wifi1.existed}" == "true"</if>
+		<step no="shutdown.eth1">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0">
+			<desc>
+				-Config ap1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.passwd}"
+				-v "hive ${hive.name} manage all"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
+				-Config ap2
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.passwd}"
+				-v "hive ${hive.name} manage all"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config ssid and bind to interface
+				-Laptop uses user-profile "FW"
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-config ssid and bind to interface
+				-Laptop uses user-profile "FW"
+			</desc>
+			<telnet target="ap2">
+				-v "security-object ap2-${ssid.name}"
+				-v "security-object ap2-${ssid.name} default-user-profile-attr 1"
+				-v "ssid ap2-${ssid.name}"
+				-v "ssid ap2-${ssid.name} security-object ap2-${ssid.name}"
+				-v "interface wifi0 ssid ap2-${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile sss qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface wifi1 radio channel 36"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show ap2's interface wifi1 info
+			</desc>
+			<log-file>step3.1_show_ap2_interface_info.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				get ap2's wifi1's mac address
+			</desc>
+			<setvar name="ap2.wifi1.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step3.1_show_ap2_interface_info.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>shutdown interface wifi1 and then up it (it's aimed to clear wifi1's neighbor list)</desc>
+			<telnet target="ap1">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+<!--  
+		<step no="4" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step4_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+-->
+		<step no="4.1" delay="15">
+			<desc>
+				-shutdown interface eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5" delay="35" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step5_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap2" />
+
+		<include prefix="7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="8">
+			<desc>
+				-Config ip-policy which permit Laptop's ip_address
+			</desc>
+			<console target="ap1">
+				-v "ip-policy FW"
+				-v "ip-policy FW id 1 from ${sta1.tif.ip} action permit"
+				-v "user-profile ttt security ip-policy from-access FW"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				clear local file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /${ftp_test_file_local_dir}/${job.id}ping.log"
+			</ssh>
+		</step>
+
+		<step no="9">
+			<desc>
+				sta1 ping sta2 in background
+			</desc>
+			<log-file>step9_sta1_start_ping.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ping ${sta2.tif.ip} &gt; /${ftp_test_file_local_dir}/${job.id}ping.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				get ping id
+			</desc>
+			<setvar name="ping.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step9_sta1_start_ping.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="9.2" delay="30">
+			<desc>
+				check ping result
+			</desc>
+			<log-file>step9.2_check_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /${ftp_test_file_local_dir}/${job.id}ping.log"
+			</ssh>
+			<log-match>-c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				-Check the ip-session table on MP
+			</desc>
+			<log-file>step10_show_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match>-c -i "${sta2.tif.ip}" -i "${sta1.tif.ip}" -i "Proto 1;"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				4) Shutdown the wifi backhoul of AP
+				"intface wifi[num] shutdown"
+			</desc>
+			<telnet target="ap2">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="10.2" delay="60">
+			<desc>
+				check ping result
+			</desc>
+			<log-file>step10.2_check_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /${ftp_test_file_local_dir}/${job.id}ping.log"
+			</ssh>
+			<log-match>-n -c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				-Check the ip-session table on MP
+			</desc>
+			<log-file>step11_show_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match>-n -c -i "${sta2.tif.ip}" -i "${sta1.tif.ip}" -i "Proto 1;"</log-match>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				-up the wifi backhoul of AP
+				"no intface wifi[num] shutdown"
+			</desc>
+			<telnet target="ap2">
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="11.2" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step11.2_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="11.3" delay="60">
+			<desc>
+				check ping result
+			</desc>
+			<log-file>step11.3_check_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /${ftp_test_file_local_dir}/${job.id}ping.log"
+			</ssh>
+			<log-match>-c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				-Check the ip-session table on MP
+			</desc>
+			<log-file>step12_show_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match>-c -i "${sta2.tif.ip}" -i "${sta1.tif.ip}" -i "Proto 1;"</log-match>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				4) Shutdown the wifi backhoul of MP
+				"intface wifi[num] shutdown"
+			</desc>
+			<console target="ap1">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+			</console>
+		</step>
+
+		<step no="12.2" delay="60">
+			<desc>
+				check ping result
+			</desc>
+			<log-file>step12.2_check_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /${ftp_test_file_local_dir}/${job.id}ping.log"
+			</ssh>
+			<log-match>-n -c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				-Check the ip-session table on MP
+			</desc>
+			<log-file>step13_show_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match>-n -c -i "${sta2.tif.ip}" -i "${sta1.tif.ip}" -i "Proto 1;"</log-match>
+		</step>
+
+		<step no="13.1">
+			<desc>
+				-up the wifi backhoul of MP
+				"no intface wifi[num] shutdown"
+			</desc>
+			<console target="ap1">
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</console>
+		</step>
+
+		<step no="13.2" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step13.2_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="13.3" delay="60"  type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>
+				check ping result
+			</desc>
+			<log-file>step13.3_check_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${sta2.tif.ip} -c 10"
+			</ssh>
+			<log-match>-c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				-Check the ip-session table on MP
+			</desc>
+			<log-file>step14_show_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match>-c -i "${sta2.tif.ip}" -i "${sta1.tif.ip}" -i "Proto 1;"</log-match>
+		</step>
+
+		<step no="14.1">
+			<desc>
+				-Change the wifi backhaul to access on AP
+				"intface wifi[num] mode access"
+			</desc>
+			<telnet target="ap2">
+				-v "interface wifi1 mode access"
+			</telnet>
+		</step>
+
+		<step no="14.2" delay="60">
+			<desc>
+				check ping result
+			</desc>
+			<log-file>step14.2_check_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /${ftp_test_file_local_dir}/${job.id}ping.log"
+			</ssh>
+			<log-match>-n -c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="15">
+			<desc>
+				-Check the ip-session table on MP
+			</desc>
+			<log-file>step15_show_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match>-n -c -i "${sta2.tif.ip}" -i "${sta1.tif.ip}" -i "Proto 1;"</log-match>
+		</step>
+
+		<step no="15.1">
+			<desc>
+				-Change the wifi to backhaul on AP
+			</desc>
+			<telnet target="ap2">
+				-v "interface wifi1 mode backhaul"
+			</telnet>
+		</step>
+
+		<step no="15.2" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step15.2_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="15.3" delay="60">
+			<desc>
+				check ping result
+			</desc>
+			<log-file>step15.3_check_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /${ftp_test_file_local_dir}/${job.id}ping.log"
+			</ssh>
+			<log-match>-c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				-Check the ip-session table on MP
+			</desc>
+			<log-file>step16_show_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match>-c -i "${sta2.tif.ip}" -i "${sta1.tif.ip}" -i "Proto 1;"</log-match>
+		</step>
+
+		<step no="16.1">
+			<desc>
+				-Change the wifi backhaul to access on MP
+				"intface wifi[num] mode access"
+			</desc>
+			<console target="ap1">
+				-v "interface wifi1 mode access"
+			</console>
+		</step>
+
+		<step no="16.2" delay="60">
+			<desc>
+				check ping result
+			</desc>
+			<log-file>step16.2_check_ping_result.log</log-file>
+			<ssh target="sta1">
+				-v "tail /${ftp_test_file_local_dir}/${job.id}ping.log"
+			</ssh>
+			<log-match>-n -c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="17">
+			<desc>
+				-Check the ip-session table on MP
+			</desc>
+			<log-file>step17_show_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match>-n -c -i "${sta2.tif.ip}" -i "${sta1.tif.ip}" -i "Proto 1;"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					-kill process
+					-clear local file
+				</desc>
+				<ssh target="sta1">
+					-v "killall -q ping"
+					-v "rm -f /${ftp_test_file_local_dir}/${job.id}ping.log"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

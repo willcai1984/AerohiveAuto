@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that User is allowed to configure the lowest severity level to send log messages to SNMP server through SNMP trap.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Config SNMP server 10.155.30.230
+		Enable trap-info over snmp, disable trap-info over-capwap
+		Set logging trap level info
+
+		Test Procedure:
+		From AP send trap to SNMP server by CLI "_test trap-case info..."
+		Use ethereal to capture packet in SNMP server or use tcpdump -I eth0 port
+		162 to check
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="packets_send_result" value="packets_send_result" />
+	<property name="log_file_dir" value="/tmp" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Config SNMP server 10.155.30.230
+				Enable trap-info over snmp, disable trap-info over-capwap
+				Set logging trap level info
+				Use ethereal to capture packet in SNMP server or use tcpdump -I eth0 port
+				162 to check
+			</desc>
+			<telnet target="ap1">
+				-v "snmp trap-host v2c ${mpc.tif.ip} port 161 community hivecommunity"
+				-v "snmp trap-info over-snmp"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				show snmp trap-host
+			</desc>
+			<log-file>step2_show_snmp.log</log-file>
+			<telnet target="ap1">
+				-v "show snmp trap-host"
+			</telnet>
+			<log-match>-p 3 -i "${mpc.tif.ip}" -i " 161 "</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				delete local files
+			</desc>
+			<script>
+				rm -f ${log_file_dir}/${packets_send_result}
+			</script>
+		</step>
+
+		<step no="3">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step3_start_tshark.log</log-file>
+			<ssh host="${mpc.tif.ip}" timeout="500">
+				-v "nohup tshark -i ${mpc.tif.name} port 161 &gt; ${log_file_dir}/${packets_send_result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3_start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				From AP send trap to SNMP server by CLI "_test trap-case info..."
+			</desc>
+			<telnet target="ap1">
+				-v "_test trap-case info alarmalert "
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<script>
+				kill ${tshark.pid}
+			</script>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				check the log message file in snmp server.
+			</desc>
+			<log-file>step5.1_check_file.log</log-file>
+			<script>
+				cat ${log_file_dir}/${packets_send_result} &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "${ap1.mgt0.ip} -&gt; ${mpc.tif.ip}" -i "sNMPv2-Trap"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+
+		<stage>
+			<step no="0">
+				<desc>
+					kill process which run in background.
+				</desc>
+				<script>
+					killall tshark -q
+				</script>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					delete local files
+				</desc>
+				<script>
+					rm -f ${log_file_dir}/${packets_send_result}
+				</script>
+			</step>
+		</stage>
+	</post-process>
+</testcase>

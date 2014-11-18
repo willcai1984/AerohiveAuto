@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>For every one minute interval, AP will monitor the interference channel utilizations and send trap to SNMP server Precondition Enable trap over SNMP by snmp trapinfo oversnmp in AP Disable trap over Capwap by no trapinfo overcapwap in AP Set trap host by snmp traphost v2c a.b.c.d with default community (a.b.c.d is PC's ip address) in AP Create a SSID and bind it to interface wifi0 Create a radio profile and bind it to interface wifi0 radio profile 11 radio profile 11 phymode 11ng radio profile 11 interferencemap enable radio profile 11 interferencemap cuthreshold 15 radio profile 11 interferencemap crcerrthreshold 15 interface wifi0 radio profile 11 channel utilizations (snapshot, short term means average and running average) and CRC error rate against their thresholds, if any one of them is above their threshold (thresholds are settable by CLI), AP should send HM an interference alert event to HM. AP will send out clear alert to HM only when: the last short term period's
+		CRC_error_rate, means average Interference CU and the last snapshot interference CU are all below their thresholds." ::= { ahTrapModule 10} 6.1.2.11. Ft_SNMP_TrapoverSNMP_11
+	</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		1. Use Wireshark or Ethereal to capture packet, check if AP send
+		channel utilizations trap to SNMP server , check trap format
+		2. Change community, then check if AP send channel utilizations
+		trap to SNMP server, check trap format
+		3. Change version to v1 with default community, execute CLI
+		"_test trapcase alert interferencealert" to generate trap, check if
+		trap can be sent to SNMP server, check trap format
+		4. Change community, do the same operation, check if trap can be
+		sent to SNMP server, check trap format
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="checkfile" value="/tmp/checkfile" />
+
+	<stage>
+		<step no="0">
+			<desc>rm checkfile</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f ${checkfile}"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				Enable trap over SNMP by snmp trapinfo oversnmp in AP
+				Disable trap over Capwap by no trapinfo overcapwap in AP
+				Set trap host by snmp traphost v2c a.b.c.d with default community (a.b.c.d is PC’s ip address) in AP
+			</desc>
+			<telnet target="ap1">
+				-v "snmp trap-host v2c ${tb.server1}"
+				-v "snmp trap-info over-snmp"
+				-v "no snmp trap-info over-capwap"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "radio profile 11"
+				-v "radio profile 11 phymode 11ng"
+				-v "radio profile 11 interference-map enable"
+				-v "radio profile 11 interference-map cu-threshold 15"
+				-v "radio profile 11 interference-map crc-err-threshold 15"
+				-v "interface wifi0 radio profile 11"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				_test trap-case alert interferencealert
+			</desc>
+			<telnet target="ap1">
+				-v "_test trap-case alert interferencealert"
+			</telnet>
+		</step>
+
+		<step no="1.2" delay="30">
+			<desc>
+				Use Wireshark or Ethereal to capture packet, change channel or
+				power of interface wifi0, check if trap be sent to SNMP server,
+				check trap format
+			</desc>
+			<log-file>check_log_file1.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahInterferenceMapAlertEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName =" -i "AH-TRAP-MIB::ahTrapDesc = interference alert trap., AH-TRAP-MIB::ahCode = 1, AH-TRAP-MIB::ahObjectName = interference alert, AH-TRAP-MIB::ahSeverity = critical, AH-TRAP-MIB::ahIfIndex = 12, AH-TRAP-MIB::ahInterferenceThreshold = 70, AH-TRAP-MIB::ahRunningAverageInterference = 30, AH-TRAP-MIB::ahShortTermInterference = 20, AH-TRAP-MIB::ahSnapshotInterference = 80, AH-TRAP-MIB::ahCRCErrRateThreshold = 40, AH-TRAP-MIB::ahCRCErrRate = 34, AH-TRAP-MIB::ahFailureSet = 1"</log-match>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>check log file</desc>
+			<log-file>check_tshark1.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match>-c -i "version: v2c"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="1.4">
+			<desc>
+				kill tshark
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "kill ${process_id1}"
+			</ssh>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				remove tmpfile
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f /tmp/tshark_log.pcap"
+			</ssh>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="1.7">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Change community and repeat the above operation ,check if
+				trap be sent to SNMP server, check trap format
+			</desc>
+			<console target="ap1">
+				-v "no snmp trap-host v2c ${tb.server1}"
+				-v "snmp trap-host v2c ${tb.server1} community aerohive"
+			</console>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				_test trap-case alert interferencealert
+			</desc>
+			<telnet target="ap1">
+				-v "_test trap-case alert interferencealert"
+			</telnet>
+		</step>
+
+		<step no="2.2" delay="30">
+			<desc>check log file</desc>
+			<log-file>check_log_file2.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahInterferenceMapAlertEvent, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName =" -i "AH-TRAP-MIB::ahTrapDesc = interference alert trap., AH-TRAP-MIB::ahCode = 1, AH-TRAP-MIB::ahObjectName = interference alert, AH-TRAP-MIB::ahSeverity = critical, AH-TRAP-MIB::ahIfIndex = 12, AH-TRAP-MIB::ahInterferenceThreshold = 70, AH-TRAP-MIB::ahRunningAverageInterference = 30, AH-TRAP-MIB::ahShortTermInterference = 20, AH-TRAP-MIB::ahSnapshotInterference = 80, AH-TRAP-MIB::ahCRCErrRateThreshold = 40, AH-TRAP-MIB::ahCRCErrRate = 34, AH-TRAP-MIB::ahFailureSet = 1"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>check log file</desc>
+			<log-file>check_tshark2.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match>-c -i "version: v2c"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="2.4">
+			<desc>
+				kill tshark
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "kill ${process_id2}"
+			</ssh>
+		</step>
+
+		<step no="2.5">
+			<desc>
+				remove tmpfile
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f /tmp/tshark_log.pcap"
+			</ssh>
+		</step>
+
+		<step no="2.6">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="2.7">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id3">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				3. Change version to v1 with default community, change power or
+				channel of interface wifi0, check if trap can be sent to SNMP
+				server, check trap format
+			</desc>
+			<telnet target="ap1">
+				-v "no snmp trap-host v2c ${tb.server1}"
+				-v "snmp trap-host v1 ${tb.server1}"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				_test trap-case alert interferencealert
+			</desc>
+			<telnet target="ap1">
+				-v "_test trap-case alert interferencealert"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>check log file</desc>
+			<log-file>check_log_file3.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahTrapModule.0.10, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName =" -i "AH-TRAP-MIB::ahTrapDesc = interference alert trap., AH-TRAP-MIB::ahCode = 1, AH-TRAP-MIB::ahObjectName = interference alert, AH-TRAP-MIB::ahSeverity = critical, AH-TRAP-MIB::ahIfIndex = 12, AH-TRAP-MIB::ahInterferenceThreshold = 70, AH-TRAP-MIB::ahRunningAverageInterference = 30, AH-TRAP-MIB::ahShortTermInterference = 20, AH-TRAP-MIB::ahSnapshotInterference = 80, AH-TRAP-MIB::ahCRCErrRateThreshold = 40, AH-TRAP-MIB::ahCRCErrRate = 34, AH-TRAP-MIB::ahFailureSet = 1, SNMP-COMMUNITY-MIB::snmpTrapAddress.0 = ${ap1.mgt0.ip}, SNMP-COMMUNITY-MIB::snmpTrapCommunity.0 = \\\&quot;hivecommunity\\\&quot;, SNMPv2-MIB::snmpTrapEnterprise.0 = AH-TRAP-MIB::ahTrapModule"</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>check log file</desc>
+			<log-file>check_tshark3.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match>-c -i "version: version-1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.4">
+			<desc>
+				kill tshark
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "kill ${process_id3}"
+			</ssh>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				remove tmpfile
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f /tmp/tshark_log.pcap"
+			</ssh>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				open tshark on mpc background
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup tshark -i ${tb.server1.tif.name} -w /tmp/tshark_log.pcap &gt; yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.7">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id4">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				4. Change community, do the same operation, check if trap can be
+				sent to SNMP server, check trap format
+			</desc>
+			<telnet target="ap1">
+				-v "no snmp trap-host v1 ${tb.server1}"
+				-v "snmp trap-host v1 ${tb.server1} community aerohive"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				_test trap-case alert interferencealert
+			</desc>
+			<telnet target="ap1">
+				-v "_test trap-case alert interferencealert"
+			</telnet>
+		</step>
+
+		<step no="4.2" delay="30">
+			<desc>check log file</desc>
+			<log-file>check_log_file4.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "cat ${checkfile}"
+				-v "rm -f ${checkfile}"
+			</ssh>
+			<log-match>-c -i "${tb.server1}" -i "${ap1.mgt0.ip}" </log-match>
+			<log-match>-c -i "DISMAN-EVENT-MIB::sysUpTimeInstance" -i "SNMPv2-MIB::snmpTrapOID.0 = AH-TRAP-MIB::ahTrapModule.0.10, AH-TRAP-MIB::ahAPId" -i "AH-TRAP-MIB::ahAPName =" -i "AH-TRAP-MIB::ahTrapDesc = interference alert trap., AH-TRAP-MIB::ahCode = 1, AH-TRAP-MIB::ahObjectName = interference alert, AH-TRAP-MIB::ahSeverity = critical, AH-TRAP-MIB::ahIfIndex = 12, AH-TRAP-MIB::ahInterferenceThreshold = 70, AH-TRAP-MIB::ahRunningAverageInterference = 30, AH-TRAP-MIB::ahShortTermInterference = 20, AH-TRAP-MIB::ahSnapshotInterference = 80, AH-TRAP-MIB::ahCRCErrRateThreshold = 40, AH-TRAP-MIB::ahCRCErrRate = 34, AH-TRAP-MIB::ahFailureSet = 1, SNMP-COMMUNITY-MIB::snmpTrapAddress.0 = ${ap1.mgt0.ip}, SNMP-COMMUNITY-MIB::snmpTrapCommunity.0 = \\\&quot;aerohive\\\&quot;, SNMPv2-MIB::snmpTrapEnterprise.0 = AH-TRAP-MIB::ahTrapModule"</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>check log file</desc>
+			<log-file>check_tshark4.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match>-c -i "version: version-1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.4">
+			<desc>
+				kill tshark
+			</desc>
+			<log-file>start_tshark.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "kill ${process_id4}"
+			</ssh>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				remove tmpfile
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "rm -f /tmp/tshark_log.pcap"
+			</ssh>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					remove tmpfile
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "rm -f /tmp/tshark_log.pcap"
+				</ssh>
+			</step>
+
+			<step no="1">
+				<desc>
+					kill tshark
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "kill ${process_id1}"
+				</ssh>
+			</step>
+
+			<step no="2">
+				<desc>
+					kill tshark
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "kill ${process_id2}"
+				</ssh>
+			</step>
+
+			<step no="3">
+				<desc>
+					kill tshark
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "kill ${process_id3}"
+				</ssh>
+			</step>
+
+			<step no="4">
+				<desc>
+					kill tshark
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "kill ${process_id4}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

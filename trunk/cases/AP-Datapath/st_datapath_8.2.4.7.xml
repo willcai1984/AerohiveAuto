@@ -1,0 +1,438 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>proxy arp process for L3 roaming (two laptops roaming)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition
+		-construct this topology
+		-ap1 and ap2 in different subnet
+		Test procedure
+		-laptop1 laptop3 link to ap1 first, then all roaming to ap2(change the power or shutdown the interface)
+		-make sure ap1 ap2 don’t have the arp entries of laptop1 laptop3, clear arp on laptop1, then laptop1 ping laptop3, result 1
+		Expect result
+		1:ping successfully, the arp broadcast packet are flooded to all access interfaces on ap2, the broadcast request packet should be tunneled to ap1, then flood to all up interfaces on ap1 except incoming tunnel interface; after getting ip of laptop3, will process on ap2 only, not tunnel to ap1.
+		(can see fe and fe_arp debug )
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}-A" />
+
+	<stage>
+		<step no="pre.0">
+			<desc>
+				-set wifi1's channel
+			</desc>
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface wifi1 radio channel 153"
+			</telnet>
+		</step>
+
+		<step no="pre.1">
+			<desc>
+				-set wifi1's channel
+			</desc>
+			<if>"${ap2.wifi1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface wifi1 radio channel 153"
+			</telnet>
+		</step>
+
+		<step no="pre.2">
+			<desc>
+				-shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="pre.3">
+			<desc>
+				-shutdown interface eth1
+			</desc>
+			<if>"${ap2.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.4">
+			<desc>
+				close dhcp client
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="0.5">
+			<desc>
+				open dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="0.6" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.6_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.7">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.6_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>config ap1</desc>
+			<telnet target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "ssid ${ssid.name}-A"
+				-v "ssid ${ssid.name}-A security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}-A"
+				-v "interface wifi0 radio channel 1"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile datapath vlan ${tb.vlan1} mobility-policy FWtest attribute 2"
+				-v "amrp interface eth0 priority 100"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>config ap2</desc>
+			<telnet target="ap2">
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "ssid ${ssid.name}-A"
+				-v "ssid ${ssid.name}-A security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}-A"
+				-v "interface wifi0 radio channel 1"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile datapath vlan ${tb.vlan1} mobility-policy FWtest attribute 2"
+				-v "amrp interface eth0 priority 100"
+				-v "interface wifi0 ssid ${ssid.name}-A shutdown"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>show_interface_wifi0_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				get wifi0's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap1.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi0_info.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="1.4" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show roaming neighbor on AP1
+			</desc>
+			<log-file>step1.4_show_roaming_neighbor_ap1_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="1.5" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				show roaming neighbor on AP2
+			</desc>
+			<log-file>step1.5_show_roaming_neighbor_ap2_${loop_check.idx}.log</log-file>
+			<telnet target="ap2" timeout="10">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-c -i "${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="1.6" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show amrp dnxp neighbor on AP1
+			</desc>
+			<log-file>step1.6_show_amrp_dnxp_neighbor_ap1_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2.mgt0.ip}/24"</log-match>
+		</step>
+
+		<step no="1.7" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show amrp dnxp neighbor on AP2
+			</desc>
+			<log-file>step1.7_show_amrp_dnxp_neighbor_ap2_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap1.mgt0.ip}/24"</log-match>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Show roaming cache
+			</desc>
+			<log-file>step4_show_roaming_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${ap1.wifi0.mac}"</log-match>
+			<log-match>-c -i "${sta2.tif.mac} *${ap1.wifi0.mac}"</log-match>
+
+		</step>
+
+		<step no="4.1" delay="10" type="loop-check" loop-max-times="8" loop-interval="5">
+			<desc>
+				show amrp dnxp neighbor
+			</desc>
+			<log-file>show_amrp_dnxp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				up wifi0 interface of ssidA on portal2
+			</desc>
+			<telnet target="ap2">
+				-v "no interface wifi0 ssid ${ssid.name}-A shutdown"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Shutdown wifi0 interface of ssidA on portal1
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${ssid.name}-A shutdown"
+			</telnet>
+		</step>
+
+		<step no="6" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show route on ap1
+			</desc>
+			<log-file>step6_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-i "mgt0" -i "LTO"</log-match>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show route on ap2
+			</desc>
+			<log-file>step6.1_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "wifi0.1" -i "LTO"</log-match>
+		</step>
+
+		<step no="7" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show station on ap2
+			</desc>
+			<log-file>step7_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+			<log-match>-c -i "${sta2.tif.mac}" -i "${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="7.1" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step7.1_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+			<log-match>-n -c -i "${sta2.tif.mac}" -i "${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				ap1 hasn't arp entry for sta1 and sta2
+			</desc>
+			<log-file>step8_show_arp_cache.log</log-file>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+			<log-match>-n -c -i "${sta2.tif.mac}" -i "${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				ap2 hasn't arp entry for sta1 and sta2
+			</desc>
+			<log-file>step8.1_show_arp_cache.log</log-file>
+			<telnet target="ap2">
+				-v "clear arp-cache"
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+			<log-match>-n -c -i "${sta2.tif.mac}" -i "${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>Open debug cli on portal2</desc>
+			<telnet target="ap2">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 2 src-ip ${sta2.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 3 src-mac ${sta1.tif.mac} etype 0806 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8.3">
+			<desc>Open debug cli on portal1</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 2 src-ip ${sta2.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 3 src-mac ${sta1.tif.mac} etype 0806 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="9">
+			<desc>
+				-clear arp on windows sta
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step9_clear_sta1_arp.log</log-file>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				-clear arp on windows sta
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step9.1_clear_sta1_arp.log</log-file>
+			<staf target="sta1">
+				-v "arp -d ${sta2.tif.ip}"
+			</staf>
+		</step>
+
+		<include prefix="10" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 5" />
+
+		<step no="11" delay="20">
+			<desc>show log buffer on portal</desc>
+			<log-file>step11_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${sta2.tif.ip}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${sta2.tif.ip}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) wifi0.1 ${sta2.tif.mac}-&gt;${sta1.tif.mac} arp ${sta2.tif.ip}(${sta2.tif.mac})-&gt;${sta1.tif.ip}(${sta1.tif.mac})"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${sta2.tif.mac}-&gt;${sta1.tif.mac} arp ${sta2.tif.ip}(${sta2.tif.mac})-&gt;${sta1.tif.ip}(${sta1.tif.mac})"</log-match>
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(o) eth0 ${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "\[fe\]: bypass fe egress procesing and deliver packet to stack on mgt0"</log-match>
+		</step>
+
+		<step no="11.1">
+			<desc>show log buffer on portal</desc>
+			<log-file>step11.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(o) wifi1.1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${sta2.tif.ip}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) eth0 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${sta2.tif.ip}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(r) mgt0 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${sta2.tif.ip}(0000:0000:0000)"</log-match>
+			<log-match>-n -c -i "${sta1.tif.ip}-&gt;${sta2.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -c -i "${sta2.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -c -i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-n -c -i "(o) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+		</step>
+	</stage>
+</testcase>

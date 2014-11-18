@@ -1,0 +1,439 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify SLA throughput is being met by boost.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		1. Bandwidth Sentinel is enabled on a user profile user_profile_1
+		Command: user-profile user_profile_1 performance-sentinel enable
+		2.Configure one SSID and its default user profile is set to user_profile_1
+		3.User_profile_1 bandwidth sentinel action is set to boost
+		Command: user-profile user_profile_1 bandwidth-sentinel action boost
+		4. Configure one radio profile and set its mode to 11ng-20M bandwidth
+		5.Set user profile guaranteed-bandwidth to 3000
+		Test Procedure:
+		1. Using veriwave dynamix to connect 11g(54M) and 11 b(11M) client
+		2.Sending downstream UDP traffic to these two clients: packet size 1518
+		bytes and pps is set to 10K
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>windows</tbtype>
+	<stage>
+		<step no="1">
+			<desc>
+				configure AP
+			</desc>
+			<log-file>ap_configure_1.log</log-file>
+			<telnet target="ap1">
+				-v "security-object aaa"
+				-v "security-object aaa default-user-profile-attr 2"
+				-v "qos airtime enable"
+				-v "qos policy bbb"
+				-v "user-profile cpliang qos-policy bbb vlan-id 1 attribute 2"
+				-v "user-profile cpliang performance-sentinel enable"
+				-v "user-profile cpliang performance-sentinel action boost"
+				-v "user-profile cpliang performance-sentinel guaranteed-bandwidth 100"
+				-v "performance-sentinel notification-interval 60"
+				-v "ssid ${ssid.name}1"
+				-v "ssid ${ssid.name}1 security-object aaa"
+				-v "hive ${hive.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "report statistic period 1"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="1.1">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				configure AP relate with wifi1
+			</desc>
+			<log-file>ap_configure_11.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}2"
+				-v "ssid ${ssid.name}2 security-object aaa"
+				-v "interface wifi1 radio channel 36"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>
+				disable reporting
+			</desc>
+			<log-file>ap_configure_2.log</log-file>
+			<telnet target="ap1">
+				-v "no report statistic enable"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="3">
+			<desc>Generate wifi_aerohive_test profile for ssid ${ssid.name}1 for laptop1</desc>
+			<script>
+				${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/open.xml -l ${log.dir} -o wifi_aerohive_test.xml -s "${ssid.name}1"
+			</script>
+		</step>
+
+		<step no="4">
+			<desc>Copy a wifi windows profile file to laptop1 </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+		<step no="5">
+			<desc>Bring down the client Wireless of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="6">
+			<desc>Delete current Wireless profile of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan delete profile ${ssid.name}1 "
+			</script>
+		</step>
+
+		<step no="7">
+			<desc>Add new profile for ssid to laptop1
+			</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="8" delay="120">
+			<desc>Bring up the client Wireless on laptop1 </desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan connect name=${ssid.name}1 interface=\"${sta1.tif.name}\"" -v " netsh wlan show profiles ${ssid.name}1" -v "netsh wlan show interfaces"
+			</script>
+			<no-error-check />
+		</step>
+		<step no="9" delay="60">
+			<desc>Loop 10 times ipconfig to get ip in laptop1 </desc>
+			<script>
+				bash ${bin.dir}/aerohive/get_laptop_ip.sh ${sta1.mif.ip} ${log.dir} ipconfig1.log
+			</script>
+		</step>
+		<step no="10">
+			<desc>Show ipconfig in laptop1 </desc>
+			<log-file>ipconfig_${sta1.mif.ip}.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+		<step no="11">
+			<desc>Get the mac of laptop1</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -m -width 2
+			</setvar>
+		</step>
+		<step no="12">
+			<desc>Get the ip of laptop1</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+		<step no="13" delay="20">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi0_ssid_station.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|Total station count.*#" timeout="80">
+				-v "show ssid ${ssid.name}1 station"
+				-v ""
+			</telnet>
+
+		</step>
+		<step no="14">
+			<desc>Get laptop1 ip in AP1  </desc>
+			<setvar name="laptop1.ip.in.ap">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi0_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+		<step no="15">
+			<desc>Compare laptop1 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop1.ip.in.ap} != ${sta1.tif.ip}"
+				if [ "${laptop1.ip.in.ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<!-- step 16: generate iperf packet -->
+		<include prefix="16" file="cases/ClientHealth/conf/sub_run_iperf_downlink_sta.xml" />
+		<step no="17">
+			<desc>
+				enable reporting
+			</desc>
+			<log-file>ap_configure_3.log</log-file>
+			<telnet target="ap1">
+				-v "report statistic enable"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="17.1" delay="10">
+			<desc>
+				show ssid counter station status
+			</desc>
+			<log-file>show_ssid_counter_station_wifi0.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}1 counter station"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="18">
+			<desc>
+				get sla status
+			</desc>
+			<log-file>show_ssid_counter_station_wifi0_sla.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}1 counter station | include SLA"
+			</console>
+			<log-match>-e "SLA enabled status good_and_met" -e "SLA enabled status bad"</log-match>
+			<log-match>-e "100 Kbps SLA BW"</log-match>
+		</step>
+		<step no="19">
+			<desc>
+				get sla BW status
+			</desc>
+			<log-file>show_ssid_counter_station_wifi0_bw.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}1 counter station | include BW"
+			</console>
+		</step>
+		<step no="20">
+			<desc>Get actual bw</desc>
+			<setvar name="sta1.bw.wifi0">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/show_ssid_counter_station_wifi0_bw.log -p "(\d+)\s+Kbps BW usage"
+			</setvar>
+		</step>
+		<step no="21">
+			<desc>Compare actual bw with guranteed bw  </desc>
+			<script>
+				if [ ${sta1.bw.wifi0} -lt 100 ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="21.1" delay="120">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				show ssid counter station status
+			</desc>
+			<log-file>show_ssid_counter_station_wifi1_later.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}2 counter station"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="21.2">
+			<desc>
+				get application score in report
+			</desc>
+			<log-file>show_report_client_application_score_wifi0_before.log</log-file>
+			<console target="ap1">
+				-v "_show report reporting client"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="22">
+			<desc>
+				get application score in report
+			</desc>
+			<log-file>show_report_client_application_score_wifi0.log</log-file>
+			<console target="ap1">
+				-v "_show report reporting client | include \"Application health score\""
+			</console>
+			<log-match>-e "100" -e "49" -e "24"</log-match>
+		</step>
+		<step no="25">
+			<desc>Bring down the client Wireless on laptop1 </desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta1.tif.name}\""
+			</script>
+			<no-error-check />
+		</step>
+		<step no="26">
+			<desc>
+				disable reporting
+			</desc>
+			<log-file>ap_configure_4.log</log-file>
+			<telnet target="ap1">
+				-v "no report statistic enable"
+				-v "save config"
+			</telnet>
+		</step>
+	</stage>
+	<stage>
+		<if>"${ap1.wifi1.existed}" == "true"</if>
+		<step no="27">
+			<desc>Generate wifi_aerohive_test profile for ssid ${ssid.name}2 for laptop2</desc>
+			<script>
+				${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/open.xml -l ${log.dir} -o wifi_aerohive_test.xml -s "${ssid.name}2"
+			</script>
+		</step>
+
+		<step no="28">
+			<desc>Copy a wifi windows profile file to laptop2 </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta2.mif.ip}
+			</script>
+		</step>
+		<step no="29">
+			<desc>Bring down the client Wireless of laptop2</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan disconnect interface=\"${sta2.tif.name}\""
+			</script>
+		</step>
+
+		<step no="30">
+			<desc>Delete current Wireless profile of laptop2</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan delete profile ${ssid.name}2 "
+			</script>
+		</step>
+
+		<step no="31">
+			<desc>Add new profile for ssid to laptop2
+			</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${sta2.tif.name}\""
+			</script>
+		</step>
+
+		<step no="32" delay="120">
+			<desc>Bring up the client Wireless on laptop2 </desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan connect name=${ssid.name}2 interface=\"${sta2.tif.name}\"" -v " netsh wlan show profiles ${ssid.name}2" -v "netsh wlan show interfaces"
+			</script>
+			<no-error-check />
+		</step>
+		<step no="33" delay="60">
+			<desc>Loop 10 times ipconfig to get ip in laptop2 </desc>
+			<script>
+				bash ${bin.dir}/aerohive/get_laptop_ip.sh ${sta2.mif.ip} ${log.dir} ipconfig2.log
+			</script>
+		</step>
+		<step no="34">
+			<desc>Show ipconfig in laptop2 </desc>
+			<log-file>ipconfig_${sta2.mif.ip}.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+		<step no="35">
+			<desc>Get the mac of laptop2</desc>
+			<setvar name="sta2.tif.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta2.mif.ip}.log -i Wireless -o win -m -width 2
+			</setvar>
+		</step>
+		<step no="36">
+			<desc>Get the ip of laptop2</desc>
+			<setvar name="sta2.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta2.mif.ip}.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+		<step no="37" delay="20">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi1_ssid_station.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|Total station count.*#" timeout="80">
+				-v "show ssid ${ssid.name}2 station"
+				-v ""
+			</telnet>
+		</step>
+		<step no="38">
+			<desc>Get laptop2 ip in AP1  </desc>
+			<setvar name="laptop2.ip.in.ap">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi1_ssid_station.log -k "${sta2.tif.mac}" -p 2
+			</setvar>
+		</step>
+		<step no="39">
+			<desc>Compare laptop2 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop2.ip.in.ap} != ${sta2.tif.ip}"
+				if [ "${laptop2.ip.in.ap}" != "${sta2.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<!-- step 40: generate iperf packet -->
+		<include prefix="40" file="cases/ClientHealth/conf/sub_run_iperf_downlink_sta2.xml" />
+		<step no="41">
+			<desc>
+				enable reporting
+			</desc>
+			<log-file>ap_configure_5.log</log-file>
+			<telnet target="ap1">
+				-v "report statistic enable"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="41.1" delay="10">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				show ssid counter station status
+			</desc>
+			<log-file>show_ssid_counter_station_wifi1.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}2 counter station"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="42">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				get sla status
+			</desc>
+			<log-file>show_ssid_counter_station_wifi1_sla.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}2 counter station | include SLA"
+			</console>
+			<log-match>-e "SLA enabled status good_and_met" -e "SLA enabled status bad"</log-match>
+			<log-match>-e "100 Kbps SLA BW"</log-match>
+		</step>
+		<step no="43">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				get sla BW status
+			</desc>
+			<log-file>show_ssid_counter_station_wifi1_bw.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}2 counter station | include BW"
+			</console>
+		</step>
+		<step no="44">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>Get actual bw</desc>
+			<setvar name="sta2.bw.wifi1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/show_ssid_counter_station_wifi1_bw.log -p "(\d+)\s+Kbps BW usage"
+			</setvar>
+		</step>
+		<step no="45">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>Compare actual bw with guranteed bw  </desc>
+			<script>
+				if [ ${sta2.bw.wifi1} -lt 100 ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="46" delay="120">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				get application score in report
+			</desc>
+			<log-file>show_report_client_application_score_wifi1.log</log-file>
+			<console target="ap1">
+				-v "_show report reporting client | include \"Application health score\""
+			</console>
+			<log-match>-e "100" -e "49" -e "24"</log-match>
+		</step>
+	</stage>
+</testcase>

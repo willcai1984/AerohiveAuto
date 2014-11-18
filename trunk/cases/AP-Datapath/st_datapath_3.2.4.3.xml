@@ -1,0 +1,186 @@
+<testcase>
+	<brief>DHCP pkt process for laptop which connects to mp</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Topology to use
+		Laptop1---Mp1---Portal------Switch------DHCP server
+		Objective
+		DHCP pkt process for laptop which connects to mp
+		Pre-condition
+		Laptop1 and DHCP server are in same vlan
+		Make sure wifi0 and wifi1 are up on portal AP and Mp1(You can bind a ssid to wifi0 and make a neighbor via wifi1)
+		Test procedure
+		-laptop connects to Mp1
+		-laptop will send dhcp discovery/request pkt to get ip address
+		check the FE debug to see.
+		Meet result 1,2,3
+		-laptop will receive dhcp offer/ack pkt to get ip address
+		check the FE debug to see.
+		Meet result 4,5
+		Expect result
+		1: Laptop can get ip address
+		2: MP1 will do special handle for DHCP discovery/request pkt:
+		Only send this pkt to wifi1 interface,pls make sure not send to wifi0 .
+		3: Portal receive it and only forward it by eth0.
+		4: Portal receive the pkt from swith and only forward to wifi1.
+		5: Mp1 receive the pkt from Portal and only forward it to wifi0.x not other wifi0.x, wifi1.
+
+	</description>
+	<stage>
+
+		<step no="0.1">
+			<desc>
+				Modify AP vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<include prefix="0.2" file="subs/ap_renew_ip.xml" obj-args="ap1" />
+
+
+		<step no="1">
+			<desc>Set up Portal interface through sw menu</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "interface wifi1 radio channel 153"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<desc>Set up AP2 interface through sw menu via ssh </desc>
+			<ssh target="ap2">
+				-v "interface eth1 shutdown"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				Modify AP vlan
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<include prefix="2.3" file="subs/ap_renew_ip.xml" obj-args="ap2" />
+
+		<step no="3">
+			<desc>Set up MP interface through sw menu</desc>
+			<ssh target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "interface wifi1 radio channel 153"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>Set up Portal interface through sw menu</desc>
+			<ssh target="ap1">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>Set up Portal interface through sw menu</desc>
+			<ssh target="ap2">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</ssh>
+		</step>
+
+		<include prefix="4.3" file="subs/ap_amrp_neighbor_check.xml" obj-args="ap1,ap2" />
+		<include prefix="4.4" file="subs/ap_amrp_neighbor_check.xml" obj-args="ap2,ap1" />
+
+		<step no="5">
+			<desc>Set up MP interface through sw menu</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+
+		<step no="6.1">
+			<desc>add a _ff and open fe debug on Portal </desc>
+			<ssh target="ap1">
+				-v "_ff id 1 dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="6.2">
+			<desc>add a _ff and open fe debug on MP </desc>
+			<ssh target="ap2">
+				-v "_ff id 1 dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				Configure sta connect parameters
+			</desc>
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+
+		<include prefix="6.4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap2" />
+
+
+
+		<step no="15">
+			<desc>show log buffer at Portal</desc>
+			<log-file>buffer_portal.log</log-file>
+			<ssh target="ap1" timeout="60">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-e 'special handling for DHCP request pkts, tx on eth0'</log-match>
+		</step>
+
+		<step no="16">
+			<desc>show log buffer at MP </desc>
+			<log-file>buffer_mp.log</log-file>
+			<ssh target="ap2" timeout="100">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-e 'special handling for DHCP request pkts, tx on wifi1.1'</log-match>
+		</step>
+
+	</stage>
+</testcase>

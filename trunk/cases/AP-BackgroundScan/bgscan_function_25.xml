@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Under mesh state, check if AP will do BGScan.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test Procedure:
+
+		1.AP1 wifi1 and AP2 wifi1 backhual mode.
+		2.shutdown AP2 eth0.
+		3.after AP2 mesh with AP1,enable bgscan on AP2 wifi1.
+		4.set bgscan interval to 1 minute.open _kdebug wifi-driver w1.1 scan
+		5.check if AP2 will do bgscan.
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<stage>
+		<step no="1">
+			<desc>
+				Configure portal AP
+			</desc>
+			<log-file>ap_configure_1.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "interface wifi0 radio channel 6"
+				-v "interface wifi1 radio channel 36"
+				-v "hive ${hive.name}1"
+				-v "interface mgt0 hive ${hive.name}1"
+				-v "save config"
+			</telnet>
+
+		</step>
+		<step no="2">
+			<desc>
+				1) Configure MP with same hive
+			</desc>
+			<log-file>ap_configure_2.log</log-file>
+			<telnet target="ap2">
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi0 ssid ${ssid.name}2"
+				-v "interface wifi0 radio channel 1"
+				-v "interface wifi1 radio channel 36"
+				-v "hive ${hive.name}1"
+				-v "interface mgt0 hive ${hive.name}1"
+				-v "radio profile na phymode 11na"
+				-v "interface wifi1 radio profile na"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="2.1" delay="30">
+			<desc>3) show hive neighbor</desc>
+			<log-file>ap2_hive_neighbor.log</log-file>
+			<telnet target="ap2">
+				-v "show hive ${hive.name}1 neighbor"
+			</telnet>
+		</step>
+		<step no="2.2"  delay="30">
+			<desc>3) show amrp neighbor</desc>
+			<log-file>ap2_amrp_neighbor.log</log-file>
+			<telnet target="ap2">
+				-v "show amrp neighbor"
+			</telnet>
+			<log-match>-e "TWO-WAY"</log-match>
+		</step>
+		<step no="3">
+			<desc>show wifi1.1's mac of portal</desc>
+			<log-file>wifi11_mac_portal.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>get wifi1.1 mac of portal</desc>
+			<setvar name="ap1_wifi11_mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/wifi11_mac_portal.log -i wifi1.1 -o aero -m -width
+			</setvar>
+		</step>
+		<step no="4.1">
+			<desc>ap2 eth0 shutdown</desc>
+			<log-file>ap2_eth0_shutdown.log</log-file>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+		<step no="5" delay="240">
+			<desc>show mgt0 ip of mp</desc>
+			<log-file>mgt0_ip_mp.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		<step no="6">
+			<desc>get mp mgt0 ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/mgt0_ip_mp.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		<step no="7">
+			<desc>ping MP</desc>
+			<log-file>ping_mp</log-file>
+			<script>
+				ping ${ap2.mgt0.ip} -c 5 >> ${log.dir}/${log.file}; exit 0
+			</script>
+			<log-match>-n -e "(100\% loss)"</log-match>
+		</step>
+		<step no="7.1" delay="60">
+			<desc>3) show ap2 acsp _neighbor</desc>
+			<log-file>show_acsp_neighbor.log</log-file>
+			<console target="ap2">
+				-v "show acsp _nbr | include ${ap1_wifi11_mac}"
+			</console>
+		</step>
+		<step no="7.2">
+			<desc>3) show hive neighbor</desc>
+			<log-file>ap2_hive_neighbor.log</log-file>
+			<console target="ap2">
+				-v "show hive ${hive.name}1 neighbor"
+			</console>
+		</step>
+		<step no="7.3">
+			<desc>3) show amrp neighbor</desc>
+			<log-file>ap2_amrp_neighbor.log</log-file>
+			<console target="ap2">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>-e "TWO-WAY"</log-match>
+		</step>
+		<step no="7.4">
+			<desc>ap2 show interface</desc>
+			<log-file>ap2_show_interface.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+		<step no="7">
+			<desc>
+				6.show wifi1's channel,save in channel list {ch}.
+				"show interface wifi1 channel"
+			</desc>
+			<log-file>show_in_wifi1_channel.log</log-file>
+			<console target="ap2">
+				-v "show interface wifi1 channel"
+			</console>
+			<log-match loop-values="5180,5200,5220,5240,5745,5765,5785,5805,5825">-e "${loop.v}"</log-match>
+
+		</step>
+
+		<step no="8">
+			<desc>
+				7.set the background scan interval of wifi1 to 1 minute.
+				"radio profile na scan access interval 1"
+			</desc>
+			<log-file>ap_config_4.log</log-file>
+			<console target="ap2">
+				-v "radio profile na scan access interval 1"
+			</console>
+
+		</step>
+		<step no="9">
+			<desc>
+				8.open debug mode.
+				"_kdebug wifi-driver wifi1.1 scan"
+			</desc>
+			<log-file>add_debug_2.log</log-file>
+			<console target="ap2">
+			  -v "clear log all"
+				-v "_kdebug wifi-driver wifi1.1 scan"
+			</console>
+		</step>
+		
+		<step no="10" delay="180">
+		<if>"${img.prodtype}" != "AP230" &amp;&amp; "${img.prodtype}" != "AP1130"</if>
+			<desc>
+				9.wait about 3 minute,background scan function will work,it will scan wifi1's
+				channel.the channel value is same with channel list {ch}. the channel information is
+				in the logging buffer printed on screen.
+				"show logging buffer | include self"
+			</desc>
+			<log-file>step_10_show_wifi1_bgscan.log</log-file>
+			<console target="ap2">
+				-v "show logging buffer | in self"
+			</console>
+		</step>
+		
+		<step no="10" delay="180">
+		<if>"${img.prodtype}" == "AP230" || "${img.prodtype}" == "AP1130"</if>
+			<desc>
+				9.wait about 3 minute,background scan function will work,it will scan wifi1's
+				channel.the channel value is same with channel list {ch}. the channel information is
+				in the logging buffer printed on screen.
+				"show logging buffer | include self"
+			</desc>
+			<log-file>step_10_show_wifi1_bgscan.log</log-file>
+			<console target="ap2">
+			   -v "show logging buffer | in \"wl1: wlc_scan: scan channels\""
+			</console>
+		</step>
+		
+		
+		<step no="11">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi1_logbuffer.log</log-file>
+			<console target="ap2" timeout="120">
+				-v "show logging buffer | in Skip"
+			</console>
+			<no-error-check />
+		</step>
+		
+		<step no="11.1">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi1_logbuffer.log</log-file>
+			<setvar name="jump-check">
+				cat ${log.dir}/${log.file} |grep "Skip bg-scan due to high load" >/dev/null; 
+				if [ $? -eq 0 ]; then echo true; else echo false; fi
+			</setvar>
+			<no-error-check />
+		</step>
+		
+		<step no="12">
+		  <if>"${jump-check}" != "true"</if>
+			<desc>match all channel	</desc>
+			<log-file>find_wifi1_channel.log</log-file>
+			<script>
+				perl ${case.dir}/bin/check-scan-channel.pl ${log.dir}/step_10_show_wifi1_bgscan.log dfswifi165 > ${log.dir}/${log.file}
+			</script>
+		</step>
+	</stage>
+</testcase>

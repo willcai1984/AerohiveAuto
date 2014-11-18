@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>
+		Eth1 is in backhaul mode; eth0 is in bridge-access mode, Verify the datapath of DHCP from ap/mesh/eth0/eth1
+	</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use
+		Pc2++++++(eth0) (Mesh)--------MP--------laptop2
+		Portal
+		Pc1 &amp; DHCP server++sw+++++++++ (eth1) (AP)---------laptop1
+		Objective
+		Eth1 is in backhaul mode; eth0 is in bridge-access mode, Verify the datapath of DHCP from ap/mesh/eth0/eth1
+		Pre-condition
+		-construct this topology
+		-all pcs and laptops are in same vlan
+		Test procedure
+		-change eth0 to bridge-access mode via “interface eth0 mode bridge-access mode”
+		enable mac-learning on eth0 via “interface eth0 mac-learning enable”
+		-check the route table result 1
+		-laptop1 send dhcp discover pkt
+		check the FE debug on portal to see the datapath result 2
+		-laptop2 send dhcp discover pkt
+		check the FE debug on portal to see the datapath result 2
+		-pc2 send dhcp discover pkt
+		check the FE debug on portal to see the datapath result 2
+		-pc1 send dhcp discover pkt
+		check the FE debug on portal to see the datapath result 3
+		Expect result
+		Result 1: the default route is point to eth1; has route entry for pc2,
+		the oif is eth0
+		Result 2: Portal will do
+		special handle for dhcp discovery pkt and only send it out from eth1 interface
+		Result 3: Portal will flood it to all interface(ap/mesh/eth0)
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}-B" />
+	<property name="conn2.ssid" value="${ssid.name}-A" />
+
+	<stage>
+		<if>"${ap.eth1.existed}" == "true" &amp;&amp; "${ap.wifi1.existed}" == "true"</if>
+		<include prefix="pre.0" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="pre.1">
+			<desc>
+				-shutdown interface eth1
+			</desc>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				-Config ap2's vlan and native-vlan
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.4" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.4_show_interface_mgt0_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.5">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.4_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>config ap1</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 153"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>config ap2</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>show wifi1.1's mac of portal</desc>
+			<log-file>wifi_mac_portal.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>get the wifi1 mac of ap1</desc>
+			<setvar name="ap1.wifi1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/wifi_mac_portal.log -i wifi1.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>show interface the eth0 mac of ap1</desc>
+			<log-file>ap1_show_interface_eth0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface eth0"
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>get the eth0 mac of ap1</desc>
+			<setvar name="ap1.eth0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ap1_show_interface_eth0.log -i eth0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>config ap1</desc>
+			<telnet target="ap1">
+				-v "user-profile datapath vlan ${tb.vlan1} attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "interface eth1 mode bridge-access user-profile-attribute 2"
+				-v "interface eth1 mac-learning enable"
+				-v "ssid ${ssid.name}-B"
+				-v "ssid ${ssid.name}-B security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}-B"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>config ap2</desc>
+			<telnet target="ap2">
+				-v "user-profile datapath vlan ${tb.vlan1} attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "ssid ${ssid.name}-A"
+				-v "ssid ${ssid.name}-A security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}-A"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>shutdown interface wifi1 and then up it (it's aimed to clear wifi1's neighbor list)</desc>
+			<telnet target="ap2">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface wifi1 radio channel 153"
+			</telnet>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step4_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.wifi1.mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>Open debug cli on portal</desc>
+			<telnet target="ap1">
+				-v "_ff src-mac ${sta1.tif.mac} dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="7" file="subs/sta_dhcp_check.xml" obj-args="sta1" args="ingore" />
+
+		<step no="8" delay="10">
+			<desc>show log buffer on portal</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-c -i "\[fe\]: special handling for DHCP request pkts, tx on eth0" </log-match>
+			<log-match>-c -i "(o) eth0 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-n -c -i "(o) eth1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-n -c -i "(o) wifi1.1 0.0.0.0-&gt;255.255.255.255"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				-shutdown interface eth0
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>show mesh network</desc>
+			<log-file>step9_amrp_nei_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>-c -i "${ap1.wifi1.mac}" -i "TWO-WAY"</log-match>
+		</step>
+
+		<include prefix="10" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap2" />
+
+		<step no="11">
+			<desc>Open debug cli on portal</desc>
+			<telnet target="ap1">
+				-v "no _ff id 1"
+				-v "_ff src-mac ${sta2.tif.mac} dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11.1">
+			<desc>Open debug cli on mp</desc>
+			<console target="ap2">
+				-v "_ff src-mac ${sta2.tif.mac} dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="12" file="subs/sta_dhcp_check.xml" obj-args="sta2" args="ingore" />
+
+		<step no="13" delay="10">
+			<desc>show log buffer on portal</desc>
+			<log-file>step13_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi1.1 0.0.0.0-&gt;255.255.255.255" </log-match>
+			<log-match>-c -i "\[fe\]: special handling for DHCP request pkts, tx on eth0"</log-match>
+			<log-match>-c -i "(o) eth0 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-n -c -i "(o) eth1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-n -c -i "(o) wifi1.1 0.0.0.0-&gt;255.255.255.255"</log-match>
+		</step>
+
+		<step no="13.1">
+			<desc>show log buffer on mp</desc>
+			<log-file>step13.1_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-i "\[fe\]: special handling for DHCP request pkts, tx on wifi1.1"</log-match>
+			<log-match>-i "(o) wifi1.1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-n -c -i "(o) eth1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-n -c -i "(o) eth0 0.0.0.0-&gt;255.255.255.255"</log-match>
+		</step>
+
+		<include prefix="14" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<step no="15">
+			<desc>Open debug cli on portal</desc>
+			<telnet target="ap1">
+				-v "no _ff id 1"
+				-v "_ff src-mac ${bpc1.tif.mac} dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="16">
+			<desc>renew remote host bpc1's ip</desc>
+			<ssh target="bpc1">
+				-v "dhclient ${bpc1.tif.name} -r"
+				-v "dhclient ${bpc1.tif.name}"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="17" delay="10">
+			<desc>show log buffer on portal</desc>
+			<log-file>step17_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(o) eth0 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-c -i "(i) eth1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-i "\[fe\]: special handling for DHCP request pkts, tx on eth0"</log-match>
+			<log-match>-n -c -i "(o) eth1 0.0.0.0-&gt;255.255.255.255" </log-match>
+			<log-match>-n -c -i "(o) wifi0.1 0.0.0.0-&gt;255.255.255.255"</log-match>
+			<log-match>-n -c -i "(o) wifi1.1 0.0.0.0-&gt;255.255.255.255"</log-match>
+		</step>
+	</stage>
+</testcase>

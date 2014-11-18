@@ -1,0 +1,175 @@
+<testcase>
+	<brief>mac-session and ip-session can be log when traffic is denied by IP/MAC policy</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>windows</tbtype>
+	<description>
+		TOPO:
+		SW++++pc
+		|
+		laptop1-----ap-------laptop2
+		Description:
+		Process for mac/ip log in enable mode
+		Pre-condition:
+		STA1 and STA2 link to ap, and assigned ip address
+		Test procedure:
+		1. Configure mac policies which deny laptop1 accesses laptop2 and pc on ap
+		2. Laptop1 ping laptop2 and pc, result 1
+		3. Configure ip policies which deny laptop1 accesses laptop2 and pc on ap, mac policy is permit
+		4. Laptop1 ping laptop2 and pc, result 2
+		Expect result:
+		Result 1: There is log info when packets are denied by mac-policy
+		Result 2: There is log info when packets are denied by ip-policy
+	</description>
+	<stage>
+		<step no="1" delay="50">
+			<desc>cfg AP-1</desc>
+			<log-file>cfg_ap.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-f cfg-ap-1.cfg
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="2" delay="10">
+			<desc>show interface mgt0 of AP-1</desc>
+			<log-file>ap_ip.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>Get the ip of AP1</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ap_ip.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>setup ssid for ap-1</desc>
+			<log-file>set_ap_ssid.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object icsa"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>setup another ssid for ap-1</desc>
+			<log-file>set_ap_ssid.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "ssid ${ssid.name}-2"
+				-v "ssid ${ssid.name}-2 security-object icsa"
+				-v "interface wifi0 ssid ${ssid.name}-2"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="10">
+			<desc>check the mac of ${sta1.mif.ip} in vpn-client-1</desc>
+			<log-file>client_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-e "${sta1.tif.mac}" -c -i "L"</log-match>
+		</step>
+
+		<property name="conn2.ssid" value="${ssid.name}-2" />
+		<property name="conn2.proto" value="open" />
+		<include prefix="11" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn2, sta2, ap1" />
+		
+
+		<step no="15">
+			<desc>setup mac-policy for ap-1</desc>
+			<log-file>set_ap_macpolicy.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "mac-policy test"
+				-v "mac-policy test id 1 from ${sta1.tif.mac} to ${sta2.tif.mac} action deny"
+				-v "mac-policy test id 2 from ${sta2.tif.mac} to ${sta1.tif.mac} action deny"
+				-v "clear log buffer"
+				-v "console page 0"
+				-v "user-profile icsa security mac-policy from-access test to-access test"
+				-v "clear forwarding-engine mac-sessions"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="16">
+			<desc>ping pc2 from the laptop1</desc>
+			<log-file>ping_pc2.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ping ${sta2.tif.ip}" -l ${log.dir} -o ${log.file}; exit 0
+			</script>
+			<no-error-check />
+			<log-match>-e "TTL" -n -c</log-match>
+		</step>
+
+		<step no="17">
+			<desc>get the deny log from log buffer</desc>
+			<log-file>log_buffer_mac_policy.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered level info | in MAC"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "${sta2.tif.mac}->${sta1.tif.mac}, denied by MAC firewall policy, drop pkt"</log-match>
+		</step>
+
+		<step no="18">
+			<desc>remove mac-policy for ap-1</desc>
+			<log-file>reset_ap_macpolicy.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "no user-profile icsa security mac-policy"
+				-v "no mac-policy test"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="19">
+			<desc>setup ip-policy for ap-1</desc>
+			<log-file>set_ap_ippolicy.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v " "
+				-v "ip-policy test"
+				-v "ip-policy test id 1 from ${sta1.tif.ip} 255.255.255.255 to ${sta2.tif.ip} 255.255.255.255 action deny"
+				-v "ip-policy test id 2 from ${sta2.tif.ip} 255.255.255.255 to ${sta1.tif.ip} 255.255.255.255 action deny"
+				-v "user-profile icsa security ip-policy from-access test to-access test"
+				-v "clear log buffer"
+				-v "console page 0"
+				-v "clear forwarding-engine ip-sessions"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="20">
+			<desc>ping pc2 from the laptop1</desc>
+			<log-file>ping_pc_ip2.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ping ${sta2.tif.ip}" -l ${log.dir} -o ${log.file}; exit 0
+			</script>
+			<no-error-check />
+			<log-match>-e "TTL" -n -c</log-match>
+		</step>
+
+		<step no="21">
+			<desc>get the IP deny log from log buffer</desc>
+			<log-file>log_buffer_IP_policy.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered level info | in IP"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "${sta1.tif.ip}" -i "${sta2.tif.ip}" -i "denied by IP firewall policy, drop pkt"</log-match>
+		</step>
+	</stage>
+</testcase>

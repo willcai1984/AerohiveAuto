@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>feature test cases</brief>
+	<priority>low</priority>
+	<automated>yes</automated>
+	<description>
+		Verifiy the security for ssid
+		Open ssid
+	
+	</description>
+	<numofap>0</numofap>
+	<tbtype>winlin</tbtype>
+	
+	<pre-process>
+		<stage>
+			<step no="0">
+				<desc>Initialize the DUT db</desc>
+				<call step="init.cloud.server" />
+			</step>
+		</stage>
+	</pre-process>
+	
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>Clean up the DUT db</desc>
+				<call step="cleanup.cloud.server" />
+			</step>
+		</stage>
+	</post-process>
+
+	<property name="test1" value="ServiceType" />
+	<property name="ap.mac" value="000011112223" />
+	<property name="tb.fileserver" value="10.155.40.181" />
+	<property name="owner.id" value="102" />
+	<property name="vlan.id" value="10" />
+	<property name="userprofile.id" value="10" />
+	
+	<declaration>
+		<step name="create.user.profile" description="">
+			<restapi name = "createUserProfile">
+				{
+				"jsonType" : "user-profile",
+				"ownerId" : 102,
+				"name" : "UserProfile10",
+				"predefined" : false,
+				"vlan" : {
+				"jsonType" : "vlan",
+				"ownerId" : 102,
+				"name" : "Aerohive_VlanProfile",
+				"description" : "Vlan Profile",
+				"predefined" : false,
+				"entries" : 
+				  [ {
+				      "ownerId" : 102,
+				      "tags" : [ ],
+				      "vlanNumber" : 1
+				   } ]
+				},
+				"enableFirewall" : false,		
+				"enableSchedule" : false,
+				"schedules" : [ ],
+				"enableTrafficTunneling" : false,
+				"enableClientSla" : false,
+				"enableQos" : false,
+				"restriction" : "DENY_CAR",
+				"schedules" : [ ],
+				"enableClassification" : false
+				}
+			</restapi>
+		</step>
+		<step name="create.open.ssid.profile" description="">
+			<restapi name = "createSsidProfile">
+				{
+				"ownerId" : 102, 
+				"predefined" : false, 
+				"jsonType" : "ssid-profile", 
+				"name" : "Open", 
+				"description" : "ssid with unsecured (open) network for guest access", 
+				"ssid" : "Open", 
+				"radioBand" : "DUAL", 
+				"ssidUsageIndustry" : "ENTERPRISE", 
+				"ssidUsageUserGroup" : "GUEST_ACCESS", 
+				"enableMacAuthentication" : false , 
+				"defaultUserProfile" : refObjectInTestStep = "create.user.profile", 
+				"accessSecurity" : 
+					{
+					"jsonType": "openAccess",
+					"ownerId": 102
+					}	
+				}
+			</restapi>
+		</step>	
+		
+
+		<step name="create.network.policy" description="">
+			<restapi name = "createNetworkPolicy">
+				{
+				"ownerId" : 102,
+				"name" : "Aerohive_network",
+				"type" : "NetworkAccessAndSwitching"
+				}
+			</restapi>
+		</step>
+		<!--This step should be removed after Could 3.0 can push configuration to device-->
+		<step name="create.device.1.ap330.v6101.as.ap">
+			<restapi name = "createDevice">
+				{
+				"ownerId":102,
+				"ipAddress": "10.155.21.23",
+				"macAddress":"000011112223",
+				"hostname":"virtual device for test2",
+				"serialNumber":"11112222333344",
+				"productType":"AP_330",
+				"softwareVersion": "6.1.0.1",
+				"role":19050,
+				"function":"Ap",
+				"adminState":"UNMANAGED",
+				"isConnected":true
+				}
+			</restapi>
+		</step>
+		<step name="add.ssid.profile.into.network.policy" description="">
+			<restapi name = "assignfeature">
+				{
+				"jsonType" : "network_policy",
+				"networkPolicyId" : refIdInTestStep = "create.network.policy",
+				"featureId" : refIdInTestStep = "create.ssid.profile"
+				}
+			</restapi>
+		</step>
+		<step name="assign.network.policy.to.device" description="">
+			<restapi name = "assignnetworkpolicy">
+				{
+				"device" : refObjectInTestStep = "create.device.1.ap330.v6101.as.ap",
+				"networkPolicy" : refObjectInTestStep = "create.network.policy"
+				}
+			</restapi>
+		</step>
+
+		<step name="download.cli.to.device" description="">
+			<restapi name = "downloadcli">
+				{
+				"networkPolicyId" : refIdInTestStep = "create.network.policy",
+				"deviceIds" : [ refIdInTestStep = "create.device.1.ap330.v6101.as.ap"],
+				"configDownloadTypes" : [ "deviceFull"]
+				}
+			</restapi>
+		</step>
+	</declaration>
+
+	<stage> 
+		<step no="1">
+			<call step="assign.network.policy.to.device" />
+		</step>
+		<step no="2">
+			<call step="download.cli.to.device" />
+		</step>
+		<step no="3">
+			<ssh target="${tb.fileserver}" user="root">
+				-v "cat /var/data/fileserver/configuration/${owner.id}/${ap.mac}-deviceFull.config"
+			</ssh>
+			<log-match>-i "security-object Open"</log-match>
+			<log-match>-i "ssid Open"</log-match>
+            <log-match>-i "ssid Open security-object Open"</log-match>
+            <log-match>-i "ssid open security mac-filter open"</log-match>
+         </step>
+	</stage>
+	<failed-process />
+	<post-process />
+</testcase>

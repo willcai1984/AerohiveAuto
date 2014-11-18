@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Binding/Unbinding user-profile while traffic is on-going(to-access deny, through MP)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptops has been associated with AP1 and assigned an ip address
+
+		Test Procedure:
+		1) Laptop2 and Laptop1 ping continuance
+		2) Configure a ip-policy on MP and bind it to FW:
+		"ip-policy FW"
+		"ip-policy FW to &lt;Laptop1 ip addr&gt; action deny"
+		"user-profile FW security ip-policy to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Check the ping pkt
+		4) Unbinding the policy to user-profile
+		"no user-profile FW security ip-policy to-access"
+		5) Check the ping pkt
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}-1" />
+	<property name="conn2.ssid" value="${ssid.name}-2" />
+
+	<stage>
+		<if>"${ap.wifi1.existed}" == "true"</if>
+
+		<step no="shutdown.eth1">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				-Config ap2's vlan and native-vlan
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.4" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.4_show_interface_mgt0_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.5">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.4_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				Configure AP
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "interface wifi1 radio channel 36"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Configure MP
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${conn2.ssid}"
+				-v "ssid ${conn2.ssid} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${conn2.ssid}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "interface wifi1 radio channel 36"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				check wifi1
+			</desc>
+			<log-file>step1.2_check_wifi1.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				Get wifi1 mac
+			</desc>
+			<setvar name="ap2_wifi1_mac">
+				${bin.dir}/getbyrexp.py -p "MAC addr=(\S+);" -f ${log.dir}/step1.2_check_wifi1.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.3a" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step1.3a_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2_wifi1_mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				shutdown interface eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="1.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check amrp neighbor
+			</desc>
+			<log-file>step1.5_check_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>-c -i "${ap2_wifi1_mac}" -i "${ap2.mgt0.ip}" -i "TWO-WAY"</log-match>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap2" />
+
+		<step no="open.debug">
+			<desc>
+				open debug
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_ff id 2 src-ip ${sta2.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 5" />
+
+		<include prefix="5" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 5" />
+
+		<step no="5">
+			<desc>
+				- Configure a ip-policy and bind it to FW:
+				"ip-policy FW"
+				"ip-policy FW to &lt;Laptop ip addr&gt; action deny"
+				"user-profile FW security ip-policy from-access FW"
+			</desc>
+			<console target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 to ${sta1.tif.ip} action deny"
+				-v "user-profile ${user_id} security ip-policy to-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="6" delay="30">
+			<desc>
+				clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="7" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 5, negative" />
+
+		<include prefix="8" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 5, negative" />
+
+		<step no="9">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step9_show_loging_buffered.log</log-file>
+			<console target="ap1" timeout="800">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi1.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] upid default action \[deny\]" -e "\(i\) wifi1.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>
+				Unbinding the policy to user-profile
+				“no user-profile FW security ip-policy to-access”
+			</desc>
+			<console target="ap1">
+				-v "no user-profile ${user_id} security ip-policy to-access"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="10.1" delay="30">
+			<desc>
+				clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="11" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 5" />
+
+		<include prefix="12" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 5" />
+
+		<step no="13">`
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step13_show_loging_buffered.log</log-file>
+			<console target="ap1" timeout="800">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

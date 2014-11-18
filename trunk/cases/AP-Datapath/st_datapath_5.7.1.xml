@@ -1,0 +1,624 @@
+<testcase>
+	<brief>Mix backhaul/access Scenario</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>3</numofap>
+	<numofsta>2</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>windows</tbtype>
+	<description>
+		Objective
+		Eth0 is in backhaul mode; eth1 is in bridge-access mode, Verify the datapath of Broadcast/Multicast from ap/mesh/eth0/eth1
+		Pre-condition
+		-construct this topology
+		-all pcs and laptops are in same vlan
+		Test procedure
+		-change eth0 to bridge-access mode via “interface eth0 mode bridge-access mode”
+		enable mac-learning on eth0 via “interface eth0 mac-learning enable”
+		-check the route table result 1
+		-clear arp table on portal and all pc/laptop
+		-laptop1 send a broadcast pkt like arp request (you can ping a un-exists host to generate arp request pkt, but pls make sure this host is in the same vlan)
+		check the FE debug on portal to see the datapath result 2
+		-laptop2 send a broadcast pkt like arp request
+		check the FE debug on portal to see the datapath result 2
+		-pc2 send a broadcast pkt like arp request
+		check the FE debug on portal to see the datapath result 3
+		-pc1 send a broadcast pkt like arp request
+		check the FE debug on portal to see the datapath result 4
+		Expect result
+		Result 1: the
+		default route is point to eth1; has route entry for pc2,
+		the oif is eth0
+		Result 2: this pkt should be forwarded to AP interface, mesh
+		interface,eth0 interface,eth1 interface
+		Result 3: this pkt should be forwarded to AP interface, mesh
+		interface, eth1 interface
+		Result 4: this pkt should be forwarded to AP interface, mesh
+		interface, eth0 interface
+	</description>
+
+	<stage>
+		<property name="unknown.host1" value="${tb.unreach.ip1}" />
+		<property name="unknown.host1.mac" value="AA:AA:AA:AA:AA:AA" />
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" == "true"</if>
+
+		<step no="SetUpAP1.1">
+			<desc>Set up Portal AP</desc>
+			<log-file>setup_portal.log</log-file>
+			<console target="ap1">
+				-v "user-profile datapath qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-psk ascii aerohive"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "interface wifi1 radio channel 165"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "interface eth1 manage telnet"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="SetUpAP2.1">
+			<desc>Set up MP</desc>
+			<log-file>setup_mp.log</log-file>
+			<console target="ap2">
+				-v "user-profile datapath qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-psk ascii aerohive"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ap2.name}"
+				-v "ssid ${ap2.name} security-object autoap"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${ap2.name}"
+				-v "interface wifi0 radio channel 6"
+				-v "interface wifi0 radio power 15"
+				-v "interface wifi1 radio channel 165"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "interface eth1 shutdown"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="SetUpAP3.1">
+			<desc>Set up AP3</desc>
+			<log-file>setup_ap3.log</log-file>
+			<console target="ap3">
+				-v "user-profile datapath qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-psk ascii aerohive"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ap3.name}"
+				-v "ssid ${ap3.name} security-object autoap"
+				-v "interface wifi0 ssid ${ap3.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "interface wifi1 hive hive0 shutdown"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "interface eth0 shutdown"
+				-v "interface mgt0 ip ${ap3.mgt0.ip}/24"
+				-v "interface eth1 manage telnet"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="GetAP1.MAC.1" delay="30">
+			<desc>show interface of Portal1</desc>
+			<log-file>show_portal_interface.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="GetAP1.MAC.2">
+			<desc>get the eth0 mac address of portal</desc>
+			<setvar name="ap1.eth0.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_portal_interface.log -k eth0 -p 2
+			</setvar>
+		</step>
+
+		<step no="GetAP1.MAC.3">
+			<desc>get the wifi1 mac address of portal</desc>
+			<setvar name="ap1.wifi1.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_portal_interface.log -k wifi1 -p 2
+			</setvar>
+		</step>
+
+		<step no="GetAP2.MAC.1">
+			<desc>show interface of MP</desc>
+			<log-file>show_mp_interface.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="GetAP2.MAC.2">
+			<desc>get the eth0 mac address of MP</desc>
+			<setvar name="ap2.eth0.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_mp_interface.log -k eth0 -p 2
+			</setvar>
+		</step>
+
+		<step no="GetAP2.MAC.3">
+			<desc>get the wifi1 mac address of MP</desc>
+			<setvar name="ap2.wifi1.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_mp_interface.log -k wifi1 -p 2
+			</setvar>
+		</step>
+
+		<step no="GetAP3.MAC.1">
+			<desc>show interface of AP3</desc>
+			<log-file>show_mp_interface.log</log-file>
+			<console target="ap3">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="GetAP3.MAC.2">
+			<desc>get the eth0 mac address of AP3</desc>
+			<setvar name="ap3.eth0.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_mp_interface.log -k eth0 -p 2
+			</setvar>
+		</step>
+
+		<step no="CheckAP1DefaultRoute">
+			<desc>show route of Portal1</desc>
+			<log-file>show_portal_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-i "0000:0000:0000\ \ ${ap1.eth0.w4mac}" -i "eth0"</log-match>
+			<log-match>-i "${ap3.eth0.w4mac}\ \ ${ap1.eth0.w4mac}" -i "eth1"</log-match>
+		</step>
+
+		<step no="GetMpc.tif.mac.1">
+			<desc>Get master-PC's route table</desc>
+			<log-file>show_mpc_route.log</log-file>
+			<script>
+				route >> ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="GetMpc.tif.mac.2">
+			<desc>Get master-PC's testbed interface</desc>
+			<setvar name="mpc.tif.name">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_mpc_route.log -k ${tb.vlan1.gw} -p 8
+			</setvar>
+		</step>
+
+		<step no="GetMpc.tif.mac.3">
+			<desc>get master-PC's tif ifconfig</desc>
+			<log-file>show_mpc_ipconfig.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name}>> ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="GetMpc.tif.mac.4">
+			<desc>Get master's tif mac-address</desc>
+			<setvar name="mpc.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_mpc_ipconfig.log -i ${mpc.tif.name} -o linux -m
+			</setvar>
+		</step>
+
+		<step no="GetMpc.tif.mac.5">
+			<desc>get 4 width mpc mac</desc>
+			<setvar name="mpc.tif.w4mac">
+				echo ${mpc.tif.mac} | sed 's/://g; s/../&amp;:/g' | awk -F : '{print $1$2":"$3$4":"$5$6}'
+			</setvar>
+		</step>
+
+		<step no="GetVpc.tif.info.1">
+			<desc>Get Vpc's route table</desc>
+			<log-file>show_bpc_ipconfig.log</log-file>
+			<ssh host="${bpc1.mif.ip}" prompt=">|.*#">
+				-v "ifconfig ${bpc1.tif.name} down"
+				-v "ifconfig ${bpc1.tif.name} up"
+				-v "dhclient ${bpc1.tif.name}"
+				-v "ifconfig ${bpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="GetVpc.tif.info.2">
+			<desc>Get bpc's tif mac-address</desc>
+			<setvar name="bpc1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_bpc_ipconfig.log -i ${bpc1.tif.name} -o linux -m
+			</setvar>
+		</step>
+
+		<step no="GetVpc.tif.info.3">
+			<desc>get 4 width bpc mac</desc>
+			<setvar name="bpc1.tif.w4mac">
+				echo ${bpc1.tif.mac} | sed 's/://g; s/../&amp;:/g' | awk -F : '{print $1$2":"$3$4":"$5$6}'
+			</setvar>
+		</step>
+
+		<step no="GetVpc.tif.info.4">
+			<desc>Get bpc's tif ip</desc>
+			<setvar name="bpc1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_bpc_ipconfig.log -i ${bpc1.tif.name} -o linux -nomask
+			</setvar>
+		</step>
+
+		<step no="ReleaseVpc.tif.ip.1">
+			<desc>release VPC's tif ip</desc>
+			<log-file>release_bpc_ip.log</log-file>
+			<ssh host="${bpc1.mif.ip}" prompt=">|.*#">
+				-v "ping ${mpc.tif.ip} -c 2"
+				-v "dhclient -r ${bpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="CheckAmrpNeighbour.1" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show Portal amrp neighbor
+			</desc>
+			<log-file>show_portal_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show amrp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.w4mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="CheckAmrpNeighbour.2" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show MP amrp neighbor
+			</desc>
+			<log-file>show_mp_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.wifi1.w4mac}\s+${ap1.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="SetUpAP2.2">
+			<desc>Set up MP AP</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+		<step no="Getlaptop1Info.1" delay="120">
+			<desc>Generate wifi_aerohive_test profile</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/wpa2-aes-psk.xml -o wifi_aerohive_test_1.xml -s "${ssid.name}" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.2">
+			<desc>Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password  </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test_1.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.3">
+			<desc>Bring down the client Wireless</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.4">
+			<desc>Delete current Wireless profile</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan delete profile ${ssid.name} "
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.5">
+			<desc>Add new profile</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.6" delay="30">
+			<desc>Bring up the client Wireless</desc>
+			<log-file>laptop1_connect_ssid1.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan connect ssid=${ssid.name} name=${ssid.name} interface=\"${sta1.tif.name}\"" -v " netsh wlan show profiles ${ssid.name}" -v "netsh wlan show interfaces" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.7" delay="180">
+			<desc>Dump all interfaces data from remote host</desc>
+			<log-file>ipconfig_${sta1.mif.ip}.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.8">
+			<desc>Get laptop's IP</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+
+		<step no="Getlaptop1Info.9">
+			<desc>Get laptop's MAC</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -m
+			</setvar>
+		</step>
+
+		<step no="Getlaptop1Info.10">
+			<desc>get 4 width station mac</desc>
+			<setvar name="sta1.tif.w4mac">
+				echo ${sta1.tif.mac} | sed 's/://g; s/../&amp;:/g' | awk -F : '{print $1$2":"$3$4":"$5$6}'
+			</setvar>
+		</step>
+
+		<step no="Getlaptop2Info.1" delay="120">
+			<desc>Generate wifi_aerohive_test profile</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/wpa2-aes-psk.xml -o wifi_aerohive_test_2.xml -s "${ap2.name}" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.2">
+			<desc>Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password  </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test_2.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta2.mif.ip}
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.3">
+			<desc>Bring down the client Wireless</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan disconnect interface=\"${sta2.tif.name}\""
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.4">
+			<desc>Delete current Wireless profile</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan delete profile ${ap2.name} "
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.5">
+			<desc>Add new profile</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${sta2.tif.name}\""
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.6" delay="180">
+			<desc>Bring up the client Wireless</desc>
+			<log-file>laptop2_connect_ssid2.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan connect ssid=${ap2.name} name=${ap2.name} interface=\"${sta2.tif.name}\"" -v " netsh wlan show profiles ${ap2.name}" -v "netsh wlan show interfaces" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.7" delay="15">
+			<desc>Dump all interfaces data from remote host</desc>
+			<log-file>ipconfig_${sta2.mif.ip}.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.8">
+			<desc>Get laptop's IP</desc>
+			<setvar name="sta2.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta2.mif.ip}.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+
+		<step no="Getlaptop2Info.9">
+			<desc>Get laptop's MAC</desc>
+			<setvar name="sta2.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta2.mif.ip}.log -i Wireless -o win -m
+			</setvar>
+		</step>
+
+		<step no="Getlaptop2Info.10">
+			<desc>get 4 width station mac</desc>
+			<setvar name="sta2.tif.w4mac">
+				echo ${sta2.tif.mac} | sed 's/://g; s/../&amp;:/g' | awk -F : '{print $1$2":"$3$4":"$5$6}'
+			</setvar>
+		</step>
+
+		<step no="ClearMacLearningAP1.1">
+			<desc>clear mac learning in AP1</desc>
+			<log-file>clear_mac_learning_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "clear interface eth1 mac-learning dynamic all"
+			</telnet>
+		</step>
+
+		<step no="Laptop1PingUnknownPC.1">
+			<desc>set _ff rule and clear log buffer </desc>
+			<log-file>show_log_buf_initial_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show log buf"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} dst-ip ${bpc1.tif.ip} bidirectional"
+				-v "_ff id 2 etype 0806 bidirectional"
+				-v "clear log all"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="Laptop1PingUnknownPC.2" delay="5">
+			<desc>laptop1 ping unknown host</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ping ${bpc1.tif.ip} -n 1" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="Laptop1PingUnknownPC.3">
+			<desc>show log buffer at Portal1,this traffic should be sent out to eth0, eth1, ap, mesh</desc>
+			<log-file>show_laptop1_ping_unknown.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(i) wifi0" -i "${sta1.tif.w4mac}->ffff:ffff:ffff arp" -i "${sta1.tif.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) eth0 ${sta1.tif.w4mac}->ffff:ffff:ffff arp" -i "${sta1.tif.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) eth1 ${sta1.tif.w4mac}->ffff:ffff:ffff arp" -i "${sta1.tif.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) wifi0" -i "${sta1.tif.w4mac}->ffff:ffff:ffff arp" -i "${sta1.tif.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) wifi1" -i "${sta1.tif.w4mac}->ffff:ffff:ffff arp" -i "${sta1.tif.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+		</step>
+
+		<step no="Laptop2PingUnknownPC.1">
+			<desc>set _ff rule and clear log buffer </desc>
+			<telnet target="ap1">
+				-v "no _ff id 1"
+				-v "no _ff id 2"
+				-v "_ff id 1 src-ip ${sta2.tif.ip} dst-ip ${bpc1.tif.ip} bidirectional"
+				-v "_ff id 2 etype 0806 bidirectional"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="Laptop2PingUnknownPC.2" delay="5">
+			<desc>laptop2 ping unknown host</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "ping ${bpc1.tif.ip} -n 1" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="Laptop2PingUnknownPC.3">
+			<desc>show log buffer at Portal1,this traffic should be sent out to eth0, eth1, ap, mesh</desc>
+			<log-file>show_laptop2_ping_unknown.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(i) wifi1" -i "${sta2.tif.w4mac}->ffff:ffff:ffff arp" -i "${sta2.tif.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) eth0 ${sta2.tif.w4mac}->ffff:ffff:ffff arp" -i "${sta2.tif.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) eth1 ${sta2.tif.w4mac}->ffff:ffff:ffff arp" -i "${sta2.tif.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) wifi0" -i "${sta2.tif.w4mac}->ffff:ffff:ffff arp" -i "${sta2.tif.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) wifi1" -i "${sta2.tif.w4mac}->ffff:ffff:ffff arp" -i "${sta2.tif.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+		</step>
+
+		<step no="MpcPingUnknownPC.1">
+			<desc>set _ff and clear log buffer </desc>
+			<telnet target="ap1">
+				-v "no _ff id 1"
+				-v "no _ff id 2"
+				-v "_ff id 1 src-ip ${mpc.tif.ip} dst-ip ${unknown.host1} bidirectional"
+				-v "_ff id 2 etype 0806 bidirectional"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="MpcPingUnknownPC.2" delay="5">
+			<desc>mpc ping unknown host</desc>
+			<log-file>mpc_ping_unknown_host.log</log-file>
+			<script>
+				ping ${unknown.host1} -c 2 >> ${log.dir}/${log.file}; exit 0
+			</script>
+		</step>
+
+		<step no="MpcPingUnknownPC.3">
+			<desc>show log buffer at Portal</desc>
+			<log-file>show_mpc_ping_unknown.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(i) eth0 ${mpc.tif.w4mac}->ffff:ffff:ffff arp" -i "${mpc.tif.ip}" -i "${unknown.host1}" -c</log-match>
+			<log-match>-i "(o) eth0 ${mpc.tif.w4mac}->ffff:ffff:ffff arp" -i "${mpc.tif.ip}" -i "${unknown.host1}" -c -n</log-match>
+			<log-match>-i "(o) eth1 ${mpc.tif.w4mac}->ffff:ffff:ffff arp" -i "${mpc.tif.ip}" -i "${unknown.host1}" -c</log-match>
+			<log-match>-i "(o) wifi0" -i "${mpc.tif.w4mac}->ffff:ffff:ffff arp" -i "${mpc.tif.ip}" -i "${unknown.host1}" -c</log-match>
+			<log-match>-i "(o) wifi1" -i "${mpc.tif.w4mac}->ffff:ffff:ffff arp" -i "${mpc.tif.ip}" -i "${unknown.host1}" -c</log-match>
+		</step>
+
+		<step no="AP3PingUnknownPC.1">
+			<desc>set _ff and clear log buffer on ap1</desc>
+			<telnet target="ap1">
+				-v "no _ff id 1 "
+				-v "no _ff id 2 "
+				-v "_ff id 1 src-ip ${ap3.mgt0.ip} dst-ip ${bpc1.tif.ip} bidirectional"
+				-v "_ff id 2 etype 0806 bidirectional"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="AP3PingUnknownPC.2">
+			<desc>ap3 ping unknown</desc>
+			<log-file>ap3_ping_unknown.log</log-file>
+			<telnet target="ap3" timeout="100">
+				-v "ping ${bpc1.tif.ip} count 1"
+			</telnet>
+		</step>
+
+		<step no="AP3PingUnknownPC.3">
+			<desc>show log buffer that ap3 ping unknown</desc>
+			<log-file>show_ap3_ping_unknown.log</log-file>
+			<telnet target="ap1" timeout="100">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(i) eth1 ${ap3.eth0.w4mac}->ffff:ffff:ffff arp" -i "${ap3.mgt0.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) eth0 ${ap3.eth0.w4mac}->ffff:ffff:ffff arp" -i "${ap3.mgt0.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) eth1 ${ap3.eth0.w4mac}->ffff:ffff:ffff arp" -i "${ap3.mgt0.ip}" -i "${bpc1.tif.ip}" -c -n</log-match>
+			<log-match>-i "(o) wifi0" -i "${ap3.eth0.w4mac}->ffff:ffff:ffff arp" -i "${ap3.mgt0.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+			<log-match>-i "(o) wifi1" -i "${ap3.eth0.w4mac}->ffff:ffff:ffff arp" -i "${ap3.mgt0.ip}" -i "${bpc1.tif.ip}" -c</log-match>
+		</step>
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>release dhcp lease</desc>
+				<ssh host="${bpc1.mif.ip}" prompt=">|.*#" timeout="60">
+					-v "dhclient -r ${bpc1.tif.name}"
+				</ssh>
+			</step>
+			<step no="Releaselaptop2.1">
+				<desc>Bring down the client Wireless</desc>
+				<script>
+					perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "ipconfig /release \"${sta1.tif.name}\""
+				</script>
+			</step>
+			<step no="Releaselaptop2.2">
+				<desc>Bring down the client Wireless</desc>
+				<script>
+					perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan disconnect interface=\"${sta2.tif.name}\""
+				</script>
+			</step>
+			<step no="Releaselaptop2.3">
+				<desc>Delete current Wireless profile</desc>
+				<script>
+					perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan delete profile ${ap2.name} "
+				</script>
+			</step>
+			<step no="SetUpAP1.1">
+				<desc>Set up Portal AP</desc>
+				<log-file>setup_portal.log</log-file>
+				<console target="ap1">
+					-v "no interface eth1 mode"
+					-v "save config"
+				</console>
+			</step>
+			<step no="SetUpAP2.1">
+				<desc>Set up AP2</desc>
+				<log-file>setup_ap2.log</log-file>
+				<console target="ap2">
+					-v "no interface eth0 shutdown"
+					-v "save config"
+				</console>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+
+</testcase>

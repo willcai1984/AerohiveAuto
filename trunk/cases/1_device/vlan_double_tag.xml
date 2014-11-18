@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>VLAN configuration mgmt test</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use
+		IXIA---------------Switch
+
+		IXIA1 ---- sw.port1
+		IXIA2 ---- sw.port2
+		IXIA3 ---- sw.port3
+		IXIA4 ---- sw.port4
+
+		bug 19875,23186,20819,20024,20050,20060,20079,20120,20642,21696,20723,20819,20094,19789,20600
+
+
+		Pre-condition:
+		Reset config of switch to factory default
+
+		Test procedure:
+		1. port1 trunk native vlan 100, allow vlan all; port2 trunk native vlan 100, allow vlan all;
+		ixia1 send double tagged packet(outer-tag 8100/100, inner-tag 88a8/200), ixia2 received packet, result1;
+
+		2. port1 trunk native vlan 100, allow vlan all; port2 trunk native vlan 100, allow vlan all;
+		ixia1 send double tagged packet(outer-tag 8100/200, inner-tag 88a8/100), ixia2 received packet, result2;
+
+		3. port1 trunk native vlan 100, allow vlan all; port2 trunk native vlan 100, allow vlan all;
+		ixia1 send double tagged packet(outer-tag 88a8/100, inner-tag 8100/200), ixia2 received packet, result3;
+
+		4. port1 trunk native vlan 100, allow vlan all; port2 trunk native vlan 100, allow vlan all;
+		ixia1 send double tagged
+		packet(outer-tag 88a8/200, inner-tag 8100/100), ixia2 received packet, result4;
+
+		5. port1 trunk native vlan 100, allow vlan all; port2 trunk native vlan 100, allow vlan all;
+		ixia1 send double tagged packet(outer-tag 8100/100, inner-tag 8100/100), ixia2 received packet, result5;
+
+		6. port1 trunk native vlan 100, allow vlan all; port2 trunk native vlan 100, allow vlan all;
+		ixia1 send double tagged packet(outer-tag 8100/100, inner-tag 9101/200), ixia2 received packet, result5;
+
+		Expect result:
+		result1: port2 received packet tagged 88a8/200;
+		result2: port2 received packet tagged (outer-tag 8100/200, inner-tag 88a8/100);
+		result3: port2 received packet tagged (8100/200);
+		result4: port2 received packet tagged (outer-tag 8100/200, inner-tag 8100/100);
+		result5: port2 received packet tagged (8100/100);
+		result6: port2 received packet tagged (9101/200);
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<comment>
+		sw1.port1=eth1/5;
+		sw1.port1.phytype=copper;
+		sw1.port2=eth1/6;
+		sw1.port2.phytype=copper;
+		sw1.mgt0.port=eth1/1;
+		sw1.mgt0.vlan=121;
+		sw1.port1.ixia_port=1/1/5;
+		sw1.port2.ixia_port=1/1/6;
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclclient1.ip=10.155.40.10;
+		pub.tclserver1.ip=10.155.30.178;
+		tb.conserver.ip=10.155.32.228;
+		tb.conserver.user=root;
+		tb.conserver.passwd=aerohive;
+		sw1.cons_name=tb1-SR2024-3;
+		sw1.user=admin;
+		sw1.passwd=aerohive;
+		sw1.prompt="AH-[a-z0-9A-Z_]*#";
+		mpc.mif.ip=10.155.32.228;
+		mpc.tif.ip=10.68.136.252;
+		mpc.user=root;
+		mpc.passwd=aerohive;
+		mpc.prompt=".*#";
+		mpc.tif.name=eth1;
+		tb.nvlan=100;
+		tb.vlans=100,200,300;
+		tb.vlan1=100;
+		tb.vlan2=200;
+		tb.vlan3=300;
+	</comment>
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011" />
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012" />
+	<property name="stream1.txport1" value="${sw1.port1.ixia_port}" />
+	<property name="stream1.rxport1" value="${sw1.port2.ixia_port}" />
+	<property name="stream1.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+	<property name="stream1.rxport1.mac" value="ffff.ffff.ffff" />
+	<property name="stream1.etype" value="0x0800" />
+	<property name="stream1.UDFoffset" value="34" />
+	<property name="stream1.patternOffset1" value="38" />
+
+	<stage>
+		<step no="1.0">
+			<desc>
+				configure switch,
+				port1 native vlan 100, allow all;
+				port2 native vlan 100, allow all;
+			</desc>
+			<telnet target="sw1">
+				-v "vlan 100"
+				-v "vlan 200"
+
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port1} switchport trunk allow vlan all"
+				-v "interface ${sw1.port1} switchport trunk native vlan 100"
+
+				-v "interface ${sw1.port2} switchport mode trunk"
+				-v "interface ${sw1.port2} switchport trunk allow vlan all"
+				-v "interface ${sw1.port2} switchport trunk native vlan 100"
+
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id 100"
+				-v "show vlan id 200"
+			</telnet>
+		</step>
+
+
+
+		<step no="1.1">
+			<desc>add udf1 to check vlan</desc>
+			<setvar name="stream1.UDFsignature1">
+				echo "8100`printf %04x 200`"
+			</setvar>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				send double tag packet
+			</desc>
+			<log-file>eth2test.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport1}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+				<!-- -vlan enable -vlan_id ${tb.vlan1} -vlan_dot1p 0 -vlan_cfi 0 -->
+				-eth2_protocol ${stream1.etype}
+				-frame_length 68\
+				-udf_offset 54\
+				-udf_value 0xBDBDBDBD\
+				-rate_pps 10\
+				-patternOffset2 54\
+				-rxPattern 0xBDBDBDBD"
+				-v ""
+
+				-v "stream_stack_vlan_set -portList ${stream1.txport1} -streamId 1\
+				-vlan_id_outer 100 -vlan_protocolID_outer 0x8100\
+				-vlan_id_inner 200 -vlan_protocolID_inner 0x88a8"
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport1} -duration 1"
+
+				<!-- check the result -->
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport1}"
+				-v ""
+
+				-v "ctrl-c"
+			</ssh>
+		</step>
+
+		<step no="1.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				analyse statistics on rxport, port2, port3, port4 can't received packet; because port1 cant'r receive packet;
+			</desc>
+			<log-file>eth2test.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport1} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

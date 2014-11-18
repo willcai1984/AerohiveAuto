@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Different mask rules' order influence</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP
+		Enable 2 dhcp server（mgt0.1 mgt0.2）
+		Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+		Mgt0.2 vlan20 IPaddr 10.1.20.1 gateway 10.1.20.1
+		Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+		Laptop2 connect to Mgt0.2 IPaddr 10.1.20.2
+
+		Test Procedure:
+		1) Configure network firewall rule
+		"network-firewall name 1001 from network 10.1.10.2 255.255.255.0 action
+		permit logging on"
+		"network-firewall name 1002 from network 10.1.10.2 255.255.255.255 action
+		deny logging on"
+		"network-firewall name 1003 from any to any action deny logging off"
+		2) Laptop1 ping Laptop2
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<property name="br.vpc.netmask" value="255.255.255.0" />
+	<property name="br.vpc.netmask_1" value="255.255.255.255" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP
+				Enable 2 dhcp server（mgt0.1 mgt0.2）
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vlan1}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/24"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.2 vlan ${br1.vlan2}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/24"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.2 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				Set interface eth0 to wan mode,eth1/eth2 to access mode and enable mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute 2"
+				-v "interface eth2 mode bridge-802.1q"
+				-v "interface eth2 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>br1.vpc2 get ip addr from dhcp server of mgt0.2</desc>
+			<log-file>ifconfig_vpc2_.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>set br1.vpc2.tif.ip var for vpc2 on BR side</desc>
+			<setvar name="br1.vpc2.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc2.mif.ip} -u ${br1.vpc2.user} -p ${br1.vpc2.passwd} -i ${br1.vpc2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				"_ff id 1 src-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				Configure network firewall rule
+				“network-firewall name 1001 from network 10.1.10.2 255.255.255.0 action permit logging on”
+				“network-firewall name 1002 from network 10.1.10.2 255.255.255.255 action deny logging on”
+				“network-firewall name 1003 from any to any action deny logging on”
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+				-v "network-firewall name 1001 from network ${br1.vpc1.tif.ip} ${br.vpc.netmask} action permit logging on"
+				-v "network-firewall name 1002 from network ${br1.vpc1.tif.ip} ${br.vpc.netmask_1} action deny logging on"
+				-v "network-firewall name 1003 from any to any action deny logging on"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				vpc ping vpc2
+			</desc>
+			<log-file>step5_vpc_ping_vpc2.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.vpc2.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc2.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<include prefix="5.1" file="subs/save_ap_log.xml" args="show logging buffered, br1.br, step5.1_show_logging_buffered.log" />
+
+		<step no="5.2">
+			<desc>
+				check log
+			</desc>
+			<log-file>step5.1_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ACCEPT PACKET: SRC=${br1.vpc1.tif.ip} DST=${br1.vpc2.tif.ip} PROTO=ICMP TYPE=\d+ CODE=\d+ \(RULE=1001\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

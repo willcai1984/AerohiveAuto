@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Tls check-in-db enabled</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a radius with AD
+		-config a radius server using local radius
+		-tls check-in-db enabled
+		-leave other parameters default
+
+		Test Procedure:
+		-client using tls to do auth
+		-the cert cn should be matched a AD user name
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.ad1.username}" />
+	<property name="conn1.passwd" value="${pub.ad1.passwd}" />
+	<property name="conn1.eap_type" value="TLS" />
+
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa2-aes-8021x" />
+
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object autoap security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type active-directory primary server ${pub.ad1.ip}"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				-v "aaa radius-server local db-type active-directory primary login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-set station auth method and download radius server key
+			</desc>
+			<telnet target="ap1">
+				-v "save radius-server-key radius-server tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "save radius-server-key radius-server tftp://${pub.tftp1.tip}:certs/server_cert.pem"
+				-v "save radius-server-key radius-server tftp://${pub.tftp1.tip}:certs/server_key.pem"
+				-v "aaa radius-server local sta-auth ca-cert cacert.pem server-cert server_cert.pem private-key server_key.pem"
+				-v "aaa radius-server local sta-auth type tls check-in-db"
+				-v "aaa radius-server local enable"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa2-aes-8021x" />
+
+		<step no="4">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>step4_show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>open debug mode and clear log all</desc>
+			<telnet target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>transport 3 certificate files to sta2</desc>
+			<ssh target="sta2">
+				-v "cd /tmp"
+				-v "tftp ${pub.tftp1.ip} -c get certs/cacert.pem"
+				-v "tftp ${pub.tftp1.ip} -c get certs/${conn1.username}_cert.pem"
+				-v "tftp ${pub.tftp1.ip} -c get certs/${conn1.username}_key.pem"
+			</ssh>
+		</step>
+
+		<include prefix="7" file="subs/wpa_supplicant_start.xml" args="sta2" />
+
+		<step no="8">
+			<desc>configure ssid property on sta2</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${conn1.ssid}\""
+				-v "set_network 0 key_mgmt WPA-EAP"
+				-v "set_network 0 proto RSN"
+				-v "set_network 0 eap TLS"
+				-v "set_network 0 phase2 \"auth=MSCHAPV2\""
+				-v "set_network 0 identity \"${job.sid}-aerohive\""
+				-v "set_network 0 ca_cert \"/tmp/cacert.pem\""
+				-v "set_network 0 client_cert \"/tmp/${conn1.username}_cert.pem\""
+				-v "set_network 0 private_key \"/tmp/${conn1.username}_key.pem\""
+				-v "set_network 0 private_key_passwd \"${conn1.passwd}\""
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="9" delay="25">
+			<desc>check if sta2 is associated unsuccessful</desc>
+			<log-file>step9_wpa_stat_sta2.log</log-file>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-i "wpa_state=COMPLETED" -n</log-match>
+		</step>
+
+		<step no="10" delay="10">
+
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "rlm_eap_tls: User ${pub.ad1.username} found"</log-match>
+			<log-match>-c -i "Sending Access-Accept of id" -i "to ${ap1.forwards.ip} port"</log-match>
+			<log-match>-c -i "rlm_eap_tls: check-in-db enabled, and user ${job.sid}-aerohive does not found in DB!"</log-match>
+			<log-match>-c -i "Sending Access-Reject of id" -i "to ${ap1.forwards.ip} port"</log-match>
+		</step>
+
+		<include prefix="11" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>delete certificate files</desc>
+				<ssh target="sta1">
+					-v "rm -f /tmp/cacert.pem"
+					-v "rm -f /tmp/${conn1.username}_cert.pem"
+					-v "rm -f /tmp/${conn1.username}_key.pem"
+				</ssh>
+			</step>
+
+			<step no="1">
+				<desc>delete certificate files</desc>
+				<ssh target="sta2">
+					-v "rm -f /tmp/cacert.pem"
+					-v "rm -f /tmp/${conn1.username}_cert.pem"
+					-v "rm -f /tmp/${conn1.username}_key.pem"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

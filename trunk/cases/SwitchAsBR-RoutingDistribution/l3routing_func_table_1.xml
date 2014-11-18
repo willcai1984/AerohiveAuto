@@ -1,0 +1,281 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Split routing table testing </brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		VPN tunnel establish successfully
+
+		Test Procedure:
+
+		1. After tunnel establish successfully, check the spilt routing on BR and the
+		routing on GW, result 1
+		2. Modify the background networking under the other routers, such as add,
+		delete some subnets, result 2
+		3. Modify the networking on BR, such as add, delete some subnets (mgt0.x),
+		result 3
+	</description>
+
+	<numofcvg>1</numofcvg>
+	<numofbr>1</numofbr>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<property name="vpn.client.list" value="clientList1" />
+	<property name="vpn.server.name" value="vpnServer1" />
+
+	<stage>
+
+		<step no="cvg1.cvg.tunnel.ip.gen">
+			<setvar name="cvg1.cvg.tunnel.ip">
+				if [ "yes" == "${cvg1.cvg.fw_existed}" ]; then
+				echo "${cvg1.cvg.mip.ip}"
+				else
+				echo "${cvg1.cvg.wan.ip}"
+				fi
+			</setvar>
+		</step>
+
+		<step no="1.1">
+			<desc>Enable DHCP server on interface mgt0.1</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask 255.255.255.0"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>enable ospf on eth1 if it has two arms</desc>
+			<if>"two" == "${cvg1.cvg.arm_type}"</if>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "routing protocol ospf advertise eth1"
+				-v "routing protocol ospf router-id ${cvg1.cvg.lan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+			</telnet>
+		</step>
+
+		<step no="1.2b">
+			<desc>enable ospf on eth0 if it has one arms</desc>
+			<if>"one" == "${cvg1.cvg.arm_type}"</if>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "routing protocol ospf advertise eth0"
+				-v "routing protocol ospf router-id ${cvg1.cvg.wan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+			</telnet>
+		</step>
+
+		<step no="1.3a">
+			<desc>config CVG act as l3 VPN server</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:certs/server_cert.pem"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:certs/server_key.pem"
+				-v "vpn xauth-client-list ${vpn.client.list} local"
+				-v "vpn xauth-client-list ${vpn.client.list} client-name ${br1.br.name} password aerohive"
+				-v "vpn server-ipsec-tunnel ${vpn.server.name} vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${vpn.server.name} client-list ${vpn.client.list}"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel ${vpn.server.name}"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v ""
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.mgt0.supermask}"
+				-v ""
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="1.3b">
+			<desc>config BR as l3 VPN client</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "vpn client-ipsec-tunnel ${br1.br.name}_ipsec_1 vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${br1.br.name}_ipsec_1 gateway ${cvg1.cvg.tunnel.ip} client-name ${br1.br.name} password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel ${br1.br.name}_ipsec_1 primary"
+				-v "routing route-request enable"
+				-v ""
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v ""
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.lan.netmask}"
+				-v ""
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="1.4a" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check vpn ike sa on BR side
+				destination to CVG public address
+			</desc>
+			<log-file>ike_sa_br${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+		</step>
+
+		<step no="1.4b" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check vpn ike sa on CVG side
+				destionation to BR public address
+			</desc>
+			<log-file>ike_sa_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-re -i "${br1.br_fw.ip}\[\d+\] *\w+:\w+ *9 *R"</log-match>
+		</step>
+
+		<step no="1.4c">
+			<desc>
+				check gre tunnel on br side
+				remote to CVG wan address, local mgt0 address ,gateway CVG public address
+			</desc>
+			<log-file>show_gre_tunnel_br.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.tunnel.ip}"</log-match>
+		</step>
+
+		<step no="1.4d">
+			<desc>
+				check gre tunnel on cvg side
+				local to CVG wan address
+			</desc>
+			<log-file>show_gre_tunnel_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+		</step>
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "cvg1.cvg.lan.route=$(echo ${cvg1.cvg.lan.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.cvg.lan.route1=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.cvg.lan2.route=$(echo ${cvg1.cvg.lan2.gateway} | cut -d. -f1,2,3).0"
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "br1.br.mgt0.2.route=$(echo ${br1.br.mgt0.2.ip} | cut -d. -f1,2,3).0"
+				echo "br1.br.mgt0.4.route=$(echo ${br1.br.mgt0.4.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="2.1" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc> On BR, all subnets get from GW will be tunneled</desc>
+			<log-file>2.1.show_route_br_01.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.cvg.lan.route}" -p 3 -i "255.255.255.0" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<step no="2.2" type="loop-check" loop-max-times="10" loop-interval="15">
+			>
+			<desc>On GW, all subnets get from BR will be tunneled</desc>
+			<log-file>2.2.show_route_cvg_.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>add interface mgt0.2 on BR</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "vlan ${br1.vpc2.vlan}"
+				-v "interface vlan ${br1.vpc2.vlan}"
+				-v "interface vlan${br1.vpc2.vlan} ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+			</telnet>
+		</step>
+
+		<step no="3.2" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>On GW, will add the tunnel routes according to BR's modification </desc>
+			<log-file>3.2.show_route_cvg_.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.2.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>delete interface mgt0.2 on BR</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "no interface vlan ${br1.vpc2.vlan}"
+			</telnet>
+		</step>
+
+		<step no="3.4" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>On GW, will delete the tunnel routes according to BR's modification </desc>
+			<log-file>3.4.show_route_cvg_.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-n -p 1 -i "${br1.br.mgt0.2.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<step no="3.5">
+			<desc>modify interface mgt0.2 IP on BR</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "interface vlan ${br1.vpc2.vlan}"
+				-v "interface vlan${br1.vpc2.vlan} ip ${br1.br.mgt0.4.ip}/${br.lan.netmask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.4.ip}/${br.lan.netmask}"
+			</telnet>
+		</step>
+
+		<step no="3.6" type="loop-check" loop-max-times="20" loop-interval="30">
+			<desc>On GW, will change the tunnel routes according to BR's modification </desc>
+			<log-file>3.6.show_route_cvg_.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.4.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<include prefix="4.1" file="${case.dir}/subs/cvg_l3sw_vlan_cfg.xml" obj-args="cvg1" />
+
+		<step no="4.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>On BR, will add the tunnel routes according to CVG's modification </desc>
+			<log-file>4.2.show_route_br_.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.cvg.lan2.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<include prefix="4.3" file="${case.dir}/subs/cvg_l3sw_vlan_undo.xml" obj-args="cvg1" />
+
+		<step no="4.4" type="loop-check" loop-max-times="20" loop-interval="30">
+			<desc>On BR, will delete the tunnel routes according to CVG's modification </desc>
+			<log-file>4.4.show_route_br_.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show ip route"
+			</telnet>
+			<log-match>-n -p 1 -i "${cvg1.cvg.lan2.route}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+	</stage>
+
+	<failed-process>
+		<stage>
+			<include prefix="4.3_ensure" file="${case.dir}/subs/cvg_l3sw_vlan_undo.xml" obj-args="cvg1" />
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+
+</testcase>

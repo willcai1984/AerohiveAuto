@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Acounting server failover from primary to backup</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a radius server
+		-config a ssid with 802.1x support
+		-config a primary backup1,backup2 radius accounting server, they are
+		unreachable
+		-config a backup3 radius accounting server on ssid, this server is
+		available
+		-active this ssid
+
+		Test Procedure:
+		-check the radius accounting servers bind to this security-object, 'sh
+		aaa' to make sure, result 1
+		-client connects to ssid,check the debug, '_debug auth info', result 1
+		-after about several minutes, check the status of the STA
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-config a radius server
+				-config a ssid with 802.1x support
+				-config a primary backup1,backup2 radius accounting server, they are unreachable
+				-config a backup3 radius accounting server on ssid, this server is available
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting primary 1.1.1.1 shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting backup1 2.2.2.2 shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting backup2 3.3.3.3 shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting backup3 ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>config ssid and bind it to interface ,open debug mode</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile normal qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface wif0 radio channel 1"
+				-v "_debug auth all"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>show aaa</desc>
+			<log-file>step2_show_aaa.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa"
+			</telnet>
+			<log-match>-i "Primary *1.1.1.1 *${pub.radius1.acctport}"</log-match>
+			<log-match>-i "Backup1 *2.2.2.2 *${pub.radius1.acctport}"</log-match>
+			<log-match>-i "Backup2 *3.3.3.3 *${pub.radius1.acctport}"</log-match>
+			<log-match>-i "Backup3 *${pub.radius1.ip} *${pub.radius1.acctport}"</log-match>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4" type="loop-check" loop-max-times="12" loop-interval="5">
+			<desc>show logging buffered</desc>
+			<log-file>step4_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "No response from Accounting server 1.1.1.1:${pub.radius1.acctport} - failover"</log-match>
+			<log-match>-c -i "No response from Accounting server 2.2.2.2:${pub.radius1.acctport} - failover"</log-match>
+			<log-match>-c -i "No response from Accounting server 3.3.3.3:${pub.radius1.acctport} - failover"</log-match>
+			<log-match>-i " Sending RADIUS message to accounting server ${pub.radius1.ip}"</log-match>
+			<log-match>-n -c -i "No response from Accounting server ${pub.radius1.ip}:${pub.radius1.acctport} - failover"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>step4.1_show_interface_wifi0_info.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>Get ap1's wifi0‘s mac</desc>
+			<setvar name="ap1.wifi0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step4.1_show_interface_wifi0_info.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>show auth</desc>
+			<log-file>step5_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 7 -i "done" -p 10 -i "${pub.radius1.username}"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step6_show_roam.log</log-file>
+			<telnet target="ap1">
+				-v "show roam cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${ap1.wifi0.mac}" -i "YNNN"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				show station
+			</desc>
+			<log-file>step7_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "1 *Yes *1"</log-match>
+		</step>
+
+		<include prefix="8" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.gw}, 5" />
+	</stage>
+</testcase>

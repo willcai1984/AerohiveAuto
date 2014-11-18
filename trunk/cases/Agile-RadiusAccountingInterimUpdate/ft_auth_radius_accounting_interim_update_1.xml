@@ -1,0 +1,341 @@
+<testcase>
+	<brief>radius accounting update</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>linux client  enable the dhcp process after authenticaion success,
+	The accounting update packet is send out immediately after the station gets a new IP.</description>
+	
+	
+	
+	<property name="UPID_X" value="1000" />
+	
+	<property name="VLANID_X" value="${tb.vlan2}" />
+	
+	<property name="Static_IP" value="${tb.vlan2.dhcp_start}" />
+	<property name="Static_GW" value="${tb.vlan2.gw}" />
+	<property name="Hive_Name" value="${hive.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>setup ssid and 802.1x on AP1</desc>
+			<telnet target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+		        -v "security-object autoap default-user-profile-attr ${UPID_X} "			
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "hive ${Hive_Name}"
+				-v "interface  mgt0 hive  ${Hive_Name}"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="2">
+			<desc>config a user-profiles, UPID x binded to vlan x </desc>
+			<telnet target="ap1">
+				-v "user-profile x qos-policy def-user-qos vlan-id ${VLANID_X} attribute ${UPID_X}"
+			</telnet>
+		</step>
+	
+		<step no="3">
+			<desc>show protocol suite</desc>
+			<log-file>show_proto.log</log-file>
+			<telnet target="ap1">
+				-v "show security- autoap security protocol-suite"
+			</telnet>
+			<log-match>-e "Method=wpa2-aes-8021x"</log-match>
+		</step>
+		<step no="4">
+			<desc>show ssid</desc>
+			<log-file>show_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+			<log-match>-e "autoap"</log-match>
+		</step>
+		
+		
+		<!-- *************************linux client AP***************** -->
+		<property name="conn1.proto" value="wpa2-aes-8021x" />
+		<step no="pre5.1">
+			<desc>set username</desc>
+			<setvar name="conn1.username">
+				echo "${pub.radius1.username}"
+			</setvar>
+		</step>
+		<step no="pre5.2">
+			<desc>set password</desc>
+			<setvar name="conn1.passwd">
+				echo "${pub.radius1.passwd}"
+			</setvar>
+		</step>
+		
+		<step no="pre.psk.keytype">
+			<desc>set default psk.keytype</desc>
+			<if>"${conn1.psk.keytype}" == ""</if>
+			<setvar name="conn1.psk.keytype">
+				echo "ascii"
+			</setvar>
+		</step>
+		
+		<step no="pre.ssid">
+			<desc>set default ssid name</desc>
+			<if>"${conn1.ssid}" == ""</if>
+			<setvar name="conn1.ssid">
+				echo "${ssid.name}"
+			</setvar>
+		</step>
+		
+		<step no="pre.eap_type">
+			<desc>set default eap_type</desc>
+			<if>"${conn1.eap_type}" == ""</if>
+			<setvar name="conn1.eap_type">
+				echo "PEAP"
+			</setvar>
+		</step>
+		
+		<step no="pre.inner_auth">
+			<desc>set default inner_auth</desc>
+			<if>"${conn1.inner_auth}" == ""</if>
+			<setvar name="conn1.inner_auth">
+				echo "MSCHAPV2"
+			</setvar>
+		</step>
+		
+		<step no="pre.sta.tif.mac">
+			<desc>get mac of sta1</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getinfo_ip.py -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -v 'mac' | tr '[A-F]' '[a-f]'
+			</setvar>
+		</step>
+		
+	<!-- add var pub.cert.radius.tftp via wcai -->
+	<step no="pre.e">
+		<desc>transport 3 certificate files to sta1</desc>
+		<if>"${conn1.eap_type}" == "TLS"</if>
+		<ssh target="sta1">
+			-v "cd /tmp"
+			-v "tftp ${pub.tftp1.ip} -c get ${pub.cert.radius.tftp}/cacert.pem"
+			-v "tftp ${pub.tftp1.ip} -c get ${pub.cert.radius.tftp}/${conn1.username}_cert.pem"
+			-v "tftp ${pub.tftp1.ip} -c get ${pub.cert.radius.tftp}/${conn1.username}_key.key"
+		</ssh>
+	</step>
+	<step no="pre.f">
+		<desc>set default debug level</desc>
+		<if>"${debug_level}" == ""</if>
+		<setvar name="debug_level">
+			echo "0"
+		</setvar>
+	</step>
+	<step no="pre.g">
+		<desc>set default interface to connect</desc>
+		<if>"${conn1.pif}" == ""</if>
+		<setvar name="conn1.pif">
+			echo "wifi0"
+		</setvar>
+	</step>
+	<step no="pre.h">
+		<desc>show ssid ${conn1.ssid} on ap1</desc>
+		<if>${debug_level} > 0</if>
+		<log-file>show_ssid_${conn1.ssid}.log</log-file>
+		<console target="ap1">
+			-v "show ssid ${conn1.ssid}"
+		</console>
+	</step>
+	<step no="pre.i">
+		<desc>get the logical interface of ssid ${conn1.ssid}</desc>
+		<if>${debug_level} > 0</if>
+		<setvar name="conn1.lif">
+			${bin.dir}/getbyrexp.py -p "(?i)(${conn1.pif}\.\d)" -t str -f ${log.dir}/show_ssid_${conn1.ssid}.log
+		</setvar>
+	</step>
+	
+	<!--  ************************************************************************ -->
+	<step no="wpa">
+			<desc>enable auth debug to check accounting process</desc>
+			<telnet target="ap1">
+				-v "_debug auth all"
+				-v "clear log buffered"
+				-v "clear auth local-cache "
+				-v "clear auth roaming-cache"
+			</telnet>
+	</step>
+	
+	<step no="wpa.0">
+			<desc>config static IP address and gateway on client</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "ifconfig wlan0 ${Static_IP} netmask 255.255.255.0"
+				-v "route add default gw ${Static_GW}"
+				-v "ifconfig"
+			</ssh>
+		</step>
+	
+		
+	<step no="wpa.1">
+		<desc>create a wpa_supplicant configuration file on sta1</desc>
+		<ssh target="sta1">
+			-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+		</ssh>
+	</step>
+	<step no="wpa.2">
+		<desc>kill the wpa_supplicant daemon on sta1</desc>
+		<ssh target="sta1">
+			-v "killall -9 wpa_supplicant -q"
+			-v "killall dhclient -q"
+			-v "ifconfig ${sta1.tif.name} up"
+		</ssh>
+	</step>
+		
+		
+	<step no="wpa.3" delay="5">
+		<desc>start the wpa_supplicant on sta1</desc>
+		<ssh target="sta1">
+			-v "wpa_supplicant -i ${sta1.tif.name} ${sta1.wpa_flag} -c /tmp/wpa_supplicant.cfg -B"
+		</ssh>
+	</step>
+	
+	<step no="wpa.4">
+		<desc>configure ssid property on sta1</desc>
+		<if>( "${conn1.proto}" == "wpa2-tkip-8021x"
+			|| "${conn1.proto}" == "wpa2-aes-8021x" )
+			&amp;&amp; "${conn1.eap_type}" != "TLS"
+		</if>
+		<ssh target="sta1" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 proactive_key_caching \"1\""
+			-v "set_network 0 ssid \"${conn1.ssid}\""
+			-v "set_network 0 key_mgmt WPA-EAP"
+			-v "set_network 0 proto RSN"
+			-v "set_network 0 eap ${conn1.eap_type}"
+			-v "set_network 0 phase2 \"auth=${conn1.inner_auth}\""
+			-v "set_network 0 identity \"${conn1.username}\""
+			-v "set_network 0 password \"${conn1.passwd}\""
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+	
+	
+	<step no="wpa.5" type="loop-check" loop-max-times="10" loop-interval="5">
+		<!--<if>"${conn1.pif}" == "wifi1"</if> -->
+		<if>"${tb.name}" != "hztb3" &amp;&amp; "${tb.name}" != "hztb5" &amp;&amp; "${tb.name}" != "hztb11" &amp;&amp; "${tb.name}" != "hztb7"</if>
+		<log-file>iwlist_sta1_${include.prefix}_${loop_check.idx}.log</log-file>
+		<ssh target="sta1">
+			-v "iwlist ${sta1.tif.name} scanning essid ${conn1.ssid} | grep ESSID"
+		</ssh>
+		<log-match>-e "ESSID"</log-match>
+	</step>
+
+	<step no="wpa.6" type="loop-check" loop-max-times="5" loop-interval="30">
+		<desc>check if sta1 is associated successful</desc>
+		<if> "${conn1.auth_negative_test}" != "true"</if>
+		<log-file>wpa_stat_sta1_${include.prefix}_${loop_check.idx}.log</log-file>
+		<ssh target="sta1" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "stat"
+			-v "quit"
+		</ssh>
+		<log-match>-e "wpa_state=COMPLETED"</log-match>
+		<!-- <log-match>-e "wpa_state=COMPLETED" -e "wpa_state=ASSOCIATING"</log-match> -->
+	</step>
+	
+	<step no="wpa.7" delay="25">
+		<desc>check if sta1 is associated unsuccessful</desc>
+		<if> "${conn1.auth_negative_test}" == "true"</if>
+		<log-file>${include.prefix}_wpa_stat_sta1_.log</log-file>
+		<ssh target="sta1" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "stat"
+			-v "quit"
+		</ssh>
+		<log-match>-e "wpa_state=COMPLETED" -n</log-match>
+	</step>	
+	
+	<step no="wpa.10">
+			<desc>show station and check the client's UPID and vlanID</desc>
+			<log-file>show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${VLANID_X}" -i "${UPID_X}"</log-match>
+		</step>
+		
+	
+		<!-- ********************   linux client enable DHCP   ********************* -->
+			
+		<step no="6">
+			<desc>enable auth debug to check accounting process</desc>
+			<telnet target="ap1">
+				-v "no _debug all"
+				-v "_debug auth all"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+		
+		
+		<step no="7">
+			<desc>client renew IP address from DHCP</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "dhclient -r ${sta1.tif.name}"
+				-v "dhclient ${sta1.tif.name}" 
+				-v "ifconfig"
+			</ssh>
+		</step>
+			
+		<step no="8">
+			<desc>get wireless IP from station</desc>
+			<setvar name="sta1.tif.ip"> ${bin.dir}/getinfo_ip.py -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -v 'ip' </setvar>
+		</step>
+		
+		
+		<step no="9" delay="3">
+			<desc>show station and check the client's IP address, UPID and vlanID</desc>
+			<log-file>show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${UPID_X}"</log-match>
+		</step>
+		
+		<step no="10">
+			<desc>check debug on AP</desc>
+			<log-file>show_buffer.log</log-file>
+			<telnet target="ap1">
+				-v "show logg buff"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		
+		<step no="10.1">
+			<desc>extract a piece of log</desc>
+			<script>
+				tac ${log.dir}/show_buffer.log |sed -n '/receive kevent DHCP ALG data/,/RADIUS message: code=5 \(Accounting-Response\)/I'p > ${log.dir}/accounting_1.log
+			</script>
+		</step>
+		
+		
+		<step no="10.2">
+			<desc>check the accounting update prosecc on AP</desc>
+			<log-file>accounting_1.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)receive kevent KEVT_FE_STA_INFO, station \(${sta1.tif.mac}\) IP \(${sta1.tif.ip}\) hostname" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)sending out accouting interim-update packet" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Sending RADIUS message to accounting server ${pub.radius1.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Attribute 8 \(Framed-IP-Address\) length=6" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Value: ${sta1.tif.ip}" -f ${log.dir}/${log.file}</log-match>	
+		</step>
+		
+	</stage>
+</testcase>
+		
+	

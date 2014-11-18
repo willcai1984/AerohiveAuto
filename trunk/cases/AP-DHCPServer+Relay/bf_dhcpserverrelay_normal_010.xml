@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that the function of clear interface mgt0.x dhcp-server lease</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test Procedure:
+
+		1. Verify that can clear interface mgt0.x dhcp-server lease by mac.
+		2. Verify that can clear interface mgt0.x dhcp-server lease by ip.
+		3. Verify that can clear interface mgt0.x dhcp-server lease by all.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="dhcp_start" value="192.168.${tb.vlan4}.10" />
+	<property name="dhcp_end" value="192.168.${tb.vlan4}.14" />
+
+	<stage>
+		<include prefix="0" file="subs/l2swcfg_port_newvlan.xml" args="${ap1.eth0.swport}, ${tb.vlan4}" />
+
+		<step no="1">
+			<desc>
+				Set vlan vlan2 to interface mgt0.1
+				Set ip address to interface mgt0.1
+				Create a SSID and bind it to interface wifi0
+				Create a user-profile and set the same vlan with mgt0.1
+				Set the same attribute to SSID with user-profile
+			</desc>
+			<log-file>step1_use_laptop_connect_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "interface mgt0.1 vlan ${tb.vlan4}"
+				-v "interface mgt0.1 ip ${dhcp_start}/24"
+				-v "interface mgt0.1 dhcp-server ip-pool ${dhcp_start} ${dhcp_end}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.1 dhcp-server options lease-time 120"
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "user-profile ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan4} attribute 1"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="2.1">
+			<desc>
+				config the laptop to apply the ssid profile,then start to associate
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="2.2" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check if the client was associated successfully
+			</desc>
+			<log-file>step2.2_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="2.3" delay="10">
+			<desc>
+				Check the can obtain ip address
+			</desc>
+			<log-file>step2.3_ifconfig_wlan0.log</log-file>
+			<ssh target="sta1" timeout="120">
+				-v "dhclient ${sta1.tif.name}"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match>-e "inet addr:"</log-match>
+		</step>
+
+		<include prefix="3" file="subs/wpa_supplicant_start.xml" args="sta2" />
+
+		<step no="3.1">
+			<desc>
+				config the laptop to apply the ssid profile,then start to associate
+			</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="3.2" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check if the client was associated successfully
+			</desc>
+			<log-file>step3.2_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="3.3" delay="10">
+			<desc>
+				Check the can obtain ip address
+			</desc>
+			<log-file>step3.3_ifconfig_wlan0.log</log-file>
+			<ssh target="sta2" timeout="120">
+				-v "dhclient ${sta1.tif.name}"
+				-v "ifconfig ${sta2.tif.name}"
+			</ssh>
+			<log-match>-e "inet addr:"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Show interface mgt0.1 dhcp-server detail
+			</desc>
+			<log-file>step4_check_dhcp_server_detail.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0.1 dhcp-server detail"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				Get the dhcp-server detail mac
+			</desc>
+			<setvar name="mac_1">
+				${bin.dir}/getbyrexp.py -p "1\s+(\w+:\w+:\w+)\s+" -f ${log.dir}/step4_check_dhcp_server_detail.log -t str
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				Get dhcp-server detail ip
+			</desc>
+			<setvar name="ip_1">
+				${bin.dir}/getbyrexp.py -p "1\s+\S+\s+(\d+.\d+.\d+.\d+)\s+" -f ${log.dir}/step4_check_dhcp_server_detail.log -t str
+			</setvar>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				Get the dhcp-server detail mac
+			</desc>
+			<setvar name="mac_2">
+				${bin.dir}/getbyrexp.py -p "2\s+(\w+:\w+:\w+)\s+" -f ${log.dir}/step4_check_dhcp_server_detail.log -t str
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				Get dhcp-server detail ip
+			</desc>
+			<setvar name="ip_2">
+				${bin.dir}/getbyrexp.py -p "2\s+\S+\s+(\d+.\d+.\d+.\d+)\s+" -f ${log.dir}/step4_check_dhcp_server_detail.log -t str
+			</setvar>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "_debug dhcpd basic"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				clear interface mgt0.x dhcp-server lease by mac.
+			</desc>
+			<telnet target="ap1">
+				-v "clear interface mgt0.1 dhcp-server lease mac ${mac_1}"
+			</telnet>
+		</step>
+
+		<step no="5.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Verify that can clear interface mgt0.x dhcp-server lease by mac.
+			</desc>
+			<log-file>step5.1_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: recv event to clear DHCP lease by ${mac_1}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: Clear DHCP lease on interface=mgt0.1 mac=${mac_1} ip=${ip_1}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: Delete one DHCP lease on interface=mgt0.1 mac=${mac_1}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: Recieved event \(dhcp srv cfg\)." -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5.2">
+			<desc>
+				Show interface mgt0.1 dhcp-server detail
+			</desc>
+			<log-file>step5.2_check_dhcp_server_detail.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0.1 dhcp-server detail"
+			</telnet>
+			<log-match>-n -i "${mac_1}" -i "${ip_1}"</log-match>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>
+				Clear interface mgt0.x dhcp-server lease by ip.
+			</desc>
+			<telnet target="ap1">
+				-v "clear interface mgt0.1 dhcp-server lease ip ${ip_2}"
+			</telnet>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Verify that can clear interface mgt0.x dhcp-server lease by ip.
+			</desc>
+			<log-file>step6.1_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: recv event to clear DHCP lease by ${ip_2}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: Clear DHCP lease on interface=mgt0.1 mac=${mac_2} ip=${ip_2}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: Delete one DHCP lease on interface=mgt0.1 mac=${mac_2}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: Recieved event \(dhcp srv cfg\)." -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6.2">
+			<desc>
+				Show interface mgt0.1 dhcp-server detail
+			</desc>
+			<log-file>step6.2_check_dhcp_server_detail.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0.1 dhcp-server detail"
+			</telnet>
+			<log-match>-n -i "${mac_2}" -i "${ip_2}"</log-match>
+		</step>
+
+		<step no="6.3" delay="120" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Show interface mgt0.1 dhcp-server detail
+			</desc>
+			<log-file>step6.2_check_dhcp_server_detail_${loop_check.idx}.log.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0.1 dhcp-server detail"
+			</telnet>
+			<log-match>-c -i "${mac_1}"</log-match>
+			<log-match>-c -i "${mac_2}"</log-match>
+		</step>
+
+		<step no="6.4">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				Verify that can clear interface mgt0.x dhcp-server lease by all.
+			</desc>
+			<telnet target="ap1">
+				-v "clear interface mgt0.1 dhcp-server lease all"
+			</telnet>
+		</step>
+
+		<step no="7.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Verify that can clear interface mgt0.x dhcp-server lease by ip.
+			</desc>
+			<log-file>step7.1_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: Recieved event \(dhcp srv cfg\)." -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: Delete all DHCP leases on interface mgt0.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\[dhcp_basic\]: recv event to clear all DHCP leases" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7.2">
+			<desc>
+				Show interface mgt0.1 dhcp-server detail
+			</desc>
+			<log-file>step7.2_check_dhcp_server_detail.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0.1 dhcp-server detail"
+			</telnet>
+			<log-match>-n -c -i "${mac_1}"</log-match>
+			<log-match>-n -c -i "${mac_2}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+
+		<stage>
+			<step no="0">
+				<desc>
+					cancel new vlan
+				</desc>
+				<telnet host="${tb.l2sw}" prompt=".*[>|#]">
+					-v "enable"
+					-v "config"
+					-v "vlan database"
+					-v "no vlan ${tb.vlan4}"
+					-v "end"
+					-v "show vlan"
+				</telnet>
+			</step>
+		</stage>
+	</post-process>
+</testcase>

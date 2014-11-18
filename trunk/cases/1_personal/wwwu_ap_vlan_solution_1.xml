@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test the default vlan packet</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+	Pre-condition
+		1.	There are the dhcp server on vlan1~10
+		2.	the dhcp server interface native vlan is 1 and allow all the vlans
+		3.	AP is the default configuration
+		4.	Configure a ssid1 on wifi0 and the user-profile vlan is 1
+	Test procedure	
+		1.	Check the mgt0  interface,result 1
+		2.	Check the eth0  interface,result 2
+		3.	Check the eth1  interface,result 2
+		4.	Enable dhcp client on mgt0 interface,check the dhcp packets ,result 3
+		5.	Ap ping server,result 4
+		6.	Sta connect to the ap wifi0 ,result 5
+		7.	Ap ping sta,result 6
+	Expect result	
+		1.	the vlan id and native vlan are both 1
+		2.	the native vlan is 1 and allow vlan all
+		3.	the  vlan info on the dhcp packet to eth0
+			packet vlan: 1
+			interface vlan :1
+			and mgt0 get ip address from dhcp server vlan1
+		4.	ap can ping to server and the vlan info of the icmp packet
+			packet vlan: 1
+			interface vlan :1
+		5.	the  vlan info on the dhcp packet
+			vlan: 1
+			interface vlan :1
+			sta vlan:1
+			and sta get ip address from dhcp server vlan1
+		6.	ap can ping to sta and the vlan info of the icmp packet
+			vlan: 1
+			interface vlan :1
+			sta vlan:1
+	</description>
+	
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	
+	<stage>
+		
+		<step no="1">
+			<desc> 
+			1. check mgt0 interface vlan/native-vlan default is 1
+			</desc>
+			<log-file>step1_mgt0_vlan.log</log-file>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "VLAN id=1;\ \ Native vlan id=1"</log-match>
+		</step>
+		
+		<step no="2">
+			<desc>
+			2. check eth0 interface native-vlan default is 1
+			</desc>
+			<log-file>step2_eth0_vlan.log</log-file>
+			<console target="ap1">
+				-v "show interface eth0"
+			</console>
+			<log-match>-c -i "Native-vlan=1;" </log-match>
+		</step>
+		
+		<step no="3">
+			<desc>
+			3. check eth1 interface native-vlan default is 1
+			</desc>
+			<log-file>step3_eth1_vlan.log</log-file>
+			<console target="ap1">
+				-v "show interface eth1"
+			</console>
+			<log-match>-c -i "Native-vlan=1;" </log-match>
+		</step>
+		
+		<step no="4.1">
+			<desc>
+				4. Enable dhcp client on mgt0 interface,check the dhcp packets pkts vlan and interface vlan should be 1
+				4.1 get mgt0 mac address 
+			</desc>
+			<log-file>step4.1_dhcp_mgt0.log</log-file>
+			<setvar name="ap1.mgt0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1_mgt0_vlan.log -i mgt0 -o aero -m -width
+			</setvar>
+		</step>
+		
+		<step no="4.2">
+			<desc>
+				set cli for FE debug to check the dhcp process
+			</desc>
+			<log-file>step4.2_fe_debug_dhcp.log</log-file>
+			<console target="ap1">
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+				-v ""
+				-v ""
+				-v "_ff id 1 dhcp-client ${ap1.mgt0.mac}"
+				-v "_kdebug fe vlan"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_kdebug eth vlan"
+				-v ""
+				-v "clear log all"
+			</console>
+		</step>
+		
+		<step no="4.2.1">
+			<desc>
+				set cli for FE debug to check the dhcp process
+			</desc>
+			<log-file>step4.2.1_mgt0_dhcp.log</log-file>
+			<console target="ap1">
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+		
+		<step no="4.3" timeout="200" delay="10">
+			<desc>
+				check logging buffered for dhcp packets
+			</desc>
+			<log-file>step4.3_show_logging_buffered_dhcp.log</log-file>
+			<console target="ap1" timeout="1000">
+				-v "show logging buffered"; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-i "kernel: \[eth\]: eth0: parent eth0, ${ap1.mgt0.mac}->ffff:ffff:ffff" -i "packet vlan 1, interface vlan 1"</log-match>
+		</step>
+		
+		<step no="5.1">
+			<desc>
+				5.Ap ping server, check icmp pkts vlan and interface vlan should be 1
+				5.1 get server ip address
+			</desc>
+			<log-file>step5.1_dhcp_server_ip.log</log-file>
+			<console target="ap1">
+				-v "show l3 interface"
+				-v " show interface mgt0"
+			</console>
+			<setvar name="ap1.mgt0.dhcp.server">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.1_dhcp_server_ip.log -p 'Default Gateway:(\d+\.\d+\.\d+\.\d+);' -t str
+			</setvar>
+		</step>
+		
+		<step no="5.2">
+			<desc>
+				set cli for FE debug to check the icmp process
+			</desc>
+			<log-file>step5.2_fe_debug_icmp.log</log-file>
+			<console target="ap1">
+				-v "no _ff id 1"
+				-v "clear log all"
+				-v ""
+				-v ""
+				-v "_ff id 1 src-mac ${ap1.mgt0.mac} protocol 1 bidirectional"
+				-v "_kdebug fe vlan"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_kdebug eth vlan"
+				-v ""
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+				-v "ping ${ap1.mgt0.dhcp.server} count 3"
+			</console>
+		</step>
+		
+		<step no="5.3" delay="5">
+			<desc>ap ping dhcp server ip address</desc>
+			<log-file>step5.3_show_logging_buffered_icmp.log</log-file>
+			<console target="ap1" timeout="1000">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-i "kernel: \[eth\]: eth0: parent eth0" -i "packet vlan 1, interface vlan 1"</log-match>
+		</step>
+		
+
+		<step no="6.1">
+			<desc>
+				6. station connect to AP ssid
+				6.1 Configure ssid to AP 
+			</desc>
+			<console target="ap1">
+				-v "security-object aero"
+				-v "security-object aero default-user-profile-attr 1"
+				-v "user-profile vlan attribute 1"
+				-v "user-profile vlan vlan-id 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object aero"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "capwap client enable"
+			</console>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				create config file of wpa_supplicant
+			</desc>
+			<ssh target="sta1">
+				-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+				-v "ifconfig ${sta1.tif.name} down"
+				-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+		</step>
+
+		<step no="6.3" delay="5">
+			<desc>
+				start wpa_supplicant
+			</desc>
+			<ssh target="sta1">
+				-v "killall wpa_supplicant"
+				-v "wpa_supplicant -i ${sta1.tif.name} -c /tmp/wpa_supplicant.cfg -B"
+			</ssh>
+		</step>
+
+		<step no="6.4">
+			<desc>
+				station connect to ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="6.5" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check if the station was associated successfully</desc>
+			<log-file>same.vlan.ap.ping.0.4_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="6.6">
+			<desc>station gets IP by dhclient</desc>
+			<ssh target="sta1">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="6.7" delay="10">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="6.8">
+			<desc>Get station's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="6.9">
+			<desc>Get station's ip</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="6.10">
+			<desc>
+				show station on AP to check vlan info
+			</desc>
+			<log-file>same.vlan.ap.ping.2_show_sta.log</log-file>
+			<console target="ap1">
+				-v "show station"
+			</console>
+			<log-match>-c -p 1 -i "${sta1.tif.mac}" -p 2 -i "${sta1.tif.ip}" -p 10 -i "1" -p 11 -i "Yes" -p 12 -i "1"</log-match>
+		</step>	
+		
+		<step no="7.1">
+			<desc>
+				7. ap ping station to check icmp pkts, the pkts vlan and interface vlan should be 1
+				7.1 ap ping station
+			</desc>
+			<log-file>step7.1_fe_debug_icmp.log</log-file>
+			<console target="ap1">
+				-v "clear log all"
+				-v ""
+				-v ""
+				-v "_ff id 1 src-mac ${ap1.mgt0.mac} protocol 1 bidirectional"
+				-v "_kdebug fe vlan"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_kdebug eth vlan"
+				-v "_kdebug wifi-driver wifi0.1 extend vlan"
+				-v ""
+				-v ""
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+				-v ""
+				-v ""
+				-v "ping ${sta1.tif.ip} count 3"
+			</console>
+		</step>
+		
+		<step no="7.2">
+			<desc>show log buff to check pkts vlan and interface vlan</desc>
+			<log-file>step5.3_show_logging_buffered_icmp.log</log-file>
+			<console target="ap1" timeout="1000">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "vlan 1, interface vlan 1, sta vlan 1"</log-match>
+		</step>
+		
+ 
+	</stage>
+	
+</testcase>

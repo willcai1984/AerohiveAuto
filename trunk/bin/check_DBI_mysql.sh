@@ -1,0 +1,1 @@
+/opt/Mainline/bin/aerohive/handle_br_mgt0_subnet.pl 1>/logs/DBI_mysql.log 2>&1;exit 0

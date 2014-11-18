@@ -1,0 +1,1856 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check only specific user can use telnet/ssh/ping/snmp function when specify the manager-ip and telent,ssh,ping,snmp are enable in SSIDs, eth0, hive.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Manager IP is on default setup
+
+		Test Procedure:
+		-Create a SSID in Mp1.
+		-Enable the t telent,ssh,ping,snmp and specify a manager-ip and
+		netmask in MP1,portal1,portal2.
+		-Associate a computer1 to the MP1 by the SSID(the computer1 addr is
+		within the range of the netmask ).
+		-telnet/ssh/ping/snmp the MP1 which can get the result 1.
+		-Change the computer1 IP (out of the range of the netmask ). and
+		telnet/ssh/ping/snmp the MP1 which can get the result2.
+		-telnet/ssh/ping/snmp the portal1 which can get the result 1.
+		-Change the computer1 IP (out of the range of the netmask ). and
+		telnet/ssh/ping/snmp the portal1 which can get the result2.
+		-telnet/ssh/ping/snmp the portal2 which can get the result 1.
+		-Change the computer1 IP (out of the range of the netmask ). and
+		telnet/ssh/ping/snmp the portal2 which can get the result2.
+		-Create another SSID, reassociate the computer1 to the MP1 with the
+		second SSID and telnet/ssh/ping/snmp the MP1 which can get the
+		result 1.
+		-config 10 manager-ips,the
+		computer can telnet/ssh/ping/snmp the
+		MP1,portal1,portal2 using the 10 manager-ips
+		- save config. Restart the box, the configuration is still efficient.
+		-remove the manager-ip. the computer with any ip addr can
+		telnet/ssh/ping/snmp the MP1,portal1,portal2.
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="0.1">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config hive on ap1
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "hive ${hive.name} manage all"
+				-v "interface wifi1 mode backhaul"
+				-v "interface wifi1 radio channel 36"
+				-v "admin manager-ip 192.168.${tb.vlan1}.0/24"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config hive on ap2
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 mode backhaul"
+				-v "interface wifi1 radio channel 36"
+				-v "hive ${hive.name} manage all"
+				-v "admin manager-ip 192.168.${tb.vlan1}.0/24"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>
+				show ap2's interface wifi1 info
+			</desc>
+			<log-file>show_ap2_interface_info.log</log-file>
+			<console target="ap2">
+				-v "show interface wifi1"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				get ap2's wifi1's mac address
+			</desc>
+			<setvar name="ap2_wifi1_mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_interface_info.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+		
+		<step no="3.2">
+			<desc>
+				show ap1's interface wifi1 info
+			</desc>
+			<log-file>show_ap1_interface_info.log</log-file>
+			<console target="ap1">
+				-v "show interface wifi1"
+			</console>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				get ap1's wifi1's mac address
+			</desc>
+			<setvar name="ap1_wifi1_mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_interface_info.log -i wifi1 -o aero -m -width 2
+			</setvar>
+		</step>
+	        <step no="4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor when ap2's wifi1's acsp neighbor list less than 128
+			</desc>
+			<log-file>step4_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180" slow="5">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2_wifi1_mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+
+	        <step no="4.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor when ap2's wifi1's acsp neighbor list less than 128
+			</desc>
+			<log-file>step4.1_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap2" timeout="180" slow="5">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_wifi1_mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step5_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2_wifi1_mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				-shutdown ap1's eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="7">
+			<desc>
+				-create a ssid on ap2,and bind it to wifi0
+			</desc>
+			<console target="ap2">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name} manage all"
+			</console>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				-open manager of eth0
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 manage all"
+			</console>
+		</step>
+
+		<include prefix="8" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="8.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="8.2" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<step no="8.3">
+			<desc>Get laptop1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta1.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="8.4">
+			<desc>
+				delete tmp files
+			</desc>
+			<ssh target="sta1" timeout="500">
+				-v "rm -f /tmp/within_netmask_ssh_mp1.log"
+				-v "rm -f /tmp/within_netmask_ssh_potal1.log"
+				-v "rm -f /tmp/within_netmask_ssh_potal2.log"
+				-v "rm -f /tmp/within_netmask_telnet_mp1.log"
+				-v "rm -f /tmp/within_netmask_telnet_potal1.log"
+				-v "rm -f /tmp/within_netmask_telnet_potal2.log"
+				-v "rm -f /tmp/new_ssid_permit_ssh_mp1.log"
+				-v "rm -f /tmp/new_ssid_permit_ssh_potal1.log"
+				-v "rm -f /tmp/new_ssid_permit_ssh_potal2.log"
+				-v "rm -f /tmp/new_ssid_permit_telnet_mp1.log"
+				-v "rm -f /tmp/new_ssid_permit_telnet_potal1.log"
+				-v "rm -f /tmp/new_ssid_permit_telnet_potal2.log"
+				-v "rm -f /tmp/new_permit_manage_ssh_mp1.log"
+				-v "rm -f /tmp/new_permit_manage_ssh_potal1.log"
+				-v "rm -f /tmp/new_permit_manage_ssh_potal2.log"
+				-v "rm -f /tmp/new_permit_manage_telnet_mp1.log"
+				-v "rm -f /tmp/new_permit_manage_telnet_potal1.log"
+				-v "rm -f /tmp/new_permit_manage_telnet_potal2.log"
+				-v "rm -f /tmp/reboot_box_ssh_mp1.log"
+				-v "rm -f /tmp/reboot_box_ssh_potal1.log"
+				-v "rm -f /tmp/reboot_box_ssh_potal2.log"
+				-v "rm -f /tmp/reboot_box_telnet_mp1.log"
+				-v "rm -f /tmp/reboot_box_telnet_potal1.log"
+				-v "rm -f /tmp/reboot_box_telnet_potal2.log"
+				-v "rm -f /tmp/remove_manage_ip_ssh_mp1.log"
+				-v "rm -f /tmp/remove_manage_ip_ssh_potal1.log"
+				-v "rm -f /tmp/remove_manage_ip_ssh_potal2.log"
+				-v "rm -f /tmp/remove_manage_ip_telnet_mp1.log"
+				-v "rm -f /tmp/remove_manage_ip_telnet_potal1.log"
+				-v "rm -f /tmp/remove_manage_ip_telnet_potal2.log"
+			</ssh>
+		</step>
+
+		<step no="9">
+			<desc>
+				ap1:
+				-show snmp info
+			</desc>
+			<log-file>step9_show_snmp_info.log</log-file>
+			<console target="ap1">
+				-v "show snmp"
+			</console>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				get snmp contact info
+			</desc>
+			<setvar name="ap1.snmp.contact">
+				${bin.dir}/getbyrexp.py -p "Syscontact:\s*(\S+)\s*" -t str -f ${log.dir}/step9_show_snmp_info.log
+			</setvar>
+		</step>
+
+		<step no="10">
+			<desc>
+				ap2:
+				-show snmp info
+			</desc>
+			<log-file>step10_show_snmp_info.log</log-file>
+			<console target="ap2">
+				-v "show snmp"
+			</console>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				get snmp contact info
+			</desc>
+			<setvar name="ap2.snmp.contact">
+				${bin.dir}/getbyrexp.py -p "Syscontact:\s*(\S+)\s*" -t str -f ${log.dir}/step10_show_snmp_info.log
+			</setvar>
+		</step>
+
+		<step no="11">
+			<desc>
+				-ssh the MP1 which can get the result 1.
+			</desc>
+			<log-file>within_netmask_ssh_mp1.1_check_result.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show admin active"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				-Remove temporary file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="12">
+			<desc>
+				-ssh the potal1 which can get the result 1.
+			</desc>
+			<ssh target="sta1" timeout="900" prompt='root@.*~.*#'>
+				-v "rm -rf /root/.ssh/known_hosts"
+				-v 'echo "clicfg.pl -i 22 -o 600 -d ${ap2.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m \"AH.*#\" -n -z within_netmask_ssh_potal1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				-check ssh potal1's result
+			</desc>
+			<log-file>within_netmask_ssh_potal1.1_check_result.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "cat /tmp/within_netmask_ssh_potal1.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				-ssh the potal2 which can get the result 1.
+			</desc>
+			<log-file>within_netmask_ssh_potal2_check_result.log</log-file>
+			<ssh target="ap2" timeout="500">
+				-v "show admin active"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				-telnet the MP1 which can get the result 1.
+			</desc>
+			<log-file>within_netmask_telnet_mp1_check_telnet_result.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show admin active"
+			</telnet>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="14.1">
+			<desc>
+				-Remove temporary file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="15">
+			<desc>
+				-telnet the potal1 which can get the result 1.
+			</desc>
+			<ssh target="sta1" timeout="900" prompt='root@.*~.*#'>
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 23 -o 500 -d ${ap2.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m \"AH.*#\" -n -z within_netmask_telnet_potal1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="15.1">
+			<desc>
+				-check telnet potal1's result
+			</desc>
+			<log-file>within_netmask_telnet_potal1.1_check_telnet_result.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "cat /tmp/within_netmask_telnet_potal1.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				-telnet the potal2 which can get the result 1.
+			</desc>
+			<log-file>within_netmask_telnet_potal2.1_check_telnet_result.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show admin active"
+			</telnet>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="17">
+			<desc>
+				--ping the mp1 which can get the result 1.
+			</desc>
+			<log-file>within_netmask_ping_mp1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ping ${ap1.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="17.1">
+			<desc>
+				--check ping result
+			</desc>
+			<log-file>within_netmask_ping_mp1.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/within_netmask_ping_mp1.log --script "int(m.group(1))&lt;=20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="18">
+			<desc>
+				--ping the potal1 which can get the result 1.
+			</desc>
+			<log-file>within_netmask_ping_potal1.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="18.1">
+			<desc>
+				--check ping result
+			</desc>
+			<log-file>within_netmask_ping_potal1.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/within_netmask_ping_potal1.log --script "int(m.group(1))&lt;=20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="19">
+			<desc>
+				--ping the potal2 which can get the result 1.
+			</desc>
+			<log-file>within_netmask_ping_potal2.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="19.1">
+			<desc>
+				--check ping result
+			</desc>
+			<log-file>within_netmask_ping_potal1.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/within_netmask_ping_potal2.log --script "int(m.group(1))&lt;=20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="20">
+			<desc>
+				--snmp the mp1 which can get the result 1.
+			</desc>
+			<log-file>within_netmask_snmp_mp1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "service snmpd start"
+				-v "snmpget -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap1.snmp.contact}"</log-match>
+		</step>
+
+		<step no="21">
+			<desc>
+				--snmp the potal1 which can get the result 1.
+			</desc>
+			<log-file>within_netmask_snmp_potal1.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap2.snmp.contact}"</log-match>
+		</step>
+
+		<step no="22">
+			<desc>
+				--snmp the potal2 which can get the result 1.
+			</desc>
+			<log-file>within_netmask_snmp_potal2.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "service snmpd start"
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap2.snmp.contact}"</log-match>
+		</step>
+
+		<step no="23">
+			<desc>
+				-modify manager-ip on ap1
+			</desc>
+			<console target="ap1">
+				-v "no admin manager-ip"
+				-v "admin manager-ip 192.168.${tb.vlan2}.0/24"
+			</console>
+		</step>
+
+		<step no="24">
+			<desc>
+				-modify manager-ip on ap2
+			</desc>
+			<console target="ap2">
+				-v "no admin manager-ip"
+				-v "admin manager-ip 192.168.${tb.vlan2}.0/24"
+			</console>
+		</step>
+
+		<step no="25">
+			<desc>
+				-turn on switch of debug
+			</desc>
+			<console target="ap1">
+				-v "_ff dst-port 22 bidirectional"
+				-v "_ff dst-port 23 bidirectional"
+				-v "_ff dst-port 161 bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="26">
+			<desc>
+				-ssh the MP1 which can get the result 2.
+			</desc>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ssh ${ap1.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="26.1" delay="10">
+			<desc>
+				-Show logging buffered on ap1
+			</desc>
+			<log-file>step26.1_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="27">
+			<desc>
+				-turn on switch of debug
+			</desc>
+			<console target="ap2">
+				-v "_ff dst-port 22 bidirectional"
+				-v "_ff dst-port 23 bidirectional"
+				-v "_ff dst-port 161 bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="28">
+			<desc>
+				-ssh the portal which can get the result 2.
+			</desc>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ssh ${ap2.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="28.1" delay="10">
+			<desc>
+				-Show logging buffered on ap2
+			</desc>
+			<log-file>step28.1_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="29">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="30">
+			<desc>
+				-ssh the potal2 which can get the result 2.
+			</desc>
+			<ssh target="sta1" timeout="500">
+				-v "ssh ${ap2.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="30.1" delay="10">
+			<desc>
+				-Show logging buffered on ap2
+			</desc>
+			<log-file>step30.1_show_log_buffered.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${sta1.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="31">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap1">
+				-v "_ff dst-port 22 bidirectional"
+				-v "_ff dst-port 23 bidirectional"
+				-v "_ff dst-port 161 bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="32">
+			<desc>
+				-telnet the MP1 which can get the result 2.
+			</desc>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "telnet ${ap1.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="32.1" delay="10">
+			<desc>
+				-Show logging buffered on ap1
+			</desc>
+			<log-file>step32.1_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="33">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="34">
+			<desc>
+				-telnet the potal1 which can get the result 2.
+			</desc>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "telnet ${ap2.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="34.1" delay="10">
+			<desc>
+				-Show logging buffered on ap1
+			</desc>
+			<log-file>step34.1_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="35">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="36">
+			<desc>
+				-telnet the potal2 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_telnet_potal2.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "telnet ${ap2.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="36.1" delay="10">
+			<desc>
+				-Show logging buffered on ap1
+			</desc>
+			<log-file>step36.1_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${sta1.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="37">
+			<desc>
+				--ping the mp1 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_ping_mp1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ping ${ap1.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+			<log-match>-e "100% packet loss"</log-match>
+		</step>
+
+		<step no="38">
+			<desc>
+				--ping the potal1 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_ping_potal1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+			<log-match>-e "100% packet loss"</log-match>
+		</step>
+
+		<step no="39">
+			<desc>
+				--ping the potal2 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_ping_potal2.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+			<log-match>-e "100% packet loss"</log-match>
+		</step>
+
+		<step no="40">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="41">
+			<desc>
+				--snmp the mp1 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_snmp_mp1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "snmpget -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+		</step>
+
+		<step no="41.1" delay="10">
+			<desc>
+				-Show logging buffered on ap1
+			</desc>
+			<log-file>step41.1_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="42">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="43">
+			<desc>
+				--snmp the potal1 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_snmp_potal1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+		</step>
+
+		<step no="43.1" delay="10">
+			<desc>
+				-Show logging buffered on ap2
+			</desc>
+			<log-file>step43.1_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="44">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="45">
+			<desc>
+				--snmp the potal2 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_snmp_potal2.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+		</step>
+
+		<step no="45.1" delay="10">
+			<desc>
+				-Show logging buffered on ap2
+			</desc>
+			<log-file>step45.1_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${sta1.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="46">
+			<desc>
+				-Create another SSID
+			</desc>
+			<console target="ap2">
+				-v "ssid ${ssid.name}_1"
+				-v "interface wifi0 ssid ${ssid.name}_1"
+				-v "ssid ${ssid.name}_1 manage all"
+				-v "no admin manager-ip"
+				-v "admin manager-ip 192.168.${tb.vlan1}.0/24"
+			</console>
+		</step>
+
+		<step no="47">
+			<desc>
+				-kill the process wpa_supplicant
+			</desc>
+			<ssh target="sta1">
+				-v "killall wpa_supplicant"
+			</ssh>
+		</step>
+
+		<include prefix="48" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="48.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}_1\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="48.2" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check if the client was associated successfully
+			</desc>
+			<log-file>step48.2_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="48.3">
+			<desc>
+				get ip address for sta1
+			</desc>
+			<log-file>step48.3_ifconfig_sta1.log</log-file>
+			<ssh target="sta1" timeout="30">
+				-v "dhclient ${sta1.tif.name} -r"
+				-v "dhclient ${sta1.tif.name}"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match>-e "inet addr:192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="48.4">
+			<desc>
+				-Remove temporary file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="49">
+			<desc>
+				-ssh the MP1 which can get the result 1.
+			</desc>
+			<ssh target="sta1" timeout="900" prompt='root@.*~.*#'>
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 22 -o 600 -d ${ap2.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m \"AH.*#\" -n -z new_ssid_permit_ssh_mp1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="49.1">
+			<desc>
+				-check ssh mp1's result
+			</desc>
+			<log-file>new_ssid_permit_ssh_mp1.1_check_result.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "cat /tmp/new_ssid_permit_ssh_mp1.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="49.2">
+			<desc>
+				-Remove temporary file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="50">
+			<desc>
+				-telnet the MP1 which can get the result 1.
+			</desc>
+			<ssh target="sta1" timeout="900" prompt='root@.*~.*#'>
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 23 -o 600 -d ${ap2.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m \"AH.*#\" -n -z new_ssid_permit_telnet_mp1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="51">
+			<desc>
+				-check telnet mp1's result
+			</desc>
+			<log-file>new_ssid_permit_telnet_mp1.1_check_telnet_result.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "cat /tmp/new_ssid_permit_telnet_mp1.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="52">
+			<desc>
+				--ping the mp1 which can get the result 1.
+			</desc>
+			<log-file>new_ssid_permit_ping_mp1.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="52.1">
+			<desc>
+				--check ping result
+			</desc>
+			<log-file>new_ssid_permit_ping_mp1.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/new_ssid_permit_ping_mp1.log --script "int(m.group(1))&lt;=20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="53">
+			<desc>
+				--snmp the mp1 which can get the result 1.
+			</desc>
+			<log-file>new_ssid_permit_snmp_mp1.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap1.snmp.contact}"</log-match>
+		</step>
+
+		<step no="54">
+			<desc>
+				save config and restart the box.
+			</desc>
+			<console target="ap1">
+				-v "save config"
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="55">
+			<desc>
+				save config and restart the box.
+			</desc>
+			<console target="ap2">
+				-v "save config"
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="56" delay="30">
+			<desc>
+				-Restore manager-IP
+			</desc>
+			<console target="ap1">
+				-v "no admin manager-ip"
+				-v "admin manager-ip 192.168.${tb.vlan1}.0/24"
+			</console>
+		</step>
+
+		<step no="57">
+			<desc>
+				-kill the process wpa_supplicant
+			</desc>
+			<ssh target="sta1">
+				-v "killall wpa_supplicant"
+			</ssh>
+		</step>
+
+		<include prefix="58" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="58.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}_1\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="58.2" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check if the client was associated successfully
+			</desc>
+			<log-file>step58.2_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="58.3">
+			<desc>
+				get ip address for sta1
+			</desc>
+			<log-file>step21.3_ifconfig_sta1.log</log-file>
+			<ssh target="sta1" timeout="30">
+				-v "dhclient ${sta1.tif.name} -r"
+				-v "dhclient ${sta1.tif.name}"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match>-e "inet addr:192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="59">
+			<desc>
+				-ssh the MP1 which can get the result 1.
+			</desc>
+			<log-file>reboot_within_netmask_ssh_mp1.1_check_result.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show admin active"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="59.1">
+			<desc>
+				-Remove temporary file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="60">
+			<desc>
+				-ssh the potal1 which can get the result 1.
+			</desc>
+			<ssh target="sta1" timeout="900" prompt='root@.*~.*#'>
+				-v "rm -rf /root/.ssh/known_hosts"
+				-v 'echo "clicfg.pl -i 22 -o 600 -d ${ap2.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m \"AH.*#\" -n -z reboot_within_netmask_ssh_potal1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="60.1">
+			<desc>
+				-check ssh potal1's result
+			</desc>
+			<log-file>reboot_within_netmask_ssh_potal1.1_check_result.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "cat /tmp/reboot_within_netmask_ssh_potal1.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="61">
+			<desc>
+				-ssh the potal2 which can get the result 1.
+			</desc>
+			<log-file>reboot_within_netmask_ssh_potal2_check_result.log</log-file>
+			<ssh target="ap2" timeout="500">
+				-v "show admin active"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="62">
+			<desc>
+				-telnet the MP1 which can get the result 1.
+			</desc>
+			<log-file>reboot_within_netmask_telnet_mp1_check_telnet_result.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show admin active"
+			</telnet>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="62.1">
+			<desc>
+				-Remove temporary file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="63">
+			<desc>
+				-telnet the potal1 which can get the result 1.
+			</desc>
+			<ssh target="sta1" timeout="900" prompt='root@.*~.*#'>
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 23 -o 600 -d ${ap2.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m \"AH.*#\" -n -z reboot_within_netmask_telnet_potal1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="63.1">
+			<desc>
+				-check telnet potal1's result
+			</desc>
+			<log-file>reboot_within_netmask_telnet_potal1.1_check_telnet_result.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "cat /tmp/reboot_within_netmask_telnet_potal1.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="64">
+			<desc>
+				-telnet the potal2 which can get the result 1.
+			</desc>
+			<log-file>reboot_within_netmask_telnet_potal2.1_check_telnet_result.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show admin active"
+			</telnet>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="65">
+			<desc>
+				--ping the mp1 which can get the result 1.
+			</desc>
+			<log-file>reboot_within_netmask_ping_mp1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ping ${ap1.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="66">
+			<desc>
+				--check ping result
+			</desc>
+			<log-file>reboot_within_netmask_ping_mp1.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/reboot_within_netmask_ping_mp1.log --script "int(m.group(1))&lt;=20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="67">
+			<desc>
+				--ping the potal1 which can get the result 1.
+			</desc>
+			<log-file>reboot_within_netmask_ping_potal1.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="67.1">
+			<desc>
+				--check ping result
+			</desc>
+			<log-file>reboot_within_netmask_ping_potal1.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/reboot_within_netmask_ping_potal1.log --script "int(m.group(1))&lt;=20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="68">
+			<desc>
+				--ping the potal2 which can get the result 1.
+			</desc>
+			<log-file>reboot_within_netmask_ping_potal2.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="68.1">
+			<desc>
+				--check ping result
+			</desc>
+			<log-file>reboot_within_netmask_ping_potal1.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/reboot_within_netmask_ping_potal2.log --script "int(m.group(1))&lt;=20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="69">
+			<desc>
+				--snmp the mp1 which can get the result 1.
+			</desc>
+			<log-file>reboot_within_netmask_snmp_mp1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "service snmpd start"
+				-v "snmpget -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap1.snmp.contact}"</log-match>
+		</step>
+
+		<step no="70">
+			<desc>
+				--snmp the potal1 which can get the result 1.
+			</desc>
+			<log-file>reboot_within_netmask_snmp_potal1.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap2.snmp.contact}"</log-match>
+		</step>
+
+		<step no="71">
+			<desc>
+				--snmp the potal2 which can get the result 1.
+			</desc>
+			<log-file>reboot_within_netmask_snmp_potal2.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "service snmpd start"
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap2.snmp.contact}"</log-match>
+		</step>
+
+		<step no="72">
+			<desc>
+				-modify manager-ip on ap1
+			</desc>
+			<console target="ap1">
+				-v "no admin manager-ip"
+				-v "admin manager-ip 192.168.${tb.vlan2}.0/24"
+			</console>
+		</step>
+
+		<step no="73">
+			<desc>
+				-modify manager-ip on ap2
+			</desc>
+			<console target="ap2">
+				-v "no admin manager-ip"
+				-v "admin manager-ip 192.168.${tb.vlan2}.0/24"
+			</console>
+		</step>
+
+		<step no="74">
+			<desc>
+				-turn on switch of debug
+			</desc>
+			<console target="ap1">
+				-v "_ff dst-port 22 bidirectional"
+				-v "_ff dst-port 23 bidirectional"
+				-v "_ff dst-port 161 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="75">
+			<desc>
+				-ssh the MP1 which can get the result 2.
+			</desc>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ssh ${ap1.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="75.1" delay="10">
+			<desc>
+				-Show logging buffered on ap1
+			</desc>
+			<log-file>step75.1_show_logging_buffered.log</log-file>
+			<console target="ap1">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="76">
+			<desc>
+				-turn on switch of debug
+			</desc>
+			<console target="ap2">
+				-v "_ff dst-port 22 bidirectional"
+				-v "_ff dst-port 23 bidirectional"
+				-v "_ff dst-port 161 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="77">
+			<desc>
+				-ssh the portal which can get the result 2.
+			</desc>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ssh ${ap2.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="77.1" delay="10">
+			<desc>
+				-Show logging buffered on ap2
+			</desc>
+			<log-file>step77.1_show_logging_buffered.log</log-file>
+			<console target="ap2">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="78">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="79">
+			<desc>
+				-ssh the potal2 which can get the result 2.
+			</desc>
+			<ssh target="sta1" timeout="500">
+				-v "ssh ${ap2.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="79.1" delay="10">
+			<desc>
+				-Show logging buffered on ap2
+			</desc>
+			<log-file>step79.1_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${sta1.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="80">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="81">
+			<desc>
+				-telnet the MP1 which can get the result 2.
+			</desc>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "telnet ${ap1.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="81" delay="30">
+			<desc>
+				-Show logging buffered on ap1
+			</desc>
+			<log-file>step81.1_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="82">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="83">
+			<desc>
+				-telnet the potal1 which can get the result 2.
+			</desc>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "telnet ${ap2.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="83.1" delay="10">
+			<desc>
+				-Show logging buffered on ap1
+			</desc>
+			<log-file>step83.1_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="84">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="85">
+			<desc>
+				-telnet the potal2 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_telnet_potal2.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "telnet ${ap2.mgt0.ip}"
+			</ssh>
+		</step>
+
+		<step no="85.1" delay="10">
+			<desc>
+				-Show logging buffered on ap1
+			</desc>
+			<log-file>step85.1_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${sta1.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="86">
+			<desc>
+				--ping the mp1 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_ping_mp1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ping ${ap1.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+			<log-match>-e "100% packet loss"</log-match>
+		</step>
+
+		<step no="87">
+			<desc>
+				--ping the potal1 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_ping_potal1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+			<log-match>-e "100% packet loss"</log-match>
+		</step>
+
+		<step no="88">
+			<desc>
+				--ping the potal2 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_ping_potal2.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+			<log-match>-e "100% packet loss"</log-match>
+		</step>
+
+		<step no="89">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="90">
+			<desc>
+				--snmp the mp1 which can get the result 2.
+			</desc>
+			<log-file>without_netmask_snmp_mp1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "snmpget -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+		</step>
+
+		<step no="90.1" delay="30">
+			<desc>
+				-Show logging buffered on ap1
+			</desc>
+			<log-file>step90.1_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="91">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="92">
+			<desc>
+				--snmp the potal1 which can get the result 2.
+			</desc>
+			<log-file>reboot_without_netmask_snmp_potal1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+		</step>
+
+		<step no="92.1" delay="10">
+			<desc>
+				-Show logging buffered on ap2
+			</desc>
+			<log-file>step92.1_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${mpc.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="93">
+			<desc>
+				-Clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="94">
+			<desc>
+				--snmp the potal2 which can get the result 2.
+			</desc>
+			<log-file>reboot_without_netmask_snmp_potal2.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+		</step>
+
+		<step no="94.1" delay="10">
+			<desc>
+				-Show logging buffered on ap2
+			</desc>
+			<log-file>step94.1_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "src-ip ${sta1.tif.ip} not allowed to connect to device"</log-match>
+		</step>
+
+		<step no="95">
+			<desc>
+				remove manage-ip
+			</desc>
+			<console target="ap1">
+				-v "no admin manager-ip"
+			</console>
+		</step>
+
+		<step no="96">
+			<desc>
+				remove manage-ip
+			</desc>
+			<console target="ap2">
+				-v "no admin manager-ip"
+			</console>
+		</step>
+
+		<step no="97">
+			<desc>
+				-ssh the MP1 which can get the result 1.
+			</desc>
+			<log-file>remove_within_netmask_ssh_mp1.1_check_result.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show admin active"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="97.1">
+			<desc>
+				-Remove temporary file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="98">
+			<desc>
+				-ssh the potal1 which can get the result 1.
+			</desc>
+			<ssh target="sta1" timeout="900" prompt='root@.*~.*#'>
+				-v 'rm -rf /root/.ssh/known_hosts'
+				-v 'echo "clicfg.pl -i 22 -o 600 -d ${ap2.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m \"AH.*#\" -n -z remove_within_netmask_ssh_potal1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+		</step>
+
+		<step no="98.1">
+			<desc>
+				-check ssh potal1's result
+			</desc>
+			<log-file>remove_within_netmask_ssh_potal1.1_check_result.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "cat /tmp/remove_within_netmask_ssh_potal1.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="99">
+			<desc>
+				-ssh the potal2 which can get the result 1.
+			</desc>
+			<log-file>remove_within_netmask_ssh_potal2_check_result.log</log-file>
+			<ssh target="ap2" timeout="500">
+				-v "show admin active"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="100">
+			<desc>
+				-telnet the MP1 which can get the result 1.
+			</desc>
+			<log-file>remove_within_netmask_telnet_mp1_check_telnet_result.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show admin active"
+			</telnet>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="100.1">
+			<desc>
+				-Remove temporary file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f /tmp/tmp.sh"
+			</ssh>
+		</step>
+
+		<step no="101">
+			<desc>
+				-telnet the potal1 which can get the result 1.
+			</desc>
+			<ssh target="sta1" timeout="900" prompt='root@.*~.*#'>
+				-v 'echo "clicfg.pl -i 23 -o 600 -d ${ap2.mgt0.ip} -u ${ap.def.user} -p ${ap.def.passwd} -m \"AH.*#\" -n -z remove_within_netmask_telnet_potal1.log -l /tmp/ -v \"show admin active\"" > /tmp/tmp.sh'
+				-v 'sh /tmp/tmp.sh'
+				-v 'sleep 20'
+				-v ''
+			</ssh>
+		</step>
+
+		<step no="101.1">
+			<desc>
+				-check telnet potal1's result
+			</desc>
+			<log-file>remove_within_netmask_telnet_potal1.1_check_telnet_result.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "cat /tmp/remove_within_netmask_telnet_potal1.log"
+			</ssh>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="102">
+			<desc>
+				-telnet the potal2 which can get the result 1.
+			</desc>
+			<log-file>remove_within_netmask_telnet_potal2.1_check_telnet_result.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show admin active"
+			</telnet>
+			<log-match>-e "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="103">
+			<desc>
+				--ping the mp1 which can get the result 1.
+			</desc>
+			<log-file>remove_within_netmask_ping_mp1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ping ${ap1.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="103.1">
+			<desc>
+				--check ping result
+			</desc>
+			<log-file>remove_within_netmask_ping_mp1.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/remove_within_netmask_ping_mp1.log --script "int(m.group(1))&lt;=20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="104">
+			<desc>
+				--ping the potal1 which can get the result 1.
+			</desc>
+			<log-file>remove_within_netmask_ping_potal1.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="104.1">
+			<desc>
+				--check ping result
+			</desc>
+			<log-file>remove_within_netmask_ping_potal1.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/reboot_within_netmask_ping_potal1.log --script "int(m.group(1))&lt;=20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="105">
+			<desc>
+				--ping the potal2 which can get the result 1.
+			</desc>
+			<log-file>remove_within_netmask_ping_potal2.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "ping ${ap2.mgt0.ip} -c 5" ; exit 0
+			</ssh>
+		</step>
+
+		<step no="105.1">
+			<desc>
+				--check ping result
+			</desc>
+			<log-file>remove_within_netmask_ping_potal1.1_check_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/remove_within_netmask_ping_potal2.log --script "int(m.group(1))&lt;=20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="106">
+			<desc>
+				--snmp the mp1 which can get the result 1.
+			</desc>
+			<log-file>remove_within_netmask_snmp_mp1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "service snmpd start"
+				-v "snmpget -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap1.snmp.contact}"</log-match>
+		</step>
+
+		<step no="107">
+			<desc>
+				--snmp the potal1 which can get the result 1.
+			</desc>
+			<log-file>remove_within_netmask_snmp_potal1.log</log-file>
+			<ssh target="sta1" timeout="500">
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap2.snmp.contact}"</log-match>
+		</step>
+
+		<step no="108">
+			<desc>
+				--snmp the potal2 which can get the result 1.
+			</desc>
+			<log-file>remove_within_netmask_snmp_potal2.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="500">
+				-v "service snmpd start"
+				-v "snmpget -v 2c ${ap2.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4.0"
+			</ssh>
+			<log-match>-e "SNMPv2-MIB::sysContact.0 = STRING: ${ap2.snmp.contact}"</log-match>
+		</step>
+	</stage>
+</testcase>

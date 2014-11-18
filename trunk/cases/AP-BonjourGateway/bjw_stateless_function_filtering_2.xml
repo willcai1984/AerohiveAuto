@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>VLAN group configuration, group add, modify and delete</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		pre-condition:
+	
+		test procedure:
+		1. Configure VLAN group with VLAN 54, 55, 56
+		2. Configure the VLAN group in a filter
+		3. Modify the VLAN group to VLAN 51, 52, 53
+		4. Delete the VLAN group
+		5. Delete the filter that using the VLAN group
+		6. Delete the VLAN group
+		
+		expect result:
+		Result1, VLAN group contains VLAN 54, 55, 56
+		Result2, Filter created successfully
+		Result3, the filter now functions to VLAN 51, 52, 53
+		Result4, VLAN group can’t be deleted
+		Result5, Filter is deleted
+		Result6, VLAN group is deleted	
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+	
+		<include prefix="0" file="subs/l3swcfg_port_vlan.xml" args="${tb.apple.l3sw.port}, ${tb.vlan1}, ${tb.vlans}" />
+		
+		<step no="1">
+    		<desc>
+       			config ap1
+    		</desc>
+    		<log-file>ap1_config.log</log-file>
+    		<console target="ap1">
+       			-v "interface mgt0 vlan ${tb.vlan1}"
+       			-v "interface mgt0 native-vlan ${tb.vlan1}"
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}"
+       			-v "interface mgt0 hive ${hive.name}"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan1} ${tb.vlan3}"
+    		</console>
+		</step>
+		
+		<step no="1.1" delay="10">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step1.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>	
+	
+		<step no="2">
+			<desc>config ap2</desc>
+			<log-file>ap2_config.log</log-file>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan3}"   			
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}1"
+       			-v "interface mgt0 hive ${hive.name}1"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan3}"
+			</console>
+		</step>
+				
+		<step no="3" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>check bonjour-gateway status on ap1</desc>
+			<log-file>show_bon_sta1.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+			
+		<step no="4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the bonjour-gateway vlan</desc>
+			<log-file>show_bonjour_vlan.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway vlan"
+			</ssh>
+			<log-match>-p 1 -i "${tb.vlan1}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan2}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan3}"</log-match>
+		</step>
+				
+		<step no="5" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>check bonjour-gateway status on ap2</desc>
+			<log-file>show_bon_sta2.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway status"
+			</console>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+			
+		<step no="6">		
+			<desc>check the bonjour-gateway vlan on ap2</desc>
+			<log-file>show_bon_vlan2.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway vlan"
+			</console>			
+			<log-match>-p 1 -i "${tb.vlan3}"</log-match>
+		</step>
+		
+		<step no="7"  type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap1</desc>
+			<log-file>show_local_service1.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="8">
+			<desc>config filter rule on ap1</desc>
+			<log-file>config_filter.log</log-file>
+			<ssh target="ap1">
+				-v "vlan-group 1 ${tb.vlan2}"
+				-v "bonjour-gateway filter rule 1 * to 1"
+			</ssh>
+		</step>
+		
+		<step no="9">
+			<desc>show local service on ap2</desc>
+			<log-file>show_local_service2.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway service local"
+			</console>
+			<log-match>-n -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-n -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-n -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-n -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-n -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="10">
+			<desc>modify vlan-group</desc>
+			<log-file>modify_vlan_group.log</log-file>
+			<ssh target="ap1">
+				-v "vlan-group 1 ${tb.vlan3}"
+			</ssh>
+		</step>
+		
+		<step no="11">
+			<desc>restart bgd</desc>
+			<log-file>restart_bgd.log</log-file>
+			<console target="ap2">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</console>
+		</step>
+		
+		<step no="11.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>show_bon_sta3.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway status"
+			</console>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="12" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap2</desc>
+			<log-file>show_local_service3.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway service local"
+			</console>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan3}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="13">
+			<desc>delete vlan-group</desc>
+			<log-file>delete_vlan_group.log</log-file>
+			<ssh target="ap1">
+				-v "no vlan-group 1"
+			</ssh>
+			<log-match>-i "The VLAN group is used by some filter rule, can't be removed"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="14">
+			<desc>delete filter rule</desc>
+			<log-file>delete_filter.log</log-file>
+			<ssh target="ap1">
+				-v "no bonjour-gateway filter rule 1"
+			</ssh>
+		</step>		
+		
+		<step no="15">
+			<desc>delete vlan-group</desc>
+			<log-file>delete_vlan_group2.log</log-file>
+			<ssh target="ap1">
+				-v "no vlan-group 1"
+				-v "show vlan-group"
+			</ssh>
+			<log-match>-n -i "1)"</log-match>
+		</step>	
+	</stage>
+</testcase>

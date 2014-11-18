@@ -1,0 +1,275 @@
+<include obj-arg-names="__SW__">
+
+	<step no="1.1.1.get_dut_info">
+		<desc>get dut version</desc>
+		<log-file>show__SW__ver.log</log-file>
+		<console target="__SW__" slow="1">
+			-v ""
+			-v "show version"
+			-v "show version detail"
+			-v "show run"
+			-v ""
+		</console>
+		<no-error-check />
+	</step>
+
+	<!-- <step no="1.1.2.set_platform_variable"> <desc>set_platform_variable according to show__SW__ver.log on above step</desc> <multi-setvar> echo "curr_sr2000_plt=`cat ${log.dir}/showsw1ver.log|grep "Platform"|awk '{print $2}'|sed '2,$d'`" </multi-setvar> <no-error-check /> </step> -->
+
+	<step no="1.1.2.set_platform_var">
+		<desc>set_platform_variable according to show__SW__ver.log on above step</desc>
+		<setvar name="__SW__.platform">
+			cat ${log.dir}/showsw1ver.log|grep "Platform"|awk '{print $2}'|sed '2,$d'
+		</setvar>
+		<no-error-check />
+	</step>
+
+	<step no="1.2.configure">
+		<desc>configure mgt0 port on sr2000</desc>
+		<console target="__SW__" slow="2">
+			-v "interface ${__SW__.mgt0.port} shutdown"
+			-v "vlan ${__SW__.mgt0.vlan}"
+			-v "interface ${__SW__.mgt0.port} switchport access vlan ${__SW__.mgt0.vlan}"
+			-v ""
+			-v "interface mgt0 vlan ${__SW__.mgt0.vlan}"
+			-v "interface manage Telnet"
+			-v "console timeout 0"
+			-v "no capwap client enable"
+			-v ""
+			-v "console page 0"
+			-v "no interface ${__SW__.mgt0.port} shutdown"
+			-v "no interface mgt0 dhcp client"
+			-v ""
+			-v "interface mgt0 dhcp client"
+			-v ""
+		</console>
+	</step>
+	<step no="1.3.loop_show_int_mgt0" timeout="600">
+		<desc>loop to show_int_mgt0 and generate show_mgt0.log </desc>
+		<file>__SW___show_mgt_try_${include.prefix}_1.log</file>
+
+		<file>__SW___show_mgt_try_${include.prefix}_2.log</file>
+
+		<file>__SW___show_mgt_try_${include.prefix}_3.log</file>
+
+		<file>__SW___show_mgt_try_${include.prefix}_4.log</file>
+
+		<file>show_mgt0.log</file>
+
+		<script timeout="400">
+			## enter workdir
+			pushd .
+			cd ${log.dir}
+
+			for loop_idx in 1 2 3 4
+			do
+			<br />
+			echo Round $loop_idx get ip begin...
+			date
+			##
+			try_show_result_file=__SW___show_mgt_try_${include.prefix}_$loop_idx.log
+
+			<br />
+			## for round 1 process
+			## show interface mgt0: begin
+			if [ $loop_idx -eq 1 ]; then
+			console.py -w 1 -o 60 -d ${__SW__.conserver.ip} -e ${__SW__.cons_name} -z "$try_show_result_file" -v "" -v "show interface mgt0"
+
+			if [ $? -ne 0 ]; then
+			echo "console operation failed!"
+			exit 1;
+			fi
+			## get the mgt0 ip
+			__SW___mgt0_ip=`${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/$try_show_result_file -t str`
+			## judge __SW___mgt0_ip not equal 192.168.1.1 continue to loop2 and loop3
+			if [ "$__SW___mgt0_ip" != "192.168.1.1" ] &amp;&amp; [ "$__SW___mgt0_ip" != "" ]; then
+			echo "got ip normally,the ip is $__SW___mgt0_ip, loop get ip finished!"
+			cat ${log.dir}/$try_show_result_file > ${log.dir}/show_mgt0.log
+			date
+			break;
+			else
+			echo "Normally ip has not got, ip is $__SW___mgt0_ip , continue to loop get"
+			fi
+
+			fi
+
+			<br />
+			## for round 2 and 3 and 4 process
+			## show interface mgt0: begin
+			if [ $loop_idx -eq 2 ] || [ $loop_idx -eq 3 ] || [ $loop_idx -eq 4 ]; then
+			sleep 1
+			console.py -w 1 -o 60 -d ${__SW__.conserver.ip} -e ${__SW__.cons_name} -z "$try_show_result_file" -v "no interface mgt0 dhcp client" -v "interface mgt0 dhcp client" -v "" -v "show interface mgt0"
+			if [ $? -ne 0 ]; then
+			echo "console operation failed!"
+			exit 1;
+			fi
+			## get the mgt0 ip
+			__SW___mgt0_ip=`${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/$try_show_result_file -t str`
+			## judge __SW___mgt0_ip not equal 192.168.1.1 continue to loop3
+			if [ "$__SW___mgt0_ip" != "192.168.1.1" ] &amp;&amp; [ "$__SW___mgt0_ip" != "" ]; then
+			echo "got ip normally,the ip is $__SW___mgt0_ip, loop get ip finished!"
+			cat ${log.dir}/$try_show_result_file > ${log.dir}/show_mgt0.log
+			date
+			break;
+			else
+			echo "got ip is $__SW___mgt0_ip, continue to loop to get ip"
+			fi
+			fi
+			<br />
+
+			<br />
+			#the above-from---do---to---done-is the loop body
+			echo Round $loop_idx get ip end!
+			date
+			echo
+			done
+			<br />
+
+			## exit dir
+			popd
+		</script>
+		<no-error-check />
+	</step>
+	<!-- <step no="1.3.show.mgt0"> <desc>show mgt0 on sr2000</desc> <log-file>show_mgt0.log</log-file> <console target="__SW__" slow="1"> -v "" -v "show interface mgt0" -v "" </console> <no-error-check /> </step> -->
+
+	<!--__SW__ set to ap1 need framework to support __SW__ later 2013/4/19 -->
+	<step no="1.4.get.0">
+		<desc>get ip of sw1.forward.ip</desc>
+		<setvar name="__SW__.forward.ip">
+			${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_mgt0.log -t str
+		</setvar>
+	</step>
+	<step no="1.4.get.1">
+		<desc>get ip of ap1.mgt0.ip</desc>
+		<setvar name="ap1.mgt0.ip">
+			${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_mgt0.log -t str
+		</setvar>
+	</step>
+	<step no="1.4.get.2">
+		<desc>get ip of mgt0 to __SW__.mgt0.ip</desc>
+		<setvar name="__SW__.mgt0.ip">
+			${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_mgt0.log -t str
+		</setvar>
+	</step>
+	<step no="1.4.get.3">
+		<desc>get __SW__.admin.ip</desc>
+		<setvar name="__SW__.admin.ip">
+			${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_mgt0.log -t str
+		</setvar>
+	</step>
+	<step no="1.5.check.ping.1" type="loop-check" loop-max-times="4" loop-interval="4">
+		<log-file>check1_ping_from_mpc_to_mgt0_${loop_check.idx}.log</log-file>
+		<script>
+			ping ${ap1.mgt0.ip} -c 4 > ${log.dir}/check1_ping_from_mpc_to_mgt0_${loop_check.idx}.log
+		</script>
+		<log-match>-c -i "from ${ap1.mgt0.ip}: " -i "ttl=" -f ${log.dir}/check1_ping_from_mpc_to_mgt0_${loop_check.idx}.log</log-match>
+	</step>
+
+	<step no="1.5.check.ping.2" type="loop-check" loop-max-times="4" loop-interval="4">
+		<desc>check ping from mpc to mgt0</desc>
+		<log-file>check2_ping_from_mpc_to_mgt0_${loop_check.idx}.log</log-file>
+		<script>
+			ping ${__SW__.mgt0.ip} -c 4 > ${log.dir}/check2_ping_from_mpc_to_mgt0_${loop_check.idx}.log
+		</script>
+		<log-match>-c -i "from ${__SW__.mgt0.ip}: " -i "ttl=" -f ${log.dir}/check2_ping_from_mpc_to_mgt0_${loop_check.idx}.log</log-match>
+	</step>
+
+
+	<step no="1.6.generate_var">
+		<desc>generate the kernel port var</desc>
+		<multi-setvar>
+			echo "__SW__.mgt0.kport=`grep -w ${__SW__.mgt0.port} ${auto.root.dir}/subs/conf/sw_port.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port1}" ] || echo "__SW__.kport1=`grep -o ${__SW__.port1} ${auto.root.dir}/subs/conf/sw_port.txt|awk '{print
+			$2}'`"
+			[ "" == "${__SW__.port2}" ] || echo "__SW__.kport2=`grep -o ${__SW__.port2} ${auto.root.dir}/subs/conf/sw_port.txt|awk '{print
+			$2}'`"
+			[ "" == "${__SW__.port3}" ] || echo "__SW__.kport3=`grep -o ${__SW__.port3} ${auto.root.dir}/subs/conf/sw_port.txt|awk '{print
+			$2}'`"
+			[ "" == "${__SW__.port4}" ] || echo "__SW__.kport4=`grep -o ${__SW__.port4} ${auto.root.dir}/subs/conf/sw_port.txt|awk '{print
+			$2}'`"
+		</multi-setvar>
+	</step>
+
+	<step no="1.7.generate_var_if_IS_SR2148P">
+		<desc>generate the port index var</desc>
+		<if> "${__SW__.platform}" == "SR2148P"</if>
+		<multi-setvar>
+			[ "" == "${__SW__.port1}" ] || echo "__SW__.port1.hwindex=`grep -i -w ${__SW__.port1} ${auto.root.dir}/subs/conf/sw_sr2148p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port2}" ] || echo "__SW__.port2.hwindex=`grep -i -w ${__SW__.port2} ${auto.root.dir}/subs/conf/sw_sr2148p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port3}" ] || echo "__SW__.port3.hwindex=`grep -i -w ${__SW__.port3} ${auto.root.dir}/subs/conf/sw_sr2148p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port4}" ] || echo "__SW__.port4.hwindex=`grep -i -w ${__SW__.port4} ${auto.root.dir}/subs/conf/sw_sr2148p_index_chipID.txt|awk '{print $2}'`"
+			
+			[ "" == "${__SW__.port1}" ] || echo "__SW__.port1.chipid=`grep -i -w ${__SW__.port1} ${auto.root.dir}/subs/conf/sw_sr2148p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port2}" ] || echo "__SW__.port2.chipid=`grep -i -w ${__SW__.port2} ${auto.root.dir}/subs/conf/sw_sr2148p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port3}" ] || echo "__SW__.port3.chipid=`grep -i -w ${__SW__.port3} ${auto.root.dir}/subs/conf/sw_sr2148p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port4}" ] || echo "__SW__.port4.chipid=`grep -i -w ${__SW__.port4} ${auto.root.dir}/subs/conf/sw_sr2148p_index_chipID.txt|awk '{print $3}'`"
+		</multi-setvar>
+	</step>
+	
+	<step no="1.8.generate_var_if_IS_SR2124P">
+		<desc>generate the port index var</desc>
+		<if> "${__SW__.platform}" == "SR2124P"</if>
+		<multi-setvar>
+			[ "" == "${__SW__.port1}" ] || echo "__SW__.port1.hwindex=`grep -i -w ${__SW__.port1} ${auto.root.dir}/subs/conf/sw_sr2124p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port2}" ] || echo "__SW__.port2.hwindex=`grep -i -w ${__SW__.port2} ${auto.root.dir}/subs/conf/sw_sr2124p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port3}" ] || echo "__SW__.port3.hwindex=`grep -i -w ${__SW__.port3} ${auto.root.dir}/subs/conf/sw_sr2124p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port4}" ] || echo "__SW__.port4.hwindex=`grep -i -w ${__SW__.port4} ${auto.root.dir}/subs/conf/sw_sr2124p_index_chipID.txt|awk '{print $2}'`"
+			
+			[ "" == "${__SW__.port1}" ] || echo "__SW__.port1.chipid=`grep -i -w ${__SW__.port1} ${auto.root.dir}/subs/conf/sw_sr2124p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port2}" ] || echo "__SW__.port2.chipid=`grep -i -w ${__SW__.port2} ${auto.root.dir}/subs/conf/sw_sr2124p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port3}" ] || echo "__SW__.port3.chipid=`grep -i -w ${__SW__.port3} ${auto.root.dir}/subs/conf/sw_sr2124p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port4}" ] || echo "__SW__.port4.chipid=`grep -i -w ${__SW__.port4} ${auto.root.dir}/subs/conf/sw_sr2124p_index_chipID.txt|awk '{print $3}'`"
+		</multi-setvar>
+	</step>
+	<step no="1.9.1.generate_var_if_IS_SR2024P_or_SR2024">
+		<desc>generate the port index var</desc>
+		<if> "${__SW__.platform}" == "SR2024P" || "${__SW__.platform}" == "SR2024"</if>
+		<multi-setvar>
+			[ "" == "${__SW__.port1}" ] || echo "__SW__.port1.hwindex=`grep -i -w ${__SW__.port1} ${auto.root.dir}/subs/conf/sw_sr2024p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port2}" ] || echo "__SW__.port2.hwindex=`grep -i -w ${__SW__.port2} ${auto.root.dir}/subs/conf/sw_sr2024p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port3}" ] || echo "__SW__.port3.hwindex=`grep -i -w ${__SW__.port3} ${auto.root.dir}/subs/conf/sw_sr2024p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port4}" ] || echo "__SW__.port4.hwindex=`grep -i -w ${__SW__.port4} ${auto.root.dir}/subs/conf/sw_sr2024p_index_chipID.txt|awk '{print $2}'`"
+			
+			[ "" == "${__SW__.port1}" ] || echo "__SW__.port1.chipid=`grep -i -w ${__SW__.port1} ${auto.root.dir}/subs/conf/sw_sr2024p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port2}" ] || echo "__SW__.port2.chipid=`grep -i -w ${__SW__.port2} ${auto.root.dir}/subs/conf/sw_sr2024p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port3}" ] || echo "__SW__.port3.chipid=`grep -i -w ${__SW__.port3} ${auto.root.dir}/subs/conf/sw_sr2024p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port4}" ] || echo "__SW__.port4.chipid=`grep -i -w ${__SW__.port4} ${auto.root.dir}/subs/conf/sw_sr2024p_index_chipID.txt|awk '{print $3}'`"
+		</multi-setvar>
+	</step>
+	<step no="1.9.2.generate_var_if_IS_SR2010P">
+		<desc>generate the port index var</desc>
+		<if> "${__SW__.platform}" == "SR2010P"</if>
+		<multi-setvar>
+			[ "" == "${__SW__.port1}" ] || echo "__SW__.port1.hwindex=`grep -i -w ${__SW__.port1} ${auto.root.dir}/subs/conf/sw_sr2010p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port2}" ] || echo "__SW__.port2.hwindex=`grep -i -w ${__SW__.port2} ${auto.root.dir}/subs/conf/sw_sr2010p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port3}" ] || echo "__SW__.port3.hwindex=`grep -i -w ${__SW__.port3} ${auto.root.dir}/subs/conf/sw_sr2010p_index_chipID.txt|awk '{print $2}'`"
+			[ "" == "${__SW__.port4}" ] || echo "__SW__.port4.hwindex=`grep -i -w ${__SW__.port4} ${auto.root.dir}/subs/conf/sw_sr2010p_index_chipID.txt|awk '{print $2}'`"
+			
+			[ "" == "${__SW__.port1}" ] || echo "__SW__.port1.chipid=`grep -i -w ${__SW__.port1} ${auto.root.dir}/subs/conf/sw_sr2010p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port2}" ] || echo "__SW__.port2.chipid=`grep -i -w ${__SW__.port2} ${auto.root.dir}/subs/conf/sw_sr2010p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port3}" ] || echo "__SW__.port3.chipid=`grep -i -w ${__SW__.port3} ${auto.root.dir}/subs/conf/sw_sr2010p_index_chipID.txt|awk '{print $3}'`"
+			[ "" == "${__SW__.port4}" ] || echo "__SW__.port4.chipid=`grep -i -w ${__SW__.port4} ${auto.root.dir}/subs/conf/sw_sr2010p_index_chipID.txt|awk '{print $3}'`"
+		</multi-setvar>
+	</step>
+	
+	<!--__SW__ set to ap1 need framework to support __SW__ later 2013/4/19 -->
+	<comment>
+		<step no="pre1.d.1">
+			<desc>check ping from mpc to mgt0</desc>
+			<log-file>check_ping_from_mpc_to_mgt0.log</log-file>
+			<script>
+				ping ${ap1.mgt0.ip} -c 4 > ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${ap1.mgt0.ip}: " -i "ttl=" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="pre1.d.sw1">
+			<desc>check ping from mpc to mgt0</desc>
+			<log-file>check_ping_from_mpc_to_mgt0.log</log-file>
+			<script>
+				ping ${__SW__.mgt0.ip} -c 4 > ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${__SW__.mgt0.ip}: " -i "ttl=" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</comment>
+
+</include>

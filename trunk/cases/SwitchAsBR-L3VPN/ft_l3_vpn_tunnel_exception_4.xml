@@ -1,0 +1,187 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Add an domain name to exception list</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-l3 vpn tunnel is created between BR and CVG
+		-setup a ssid on BR, bind a user-profile with l3-tunnel-action with-
+		exception
+		-create a ethx.y, use it as dns server
+		-config a ext-resolve dns server
+		-setup a ethx.y interface to bind a user-profile with l3-tunnel-action
+		with-exception
+		-STA connects to ssid or ethx.y
+
+		Test Procedure:
+		-add an domain to the exception list,
+		‘vpn l3-tunnel-exception www.google.com'
+		-check the tunnel exception list,
+		‘sh vpn l3-tunnel-exception'
+		-check the Tunnel All With Exception Routing Table,
+		‘sh ip policy-route l3-tunnel-exception'
+		-STA ping domain www.google.com
+		- check the Tunnel All With Exception Routing Table again
+	</description>
+	<numofcvg>1</numofcvg>
+	<numofbr>1</numofbr>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+		<include prefix="1" file="subs/vpn_setup_one_sw.xml" obj-args="cvg1, br1" />
+
+		<step no="2.1">
+			<desc>config mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">			
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask 255.255.255.0"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc1.vlan} dns-server int-domain-name ${cvg1.dns1.domain1}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server int-resolve dns1 ${cvg1.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server ext-resolve dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server enable"
+			</telnet>
+		</step>
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.vpc1.route=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns1.route=$(echo ${cvg1.dns1.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				set eth1's mode and permit mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				<!---v "security-object lan1"
+				-v "security-object lan1 default-user-profile-attr 1"-->
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"					
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+ 			    -v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+ 			    -v "interface ${br1.br.lan.int1} switchport user-profile-attribute 1"
+ 			    <!-- -v "interface ${br1.br.lan.int1} security-object lan1"-->
+			</telnet>
+		</step>
+
+		<step no="4.2" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>-add an domain to the exception list</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "routing match-map ma user-profile lan1 to hostname ${pub.dns1.domain1}"
+				-v "routing match-map mb user-profile lan1 to any"
+				-v "routing route-map ra via ${br1.br.wan.int1}"
+				-v "routing route-map rb via encrypted"
+				-v "routing policy pa id 1 match-map ma route-map ra"
+				-v "routing policy pb id 2 match-map mb route-map rb"
+			</telnet>
+		</step>
+
+		<step no="5.1" delay="10">
+			<desc>show log buffer on br</desc>
+			<log-file>step5.1_show_log_buff.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show log buffer"
+			</telnet>
+			<log-match>-i "whitelist pattern added: ${pub.dns1.domain1}"</log-match>
+			<log-match>-i "using nameserver ${pub.dns1.ip}#53"</log-match>
+			<log-match>-i "ah_vpn_handle_tun_exception_pbr_hostname_change: hostname ${pub.dns1.domain1} add 1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5.2" delay="10">
+			<desc>sh vpn l3-tunnel-exception</desc>
+			<log-file>step5.2_show_exception.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn l3-tunnel-exception"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "L3 Tunnel Exception List:" -ps p "${pub.dns1.domain1}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.3" delay="10">
+			<desc>show ip policy-route l3-tunnel-exception</desc>
+			<log-file>step5.3_show_exception.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip policy-route l3-tunnel-exception"
+			</telnet>
+			<log-match>-n -i "${pub.dns1.ip}" -i "${br1.br.wan.int1}"</log-match>
+		</step>
+
+		<step no="5.5">
+			<desc>enable debug on BR</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_debug dns"
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} bid"
+				-v "_ff id 2 dst-port 53 bid"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				br1.vpc1 ping internal domain name
+			</desc>
+			<log-file>step6.3_ping.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ping ${pub.dns1.domain1} -c 3"
+			</ssh>
+		</step>
+
+		<step no="7.1">
+			<desc>show log buff</desc>
+			<log-file>7.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show log buff"
+			</telnet>
+			<no-error-check />
+		<!--	<log-match bin="${bin.dir}/searchblocks.py">-b "add exception route: ip route add ${pub.dns1.ip}/32" -ps p "dnsmasq\[\d+\]: 0: ${pub.dns1.ip}" -ps p "dnsmasq\[\d+\]: DNS pattern: ${pub.dns1.domain1}" -ps p "dnsmasq\[\d+\]: DNS name: ${pub.dns1.domain1}" -ps p "dnsmasq\[\d+\]: Add IPs: ${pub.dns1.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "create routing cache:${br1.vpc1.tif.ip}[\t\&gt;\- ]+${pub.dns1.ip} fwmark \d+ dev tunnel\d+" -c 0 -f ${log.dir}/${log.file}</log-match>-->
+		</step>
+
+		<step no="8" delay="10">
+			<desc>sh vpn l3-tunnel-exception</desc>
+			<log-file>step8_show_exception.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn l3-tunnel-exception"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "L3 Tunnel Exception List:" -ps p "${pub.dns1.domain1}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.1" delay="10">
+			<desc>show ip policy-route l3-tunnel-exception</desc>
+			<log-file>step8.1_show_exception.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip policy-route l3-tunnel-exception"
+			</telnet>
+			<log-match>-c -i "${pub.dns1.ip}" -i "${br1.br.wan.kport1}"</log-match>
+		</step>
+	</stage>
+</testcase>

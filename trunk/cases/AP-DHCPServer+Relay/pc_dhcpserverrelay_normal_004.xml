@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that DHCP client option and DHCP server option.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test procedure
+		1. The server MUST supply as many of the requested parameters as
+		possible and MUST omit any parameters it cannot provide. The
+		server MUST include each requested parameter only once unless
+		explicitly allowed in the DHCP Options and BOOTP Vendor
+		Extensions document.
+
+		Test Procedure:
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="mgt0.1_ip" value="192.168.${tb.vlan4}.10" />
+	<property name="def_gw_id" value="192.168.${tb.vlan4}.254" />
+	<property name="dns1_id" value="192.168.${tb.vlan4}.100" />
+	<property name="domain_name_id" value="192.168.${tb.vlan4}.110" />
+	<property name="mtu_id" value="1500" />
+	<property name="netmask_id" value="255.255.255.0" />
+	<property name="ntp1_id" value="192.168.${tb.vlan4}.120" />
+	<property name="pop3_id" value="192.168.${tb.vlan4}.130" />
+	<property name="smtp_id" value="192.168.${tb.vlan4}.140" />
+	<property name="lease_time" value="120" />
+	<property name="tb.vlan4.dhcp_start" value="192.168.${tb.vlan4}.200" />
+	<property name="tb.vlan4.dhcp_end" value="192.168.${tb.vlan4}.204" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				The server MUST supply as many of the requested parameters as
+				possible and MUST omit any parameters it cannot provide. The
+				server MUST include each requested parameter only once unless
+				explicitly allowed in the DHCP Options and BOOTP Vendor
+				Extensions document.
+			</desc>
+			<log-file>step1_config_ap.log</log-file>
+			<ssh target="ap1">
+				-v "interface mgt0.1 vlan ${tb.vlan4}"
+				-v "interface mgt0.1 ip ${mgt0.1_ip}/24"
+				-v "interface mgt0.1 dhcp-server ip-pool ${tb.vlan4.dhcp_start} ${tb.vlan4.dhcp_end}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${def_gw_id}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${dns1_id}"
+				-v "interface mgt0.1 dhcp-server options domain-name ${domain_name_id}"
+				-v "interface mgt0.1 dhcp-server options mtu ${mtu_id}"
+				-v "interface mgt0.1 dhcp-server options netmask ${netmask_id}"
+				-v "interface mgt0.1 dhcp-server options ntp1 ${ntp1_id}"
+				-v "interface mgt0.1 dhcp-server options pop3 ${pop3_id}"
+				-v "interface mgt0.1 dhcp-server options smtp ${smtp_id}"
+				-v "interface mgt0.1 dhcp-server options lease-time ${lease_time}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "user-profile ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan4} attribute 1"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "no interface eth0 allowed-vlan ${tb.vlan4}"
+			</ssh>
+		</step>
+		
+		<step no="1.0">
+			<desc>delete a allowed-vlan</desc>		
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<log-file>step1.0_config_ap.log</log-file>
+			<ssh target="ap1">
+				-v "no interface eth1 allowed-vlan ${tb.vlan4}"
+			</ssh>
+		</step>
+
+		<include prefix="1.1" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="1.2">
+			<desc>
+				config the laptop to apply the ssid profile,then start to associate
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="1.3" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				check if the client was associated successfully
+			</desc>
+			<log-file>step1.3_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				Station tcpdump
+			</desc>
+			<ssh target="sta1">
+				-v "nohup tcpdump -i ${sta1.tif.name} -nn port 67 -vvvv &gt; /tmp/step1.4_sta_tcpdump.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				dhclient wlan0
+			</desc>
+			<ssh target="sta1" timeout="100">
+				-v "dhclient ${sta1.tif.name}"
+				-v "dhclient ${sta1.tif.name} -r"
+			</ssh>
+		</step>
+
+		<step no="1.6" delay="10">
+			<desc>
+				ifconfig to show the ip add
+			</desc>
+			<log-file>step1.6_ifconfig_wlan0.log</log-file>
+			<ssh target="sta1" timeout="100">
+				-v "dhclient ${sta1.tif.name}"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match>-e "inet addr:" -e "inet"</log-match>
+		</step>
+
+		<step no="1.7">
+			<desc>
+				Get laptop1's ip
+			</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.6_ifconfig_wlan0.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="1.8" delay="10">
+			<desc>
+				Station killall tcpdump
+			</desc>
+			<log-file>step1.8_sta_killall_tcpdump.log</log-file>
+			<ssh target="sta1">
+				-v "killall tcpdump"
+			</ssh>
+		</step>
+
+		<step no="1.9" delay="10">
+			<desc>
+				check "nohup tcpdump" result
+			</desc>
+			<log-file>step1.9_check_result.log</log-file>
+			<ssh target="sta1">
+				-v "cat /tmp/step1.4_sta_tcpdump.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "${mgt0.1_ip}.67 &gt; ${sta1.tif.ip}.68:.* BOOTP\/DHCP, Reply" -ps p "Subnet-Mask.*: ${netmask_id}" p "Lease-Time.*: ${lease_time}" p "Default-Gateway.*: ${def_gw_id}" p "Domain-Name-Server.*: ${dns1_id}" p "Domain-Name.*: \"${domain_name_id}\"" p "MTU.*: ${mtu_id}" p "NTP.*: ${ntp1_id}" p "SMTP.*: ${smtp_id}" p "POP3.*: ${pop3_id}" -e "END Option" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="1.10" delay="10">
+			<desc>
+				check interface mgt0.1 dhcp-server options
+			</desc>
+			<log-file>step1.10_check_mgt0.1_dhcp_server_options.log</log-file>
+			<ssh target="ap1">
+				-v "show interface mgt0.1 dhcp-server"
+			</ssh>
+			<log-match>-c -i "Lease time" -i "${lease_time}"</log-match>
+			<log-match>-c -i "Netmask" -i "${netmask_id}"</log-match>
+			<log-match>-c -i "Default gateway" -i "${def_gw_id}"</log-match>
+			<log-match>-c -i "DNS Server" -i "${dns1_id}"</log-match>
+			<log-match>-c -i "NTP Server" -i "${ntp1_id}"</log-match>
+			<log-match>-c -i "POP3 Server" -i "${pop3_id}"</log-match>
+			<log-match>-c -i "SMTP Server" -i "${smtp_id}"</log-match>
+			<log-match>-c -i "MTU" -i "${mtu_id}"</log-match>
+			<log-match>-c -i "Domain name" -i "${domain_name_id}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+		<stage>
+			<step no="0" delay="60">
+				<desc>
+					Station killall tcpdump
+				</desc>
+				<log-file>step0_sta_killall_tcpdump.log</log-file>
+				<ssh target="sta1">
+					-v "killall tcpdump"
+				</ssh>
+			</step>
+		</stage>
+	</post-process>
+</testcase>

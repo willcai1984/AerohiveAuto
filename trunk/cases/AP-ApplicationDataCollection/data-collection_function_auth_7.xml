@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Distinguish between manual WEP and 802.1X-provided dynamic WEP keys</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Create two 802.1X-provided dynamic WEP SSID(wep104-8021x, wep40-8021x)
+		and bind them to interface wifi0
+		Set radius server to two SSIDs
+		Enable data collection
+		Open _debug dcm all
+		Data-collection collect interval 2 min
+
+		Test Procedure:
+
+		1. Use a client connect to wep104-8021x SSID, check dynamic WEP sessions
+		and manual WEP sessions by "show data-collection auth"
+		2. Disconnect client and connect wep40-8021x SSID, check dynamic WEP
+		sessions and manual WEP sessions by "show data-collection auth"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}_6" />
+	<property name="conn1.proto" value="wep-104-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.eap_group" value="WEP104" />
+	<property name="conn1.eap_type" value="PEAP" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+	<property name="conn2.ssid" value="${ssid.name}_7" />
+	<property name="conn2.proto" value="wep-40-8021x" />
+	<property name="conn2.username" value="${pub.radius1.username}" />
+	<property name="conn2.eap_group" value="WEP40" />
+	<property name="conn2.eap_type" value="PEAP" />
+	<property name="conn2.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Enable data collection
+				Open _debug dcm all
+				Data-collection collect interval 2 min
+			</desc>
+			<telnet target="ap1">
+				-v "data-collection enable"
+				-v "_debug dcm all"
+				-v "clear log all"
+				-v "data-collection collect interval 2 min"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				Create 802.1X-provided dynamic WEP SSID wep104-8021x and bind it to interface wifi0
+			</desc>
+			<telnet target="ap1">
+				-v "security-object test6"
+				-v "security-object test6 security protocol-suite wep104-8021x"
+				-v "security-object test6 security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object test6"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+			</telnet>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				Create 802.1X-provided dynamic WEP SSID wep40-8021x and bind it to interface wifi0
+			</desc>
+			<telnet target="ap1">
+				-v "security-object test7"
+				-v "security-object test7 security protocol-suite wep40-8021x"
+				-v "security-object test7 security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${conn2.ssid}"
+				-v "ssid ${conn2.ssid} security-object test7"
+				-v "interface wifi0 ssid ${conn2.ssid}"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				exec data-collection clear
+			</desc>
+			<telnet target="ap1">
+				-v "exec data-collection clear"
+			</telnet>
+		</step>
+
+		<include prefix="1.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="1.3">
+			<desc>
+				show ssid station
+			</desc>
+			<telnet target="ap1">
+				-v "show ssid ${conn1.ssid} station"
+			</telnet>
+			<log-match>-i "${sta1.tif.ip}" -i "wep-8021x *wep"</log-match>
+		</step>
+
+		<step no="1.4" delay="120">
+			<desc>
+				Use a client connect to wep-104-8021x SSID, check 8021x sessions by "show data-
+				collection auth"
+			</desc>
+			<telnet target="ap1">
+				-v "show data-collection auth"
+			</telnet>
+			<log-match>-i "DC_AUTH_METHOD_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_WEB (Open+CWP) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_DEFAULT_PSK (PSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_GROUP_PSK (PPSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_EAP (EAP) *: 1"</log-match>
+			<log-match>-i "DC_ENCRYPT_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_MANUAL_WEP (Manual WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_DYNAMIC_WEP (Dynamic WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_TKIP (TKIP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_CCMP (CCMP) *: 0"</log-match>
+		</step>
+
+		<step no="clear">
+			<desc>
+				exec data-collection clear
+			</desc>
+			<telnet target="ap1">
+				-v "exec data-collection clear"
+			</telnet>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				Disconnect client and connect to other SSID,check 8021x sessions by "show
+				data-collection auth"
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v "ter"
+				-v "quit"
+				-v "dhclient -r ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="1.6" delay="120">
+			<desc>
+				check 8021x sessions by "show data-collection auth"
+			</desc>
+			<telnet target="ap1">
+				-v "show data-collection auth"
+			</telnet>
+			<log-match>-i "DC_AUTH_METHOD_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_WEB (Open+CWP) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_DEFAULT_PSK (PSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_GROUP_PSK (PPSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_EAP (EAP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_MANUAL_WEP (Manual WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_DYNAMIC_WEP (Dynamic WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_TKIP (TKIP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_CCMP (CCMP) *: 0"</log-match>
+		</step>
+
+		<step no="clear">
+			<desc>
+				exec data-collection clear
+			</desc>
+			<telnet target="ap1">
+				-v "exec data-collection clear"
+			</telnet>
+		</step>
+
+		<include prefix="1.7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="1.8" delay="120">
+			<desc>
+				Disconnect client and connect to other SSID, check 8021x sessions by "show
+				data-collection auth"
+			</desc>
+			<telnet target="ap1">
+				-v "show data-collection auth"
+			</telnet>
+			<log-match>-i "DC_AUTH_METHOD_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_WEB (Open+CWP) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_DEFAULT_PSK (PSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_GROUP_PSK (PPSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_EAP (EAP) *: 1"</log-match>
+			<log-match>-i "DC_ENCRYPT_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_MANUAL_WEP (Manual WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_DYNAMIC_WEP (Dynamic WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_TKIP (TKIP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_CCMP (CCMP) *: 0"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				exec data-collection clear
+			</desc>
+			<telnet target="ap1">
+				-v "exec data-collection clear"
+			</telnet>
+		</step>
+
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="2.3">
+			<desc>
+				show ssid station
+			</desc>
+			<telnet target="ap1">
+				-v "show ssid ${conn2.ssid} station"
+			</telnet>
+			<log-match>-i "${sta1.tif.ip}" -i "wep-8021x *wep"</log-match>
+		</step>
+
+		<step no="2.4" delay="120">
+			<desc>
+				Use a client connect to wep-40-8021x SSID, check 8021x sessions by "show data-
+				collection auth"
+			</desc>
+			<telnet target="ap1">
+				-v "show data-collection auth"
+			</telnet>
+			<log-match>-i "DC_AUTH_METHOD_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_WEB (Open+CWP) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_DEFAULT_PSK (PSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_GROUP_PSK (PPSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_EAP (EAP) *: 1"</log-match>
+			<log-match>-i "DC_ENCRYPT_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_MANUAL_WEP (Manual WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_DYNAMIC_WEP (Dynamic WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_TKIP (TKIP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_CCMP (CCMP) *: 0"</log-match>
+		</step>
+
+		<step no="clear">
+			<desc>
+				exec data-collection clear
+			</desc>
+			<telnet target="ap1">
+				-v "exec data-collection clear"
+			</telnet>
+		</step>
+
+		<step no="2.5">
+			<desc>
+				Disconnect client and connect to other SSID,check 8021x sessions by "show
+				data-collection auth"
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v "ter"
+				-v "quit"
+				-v "dhclient -r ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.6" delay="120">
+			<desc>
+				check 8021x sessions by "show data-collection auth"
+			</desc>
+			<telnet target="ap1">
+				-v "show data-collection auth"
+			</telnet>
+			<log-match>-i "DC_AUTH_METHOD_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_WEB (Open+CWP) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_DEFAULT_PSK (PSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_GROUP_PSK (PPSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_EAP (EAP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_MANUAL_WEP (Manual WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_DYNAMIC_WEP (Dynamic WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_TKIP (TKIP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_CCMP (CCMP) *: 0"</log-match>
+		</step>
+
+		<step no="clear">
+			<desc>
+				exec data-collection clear
+			</desc>
+			<telnet target="ap1">
+				-v "exec data-collection clear"
+			</telnet>
+		</step>
+
+		<include prefix="2.7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="2.8" delay="120">
+			<desc>
+				Disconnect client and connect to other SSID, check 8021x sessions by "show
+				data-collection auth"
+			</desc>
+			<telnet target="ap1">
+				-v "show data-collection auth"
+			</telnet>
+			<log-match>-i "DC_AUTH_METHOD_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_WEB (Open+CWP) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_DEFAULT_PSK (PSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_GROUP_PSK (PPSK) *: 0"</log-match>
+			<log-match>-i "DC_AUTH_METHOD_EAP (EAP) *: 1"</log-match>
+			<log-match>-i "DC_ENCRYPT_OPEN (Open) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_MANUAL_WEP (Manual WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_DYNAMIC_WEP (Dynamic WEP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_TKIP (TKIP) *: 0"</log-match>
+			<log-match>-i "DC_ENCRYPT_CCMP (CCMP) *: 0"</log-match>
+		</step>
+	</stage>
+</testcase>

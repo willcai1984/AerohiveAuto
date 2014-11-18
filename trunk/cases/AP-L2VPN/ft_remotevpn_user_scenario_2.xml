@@ -1,0 +1,449 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>use scenario 2 to test</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		use scenario 2 to test
+		VPN Server 1--------Primary Tunnel------|
+		VPN Client---laptop
+		VPN Server 2--------Backup Tunnel------|
+
+		1. GRE-over-IPsec encapsulation of station traffic on the source remote-office AP
+		2. GRE-over-IPsec decapsulation of station traffic at the central office VPN server
+		3. Forwarding of the station traffic at the central office VPN server to backhaul to different subnet
+		4. GRE-over-IPsec encapsulation of forwarded traffic at the central office VPN server
+		5. GER-over-IPsec decapsulation of forwarded traffic received at the destination remote-office AP
+		6. Verify the upper step by Unicast/Broadcast pkt.
+		7. Verify the upper step when packet is fragmentation.
+	</description>
+	<numofap>3</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+		<step no="1.1">
+			<desc>move ap1 to vlan ${tb.vlan2}</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<include prefix="1.2" file="subs/ap_renew_ip.xml" obj-args="ap1" />
+
+		<step no="2.1">
+			<desc>setup ap1 as VPN primary server</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:${pub.cert.vpn.tftp}/server_cert.pem no-prompt"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:${pub.cert.vpn.tftp}/server_key.pem no-prompt"
+				-v "vpn xauth-client-list clientList local"
+				-v "vpn xauth-client-list clientList client-name vpnclient1 password aerohive"
+				-v "vpn client-ip-pool ipPool local ${tb.vlan3.dhcp_start} ${tb.vlan3.dhcp_end} netmask 255.255.255.0"
+				-v "vpn server-ipsec-tunnel primaryServer"
+				-v "vpn ipsec-tunnel primaryServer client-list clientList client-ip-pool ipPool dns-server ${pub.dns1.ip}"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel primaryServer"
+				-v "user-profile Tunnel${tb.vlan3} qos-policy def-user-qos vlan-id ${tb.vlan3} attribute ${tb.vlan3}"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>setup ssid on vpn primary server</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}-server"
+				-v "security-object ${ssid.name}-server security protocol-suite open"
+				-v "security-object ${ssid.name}-server default-user-profile-attr ${tb.vlan3}"
+				-v "ssid ${ssid.name}-server"
+				-v "ssid ${ssid.name}-server security-object ${ssid.name}-server"
+				-v "interface wifi0 ssid ${ssid.name}-server"
+				-v "interface wifi1 ssid ${ssid.name}-server"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>move ap2 to vlan ${tb.vlan2}</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+		
+		<include prefix="3.2" file="subs/ap_renew_ip.xml" obj-args="ap2" />
+
+		<step no="4">
+			<desc>setup ap2 as VPN backup server</desc>
+			<ssh target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:${pub.cert.vpn.tftp}/server_cert.pem no-prompt"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:${pub.cert.vpn.tftp}/server_key.pem no-prompt"
+				-v "vpn xauth-client-list clientList local"
+				-v "vpn xauth-client-list clientList client-name vpnclient1 password aerohive"
+				-v "vpn client-ip-pool ipPool local ${tb.vlan2.dhcp_start} ${tb.vlan2.dhcp_end} netmask 255.255.255.0"
+				-v "vpn server-ipsec-tunnel backupServer"
+				-v "vpn ipsec-tunnel backupServer client-list clientList client-ip-pool ipPool dns-server ${pub.dns1.ip}"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel backupServer"
+				-v "user-profile Tunnel${tb.vlan3} qos-policy def-user-qos vlan-id ${tb.vlan3} attribute ${tb.vlan3}"
+			</ssh>
+		</step>
+		
+		<step no="5.1">
+			<desc>change mgt0 vlan on AP3</desc>
+			<console target="ap3">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+		
+		<include prefix="5.2" file="subs/ap_renew_ip.xml" obj-args="ap3" />
+		
+		<step no="5.2">
+			<desc>setup ap3 as VPN client</desc>
+			<ssh target="ap3">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:${pub.cert.vpn.tftp}/cacert.pem no-prompt"
+				-v "vpn client-ipsec-tunnel vpn_server_1"
+				-v "vpn client-ipsec-tunnel vpn_server_2"
+				-v "vpn ipsec-tunnel vpn_server_1 gateway ${ap1.mgt0.ip} client-name vpnclient1 password aerohive"
+				-v "vpn ipsec-tunnel vpn_server_2 gateway ${ap2.mgt0.ip} client-name vpnclient1 password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel vpn_server_1 primary"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel vpn_server_2"
+			</ssh>
+		</step>
+		
+		<step no="5.3">
+			<desc>setup ssid on VPN client</desc>
+			<ssh target="ap3">
+				-v "security-object ${ssid.name}-client"
+				-v "user-profile Tunnel${tb.vlan3} qos-policy def-user-qos vlan-id ${tb.vlan3} attribute ${tb.vlan3}"
+				-v "user-profile Tunnel${tb.vlan3} tunnel-policy vpn_tunnel_policy"
+				-v "security-object ${ssid.name}-client default-user-profile-attr ${tb.vlan3}"
+				-v "security-object ${ssid.name}-client security protocol-suite open"
+				-v "ssid ${ssid.name}-client"
+				-v "ssid ${ssid.name}-client security-object ${ssid.name}-client"
+				-v "interface wifi0 ssid ${ssid.name}-client"
+				-v "interface wifi1 ssid ${ssid.name}-client"
+
+			</ssh>
+		</step>
+		
+		<step no="6.1" delay="30" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check vpn ike sa on vpn client side</desc>
+			<log-file>ike_sa_client${loop_check.idx}.log</log-file>
+			<ssh target="ap3">
+				-v "show vpn ike sa"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip}\[500\]" -p 3 -i "9" -p 4 -i "I"</log-match>
+			<log-match>-i "${ap2.mgt0.ip}\[500\]" -p 3 -i "9" -p 4 -i "I"</log-match>
+		</step>
+		
+		<step no="6.2">
+			<desc>check vpn ike sa on vpn primary server side</desc>
+			<log-file>ike_sa_server_pri.log</log-file>
+			<ssh target="ap1">
+				-v "show vpn ike sa"
+			</ssh>
+			<log-match>-i "${ap3.mgt0.ip}\[500\]" -p 3 -i "9" -p 4 -i "R"</log-match>
+		</step>
+		<step no="6.3">
+			<desc>check vpn ike sa on vpn backup server side</desc>
+			<log-file>ike_sa_server_bak.log</log-file>
+			<ssh target="ap2">
+				-v "show vpn ike sa"
+			</ssh>
+			<log-match>-i "${ap3.mgt0.ip}\[500\]" -p 3 -i "9" -p 4 -i "R"</log-match>
+		</step>
+		
+		<step no="7.1">
+			<desc>show config on vpn primary server</desc>
+			<log-file>multi_show_server_ap1.log</log-file>
+			<ssh target="ap1">
+				-v "show vpn tunnel-id"
+				-v "show vpn ike sp"
+				-v "show vpn ipsec-tunnel"
+			</ssh>
+		</step>
+		
+		<step no="7.2">
+			<desc>show config on vpn backup server</desc>
+			<log-file>multi_show_server_ap2.log</log-file>
+			<ssh target="ap2">
+				-v "show vpn tunnel-id"
+				-v "show vpn ike sp"
+				-v "show vpn ipsec-tunnel"
+			</ssh>
+		</step>
+		<step no="7.3">
+			<desc>show config on vpn client</desc>
+			<log-file>multi_show_client.log</log-file>
+			<ssh target="ap3">
+				-v "show vpn tunnel-id"
+				-v "show vpn ike sp"
+				-v "show vpn ipsec-tunnel"
+			</ssh>
+		</step>
+		<step no="8.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>show interface tunnel0 on vpn client</desc>
+			<log-file>show_tunnel0_ap3.log</log-file>
+			<ssh target="ap3">
+				-v "show interface tunnel0"
+			</ssh>
+			<log-match>-n -i "IP addr=0.0.0.0"</log-match>
+		</step>
+		<step no="8.2">
+			<desc>get ip of tunnel1 on vpn client</desc>
+			<setvar name="ap3.tunnel0.ip">
+				grep "IP addr" ${log.dir}/show_tunnel0_ap3.log| cut -d\; -f1 | cut -d= -f2
+			</setvar>
+		</step>
+		<step no="8.3">
+			<desc>show interface tunnel1 on vpn client</desc>
+			<log-file>show_tunnel1_ap3.log</log-file>
+			<ssh target="ap3">
+				-v "show interface tunnel1"
+			</ssh>
+		</step>
+		<step no="8.4">
+			<desc>get ip of tunnel1 on vpn client</desc>
+			<setvar name="ap3.tunnel1.ip">
+				grep "IP addr" ${log.dir}/show_tunnel1_ap3.log| cut -d\; -f1 | cut -d= -f2
+			</setvar>
+		</step>
+
+		<!--<property name="sta1.ssid" value="${ssid.name}-client" /> <property name="sta1.proto" value="open" /> <include prefix="9" file="subs/sta_connect_${tb.os}.xml" rargs="sta1" /> -->
+
+		<step no="9.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}-client"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="9.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap2" />
+
+
+		<step no="10">
+			<desc>check show station on ssid ${ssid.name}-server</desc>
+			<log-file>show_station_sta1.log</log-file>
+			<ssh target="ap3">
+				-v "show ssid ${ssid.name}-client station"
+			</ssh>
+
+			<log-match> -i "${sta1.tif.mac}" -i "${sta1.tif.ip}" -i "${tb.vlan3}" -c</log-match>
+
+		</step>
+		<step no="11">
+			<desc>check route of sta1 on vpn client</desc>
+			<log-file>check_vpn_client_route.log</log-file>
+			<ssh target="ap3">
+				-v "show route"
+			</ssh>
+			<log-match>i "${sta1.tif.mac}" -i "LT"</log-match>
+		</step>
+		<step no="12">
+			<desc>enable debug on vpn client</desc>
+			<ssh target="ap3">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 2 protocol 47 bidirectional"
+				-v "_ff id 3 protocol 50 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</ssh>
+		</step>
+
+		<include prefix="13.1" file="subs/sta_ping.xml" args="sta1, ${tb.vlan1.gw}, 4" />
+
+		<step no="13.2">
+			<desc>check ping pkt go through tunnel success</desc>
+			<log-file>ping_vpn_client_subnet.log</log-file>
+			<ssh target="ap3">
+				-v "sh log buffered"
+				-v "clear log buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi.* ${tb.vlan1.gw}->${sta1.tif.ip}.*icmp-echo-reply" -ps p "encap outgoing packet ${ap3.tunnel0.ip}->${ap1.mgt0.ip}.*?proto\(47\)" p "\(o\) eth0 ${ap3.mgt0.ip}->${ap1.mgt0.ip}.*?proto\(50\)" p "\(i\) eth0 ${ap1.mgt0.ip}->${ap3.mgt0.ip}.*?proto\(50\)" p "\(i\) mgt0 ${ap1.mgt0.ip}->${ap3.tunnel0.ip}.*?proto\(47\)" -e "\(i\) wifi.* ${sta1.tif.ip}->${tb.vlan1.gw}.*icmp-echo-req" -f ${log.dir}/${log.file}
+			</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="14.1" file="subs/sta_ping.xml" args="sta1, ${tb.vlan3.gw}, 4" />
+
+		<step no="14.2">
+			<desc>check ping pkt go through tunnel success</desc>
+			<log-file>ping_same_subnet.log</log-file>
+			<ssh target="ap3">
+				-v "sh log buffered"
+				-v "clear log buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi.* ${tb.vlan3.gw}->${sta1.tif.ip}.*icmp-echo-reply" -ps p "encap outgoing packet ${ap3.tunnel0.ip}->${ap1.mgt0.ip}.*?proto\(47\)" p "\(o\) eth0 ${ap3.mgt0.ip}->${ap1.mgt0.ip}.*?proto\(50\)" p "\(i\) eth0 ${ap1.mgt0.ip}->${ap3.mgt0.ip}.*?proto\(50\)" p "\(i\) mgt0 ${ap1.mgt0.ip}->${ap3.tunnel0.ip}.*?proto\(47\)" -e "\(i\) wifi.* ${sta1.tif.ip}->${tb.vlan3.gw}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="15.1" file="subs/sta_ping.xml" args="sta1, ${tb.vlan3.gw}, 4, , 2000" />
+
+		<step no="15.2">
+			<desc>check ping pkt go through tunnel success</desc>
+			<log-file>ping_fragment.log</log-file>
+			<ssh target="ap3">
+				-v "sh log buffered"
+				-v "clear log buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi.* ${tb.vlan3.gw}->${sta1.tif.ip}.*icmp-echo-reply" -ps p "encap outgoing packet ${ap3.tunnel0.ip}->${ap1.mgt0.ip}.*?proto\(47\)" p "\(o\) eth0 ${ap3.mgt0.ip}->${ap1.mgt0.ip}.*?proto\(50\)" p "\(i\) eth0 ${ap1.mgt0.ip}->${ap3.mgt0.ip}.*?proto\(50\)" p "\(i\) mgt0 ${ap1.mgt0.ip}->${ap3.tunnel0.ip}.*?proto\(47\)" -e "\(i\) wifi.* ${sta1.tif.ip}->${tb.vlan3.gw}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<!--<property name="sta2.ssid" value="${ssid.name}-server" /> <property name="sta2.proto" value="open" /> <include prefix="16" file="subs/sta_connect_${tb.os}_next.xml" rargs="sta2" /> -->
+
+		<step no="16.1">
+			<multi-setvar>
+				echo "conn2.ssid=${ssid.name}-server"
+				echo "conn2.proto=open"
+				echo "conn2.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="16.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+
+
+		<step no="17.1">
+			<desc>check show station on vpn server</desc>
+			<log-file>show_station_sta2.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name}-server station"
+			</ssh>
+			<log-match> -i "${sta2.tif.mac}" -i "${sta2.tif.ip}" -i "${tb.vlan3}" -c</log-match>
+
+		</step>
+		<step no="17.2">
+			<desc>enable debug on AP1</desc>
+			<ssh target="ap1">
+				-v "_ff id 1 src-ip ${sta2.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 2 protocol 47 bidirectional"
+				-v "_ff id 3 protocol 50 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</ssh>
+		</step>
+
+		<include prefix="18.1" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+
+		<step no="18.2">
+			<desc>check ping pkt go through tunnel success</desc>
+			<log-file>ping_vpn_station.log</log-file>
+			<ssh target="ap1">
+				-v "sh log buffered"
+				-v "clear log buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${ap1.mgt0.ip}->${ap3.mgt0.ip}.*?proto\(50\)" -ps p "\(i\) mgt0 ${ap3.tunnel0.ip}->${ap1.mgt0.ip}.*?proto\(47\)" p "\(o\) wifi.* ${sta1.tif.ip}->${sta2.tif.ip}.*?icmp-echo-req" p "\(i\) wifi.* ${sta2.tif.ip}->${sta1.tif.ip}.*?icmp-echo-reply" p "encap outgoing packet ${ap1.mgt0.ip}->${ap3.tunnel0.ip}.*?proto\(47\)" -e "\(i\) eth0 ${ap3.mgt0.ip}->${ap1.mgt0.ip}.*?proto\(50\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<step no="19">
+			<desc>check the primary tunnel now by show amrp tunnel route on vpn client</desc>
+			<log-file>amrp-tunnel-route.log</log-file>
+			<ssh target="ap3">
+				-v "show amrp tunnel route"
+			</ssh>
+		</step>
+		<step no="20">
+			<desc>make failover happen by changing primary vpn server</desc>
+			<ssh target="ap3">
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel vpn_server_2 primary"
+			</ssh>
+		</step>
+		<step no="21" delay="15" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check vpn ike sa on vpn client side</desc>
+			<log-file>ike_sa_client_failover${loop_check.idx}.log</log-file>
+			<ssh target="ap3">
+				-v "show vpn ike sa"
+			</ssh>
+			<log-match>-i "${ap1.mgt0.ip}\[500\]" -p 3 -i "9" -p 4 -i "I"</log-match>
+			<log-match>-i "${ap2.mgt0.ip}\[500\]" -p 3 -i "9" -p 4 -i "I"</log-match>
+		</step>
+		<step no="22">
+			<desc>check the primary tunnel now by show amrp tunnel route on vpn client</desc>
+			<log-file>amrp-tunnel-route_failover.log</log-file>
+			<ssh target="ap3">
+				-v "show amrp tunnel route"
+			</ssh>
+		</step>
+
+		<step no="22.1">
+			<desc>show interface tunnel1 on vpn client</desc>
+			<log-file>show_tunnel1_ap3.log</log-file>
+			<ssh target="ap3">
+				-v "show interface tunnel1"
+			</ssh>
+		</step>
+		<step no="22.2">
+			<desc>get ip of tunnel1 on vpn client</desc>
+			<setvar name="ap3.tunnel1.ip">
+				grep "IP addr" ${log.dir}/show_tunnel1_ap3.log| cut -d\; -f1 | cut -d= -f2
+			</setvar>
+		</step>
+
+		<include prefix="23.1" file="subs/sta_ping.xml" args="sta1, ${tb.vlan1.gw}, 4" />
+
+
+
+		<step no="23.2">
+			<desc>check ping pkt go through tunnel success</desc>
+			<log-file>ping_vpn_client_subnet_failover.log</log-file>
+			<ssh target="ap3">
+				-v "sh log buffered"
+				-v "clear log buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi.* ${tb.vlan1.gw}->${sta1.tif.ip}.*icmp-echo-reply" -ps p "encap outgoing packet ${ap3.tunnel1.ip}->${ap2.mgt0.ip}.*?proto\(47\)" p "\(o\) eth0 ${ap3.mgt0.ip}->${ap2.mgt0.ip}.*?proto\(50\)" p "\(i\) eth0 ${ap2.mgt0.ip}->${ap3.mgt0.ip}.*?proto\(50\)" p "\(i\) mgt0 ${ap2.mgt0.ip}->${ap3.tunnel1.ip}.*?proto\(47\)" -e "\(i\) wifi.* ${sta1.tif.ip}->${tb.vlan1.gw}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="24.1" file="subs/sta_ping.xml" args="sta1, ${tb.vlan3.gw}, 4" />
+
+		<step no="24.2">
+			<desc>check ping pkt go through tunnel success</desc>
+			<log-file>ping_same_subnet_failover.log</log-file>
+			<ssh target="ap3">
+				-v "sh log buffered"
+				-v "clear log buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi.* ${tb.vlan3.gw}->${sta1.tif.ip}.*icmp-echo-reply" -ps p "encap outgoing packet ${ap3.tunnel1.ip}->${ap2.mgt0.ip}.*?proto\(47\)" p "\(o\) eth0 ${ap3.mgt0.ip}->${ap2.mgt0.ip}.*?proto\(50\)" p "\(i\) eth0 ${ap2.mgt0.ip}->${ap3.mgt0.ip}.*?proto\(50\)" p "\(i\) mgt0 ${ap2.mgt0.ip}->${ap3.tunnel1.ip}.*?proto\(47\)" -e "\(i\) wifi.* ${sta1.tif.ip}->${tb.vlan3.gw}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="25.1" file="subs/sta_ping.xml" args="sta1, ${tb.vlan3.gw}, 4, , 2000" />
+
+		<step no="25.2">
+			<desc>check ping pkt go through tunnel success</desc>
+			<log-file>ping_fragment_failover.log</log-file>
+			<ssh target="ap3">
+				-v "sh log buffered"
+				-v "clear log buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi.* ${tb.vlan3.gw}->${sta1.tif.ip}.*icmp-echo-reply" -ps p "encap outgoing packet ${ap3.tunnel1.ip}->${ap2.mgt0.ip}.*?proto\(47\)" p "\(o\) eth0 ${ap3.mgt0.ip}->${ap2.mgt0.ip}.*?proto\(50\)" p "\(i\) eth0 ${ap2.mgt0.ip}->${ap3.mgt0.ip}.*?proto\(50\)" p "\(i\) mgt0 ${ap2.mgt0.ip}->${ap3.tunnel1.ip}.*?proto\(47\)" -e "\(i\) wifi.* ${sta1.tif.ip}->${tb.vlan3.gw}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<step no="26.1">
+			<desc>enable debug on AP2</desc>
+			<ssh target="ap2">
+				-v "_ff id 1 src-ip ${sta2.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 2 protocol 47 bidirectional"
+				-v "_ff id 3 protocol 50 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</ssh>
+		</step>
+
+		<include prefix="26.2" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+
+		<step no="26.3">
+			<desc>check ping pkt go through tunnel success</desc>
+			<log-file>ping_vpn_station_failover.log</log-file>
+			<ssh target="ap2">
+				-v "sh log buffered"
+				-v "clear log buffered"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${ap2.mgt0.ip}->${ap3.mgt0.ip}.*?proto\(50\)" -ps p "\(i\) mgt0 ${ap3.tunnel1.ip}->${ap2.mgt0.ip}.*?proto\(47\)" p "\(o\) eth0 ${sta1.tif.ip}->${sta2.tif.ip}.*?icmp-echo-req" p "\(i\) eth0 ${sta2.tif.ip}->${sta1.tif.ip}.*?icmp-echo-reply" p "encap outgoing packet ${ap2.mgt0.ip}->${ap3.tunnel1.ip}.*?proto\(47\)" -e "\(i\) eth0 ${ap3.mgt0.ip}->${ap2.mgt0.ip}.*?proto\(50\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

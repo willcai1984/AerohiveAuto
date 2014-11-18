@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>New Vlan from UPID that is returned from radius server</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use	TOPO 1
+		Description	 Vlan from UPID that is returned from radius server
+		Pre-condition	
+		Test procedure	
+1.	Set one security-object with radius-server
+2.	Set one user-profile and define the attribute x and vlan y
+3.	Set another 5 upid and define different vlan.
+4.	Set eth1 mode as access and bind the attribute x to it
+5.	Bind the security-object to the port.
+6.	Connect an laptops to the port.
+7.	Auth successfully and return a different upid from radius server. result 1
+8.	Disconnected the laptop and reconnected it the the port
+9.	User new username and password to autication. Resut 2.
+
+		Expect result	
+1.	Use the upid from radius server for the laptop and vlan for the port is denfined in the upid. Make sure the vlan is not y
+2.	Use the new upid from radius server for the laptop and new vlan for the port is denfined in the upid. Make sure the vlan is not y and not step 1
+
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="br.8021x.multicast" value="01-80-c2-00-00-03" />
+
+	<stage>
+
+		<step no="pre_step">
+			<desc>configure mgt0.1 with dhcp service enable</desc>
+			<console target="br1.br">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${br1.vlan1}"
+				-v "interface mgt0 native-vlan ${br1.vlan1}"
+				-v "interface mgt0.1 vlan ${br1.vlan2}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+		</step>
+
+		<step no="1">
+			<desc>
+				1. Set one security-object with radius-server
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object lan1"
+				-v "security-object lan1 security protocol-suite 802.1x"
+				-v "security-object lan1 security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object lan1 default-user-profile-attr 1"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2.	Set one user-profile and define the attribute x and vlan y
+				3.	Set another 5 upid and define different vlan.
+				4.	Set eth1 mode as access and bind the attribute x to it
+				5.	Bind the security-object to the port.
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vlan1} attribute 1"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vlan2} attribute ${br1.vlan2}"
+				-v "user-profile lan3 qos-policy def-user-qos vlan-id ${br1.vlan3} attribute ${br1.vlan3}"
+				-v "interface ${br1.br.lan.int1} mode bridge-access user-profile-attribute 1"
+				-v "interface ${br1.br.lan.int1} security-object lan1"
+				-v "int ${br1.br.lan.int1} mac-learning enable"
+			</telnet>
+		</step>
+
+		<property name="acct1.uid" value="${br1.vlan2}" />	
+		<property name="acct1.vlan" value="${br1.vlan1}" />	
+		<include prefix="pre3" file="subs/ldap_add.xml" args="auto${job.id}, aerohive" obj-args="acct1" />
+
+		<property name="conn1.user" value="auto${job.id}" />	
+		<property name="conn1.passwd" value="aerohive" />	
+		<include prefix="4" file="subs/sta_wired_connect_${tb.os}.xml" rargs="conn1, br1.vpc1, br1.br" />	
+
+		<step no="5">
+			<desc>get raw mac of vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step3_ifconfig_vpc1_.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				show interface
+			</desc>
+			<log-file>step6_show_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface ${br1.br.lan.int1}"
+			</telnet>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show 802.1x-mac-table interface eth1
+			</desc>
+			<log-file>step7_show_802.1x.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table interface ${br1.br.lan.int1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}[\t ]+${br1.vlan2}[\t ]+${br1.br.lan.int1}[\t ]+CLOSE[\t ]+N/A" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step8_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface ${br1.br.lan.int1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}\s*${br1.vlan2}.*done\s*data\s*auto${job.id}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				shutdown and startup the eth port
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface ${br1.br.lan.int1} shutdown"
+				-v "no interface ${br1.br.lan.int1} shutdown"
+			</telnet>
+		</step>
+		
+		<property name="acct2.uid" value="${br1.vlan3}" />	
+		<property name="acct2.vlan" value="${br1.vlan2}" />	
+		<include prefix="acct2.add" file="subs/ldap_add.xml" args="auto${job.id}_1, aerohive" obj-args="acct2" />
+
+		<property name="conn2.user" value="auto${job.id}_1" />	
+		<property name="conn2.passwd" value="aerohive" />	
+		<include prefix="10" file="subs/sta_wired_connect_${tb.os}.xml" rargs="conn2, br1.vpc1, br1.br" />	
+
+		<step no="11">
+			<desc>
+				show interface
+			</desc>
+			<log-file>step11_show_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface ${br1.br.lan.int1}"
+			</telnet>
+		</step>
+
+		<step no="12" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show 802.1x-mac-table interface eth1
+			</desc>
+			<log-file>step12_show_802.1x.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table interface ${br1.br.lan.int1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}[\t ]+${br1.vlan2}[\t ]+${br1.br.lan.int1}[\t ]+CLOSE[\t ]+N/A" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step13_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface ${br1.br.lan.int1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}\s*${br1.vlan2}.*done\s*data\s*auto${job.id}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+	</stage>
+
+</testcase>

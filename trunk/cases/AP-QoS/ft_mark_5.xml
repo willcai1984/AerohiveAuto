@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test marking, aerohive class0-7 mapping to 80211e(0-7) wifi0 interface Test topology Top1 Device Configuration Ssid DeathKnight Interface wifi0 ssid DeathKnight qos marker-profile 80211e 80211e ssid DeathKnight qos-marker 80211e qos marker-map 80211e 0-7 0-7</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Test Procedure:
+		1. create ssid ${ssid.name}, binding to wifi0;
+		2. set qos marker on 80211e, and apply it on ssid ${ssid.name};
+		-v "qos marker-profile 80211e 80211e"
+		-v "ssid ${ssid.name} qos-marker 80211e"
+		-v "qos marker-map 80211e [0-7] [0-7]"
+		3. mpc ping station1 (default classifier profile is "def-land-cls" ingress from ethx, so the qos class will be 2 for default)
+		4. check log buffered.
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="" value="" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				create ssid, binding wifi0
+			</desc>
+			<log-file>ssid_wifi0.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>create a wpa_supplicant configuration file on Station</desc>
+			<ssh target="sta1">
+				-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+				-v "ifconfig ${sta1.tif.name} down"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>kill the wpa_supplicant on client side</desc>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name} up"
+				-v "killall wpa_supplicant";
+			</ssh>
+		</step>
+
+		<step no="4" delay="5">
+			<desc>start the wpa_supplicant on client side</desc>
+			<ssh target="sta1">
+				-v "wpa_supplicant -i ${sta1.tif.name} ${sta1.wpa_flag} -c /tmp/wpa_supplicant.cfg -B"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>config the laptop to apply the ssid profile,then start to associate </desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="6" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check if the client was associated successfully</desc>
+			<log-file>wpa_stat_sta1_loop-check.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>client gets IP by dhclient</desc>
+			<ssh target="sta1" slow="true">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="10">
+			<desc>get wireless IP from remote linux host sta1</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="11">
+			<desc>get mpc IP from remote linux host mpc</desc>
+			<setvar name="mpc.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${mpc.mif.ip} -u ${mpc.user} -p ${mpc.passwd} -i ${mpc.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="12">
+			<desc>set qos marker and user it on ssid; and set debug filter</desc>
+			<log-file>marker_80211e_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "qos marker-profile 80211e 80211e"
+				-v "ssid ${ssid.name} qos-marker 80211e"
+				-v "qos marker-map 80211e 2 2"
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${mpc.tif.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos mark"
+			</telnet>
+		</step>
+
+		<step no="13">
+			<desc>show qos-classifer service to check default classifier on icmp protocol</desc>
+			<log-file>show_qos_class_service.log</log-file>
+			<telnet target="ap1">
+				-v "show qos classifier-map service"
+			</telnet>
+			<log-match>-i "2" -i "icmp" -p 3</log-match>
+		</step>
+
+		<step no="14">
+			<desc>show qos-marker 80211e to check marker map on 80211e</desc>
+			<log-file>show_qos_marker_80211e.log</log-file>
+			<telnet target="ap1">
+				-v "show qos marker-map 80211e"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "2\s+2" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="15">
+			<desc>Master pc ping sta1 to check qos marker </desc>
+			<log-file>mpc_ping_sta1.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 5 > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="16">
+			<desc>log buffer and check qos marker</desc>
+			<log-file>mark_5_log_buffer.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-i "${mpc.tif.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-req" -i "(o) wifi0.1"</log-match>
+			<log-match>-i "qos=2 priority=2" -i "Marking 802.11e"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,294 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify the broadcast packet from remote/gateway VPN to other.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1. Verify the broadcast packet from remote ap is not be send to IPsec-tunnel
+		such as ARP, DHCP.
+		2. ARP packet from VPN server will be send to Tunnel.
+		3. DHCP packet from VPN server is not send to Tunnel.
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+	
+	<property name="sta1.ssid" value="${ssid.name}-client" />
+	<property name="sta1.proto" value="open" />
+	<property name="sta2.ssid" value="${ssid.name}-server" />
+	<property name="sta2.proto" value="open" />
+	<property name="ap1.invalid.ip" value="2.2.2.2" />
+
+	<property name="dhcp_start" value="192.168.${tb.vlan2}.1" />
+	<property name="dhcp_start_1" value="192.168.${tb.vlan1}.11" />
+	<property name="dhcp_end" value="192.168.${tb.vlan2}.10" />
+	<property name="dhcp_end_2" value="192.168.${tb.vlan1}.20" />
+
+	<stage>
+		
+
+		<step no="1">
+			<desc>move ap1 to vlan ${tb.vlan2}</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="2" delay="20" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>recheck mgt0 ip</desc>
+			<log-file>step2_show_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-i "IP addr=" -i "192.168.${tb.vlan2}"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>refresh ap1.mgt0.ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step2_show_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>setup ap1 as VPN server</desc>
+			<telnet target="ap1">
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:${pub.cert.vpn.tftp}/server_cert.pem no-prompt"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:${pub.cert.vpn.tftp}/server_key.pem no-prompt"
+				-v "vpn xauth-client-list clientList local"
+				-v "vpn xauth-client-list clientList client-name vpnclient1 password aerohive"
+				-v "vpn client-ip-pool ipPool local ${tb.vlan3.dhcp_start} ${tb.vlan3.dhcp_end} netmask 255.255.255.0"
+				-v "vpn server-ipsec-tunnel primaryServer"
+				-v "vpn ipsec-tunnel primaryServer client-list clientList client-ip-pool ipPool dns-server ${pub.dns1.ip}"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel primaryServer"
+				-v "no bonjour enable"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>setup ssid on vpn server</desc>
+			<telnet target="ap1">
+				-v "user-profile Tunnel${tb.vlan2} qos-policy def-user-qos vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+				-v "security-object ${ssid.name}-server"
+				-v "security-object ${ssid.name}-server default-user-profile-attr ${tb.vlan2}"
+				-v "security-object ${ssid.name}-server security protocol-suite open"
+				-v "ssid ${ssid.name}-server"
+				-v "ssid ${ssid.name}-server security-object ${ssid.name}-server"
+				-v "interface wifi0 ssid ${ssid.name}-server"
+				-v "interface wifi1 ssid ${ssid.name}-server"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>change mgt0 vlan of AP2</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="3.3" delay="20" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>recheck mgt0 ip</desc>
+			<log-file>step3.3_show_mgt0.log</log-file>
+			<telnet target="ap2">
+				-v "show interface mgt0"
+			</telnet>
+			<log-match>-i "IP addr=" -i "192.168.${tb.vlan1}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="3.4">
+			<desc>refresh ap2.mgt0.ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step3.3_show_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>setup ap2 as VPN client</desc>
+			<telnet target="ap2">
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:${pub.cert.vpn.tftp}/cacert.pem no-prompt"
+				-v "vpn client-ipsec-tunnel vpn_server_1"
+				-v "vpn ipsec-tunnel vpn_server_1 gateway ${ap1.mgt0.ip} client-name vpnclient1 password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel vpn_server_1 primary"
+				-v "no bonjour enable"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>setup ssid on VPN client</desc>
+			<telnet target="ap2">
+				-v "user-profile Tunnel${tb.vlan1} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute ${tb.vlan1}"
+				-v "user-profile Tunnel${tb.vlan1} tunnel-policy vpn_tunnel_policy"
+				-v "security-object ${ssid.name}-client"
+				-v "security-object ${ssid.name}-client default-user-profile-attr ${tb.vlan1}"
+				-v "security-object ${ssid.name}-client security protocol-suite open"
+				-v "ssid ${ssid.name}-client"
+				-v "ssid ${ssid.name}-client security-object ${ssid.name}-client"
+				-v "interface wifi0 ssid ${ssid.name}-client"
+				-v "interface wifi1 ssid ${ssid.name}-client"
+			</telnet>
+		</step>
+
+		<step no="4.2" delay="30" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check vpn ike sa on vpn client side</desc>
+			<log-file>step4.2_ike_sa_client${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-i "${ap1.mgt0.ip}\[500\]" -p 3 -i "9" -p 4 -i "I"</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>check vpn ike sa on vpn server side</desc>
+			<log-file>step4.3_ike_sa_server.log</log-file>
+			<telnet target="ap1">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-i "${ap2.mgt0.ip}\[500\]" -p 3 -i "9" -p 4 -i "R"</log-match>
+		</step>
+
+		<step no="4.4">
+			<desc>multi show on VPN server</desc>
+			<log-file>step4.4_multi_show_server.log</log-file>
+			<telnet target="ap1">
+				-v "show vpn tunnel-id"
+				-v "show vpn ike sp"
+				-v "show vpn ipsec-tunnel"
+			</telnet>
+		</step>
+
+		<step no="4.6">
+			<desc>multi show on VPN client</desc>
+			<log-file>step4.6_multi_show_client.log</log-file>
+			<telnet target="ap2">
+				-v "show vpn tunnel-id"
+				-v "show vpn ike sp"
+				-v "show vpn ipsec-tunnel"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>show interface tunnel0 on vpn client</desc>
+			<log-file>step5_show_tunnel0_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show interface tunnel0"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>get ip of tunnel0 on ap2</desc>
+			<setvar name="ap2.tunnel0.ip">
+				grep "IP addr" ${log.dir}/step5_show_tunnel0_ap2.log| cut -d\; -f1 | cut -d= -f2
+			</setvar>
+		</step>
+
+
+		<!--<include prefix="6" file="subs/sta_connect_${tb.os}.xml" rargs="sta1" />
+		<include prefix="7" file="subs/sta_connect_${tb.os}_next.xml" rargs="sta2" />-->
+		
+		<step no="6.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}-client"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="6.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap2" />
+		
+				
+		<step no="7.1">
+			<multi-setvar>
+				echo "conn2.ssid=${ssid.name}-server"
+				echo "conn2.proto=open"
+				echo "conn2.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="7.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="8">
+			<desc>enable debug on VPN client</desc>
+			<telnet target="ap2">
+				-v "clear arp-cache"
+				-v "_ff id 1 etype 0806 bidirectional"
+				-v "_ff id 2 dst-port 67 bidirectional"
+				-v "_ff protocol 47 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				ap2 ping unreachable Dst-IP
+			</desc>
+			<telnet target="ap2">
+			        -v "clear arp-cache"
+				-v "ping ${ap1.invalid.ip}"
+			</telnet>
+		</step>
+
+		<step no="9" delay="20" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Check time synchronization status
+			</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "(r) mgt0 ${tb.vlan1.gw.mac}->ffff:ffff:ffff"</log-match>
+			<log-match>-c -i "(i) eth0 ${tb.vlan1.gw.mac}->ffff:ffff:ffff"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${tb.vlan1.gw.mac}->ffff:ffff:ffff"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${tb.vlan1.gw.mac}->ffff:ffff:ffff"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>enable debug on VPN client</desc>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "_ff id 1 etype 0806 bidirectional"
+				-v "_ff id 2 dst-port 67 bidirectional"
+				-v "_ff protocol 47 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buff"
+			</telnet>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				ap1 ping unreachable Dst-IP
+			</desc>
+			<telnet target="ap1">
+				-v "ping ${ap1.invalid.ip}"
+			</telnet>
+		</step>
+
+		<step no="11" delay="20">
+			<desc>
+				Check time synchronization status
+			</desc>
+			<log-file>step11_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "(i) eth0 ${tb.vlan1.gw.mac}->ffff:ffff:ffff"</log-match>
+			<log-match>-c -i "(!) eth0 ${tb.vlan1.gw.mac}->ffff:ffff:ffff"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${tb.vlan1.gw.mac}->ffff:ffff:ffff"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${tb.vlan1.gw.mac}->ffff:ffff:ffff"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

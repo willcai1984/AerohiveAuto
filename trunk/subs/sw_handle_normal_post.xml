@@ -1,0 +1,338 @@
+<include obj-arg-names="__AP__">
+	<!--<property name="__AP__.showtech" value="__AP___${case.name}_${case.feature}_${job.id}_show_tech.tar.gz" /> -->
+	<step no="0_1">
+		<desc>get show tech file name</desc>
+		<setvar name="__AP__.showtech">
+			echo "__AP___${case.name}_${case.feature}_${job.id}_show_tech.tar.gz"
+		</setvar>
+	</step>
+
+	<step no="1_1">
+		<desc>check connection between AP and TFTP server(mpc)</desc>
+		<log-file>_fp___AP___ping.log</log-file>
+		<console target="__AP__">
+			-v "ping ${mpc.tif.ip}"
+		</console>
+	</step>
+	<step no="1_2">
+		<desc>set ping result to variable</desc>
+		<setvar name="__AP__.ping.re" scope="local">
+			searchoperation.pl -c -i ', 0% packet loss,' -f ${log.dir}/_fp___AP___ping.log; echo $?
+		</setvar>
+	</step>
+	<step no="1_3">
+		<desc>show system _re to judge who reboot the DUT</desc>
+		<log-file>show_system_re___AP___.log</log-file>
+		<console target="__AP__">
+			-v "show system _re"
+		</console>
+	</step>
+	
+	<step no="3_0">
+		<desc>check if AP have core dump</desc>
+		<log-file>_fp___AP___show_core.log</log-file>
+		<console target="__AP__">
+			-v "show _core"
+			-v ""
+		</console>
+	</step>
+	<step no="3_1">
+		<desc>check if AP have core flash</desc>
+		<log-file>_fp___AP___show_core_flash.log</log-file>
+		<console target="__AP__">
+			-v "show _core flash"
+			-v ""
+		</console>
+	</step>
+	<step no="3_2">
+		<desc>check if AP have kernel dump</desc>
+		<log-file>_fp___AP___show_ker.log</log-file>
+		<console target="__AP__">
+			-v "show _ker"
+			-v ""
+		</console>
+	</step>
+	<step no="3_3">
+		<desc>set show _ker result,0 mean result is null</desc>
+		<setvar name="__AP__.showker.re" scope="local">
+			searchoperation.pl -c -i 'no kdump file' -f ${log.dir}/_fp___AP___show_ker.log; echo $?
+		</setvar>
+	</step>
+	<step no="3_4_1">
+		<desc>set show _core result,success mean result is null</desc>
+		<setvar name="__AP__.showcore.re" scope="local">
+			${bin.dir}/searchblocks.py -b "^AH.*#show _core$" -e "^AH.*#$" -ps p0 "." -nb -ne -f ${log.dir}/_fp___AP___show_core.log; exit 0
+		</setvar>
+	</step>
+	<step no="3_4_2">
+		<desc>set show _core result,success mean result is null</desc>
+		<setvar name="__AP__.show_core_flash.re" scope="local">
+			${bin.dir}/searchblocks.py -b "^AH.*#show _core flash$" -e "^AH.*#$" -ps p0 "." -nb -ne -f ${log.dir}/_fp___AP___show_core_flash.log; exit 0
+		</setvar>
+	</step>
+	<step no="3_5_1">
+		<desc>clear showker result when __AP__.showker.re is not 0</desc>
+		<if>"${__AP__.showker.re}" != "0"</if>
+		<console target="__AP__">
+			-v "cle _ker all"
+			-v ""
+		</console>
+	</step>
+	<step no="3_5_2">
+		<desc>Transport tech log file to TFTP server</desc>
+		<if>("${__AP__.ping.re}" == "0" &amp;&amp; "${__AP__.showcore.re}" != "success") || ("${__AP__.ping.re}" == "0" &amp;&amp; "${__AP__.show_core_flash.re}" != "success")</if>
+		<console target="__AP__" timeout="70" slow="1">
+			-v "show tech > tftp://${mpc.tif.ip}:${__AP__.showtech}"
+			-v ""
+		</console>
+	</step>
+	<step no="3_5_3">
+		<desc>cp the file to current log dir</desc>
+		<if>("${__AP__.ping.re}" == "0" &amp;&amp; "${__AP__.showcore.re}" != "success") || ("${__AP__.ping.re}" == "0" &amp;&amp; "${__AP__.show_core_flash.re}" != "success")</if>
+		<file>${__AP__.showtech}</file>
+		<script>
+			cd /tftpboot/; mv ${__AP__.showtech} ${log.dir}/
+		</script>
+	</step>
+	
+	<step no="3_6_1" timeout="600">
+		<desc>clear showcore result CLIs, when __AP__.showcore.re is not success</desc>
+		<if>"${__AP__.showcore.re}" != "success"</if>
+		<file>__AP___show_all_${include.prefix}_1.log</file>
+		<file>__AP___init_${include.prefix}_1.txt</file>
+		<file>__AP___disable_cli_${include.prefix}_1.txt</file>
+		<file>__AP___cli_clear_${include.prefix}_1.log</file>
+
+		<file>__AP___show_all_${include.prefix}_2.log</file>
+		<file>__AP___init_${include.prefix}_2.txt</file>
+		<file>__AP___disable_cli_${include.prefix}_2.txt</file>
+		<file>__AP___cli_clear_${include.prefix}_2.log</file>
+
+		<file>__AP___show_all_${include.prefix}_3.log</file>
+		<file>__AP___init_${include.prefix}_3.txt</file>
+		<file>__AP___disable_cli_${include.prefix}_3.txt</file>
+		<file>__AP___cli_clear_${include.prefix}_3.log</file>
+
+		<script timeout="400">
+			## enter workdir
+			pushd .
+			cd ${log.dir}
+
+			for loop_idx in 1 2 3
+			do
+			<br />
+			echo Round $loop_idx clear begin...
+			date
+			##
+			show_result_file=__AP___show_all_${include.prefix}_$loop_idx.log
+			cli_init_file=__AP___init_${include.prefix}_$loop_idx.txt
+			cli_split1_file=__AP___split1_${include.prefix}_$loop_idx.txt
+			cli_split2_file=__AP___split2_${include.prefix}_$loop_idx.txt
+			cli_tmpfile=__AP___tmpcli_${include.prefix}_$loop_idx.txt
+
+			disable_cli_file=__AP___disable_cli_${include.prefix}_$loop_idx.txt
+
+			## show running config: begin
+			console.py -w 0.5 -o 60 -d ${__AP__.conserver.ip} -e ${__AP__.cons_name} -z "$show_result_file" -v "show _core"
+			if [ $? -ne 0 ]; then
+			echo "console operation failed!"
+			exit 1;
+			fi
+			<br />
+			## get the normal CLI
+			cat $show_result_file |sed -n '/#show _core$/,/AH.*#/p' |sed '1d'|sed '$d'|sed "/console page 0/d" > $cli_init_file
+
+			if [ ! -s $cli_init_file ]; then
+			echo "No anymore CLIs, clear finished!"
+			date
+			break;
+			fi
+			<br />
+			## generate the noCLIs
+			cat $cli_init_file | grep ^no > $cli_split1_file
+
+			## generate the pure cli1
+			cat $cli_init_file | grep -v ^no > $cli_split2_file
+
+			<br />
+			## generate the disable CLIs
+			cat $cli_split1_file | sed 's/^no //' > $disable_cli_file
+
+			if [ $loop_idx -eq 1 ]; then
+			cat $cli_split2_file > $cli_tmpfile
+			fi
+
+			if [ $loop_idx -eq 2 ]; then
+			cat $cli_split2_file | awk '{$NF="";$(NF-1)="";print}' > $cli_tmpfile
+			cat $cli_split2_file >> $cli_tmpfile
+			fi
+
+			if [ $loop_idx -eq 3 ]; then
+			cat $cli_split2_file | awk '{$NF="";$(NF-1)="";$(NF-2)="";$(NF-3)="";print}' > $cli_tmpfile
+			fi
+
+			<br />
+			## generate depth 0 disable CLI file
+			echo "disable_cli_file before tac "
+			cat $disable_cli_file
+			tac $cli_tmpfile |sed 's/^/cle _core /g' | uniq >> $disable_cli_file
+			echo "disable_cli_file after tac "
+			cat $disable_cli_file
+			echo "end tac "
+			<br />
+
+
+			## special process
+			if [ $loop_idx -eq 2 ]; then
+			cat $cli_tmpfile | awk '{print "no "$1" "$2}' | uniq >> $disable_cli_file
+			cat $cli_tmpfile | awk '{print "no "$1" "$2" "$3}' | uniq >> $disable_cli_file
+			fi
+
+
+			<br />
+			echo "clear log flash" >> $disable_cli_file
+			echo "console page 22" >> $disable_cli_file
+			echo "no _kdebug all" >> $disable_cli_file
+			echo "no _debug all" >> $disable_cli_file
+			echo "save config" >> $disable_cli_file
+			<br />
+
+			console.py -w 1 -o 60 -d ${__AP__.conserver.ip} -e ${__AP__.cons_name} -z "__AP___cli_clear_${include.prefix}_$loop_idx.log" -f $disable_cli_file
+			if [ $? -ne 0 ]; then
+			echo "console operation failed!"
+			exit 1;
+			fi
+
+			#
+			echo Round $loop_idx clear end!
+			date
+			echo
+			done
+			<br />
+
+			## exit dir
+			popd
+		</script>
+		<no-error-check />
+	</step>
+	<step no="3_6_2" timeout="600">
+		<desc>clear show_core_flash result CLIs, when __AP__.show_core_flash.re is not success</desc>
+		<if>"${__AP__.show_core_flash.re}" != "success"</if>
+		<file>__AP___show_all_${include.prefix}_1.log</file>
+		<file>__AP___init_${include.prefix}_1.txt</file>
+		<file>__AP___disable_cli_${include.prefix}_1.txt</file>
+		<file>__AP___cli_clear_${include.prefix}_1.log</file>
+
+		<file>__AP___show_all_${include.prefix}_2.log</file>
+		<file>__AP___init_${include.prefix}_2.txt</file>
+		<file>__AP___disable_cli_${include.prefix}_2.txt</file>
+		<file>__AP___cli_clear_${include.prefix}_2.log</file>
+
+		<file>__AP___show_all_${include.prefix}_3.log</file>
+		<file>__AP___init_${include.prefix}_3.txt</file>
+		<file>__AP___disable_cli_${include.prefix}_3.txt</file>
+		<file>__AP___cli_clear_${include.prefix}_3.log</file>
+
+		<script timeout="400">
+			## enter workdir
+			pushd .
+			cd ${log.dir}
+
+			for loop_idx in 1 2 3
+			do
+			<br />
+			echo Round $loop_idx clear begin...
+			date
+			##
+			show_result_file=__AP___show_all_${include.prefix}_$loop_idx.log
+			cli_init_file=__AP___init_${include.prefix}_$loop_idx.txt
+			cli_split1_file=__AP___split1_${include.prefix}_$loop_idx.txt
+			cli_split2_file=__AP___split2_${include.prefix}_$loop_idx.txt
+			cli_tmpfile=__AP___tmpcli_${include.prefix}_$loop_idx.txt
+
+			disable_cli_file=__AP___disable_cli_${include.prefix}_$loop_idx.txt
+
+			## show running config: begin
+			console.py -w 0.5 -o 60 -d ${__AP__.conserver.ip} -e ${__AP__.cons_name} -z "$show_result_file" -v "show _core flash"
+			if [ $? -ne 0 ]; then
+			echo "console operation failed!"
+			exit 1;
+			fi
+			<br />
+			## get the normal CLI
+			cat $show_result_file |sed -n '/#show _core flash$/,/AH.*#/p' |sed '1d'|sed '$d'|sed "/console page 0/d" > $cli_init_file
+
+			if [ ! -s $cli_init_file ]; then
+			echo "No anymore CLIs, clear finished!"
+			date
+			break;
+			fi
+			<br />
+			## generate the noCLIs
+			cat $cli_init_file | grep ^no > $cli_split1_file
+
+			## generate the pure cli1
+			cat $cli_init_file | grep -v ^no > $cli_split2_file
+
+			<br />
+			## generate the disable CLIs
+			cat $cli_split1_file | sed 's/^no //' > $disable_cli_file
+
+			if [ $loop_idx -eq 1 ]; then
+			cat $cli_split2_file > $cli_tmpfile
+			fi
+
+			if [ $loop_idx -eq 2 ]; then
+			cat $cli_split2_file | awk '{$NF="";$(NF-1)="";print}' > $cli_tmpfile
+			cat $cli_split2_file >> $cli_tmpfile
+			fi
+
+			if [ $loop_idx -eq 3 ]; then
+			cat $cli_split2_file | awk '{$NF="";$(NF-1)="";$(NF-2)="";$(NF-3)="";print}' > $cli_tmpfile
+			fi
+
+			<br />
+			## generate depth 0 disable CLI file
+			echo "disable_cli_file before tac "
+			cat $disable_cli_file
+			tac $cli_tmpfile |sed 's/^/cle _core flash /g' | uniq >> $disable_cli_file
+			echo "disable_cli_file after tac "
+			cat $disable_cli_file
+			echo "end tac "
+			<br />
+
+
+			## special process
+			if [ $loop_idx -eq 2 ]; then
+			cat $cli_tmpfile | awk '{print "no "$1" "$2}' | uniq >> $disable_cli_file
+			cat $cli_tmpfile | awk '{print "no "$1" "$2" "$3}' | uniq >> $disable_cli_file
+			fi
+
+
+			<br />
+			echo "clear log flash" >> $disable_cli_file
+			echo "console page 22" >> $disable_cli_file
+			echo "no _kdebug all" >> $disable_cli_file
+			echo "no _debug all" >> $disable_cli_file
+			echo "save config" >> $disable_cli_file
+			<br />
+
+			console.py -w 1 -o 60 -d ${__AP__.conserver.ip} -e ${__AP__.cons_name} -z "__AP___cli_clear_${include.prefix}_$loop_idx.log" -f $disable_cli_file
+			if [ $? -ne 0 ]; then
+			echo "console operation failed!"
+			exit 1;
+			fi
+
+			#
+			echo Round $loop_idx clear end!
+			date
+			echo
+			done
+			<br />
+
+			## exit dir
+			popd
+		</script>
+		<no-error-check />
+	</step>
+</include>

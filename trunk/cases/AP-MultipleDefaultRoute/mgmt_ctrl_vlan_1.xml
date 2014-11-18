@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Egressing pkt match the vlan(mgt0) then it is send to eth1</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		1. Set a vlan in eth1(capwap, amrp pkt)
+		2. Egressing pkt match the vlan(mgt0) then it is send to eth1, result 1
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap1.eth1.existed}" == "true"</if>
+
+		<step no="0">
+			<desc>
+				config hive info
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				set wifi1's channel
+			</desc>
+			<if>"${ap2.wifi1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface wifi1 radio channel 44"
+			</telnet>
+		</step>
+
+		<step no="open.debug">
+			<desc>
+				-open debug mode
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${ap2.mgt0.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				1. Set a vlan in eth1(capwap, amrp pkt)
+			</desc>
+			<telnet target="ap1">
+				-v "forwarding-engine l2-default-route interface eth1 vlan ${tb.vlan1}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				config hive,vlan info
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				-close dhcp client
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				-open dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.4" delay="30">
+			<desc>show interface mgt0 ip</desc>
+			<log-file>show_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.5">
+			<desc>refresh ap1.mgt0.ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="2" delay="60">
+			<desc>
+				2. Egressing pkt match the vlan(mgt0) then it is send to eth1, result 1
+			</desc>
+			<log-file>step2_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth1 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}\(\d+\) ttl\(\d+\) UDP" -ps p "QoS: host pkt fwd\(mgt0\)" -e "\(\i\) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}\(\d+\) ttl\(\d+\) UDP" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

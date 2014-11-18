@@ -1,0 +1,650 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>VLAN configuration mgmt test</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use
+		Switch
+
+		Pre-condition:
+		Reset config of switch to factory default
+
+		Test procedure:
+		1. check default agg config: agg 1, show interface agg1 switchport,result1(bug 20887);
+		2. configure agg to trunk: agg 2, interface agg2 mode trunk, result2;
+		3. port1 mode trunk, nativlan vlan 100, show interface port1 switchport, result3;
+		4. port1 add to agg1, show interface agg1 switchport, show interface port1 switchport, result4;
+		5. move port1 from agg1, add port1 to agg2, result5(bug 21580);
+		6. no agg2, and create agg 2 again, show interface agg2 switchport, result6(bug 20604);
+		7. agg 3, interface agg3 mode trunk, native vlan 10, no allow vlan all, allow vlan 200;create vlan 200,
+		result7(bug 20606/20686);
+		8. save config, reboot, result8;
+
+		Expect result:
+		result1: agg1 access vlan 1;
+		result2: agg2 native vlan 1. allow vlan vll;
+		result3: port1 native vlan 100, allow vlan all;
+		result4: agg1 access vlan 1, port1 access vlan1;
+		result5: agg2 native vlan 100, allow vlan all, port1 native vlan
+		100,allow vlan all;
+		result6: agg2 access vlan 1, no port member in it;
+		result7: agg3 native vlan 10, allow vlan 200;
+		result8: agg1 access vlan 1, agg2 access vlan 1, agg3 native vlan 10, allow vlan 200;
+
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<comment>
+		sw1.port1=eth1/5;
+		sw1.port2=eth1/6;
+		sw1.port3=eth1/13;
+		sw1.port4=eth1/14;
+		sw1.port3.ixia_port
+		sw1.port1.ixia_port=1/2/7;
+		sw1.port2.ixia_port=1/2/8;
+		sw1.port1.ixia_port=1/2/9;
+		sw1.port2.ixia_port=1/2/10;
+		sw1.terminal.ip=10.155.32.105;
+		sw1.terminal.port=2054;
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclclient1.ip=10.155.40.10;
+
+		mpc.mif.ip=10.155.32.128;
+		mpc.tif.ip=10.68.136.253;
+		mpc.user=root;
+		mpc.passwd=aerohive;
+		mpc.prompt=".*#";
+		mpc.tif.name=eth1;
+		tb.nvlan=100;
+		tb.vlans=100,200,300;
+		tb.vlan1=100;
+		tb.vlan2=200;
+		tb.vlan3=300;
+	</comment>
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011" />
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012" />
+	<property name="sw1.port3.ixia_port.mac" value="0000.0000.0013" />
+	<property name="sw1.port4.ixia_port.mac" value="0000.0000.0014" />
+	<property name="stream1.txport1" value="${sw1.port1.ixia_port}" />
+	<property name="stream1.rxport1" value="${sw1.port2.ixia_port}" />
+	<property name="stream1.rxport2" value="${sw1.port3.ixia_port}" />
+	<property name="stream1.rxport3" value="${sw1.port4.ixia_port}" />
+	<property name="stream1.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+	<property name="stream1.rxport1.mac" value="ffff.ffff.ffff" />
+	<property name="stream1.etype" value="0x0800" />
+	<property name="stream1.UDFoffset" value="34" />
+	<property name="stream1.patternOffset1" value="38" />
+	<property name="stream2.txport1" value="${sw1.port2.ixia_port}" />
+	<property name="stream2.rxport1" value="${sw1.port1.ixia_port}" />
+	<property name="stream2.rxport2" value="${sw1.port3.ixia_port}" />
+	<property name="stream2.rxport3" value="${sw1.port4.ixia_port}" />
+	<property name="stream2.txport1.mac" value="${sw1.port2.ixia_port.mac}" />
+	<property name="stream2.rxport1.mac" value="ffff.ffff.ffff" />
+	<property name="stream2.etype" value="0x0800" />
+	<property name="stream2.UDFoffset" value="34" />
+	<property name="stream2.patternOffset1" value="38" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				check agg default config: default access vlan 1;
+			</desc>
+			<telnet target="sw1">
+				-v "agg 1"
+				-v "show interface agg1 switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "access"</log-match>
+			<log-match>-c -i "Access VLAN:" -i "1"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				check agg access vlan validation: agg1 pvid change to a doesn't exist vlan;
+			</desc>
+			<telnet target="sw1">
+				-v "interface agg1 switchport access vlan ${tb.vlan1}"
+				-v "show interface agg1 switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "access"</log-match>
+			<log-match>-c -i "Access VLAN:" -i "1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				check agg access vlan validation: agg1 pvid change to an exist vlan;
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "interface agg1 switchport access vlan ${tb.vlan1}"
+				-v "show interface agg1 switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "access"</log-match>
+			<log-match>-c -i "Access VLAN:" -i "${tb.vlan1}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4">
+			<desc>
+				check agg mode trunk default config: trunk native vlan 1;
+			</desc>
+			<telnet target="sw1">
+				-v "interface agg1 switchport mode trunk"
+				-v "show interface agg1 switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "trunk"</log-match>
+			<log-match>-c -i "Trunking Native VLAN:" -i "1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.1">
+			<desc>
+				check agg mode trunk, show running;
+			</desc>
+			<telnet target="sw1">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "interface agg1 switchport mode trunk"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5">
+			<desc>
+				check agg trunk native vlan, change agg port trunk native vlan;
+			</desc>
+			<telnet target="sw1">
+				-v "interface agg1 switchport trunk native vlan ${tb.vlan1}"
+				-v "show interface agg1 switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "trunk"</log-match>
+			<log-match>-c -i "Trunking Native VLAN:" -i "${tb.vlan1}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5.1">
+			<desc>
+				check agg trunk native vlan, show running;
+			</desc>
+			<telnet target="sw1">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "interface agg1 switchport trunk native vlan ${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				check agg trunk allow vlan, change agg port allow vlan;
+			</desc>
+			<telnet target="sw1">
+				-v "no interface agg1 switchport trunk allow vlan all"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="6.1">
+			<desc>
+				check agg trunk allow vlan, show running;
+			</desc>
+			<telnet target="sw1">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "no interface agg1 switchport trunk allow vlan all"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				check add port to agg, port config is the same with agg;
+			</desc>
+			<telnet target="sw1">
+				-v "interface ${sw1.port1} agg 1"
+				-v "show interface ${sw1.port1} switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "trunk"</log-match>
+			<log-match>-c -i "Trunking Native VLAN:" -i "${tb.vlan1}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>
+				check add port to agg, port config is the same with agg, but no configure in show running;
+			</desc>
+			<telnet target="sw1">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "interface ${sw1.port1} agg 1"</log-match>
+			<log-match>-c -i "no interface agg1 switchport trunk allow vlan all"</log-match>
+			<log-match>-c -i "interface agg1 switchport mode trunk"</log-match>
+			<log-match>-c -i "interface agg1 switchport trunk native vlan 100"</log-match>
+			<log-match>-c -i "no interface ${sw1.port1} switchport trunk allow vlan all" -n</log-match>
+			<log-match>-c -i "interface ${sw1.port1} switchport mode trunk" -n</log-match>
+			<log-match>-c -i "interface ${sw1.port1} switchport trunk native vlan 100" -n</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7.2">
+			<desc>
+				check add port to agg, check register pvid of port;
+			</desc>
+			<telnet target="sw1">
+				-v "show vlan-entry chip"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>
+				check remove port from agg, port is the same config as agg;
+			</desc>
+			<telnet target="sw1">
+				-v "no interface ${sw1.port1} agg 1"
+				-v "show interface ${sw1.port1} switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "trunk"</log-match>
+			<log-match>-c -i "Trunking Native VLAN:" -i "${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				check remove port from agg, port is the same config as agg, and can see config in show running;
+			</desc>
+			<telnet target="sw1">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "interface ${sw1.port1} agg 1" -n</log-match>
+			<log-match>-c -i "no interface agg1 switchport trunk allow vlan all"</log-match>
+			<log-match>-c -i "interface agg1 switchport mode trunk"</log-match>
+			<log-match>-c -i "interface agg1 switchport trunk native vlan 100"</log-match>
+			<log-match>-c -i "no interface ${sw1.port1} switchport trunk allow vlan all"</log-match>
+			<log-match>-c -i "interface ${sw1.port1} switchport mode trunk"</log-match>
+			<log-match>-c -i "interface ${sw1.port1} switchport trunk native vlan 100"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8.2">
+			<desc>
+				check add port to agg, check register pvid of port;
+			</desc>
+			<telnet target="sw1">
+				-v "show vlan-entry chip"
+			</telnet>
+		</step>
+
+		<step no="9">
+			<desc>
+				check agg access vlan and add port to access agg;
+			</desc>
+			<telnet target="sw1">
+				-v "agg 2"
+				-v "vlan ${tb.vlan2}"
+				-v "interface agg2 switch access vlan ${tb.vlan2}"
+				-v "interface ${sw1.port2} agg 2"
+				-v "show interface agg2 switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "access"</log-match>
+			<log-match>-c -i "Access VLAN:" -i "${tb.vlan2}"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				check agg access vlan and add port to access agg;
+			</desc>
+			<telnet target="sw1">
+				-v "show agg 2"
+			</telnet>
+			<log-match>-c -i "${sw1.port2}" -i "access"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="9.2">
+			<desc>
+				check agg access vlan and add port to access agg;
+			</desc>
+			<telnet target="sw1">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "interface agg2 switchport access vlan ${tb.vlan2}"</log-match>
+			<log-match>-c -i "interface ${sw1.port2} switchport access vlan ${tb.vlan2}" -n</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="9.3">
+			<desc>
+				check add port to agg, check register pvid of port;
+			</desc>
+			<telnet target="sw1">
+				-v "show vlan-entry chip"
+			</telnet>
+		</step>
+
+		<step no="10">
+			<desc>
+				check agg create/remove/create, the config first config can't be store when re-created;
+			</desc>
+			<telnet target="sw1">
+				-v "no agg 2"
+				-v "show interface ${sw1.port2} switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "access"</log-match>
+			<log-match>-c -i "Access VLAN:" -i "${tb.vlan2}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="10.1">
+			<desc>
+				check agg create/remove/create, the config first config can't be store when re-created;
+			</desc>
+			<telnet target="sw1">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "interface agg2 switchport access vlan ${tb.vlan2}" -n</log-match>
+			<log-match>-c -i "interface ${sw1.port2} switchport access vlan ${tb.vlan2}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="11">
+			<desc>
+				check agg create/remove/create, the config first config can't be store when re-created;
+			</desc>
+			<telnet target="sw1">
+				-v "agg 2"
+				-v "show interface agg2 switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "access"</log-match>
+			<log-match>-c -i "Access VLAN:" -i "1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="11.1">
+			<desc>
+				check agg create/remove/create, the config first config can't be store when re-created;
+			</desc>
+			<telnet target="sw1">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "interface agg2 switchport access vlan ${tb.vlan2}" -n</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="12">
+			<desc>
+				check agg trunk allow vlan validation;
+			</desc>
+			<telnet target="sw1">
+				-v "interface agg1 switchport trunk allow vlan 1000"
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "interface agg1 switchport trunk allow vlan 1000"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="12.1">
+			<desc>
+				check agg trunk allow vlan validation;
+			</desc>
+			<telnet target="sw1">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "interface agg1 switchport trunk allow vlan 1000"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="13">
+			<desc>
+				show vlan id, both agg and agg port-member in it.
+			</desc>
+			<telnet target="sw1">
+				-v "vlan 1000"
+				-v "interface ${sw1.port1} agg 1"
+				-v "show vlan id 1000"
+			</telnet>
+			<log-match>-c -i "VLAN1000" -i "agg1" -i "trunk"</log-match>
+			<log-match>-c -i "VLAN1000" -i "${sw1.port1}" -i "trunk"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="14.0">
+			<desc>
+				configure switch,
+				port1 trunk native vlan 100, allow all;
+				port2,por3 and port4 add to agg1;
+				agg1 trunk native vlan 200, allow vlan all,
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+
+				-v "no agg 1"
+				-v "no agg 2"
+
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port1} switchport trunk allow vlan all"
+				-v "interface ${sw1.port1} switchport trunk native vlan ${tb.vlan1}"
+
+				-v "agg 1"
+				-v "interface agg1 switchport mode trunk"
+				-v "interface agg1 switchport trunk native vlan ${tb.vlan2}"
+				-v "interface agg1 switchport trunk allow vlan all"
+
+				-v "interface ${sw1.port2} agg 1"
+				-v "interface ${sw1.port3} agg 1"
+				-v "interface ${sw1.port4} agg 1"
+
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show vlan id ${tb.vlan2}"
+			</telnet>
+		</step>
+
+		<step no="14.1">
+			<desc>add udf1 to check vlan</desc>
+			<setvar name="stream1.UDFsignature1">
+				echo "8100`printf %04x $(expr 0 + ${tb.vlan1})`"
+			</setvar>
+		</step>
+
+		<step no="14.2">
+			<desc>
+				build untagged stream, txport is port1, rxport are port2,port3 and port4, start transmit and get statistics
+			</desc>
+			<log-file>eth2test.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport1},${stream1.rxport2},${stream1.rxport3}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+
+				-eth2_protocol ${stream1.etype}
+				-udf_offset ${stream1.UDFoffset}
+				-patternOffset2 ${stream1.patternOffset1}
+				-pattern1In 0x${stream1.UDFsignature1}
+				-patternMask1In 0x00000000
+				-patternOffset1 12
+				-userDefinedStat2Pattern pattern1AndPattern2"
+				-v ""
+
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport1},${stream1.rxport2},${stream1.rxport3}"
+				-v ""
+				<!-- check the result -->
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport1}"
+				-v ""
+
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport2}"
+				-v ""
+
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport3}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+
+		<step no="14.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+
+		<step no="14.4">
+			<desc>
+				analyse statistics on rxport, port2,3,4 can received tagged 100 packet;
+			</desc>
+			<log-file>eth2test.log</log-file>
+			<log-match>-re -i "checkEqualTxWithRX \d/\d/\d{1,} \d/\d/\d{1,} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+
+		<step no="15.0">
+			<desc>
+				configure switch,
+				port1 trunk native vlan 200, allow all;
+				port2,por3 and port4 add to agg1;
+				agg1 trunk native vlan 200, allow vlan all
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port1} switchport trunk allow vlan all"
+				-v "interface ${sw1.port1} switchport trunk native vlan ${tb.vlan2}"
+
+				-v "agg 1"
+				-v "interface agg1 switchport mode trunk"
+				-v "interface agg1 switchport trunk native vlan ${tb.vlan2}"
+				-v "interface agg1 switchport trunk allow vlan all"
+
+				-v "interface ${sw1.port2} agg 1"
+				-v "interface ${sw1.port3} agg 1"
+				-v "interface ${sw1.port4} agg 1"
+
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show vlan id ${tb.vlan2}"
+			</telnet>
+		</step>
+
+		<step no="15.1">
+			<desc>add udf1 to check vlan</desc>
+			<setvar name="stream1.UDFsignature1">
+				echo "8100`printf %04x $(expr 0 + ${tb.vlan1})`"
+			</setvar>
+		</step>
+
+		<step no="15.2">
+			<desc>
+				build untagged stream, txport is port1, rxport are port2,port3 and port4, start transmit and get statistics
+			</desc>
+			<log-file>eth2test.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport1},${stream1.rxport2},${stream1.rxport3}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+
+				-eth2_protocol ${stream1.etype}
+				-udf_offset ${stream1.UDFoffset}
+				-patternOffset2 ${stream1.UDFoffset}
+				-pattern1In 0x08000000
+				-patternMask1In 0x00001111
+				-patternOffset1 12
+				-userDefinedStat2Pattern pattern1AndPattern2"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport1},${stream1.rxport2},${stream1.rxport3}"
+				-v ""
+				<!-- check the result -->
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport1}"
+				-v ""
+
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport2}"
+				-v ""
+
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport3}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+
+		<step no="15.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+
+		<step no="15.4">
+			<desc>
+				analyse statistics on rxport, port2,3,4 can received untagged packet;
+			</desc>
+			<log-file>eth2test.log</log-file>
+			<log-match>-re -i "checkEqualTxWithRX \d/\d/\d{1,} \d/\d/\d{1,} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+		
+		<step no="16">
+			<desc>
+				check agg access vlan and add port to access agg;
+			</desc>
+			<telnet target="sw1">
+			    -v "agg 1"
+				-v "interface agg1 switchport mode access"
+				-v "no agg 1"
+				-v "agg 1"
+				-v "interface ${sw1.port2} agg 1"
+				-v "interface ${sw1.port3} agg 1"
+				-v "interface agg1 switchport mode trunk"
+				-v "show interface agg1 switchport"
+			</telnet>
+			<log-match>-c -i "Port Mode:" -i "trunk"</log-match>
+		</step>
+
+		<step no="16.1">
+			<desc>
+				check member port switch mode states of the trunk agg 1.
+			</desc>
+			<telnet target="sw1">
+				-v "show agg 1"
+			</telnet>
+			<log-match>-c -i "${sw1.port2}" -i "trunk"</log-match>
+			<log-match>-c -i "${sw1.port3}" -i "trunk"</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

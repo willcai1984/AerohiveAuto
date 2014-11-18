@@ -1,0 +1,278 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Auth fail VLAN Platform Dependence SR2024</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		802.1X configured, auth fail VLAN configured as VLAN 60
+		Initial auth is 802.1x auth, 802.1X will fail
+		security-object &lt;security-object name&gt;
+		security-object &lt;security-object name&gt; security aaa radius-
+		server primary &lt;ip address of radius server&gt; shared-secret
+		&lt;share-key&gt;
+		security-object &lt;security-object name&gt; security aaa radius-
+		server accounting primary &lt;ip address of radius server&gt;
+		shared-secret &lt;share-key&gt;
+		security-object &lt;security-object name&gt; security protocol-
+		suite 802.1x
+		security-object &lt;security-object name&gt; security auth-mode
+		port-based failure-user-profile-attr &lt;upid&gt;
+		interface &lt;ethx/y&gt; switchport mode access
+		interface &lt;ethx/y&gt; security-object &lt;security-object name&gt;
+		user-profile &lt;user profile name&gt; vlan-id &lt;vlan id&gt; attribute
+		&lt;upid&gt;
+
+		Test Procedure:
+		1. Enable Auth on port, check port access, result 1
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="acct1.vlan" value="${br1.vpc3.vlan}" />
+	<property name="incorrect_attribute_value" value="100" />
+
+	<stage>
+		<include prefix="add.account1" file="subs/ldap_add.xml" args="${job.sid}-${pub.radius1.username}, ${pub.radius1.passwd}" obj-args="acct1" />
+
+		<step no="0">
+			<multi-setvar>
+				echo "br1.test.mgt0.1.ip=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).252"
+			</multi-setvar>
+		</step>
+
+		<step no="pre_step">
+			<desc>configure mgt0.1 and mgt0.2 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "vlan ${br1.vpc2.vlan}"
+				-v "vlan ${br1.vpc3.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc2.vlan}"
+				-v "interface vlan ${br1.vpc3.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc2.vlan} ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface
+				vlan${br1.vpc2.vlan} dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc3.vlan} ip ${br1.br.mgt0.3.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc3.vlan} dhcp-server ip-pool ${br1.br.mgt0.3.ip_pool_start} ${br1.br.mgt0.3.ip_pool_end}"
+				-v "interface vlan${br1.vpc3.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${br1.vpc3.vlan} dhcp-server options default-gateway ${br1.br.mgt0.3.ip}"
+				-v "interface vlan${br1.vpc3.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc3.vlan} dhcp-server enable"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="1">
+			<desc>
+				1. Set one security-object with radius-server
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object lan1"
+				-v "security-object lan1 security protocol-suite 802.1x"
+				-v "security-object lan1 security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object lan1 security auth-mode port-based failure-user-profile-attr 2"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Set one user-profile and define the attribute x,
+				3. Set the eth1 mode as bridge-access and bind the attribute to it
+				4. Bind the security-object to the eth1.
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute 2"
+				-v "interface ${br1.br.lan.int1} switchport user-profile-attribute ${incorrect_attribute_value}"
+				-v "interface ${br1.br.lan.int1} security-object lan1"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-ifconfig to show the mac info
+			</desc>
+			<log-file>step3_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="60">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="3.1a">
+			<desc>get raw mac of vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step3_ifconfig_vpc1_.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.1b">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step3.2_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.br.mgt0.1.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				-kill process
+			</desc>
+			<ssh target="br1.vpc1" timeout="200">
+				-v "killall wpa_supplicant -q"
+				-v "dhclient eth1 -r"
+				-v "killall dhclient -q"
+			</ssh>
+		</step>
+
+		<step no="3.3a">
+			<desc>
+				-prepare config file with correct username and wrong password
+			</desc>
+			<log-file>step3.3a_auth_log.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "echo -e \&quot; ctrl_interface=DIR=/var/run/wpa_supplicant \\n ap_scan=0 \\n network={ \\n key_mgmt=IEEE8021X \\n eap=MD5 \\n identity=\\x22${job.sid}-${pub.radius1.username}\\x22 \\n password=\\x22wrongpasswd\\x22 \\n eapol_flags=0 \\n } \&quot; &gt; /tmp/wpa_supplicant.conf"
+			</ssh>
+		</step>
+
+		<step no="3.3b">
+			<desc>
+				-Laptop auth
+			</desc>
+			<log-file>step3.3b_auth_log.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "wpa_supplicant -B -i eth1 -c /tmp/wpa_supplicant.conf -D wired"
+			</ssh>
+		</step>
+
+		<!-- <step no="3.3c"> -->
+		<!-- <desc> -->
+		<!-- -ifconfig to check if get ip successfully -->
+		<!-- </desc> -->
+		<!-- <log-file>step3.3c_ifconfig_log.log</log-file> -->
+		<!-- <ssh target="br1.vpc1"> -->
+		<!-- -v "ifconfig ${br1.vpc1.tif.name}" -->
+		<!-- </ssh> -->
+		<!-- </step> -->
+
+		<step no="3.4a" delay="50">
+			<desc>
+				get ip address, expect get failed attr vlan configure 2, vlan ${br1.vpc2.vlan}
+			</desc>
+			<log-file>step3.4a_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="200">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<!-- <step no="3.5" delay="30" type="loop-check" loop-max-times="10" loop-interval="10"> -->
+		<!-- <desc> show 802.1x-mac-table </desc> -->
+		<!-- <log-file>step3.5_show_8021x_mac_${loop_check.idx}.log</log-file> -->
+		<!-- <telnet target="${br1.br.wan.ip}"> -->
+		<!-- -v "show 802.1x-mac-table" -->
+		<!-- </telnet> -->
+		<!-- <log-match bin="${bin.dir}/searchbyrexp.py"> -->
+		<!-- -p "${br1.vpc1.tif.mac}[\t ]+${br1.vpc1.vlan}[\t ]+eth1[\t ]+CLOSE[\t ]+N/A" -->
+		<!-- -f ${log.dir}/${log.file} -->
+		<!-- </log-match> </step> -->
+
+		<step no="3.5" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show 802.1x-mac-table, the vlan tag is got from radius...radius failed , got from failed attr
+			</desc>
+			<log-file>step3.5_show_8021x_mac.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-c -i "${br1.vpc2.vlan}" -i "${br1.vpc1.tif.mac}" -i "${br1.br.lan.int1}"</log-match>
+		</step>
+
+
+		<step no="3.5a" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				check auth, failure auth may last 200s
+			</desc>
+			<log-file>step3.5a_check_auth_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface ${br1.br.lan.int1}"
+			</telnet>
+			<log-match>-c -i "Protocol-suite=802.1X"</log-match>
+			<log-match>-c -i "Auth-mode=port-based"</log-match>
+			<log-match>-c -i "Failure-UID=2;"</log-match>
+			<log-match>-n -c -i "${br1.vpc1.tif.mac} *2" -i "done" -i "${job.sid}-${pub.radius1.username}"</log-match>
+			<log-match>-c -i "${br1.vpc1.tif.mac} *2" -i "done"</log-match>
+		</step>
+
+		<step no="3.5b">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step3.5b_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+	<!-- No this log in switch -->
+	<!-- <log-match>-c -i "IEEE 802.1X: ${br1.vpc1.tif.mac} BE_AUTH entering state FAIL"</log-match> -->
+			<log-match>-n -c -i "STA(${br1.vpc1.tif.mac}) login to SSID(${br1.br.lan.kport1}) by user_name=${job.sid}-aerohive"</log-match>
+			<log-match>-c -i "STA(${br1.vpc1.tif.mac}) login to SSID(${br1.br.lan.kport1}) by user_name="</log-match>
+			<log-match>-c -i "Got vlan ID ${br1.vpc2.vlan} by User Profile ID 2 for station ${br1.vpc1.tif.mac}"</log-match>
+			<log-match>-c -i "Station is authenticated: SPA=${br1.vpc1.tif.mac}" </log-match>
+			<log-match>-c -i "VLAN-ID=${br1.vpc2.vlan}/0" -i "user-profile-group-ID=2," -i "ssid=lan1"</log-match>
+		</step>
+
+		<step no="3.6" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step3.6_ping_log_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.br.mgt0.1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<!-- <step no="3.7"> <desc> vpc1 ping pub dns </desc> <log-file>step3.7_ping_log.log</log-file> <ssh target="br1.vpc1" timeout="120"> -v "ping ${pub.dns1.ip} -c 4" </ssh> <log-match>-n -c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match> </step> -->
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="del.account1" file="subs/ldap_delete.xml" args="${job.sid}-${pub.radius1.username}" />
+
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

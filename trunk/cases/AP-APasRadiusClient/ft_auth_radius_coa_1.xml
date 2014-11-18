@@ -1,0 +1,166 @@
+<testcase>
+	<brief>COA disconnect should work</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Topology to use
+		Topology 1
+		Description
+		COA disconnect should
+		work
+		Pre-condition
+		-ssid enable cwp auth
+		-ssid enable
+		dynamic-auth-extension,accounting
+		-ssid is active
+		-GM is ready for coa
+		Test procedure
+		-client connect to
+		the ssid
+		-client pass the cwp auth,got
+		attributes correctly
+		-change the
+		account password on GM(radius server)
+		side
+		-radius server sends a
+		COA-disconnet
+		Expect result
+		1.Check the config
+		is right
+		2.After client is
+		connected ,make sure its state is correct
+		3.When AP received the
+		COA-disconnect,it will disconnect the certain
+		client,check the debug
+		info by _de auth all
+		4.Other clients are not
+		affected
+		5.the client
+		reconnect to ssid,the previous password is not
+		avalid,it
+		should apply
+		the new password for a successful auth
+	</description>
+
+	<stage>
+		<step no="1">
+			<desc>setup ssid on AP1</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server dynamic-auth-extension"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>show running config on AP</desc>
+			<log-file>show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show run"
+			</telnet>
+		</step>
+		<step no="3">
+			<desc>show protocol suit</desc>
+			<log-file>show_proto.log</log-file>
+			<telnet target="ap1">
+				-v "show security- autoap security protocol-suite"
+			</telnet>
+			<log-match>-e "Method=wpa-auto-8021x"</log-match>
+		</step>
+		<step no="4">
+			<desc>show ssid</desc>
+			<log-file>show_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+			<log-match>-e "autoap"</log-match>
+		</step>
+
+		<property name="conn1.proto" value="wpa2-aes-8021x" />
+		<step no="pre5.1">
+			<desc>set username</desc>
+			<setvar name="conn1.username">
+				echo "${pub.radius1.username}"
+			</setvar>
+		</step>
+		<step no="pre5.2">
+			<desc>set username</desc>
+			<setvar name="conn1.passwd">
+				echo "${pub.radius1.passwd}"
+			</setvar>
+		</step>
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>Ping from station to master Server </desc>
+			<log-file>pingmaster_${mpc.tif.ip}.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${mpc.tif.ip} -c 4"
+			</ssh>
+			<log-match>-i "from ${mpc.tif.ip}" -i "ttl="</log-match>
+		</step>
+		<step no="7">
+			<desc>get mac from client with five dash</desc>
+			<setvar name="sta1.tif.mac_5dash">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -dash -uppercase
+			</setvar>
+		</step>
+		<step no="8">
+			<desc>show intface on wifi0</desc>
+			<log-file>show_interface.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+			</telnet>
+		</step>
+		<step no="9">
+			<desc>get mac from bssid of wifi0.1</desc>
+			<setvar name="ssid.wifi0.bssid">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface.log -o aero -i wifi0.1 -m -dash -uppercase
+			</setvar>
+		</step>
+		<step no="9.1">
+			<desc>enable auth debug to check COA</desc>
+			<telnet target="ap1">
+				-v "_debug auth all"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+		<step no="10">
+			<desc>sent coa disconnect request from radius server</desc>
+			<log-file>coa_disc_svr.log</log-file>
+			<ssh host="${pub.radius1.ip}" prompt=".*#">
+				-v "echo -e \"Calling-Station-Id=${sta1.tif.mac_5dash}\\nCalled-Station-Id=${ssid.wifi0.bssid}:${ssid.name}\" | radclient -x ${ap1.mgt0.ip}:3799 disconnect aerohive"
+			</ssh>
+			<log-match>-e "Disconnect-ACK"</log-match>
+		</step>
+		<step no="11">
+			<desc>check debug on AP</desc>
+			<log-file>show_buffer.log</log-file>
+			<telnet target="ap1">
+				-v "show logg buff"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="12.1">
+			<desc>extract a piece of log</desc>
+			<script>
+				tac ${log.dir}/show_buffer.log |sed -n '/dynamic auth message from RADIUS server/,/sta ${sta1.tif.mac} is disassociated from/I'p > ${log.dir}/coa_disc_ap.log
+			</script>
+		</step>
+		<step no="12.2">
+			<desc>check the COA process on AP</desc>
+			<log-file>coa_disc_ap.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Received a Disconnect request from radius server ${pub.radius1.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Try to disassoc ${sta1.tif.mac} from.*?for ssid ${ssid.name} because auth receives COA disconnect message" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Send a Disconnect-Ack message to ${pub.radius1.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

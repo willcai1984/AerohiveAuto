@@ -1,0 +1,353 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Proxy ARP between ethx and ap interfaces in portal topo</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+		-laptops connect with ap, pass authentication
+		-laptops are in same vlan
+
+		Test procedure:
+		- clear arp table on both laptop1,laptop2
+		- clear arp table on ap
+		- laptop1 ping laptop2, should be successful
+		- clear arp table on laptop1(execute “arp –d” cmd)
+		laptop1 send arp request to get mac of laptop2. Result 1.
+		- after step 3, clear arp table on laptop2(execute “arp –d” cmd)
+		Laptop2 send arp request to get mac of laptop1 Result 2
+
+		Expect result:
+		1: AP reply this request instead of laptop2(can see fe and fe_arp debug )
+		2: AP reply this request instead of laptop1(can see fe and fe_arp debug )
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<if>"${ap1.eth1.existed}" =="true"</if>
+
+		<include prefix="pre.1" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="1">
+			<desc>
+				-config ssid, hive info and then bind them to interface
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 mac-learning enable"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<step no="4">
+			<desc>
+				-clear arp on windows bpc
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step4_clear_bpc1_arp.log</log-file>
+			<staf target="bpc1">
+				-v "arp -d ${sta1.tif.ip}"
+			</staf>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-clear arp on linux bpc
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step4.1_clear_bpc1_arp.log</log-file>
+			<ssh target="bpc1">
+				-v "ip neigh flush dev ${bpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				-clear arp on windows sta
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step5_clear_sta1_arp.log</log-file>
+			<staf target="sta1">
+				-v "arp -d ${bpc1.tif.ip}"
+			</staf>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-clear arp on linux sta
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step5.1_clear_sta1_arp.log</log-file>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="5.2">
+			<desc>ifconfig to show the server add</desc>
+			<log-file>step5.2_ifconfig.log</log-file>
+			<ssh host="${tb.http_server}">
+				-v "ifconfig ${tb.http_server.name}"
+			</ssh>
+		</step>
+
+		<step no="5.3">
+			<desc>Get server's mac</desc>
+			<setvar name="tb.http.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step5.2_ifconfig.log -i ${tb.http_server.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="5.4">
+			<desc>
+				-clear arp on server
+			</desc>
+			<ssh host="${tb.http_server}">
+				-v "ip neigh flush dev ${tb.http_server.name}"
+			</ssh>
+		</step>
+
+		<step no="5.5">
+			<desc>
+				- clear arp-cache
+			</desc>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/sta_ping.xml" args="sta1, ${bpc1.tif.ip}, 5" />
+
+		<include prefix="6.a" file="subs/sta_ping.xml" args="bpc1, ${sta1.tif.ip}, 5" />
+
+		<step no="6.b">
+			<desc>-server ping laptop, result 3</desc>
+			<log-file>step6.b_ping.log</log-file>
+			<ssh host="${tb.http_server}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				- show arp table on ap
+			</desc>
+			<log-file>step7_arp_clear.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "AP *${sta1.tif.ip}"</log-match>
+			<log-match>-c -i "${bpc1.tif.mac}" -i "ETH *${bpc1.tif.ip}"</log-match>
+			<log-match>-c -i "${tb.http.mac}" -i "ETH *${tb.http_server}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				-open debug and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe_arp basic"
+				-v "_kdebu fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff id 1 src-mac ${sta1.tif.mac} etype 0806 bidirectional"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="9">
+			<desc>
+				-clear arp on sta
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step9_clear_sta1_arp.log</log-file>
+			<staf target="sta1">
+				-v "arp -d ${bpc1.tif.ip}"
+			</staf>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				-clear arp on sta
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step9.1_clear_sta1_arp.log</log-file>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<include prefix="10" file="subs/sta_ping.xml" args="sta1, ${bpc1.tif.ip}, 10" />
+
+		<step no="11" delay="30">
+			<desc>
+				show logging buffered on ap
+			</desc>
+			<log-file>step11_show_logging_bufffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(r) eth1 ${bpc1.tif.mac}-&gt;${sta1.tif.mac} arp ${bpc1.tif.ip}(${bpc1.tif.mac})-&gt;${sta1.tif.ip}(${sta1.tif.mac})"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP reply to ${sta1.tif.ip}: ${bpc1.tif.ip} is at mac=${bpc1.tif.mac}"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP REQ from AP (ARP Reply: IP=${bpc1.tif.ip} mac=${bpc1.tif.mac})"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="12.1" delay="5">
+			<desc>
+				-clear arp on sta
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step12.1_clear_sta1_arp.log</log-file>
+			<staf target="sta1">
+				-v "arp -d ${tb.http_server}"
+			</staf>
+		</step>
+
+		<step no="12.2" delay="5">
+			<desc>
+				-clear arp on sta
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step12.2_clear_sta1_arp.log</log-file>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<include prefix="13" file="subs/sta_ping.xml" args="sta1, ${tb.http_server}, 10" />
+
+		<step no="14" delay="30">
+			<desc>
+				show logging buffered on ap
+			</desc>
+			<log-file>step14_show_logging_bufffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(r) eth0 ${tb.http.mac}-&gt;${sta1.tif.mac} arp ${tb.http_server}(${tb.http.mac})-&gt;${sta1.tif.ip}(${sta1.tif.mac})"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP reply to ${sta1.tif.ip}: ${tb.http_server} is at mac=${tb.http.mac}"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP REQ from AP (ARP Reply: IP=${tb.http_server} mac=${tb.http.mac})"</log-match>
+		</step>
+
+		<step no="15">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "no _ff id 1"
+				-v "_ff id 1 src-mac ${bpc1.tif.mac} etype 0806 bidirectional"
+			</telnet>
+		</step>
+
+		<step no="15.1">
+			<desc>
+				-clear arp on bpc
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step15.1_clear_bpc1_arp.log</log-file>
+			<staf target="bpc1">
+				-v "arp -d ${sta1.tif.ip}"
+			</staf>
+		</step>
+
+		<step no="15.2">
+			<desc>
+				-clear arp on bpc
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step15.2_clear_bpc1_arp.log</log-file>
+			<ssh target="bpc1">
+				-v "ip neigh flush dev ${bpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<include prefix="16" file="subs/sta_ping.xml" args="bpc1, ${sta1.tif.ip}, 10" />
+
+		<step no="17" delay="30">
+			<desc>
+				show logging buffered on ap
+			</desc>
+			<log-file>step17_show_logging_bufffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(r) wifi0.1 ${sta1.tif.mac}-&gt;${bpc1.tif.mac} arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${bpc1.tif.ip}(${bpc1.tif.mac})"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP reply to ${bpc1.tif.ip}: ${sta1.tif.ip} is at mac=${sta1.tif.mac}"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP REQ to AP (ARP Reply: IP=${sta1.tif.ip} mac=${sta1.tif.mac})"</log-match>
+		</step>
+
+		<step no="18">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "no _ff id 1"
+				-v "_ff id 1 src-mac ${tb.http.mac} etype 0806 bidirectional"
+			</telnet>
+		</step>
+
+		<step no="18.1">
+			<desc>
+				-clear arp on server
+			</desc>
+			<ssh host="${tb.http_server}">
+				-v "ip neigh flush dev ${tb.http_server.name}"
+			</ssh>
+		</step>
+
+		<step no="19">
+			<desc>-server ping laptop, result 3</desc>
+			<log-file>step19_ping.log</log-file>
+			<ssh host="${tb.http_server}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="20" delay="30">
+			<desc>
+				show logging buffered on ap
+			</desc>
+			<log-file>step20_show_logging_bufffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(r) wifi0.1 ${sta1.tif.mac}-&gt;${tb.http.mac} arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.http_server}(${tb.http.mac})"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP reply to ${tb.http_server}: ${sta1.tif.ip} is at mac=${sta1.tif.mac}"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP REQ to AP (ARP Reply: IP=${sta1.tif.ip} mac=${sta1.tif.mac})"</log-match>
+		</step>
+	</stage>
+</testcase>

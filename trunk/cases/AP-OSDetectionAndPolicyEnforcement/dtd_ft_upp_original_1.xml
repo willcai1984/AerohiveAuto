@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+    <brief>Apply rule the same attributes by different original attributes testing</brief>    
+	<priority>low</priority>
+    <automated>yes</automated>
+    <description>        
+		Pre-Condition:
+		Ssid’s default or returned  is different from rule’s
+		Test procedure:
+		1: Configure one ssid with cwp on ap, assume its default or returned  is x.
+		2: Configure Device Group which detects MAC OUI and OS, assume its default  is y, and bound it to User-Attribute-Policy then to ssid, result 1
+		3: choose corresponding vendor links to ap then requests a web page, result 2
+		Expect result:
+		1: configure it successfully, through show User-Attribute-Policy can see its rule and attribute.
+		2: through auth debug, should see the client’s attribute is x when it connects to ap; after client’s OS detection, it matches the User-Attribute-Policy
+		, then client’s attribute should become y after applying User-Attribute-Policy. Check the related policies about client are indentical to the changed
+		attribute. (include FW,QoS….)
+    </description>
+	<numofap>1</numofap>
+    <numofsta>1</numofsta>
+    <tbtype>winlin</tbtype>
+	
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="open" />
+	<property name="default_attribute" value="1" />
+	<property name="new_attribute" value="4000" />
+	<property name="vlan_id" value="1" />	
+	<property name="default_user_profile" value="yf-2005" />
+	<property name="new_user_profile" value="yf-2006" />		
+    <stage>
+		<step no="1.1.1">
+			<desc>Configure one ssid on ap</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name}" 
+				-v "ssid ${ssid.name}" 
+				-v "ssid ${ssid.name} security-object ${ssid.name}" 
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${default_user_profile} qos-policy def-user-qos vlan-id ${vlan_id} attribute ${default_attribute}"
+				-v "user-profile ${new_user_profile} qos-policy def-user-qos vlan-id ${vlan_id} attribute ${new_attribute}"
+				-v "security-object ${ssid.name} default-user-profile-attr ${default_attribute}"
+				-v "mac-object linux mac-range 889f:fa00:0000 - 889f:faff:ffff"
+				-v "os-object linux os-version Linux"
+				-v "device-group new_group mac-object linux os-object linux"
+				-v "mobile-device-policy nee original-user-profile ${default_user_profile} device-group new_group reassigned-user-profile-attr ${new_attribute}"
+				-v "security-object ${ssid.name} mobile-device-policy nee"
+			</telnet>
+		</step>
+		
+		<step no="1.2.1">
+			<desc>STA up wifi interface</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "ifconfig ${sta1.tif.name} down" 
+				-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+		</step>
+		
+		<step no="1.3.1">
+			<desc>get mac of sta1's ${sta1.tif.name}</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width 2 | tr '[A-F]' '[a-f]'
+			</setvar>
+		</step>
+				
+		<step no="1.4.1" delay ="50">
+			<desc>clear log bufferd</desc>
+			<telnet target="ap1">-v "clear log buffered "</telnet>
+			<telnet target="ap1">-v "_debug auth all"</telnet>
+		</step>
+		
+		<step no="1.5.1" delay ="50">
+			<desc>configure os detection</desc>
+			<telnet target="ap1">-v "os-detection  enable "</telnet>
+			<telnet target="ap1">-v "os-detection  method  dhcp-option55  "</telnet>
+		</step>
+		
+		<include prefix="1.2" file="subs/sta_wifi_connect_${tb.os}_new.xml" rargs="conn1, sta1, ap1" />
+		<include prefix="2.1" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 3" />
+	
+		<step no="1.6.1" delay="100">
+			<desc>check os-detection on debug auth </desc>
+			<log-file>CheckOsTypeOnAuth.log</log-file>
+			<telnet target="ap1">
+				-v "show log buffered | in dhcp"
+			</telnet>
+			<log-match>
+				 -i "station(${sta1.tif.mac})" -i "os(Linux)" -i "DHCP" 
+			</log-match>
+		</step>
+		
+		<step no="1.7.1" delay="100">
+			<desc>check os-detection on _show rt_sta</desc>
+			<log-file>CheckOsTypeOnCli.log</log-file>
+			<telnet target="ap1">
+				-v "_show rt-sta"
+			</telnet>
+			<log-match>
+				 -i "${sta1.tif.mac}" -i "Linux(DHCP)"
+			</log-match>
+		</step>
+		
+		<step no="1.8.1" delay="10">
+			<desc>check os-detection on show roaming cache mac</desc>
+			<log-file>CheckOsTypeOnCli.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache mac ${sta1.tif.mac}"
+			</telnet>
+			<log-match>-e "Station IP address: ${sta1.tif.ip}"</log-match>
+			<log-match>-e "User Profile ID: ${new_attribute}"</log-match>
+		</step>
+		
+	</stage>
+		
+	<stage>
+        <step no="1.9.1">
+            <desc>
+                shutdown wlan interface on sta1
+            </desc>
+            <ssh target="sta1" prompt=".*#">
+                -v "ifconfig ${sta1.tif.name} down"
+            </ssh>
+        </step>
+    </stage>
+	<failed-process>
+    <stage>
+        <step no="1.10.1">
+            <desc>
+                shutdown wlan interface on sta1
+            </desc>
+            <ssh target="sta1" prompt=".*#">
+                -v "ifconfig ${sta1.tif.name} down"
+            </ssh>
+        </step>
+    </stage>
+    </failed-process>
+	
+</testcase>

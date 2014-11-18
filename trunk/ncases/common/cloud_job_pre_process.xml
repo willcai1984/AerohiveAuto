@@ -1,0 +1,218 @@
+<testcase>
+	<brief>cloud tb job pre process</brief>
+	<description>
+		cloud tb job pre process
+	</description>
+	<property name="job_selenium_port" value="${cloud.selenium.port}" />
+	<property name="job_selenium_log" value="/tmp/selenium-${job.id}.log" />
+	<stage>
+		<step no="remove_ssh_hosts">
+			<desc>rm .ssh/known_hosts file in mpc</desc>
+			<script>
+				rm -rf /root/.ssh/known_hosts
+			</script>
+		</step>
+	</stage>
+	<stage no="truncate_talbe">
+		<if> "true" == "${need_truncate_table}"</if>
+		<if>"cloudadmin" == "${job.user}"</if>
+		<include prefix="truncate_table" file="subs/cloud_redirect_server_init.xml" />
+		<step no="init.accountdb">
+			<desc>init accountdb env</desc>
+			<ssh host="${tb.global.springboard.ip}" user="${tb.global.springboard.user}" password="" prompt=".*$" timeout="300">
+				-v ""
+				-v "pwd"
+				-v ""
+				-v "python createAdminUser.py"
+				-v ""
+			</ssh>
+			<no-error-check />
+		</step>
+		
+		<step no="init.systemdb">
+			<desc>init systemdb env</desc>
+			<ssh host="${tb.va.springboard.ip}" user="${tb.va.springboard.user}" password="" prompt=".*$" timeout="300">
+				-v ""
+				-v "pwd"
+				-v ""
+				-v "ssh ${tb.va.hmdb.user}@${tb.va.hmdb.ip}"
+				-v ""
+				-v "cd /home/qa"
+				-v "python createSystemUser.py"
+				-v ""
+			</ssh>
+			<no-error-check />
+		</step>
+	</stage>
+	<!-- process ap -->
+	<stage no="ap_check">
+	<if>"${realdut.type}" == "ap"</if>
+		<include prefix="cloud.ap.check" file="subs/cloud_ap_check.xml" obj-args="ap1" />
+		<step no="1">
+			<desc> show hw-info</desc>
+			<log-file>show_hw_info.log</log-file>
+			<console target="ap1" timeout="180">
+				-v ""
+				-v "show hw-info"
+			</console>
+		</step>
+		
+		<step no="2">
+			<desc> get serial number</desc>
+			<setvar name="device.sn">
+				/opt/Mainline/bin/getbyrexp.py -p "Serial number:\s+(\d+)" -f ${log.dir}/show_hw_info.log -t str
+			</setvar>
+		</step>
+	</stage>
+		
+	<!-- process br -->
+	<stage no="br_check">
+	<if>"${realdut.type}" == "br"</if>
+		<include prefix="cloud.br.check" file="subs/cloud_br_check.xml" obj-args="br1" />
+		<step no="1">
+			<desc> show hw-info</desc>
+			<log-file>show_hw_info.log</log-file>
+			<console target="br1" timeout="120">
+				-v ""
+				-v "show hw-info"
+			</console>
+		</step>
+		
+		<step no="2">
+			<desc> get serial number</desc>
+			<setvar name="device.sn">
+				/opt/Mainline/bin/getbyrexp.py -p "Serial number:\s+(\d+)" -f ${log.dir}/show_hw_info.log -t str
+			</setvar>
+		</step>
+	</stage>
+	
+	<!-- process sw1 -->
+	<stage no="sw_check">
+		<if>"${realdut.type}" == "sw"</if>
+		<include prefix="sw.env.check" file="subs/cloud_sw_clean_env_check.xml" obj-args="sw1" />
+		<step no="1">
+			<desc> show hw-info</desc>
+			<log-file>show_hw_info.log</log-file>
+			<console target="sw1" timeout="180">
+				-v ""
+				-v "show hw-info"
+			</console>
+		</step>
+		
+		<step no="2">
+			<desc> get serial number</desc>
+			<setvar name="device.sn">
+				/opt/Mainline/bin/getbyrexp.py -p "Serial number:\s+(\d+)" -f ${log.dir}/show_hw_info.log -t str
+			</setvar>
+		</step>
+	</stage>
+	<stage no="sw_clear">
+		<if>"${realdut.type}" == "sw"</if>
+		<if> "${sw1.env.cli_is_clean.flag}" != "success" </if>
+		<include prefix="sw.clear" file="subs/cloud_sw_clear_cli.xml" obj-args="sw1" />
+	</stage>
+	
+	<stage no="sw_match_flag">
+		<if>"${realdut.type}" == "sw"</if>
+		<step no="1.show_run">
+			<desc>show run sw1</desc>
+			<log-file>show_run.sw1.result_2.log</log-file>
+			<console target="sw1" timeout="60">
+				-v ""
+				-v "show run"
+				-v ""
+			</console>
+		</step>
+	
+		<step no="2.set_flag">
+			<desc>judge sw1 if the show run result is null,return success-Null not need reset config or fail-Not Null need reset config </desc>
+			<log-file>set_flag.use_show_run.sw1.result2.log</log-file>
+			<setvar name="sw1.env.need_reset.flag">
+				${bin.dir}/searchblocks.py -b "^AH.*#show run$" -e "^AH.*#$" -ps p0 "." -nb -ne -f ${log.dir}/show_run.sw1.result_2.log; exit 0
+			</setvar>
+		</step>
+		<step no="3.echo_flag2">
+			<script>
+				echo "${__SW__.env.need_reset.flag}"
+			</script>
+		</step>
+		
+		<step no="sw1.reset.config">
+			<if> "${sw1.env.need_reset.flag}" != "success" </if>
+			<console target="sw1" timeout="180">
+				-v ""
+				-v "reset config"
+			</console>
+		</step>
+	</stage>
+	<stage no="pre_ini_val">
+		<step no="pre.0">
+		<if>"${cloud.wpc.ip}" != "" </if>
+			<setvar name="wpc.mif.ip">
+				echo "${cloud.wpc.ip}"
+			</setvar>
+		</step>
+	</stage>
+	
+	<stage no="init.cloud.server">
+		<include prefix="start_selenium_server1" file="subs/start_selenium_server_${tb.os}.xml" args="${job_selenium_jar}, ${job_selenium_port}, ${job_selenium_log}, ${tb.browser_type},${tb.browser_path}" />
+		<step no="pre.0">
+			<desc>
+				get access addr
+			</desc>
+			<setvar name="access_addr">
+				echo "${tb.http_server}"
+			</setvar>
+		</step>
+		
+		<step no="pre.1">
+			<desc>
+				get login addr
+			</desc>
+			<setvar name="login_addr">
+				echo "${tb.http_server}/login"
+			</setvar>
+		</step>
+		
+		<step no="pre.2">
+			<desc>
+				get random number
+			</desc>
+			<setvar name="random.number">
+				echo $RANDOM
+			</setvar>
+		</step>
+		
+		<step no="1">
+			<desc>
+				access cloud3.0
+			</desc>
+			<log-file>login_cloud.html</log-file>
+			<file>session_id.log</file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/cloud_login_positive.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info --preserve-session --parameters visit.pre_url=${login_addr} visit.url=${access_addr} &gt; ${log.dir}/session_id.log
+			</script>
+		</step>	
+		<step no="2">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log -t str
+			</setvar>
+		</step>
+		
+		<step no="3">
+			<desc>
+				create network policy
+			</desc>
+			<log-file>create_serial_number.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/create_device_sn.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --parameters devices.sn_number=${device.sn} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+	</stage>
+	<stage no="stop.selenium.server">
+		<include prefix="stop_selenium_server" file="subs/stop_selenium_server_${tb.os}.xml"  args="${job_selenium_log}"/>
+	</stage>
+</testcase>

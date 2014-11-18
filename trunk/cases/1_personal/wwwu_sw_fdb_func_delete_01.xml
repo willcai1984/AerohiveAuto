@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=1) Delete mac entry check:  disable mac learning for a vlan</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	
+	<description>
+Topology to use	:
+
+switch(access)++++++PC1
+
+Description:	Delete mac entry check:  disable mac learning for a vlan
+Platform Dependence:	Chesapeake
+Pre-condition:
+•	FDB table size doesn’t exceed
+•	PC1 connect to switch access port1, pvid 10
+•	Switch access ports are with learning/forwarding state
+Test procedure:
+1.	Set mac learning enabled for vlan 10
+CLI: mac-address-table  learning  vlan  10
+2.	PC1 send frames of differenent source mac with vlan 1-4094       Result1
+3.	Set mac learning disabled for vlan 10
+CLI: no mac-address-table  learning  vlan  10
+4.	Check FDB table mac entries for vlan 10       Result2
+CLI: show mac-address-table  vlan  10
+5.	Check whether there is mac leant after mac learning disabled         Result3
+
+Expect result:
+Result1:   switch can learn all the source macs with vlan 10.
+
+Result2:  can’t display mac entries for unicast, all the entries for unicast in vlan 10 are removed, because mac-learning in vlan 10 is disabled.
+
+Result3:   no mac leant after mac learning disabled
+
+	</description>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+	
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	
+	<stage>
+		<step no="1">
+			<desc>
+				config switch, port1 and port2 access port with vlan${tb.vlan1} 
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "vlan ${tb.vlan3}"
+				-v ""
+				
+				-v "mac-address-table learning vlan ${tb.vlan1}"
+				-v "mac-address-table learning vlan ${tb.vlan2}"
+				-v ""
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port1} switchport trunk native vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport trunk allow vlan all"
+				-v ""
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		
+		<step no="2">
+			<desc>
+				build stream1, port1 sends broadcast frames for vlan ${tb.vlan1}	
+			</desc>
+			<log-file>stream1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-mac_src_count 10
+				-vlan enable
+				-vlan_id ${tb.vlan1}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-eth2_protocol 0x0800
+				-udf_offset 38
+				-patternOffset2 38"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 20"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		
+		<step no="3">
+			<desc>display and check the learnt mac address for vlan ${tb.vlan1}</desc>
+			<log-file>step3_mac_learn.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Total mac entry num: 10"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				build stream2, port1 sends broadcast frames for vlan ${tb.vlan2}	
+			</desc>
+			<log-file>stream2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the second stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-mac_src_count 10
+				-vlan enable
+				-vlan_id ${tb.vlan2}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-eth2_protocol 0x0800
+				-udf_offset 38
+				-patternOffset2 38"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 20"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>		
+		<step no="5">
+			<desc>display and check the learnt mac address for vlan ${tb.vlan2}</desc>
+			<log-file>step5_mac_learn.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table vlan ${tb.vlan2}"
+			</telnet>
+			<log-match>-e "Total mac entry num: 10"</log-match>
+		</step>		
+
+		<step no="6">
+			<desc>
+				disable mac-learning for vlan ${tb.vlan2} and check if the learnt mac addresses are deleted when mac-learning disabled.
+			</desc>
+			<log-file>step6_mac_address.log</log-file>
+			<telnet target="sw1">
+				-v "no mac-address-table learning vlan ${tb.vlan2}"
+				-v ""
+				-v "show mac-address-table vlan ${tb.vlan2}"
+			</telnet>
+			<log-match>-e "Total mac entry num: 0"</log-match>
+		</step>		
+		
+
+		<step no="7">
+			<desc>
+				build stream3, port1 sends broadcast frames for vlan ${tb.vlan2}	
+			</desc>
+			<log-file>stream3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the third stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-mac_src_count 10
+				-vlan enable
+				-vlan_id ${tb.vlan2}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-eth2_protocol 0x0800
+				-udf_offset 38
+				-patternOffset2 38"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 20"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>		
+		<step no="8">
+			<desc>display and check the learnt mac address for vlan ${tb.vlan2} when vlan ${tb.vlan2} mac-learnint is disabled</desc>
+			<log-file>step8_mac_learn.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table vlan ${tb.vlan2}"
+			</telnet>
+			<log-match>-e "Total mac entry num: 0"</log-match>
+		</step>		
+		
+		
+	</stage>
+	
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+	
+	
+</testcase>

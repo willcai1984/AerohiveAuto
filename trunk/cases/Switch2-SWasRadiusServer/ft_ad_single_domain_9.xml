@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=1)No admin credential saved,net join with the cli 'exec aaa net-join'</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configed first
+		-AP's clock should be sync to the AD server via a ntp server
+		-config AD option,fullname
+		-enable radius server
+
+		Test Procedure:
+		Use cli 'exec aaa net-join' to join the AP to windows domain
+	</description>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				-config a local radius server
+			</desc>
+			<telnet target="sw1">
+				-v "clear log buffered"
+				-v "ntp server ${pub.ntp}"
+				-v "security-object autoap"
+				-v "security-object autoap security aaa radius primary ${sw1.admin.ip}"
+				-v "security-object autoap security protocol-suite 802.1x"
+				-v "security-object autoap default-user-profile-attr ${tb.vlan1}"
+				-v "user-profile vlan${tb.vlan1} vlan-id ${tb.vlan1} attribute ${tb.vlan1}"
+				-v "save radius-server-key radius-server tftp://${pub.tftp1.tip}:sw_certs/cacert.pem"
+				-v "save radius-server-key radius-server tftp://${pub.tftp1.tip}:sw_certs/server_cert.pem"
+				-v "save radius-server-key radius-server tftp://${pub.tftp1.tip}:sw_certs/server_key.pem"
+				-v "aaa radius-server local sta-auth ca-cert cacert.pem server-cert server_cert.pem private-key server_key.pem"
+				-v "aaa radius-server local db-type active-directory primary server ${pub.ad1.ip}"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				-v "aaa radius-server local enable"
+				-v "user-profile ttt vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+		<step no="1.2">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="sw1">
+				-v "show aaa radius-server"
+				-v "_debug radiusd excessive"
+				-v "_debug radiusd samba-tools"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-i "primary active-directory (active)"</log-match>
+		</step>
+		<step no="2.1">
+			<multi-setvar>
+				echo sw1.port1.ixia_port.if1.mac_1=$(echo "${sw1.port1.ixia_port.if1.mac}" | sed 's/\./:/g')
+				echo tb.sub_netmask=$(ipcalc -4 -m ${tb.vlan1.ip}/${tb.subnet_prefix}|cut -d= -f2)
+				echo tb.vlan1.ip_end=$(echo `echo ${tb.vlan1.ip_start} |cut -d\. -f1,2,3`\.$(expr `echo ${tb.vlan1.ip_start} | cut -d\. -f4` + 5))
+			</multi-setvar>
+		</step>
+		<step no="2.2">
+			<desc>
+				enable 802.1x auth and dhcp server on switch
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "interface vlan ${tb.vlan1}"
+				-v "interface vlan${tb.vlan1} ip ${tb.vlan1.ip}/${tb.subnet_prefix}"
+				-v "user-profile vlan${tb.vlan1} vlan-id ${tb.vlan1} attribute ${tb.vlan1}"
+				-v "interface ${sw1.port1} security-object autoap"
+				-v "interface vlan${tb.vlan1} dhcp-server ip-pool ${tb.vlan1.ip_start} ${tb.vlan1.ip_end}"
+				-v "interface vlan${tb.vlan1} dhcp-server options default-gateway ${tb.vlan1.ip}"
+				-v "interface vlan${tb.vlan1} dhcp-server options netmask ${tb.sub_netmask}"
+				-v "interface vlan${tb.vlan1} dhcp-server enable"
+			</telnet>
+		</step>
+		<step no="3">
+			<desc>
+				Use cli 'exec aaa net-join' to join the AP
+			</desc>
+			<log-file>net_join_ad.log</log-file>
+			<telnet target="sw1">
+				-v "exec aaa net-join primary username ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+			</telnet>
+			<log-match>-c -i "successfully joined the Active Directory domain ${pub.ad1.realm}"</log-match>
+		</step>
+		<step no="4.1a">
+			<desc>
+				config eap protocol and start
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-new="${job.user}-${job.sid}-1">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixn_connect -def enable -chassisIP ${pub.chassis1.ip} -ixn_tcl_server ${sw1.ixn_tcl_server} -userName ${job.user} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.phytype}"
+				-v ""
+
+				-v "ixn_emulation_8021x_config -portList ${sw1.port1.ixia_port} \
+				-mac_address ${sw1.port1.ixia_port.if1.mac} \
+				-mac_addr_increment 0.0.0.0.0.1 \
+				-mac_addr_count 1 \
+				-protocol PEAPv0 \
+				-username ${pub.ad1.username} \
+				-password ${pub.ad1.passwd} \
+				-ca_path ${ixn.cert_dir} \
+				-key_path ${ixn.cert_dir}"
+				-v "ixn_allprotocols_control -action start"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="4.2b" type="loop-check" loop-max-times="5" loop-interval="6">
+			<desc>
+				check ${sw1.port1.ixia_port.if1.mac} passes eap auth 
+			</desc>
+			<log-file>eap_check${loop_check.idx}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1" >
+				-v "ixn_emulation_8021x_stats -protocol peap"
+				-v ""
+			</ssh>
+			<log-match>-re -e "{PEAP Success} 1"</log-match>
+		</step>
+		<step no="4.2">
+			<desc>
+				create protocol interface, get dhcp and ping
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_create -portList ${sw1.port1.ixia_port} -mac_src ${sw1.port1.ixia_port.if1.mac}"
+				-v "ixn_interface_dhcp_config -portList ${sw1.port1.ixia_port} -enable true"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="4.3" type="loop-check" loop-max-times="5" loop-interval="3">
+			<desc>
+				check ${sw1.port1.ixia_port.if1.mac} gets ip addr
+			</desc>
+			<log-file>dhcp_check${loop_check.idx}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1" >
+				-v "ixn_interface_dhcp_info -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-re -i "${sw1.port1.ixia_port}\.${sw1.port1.ixia_port.if1.mac}.ip=([0-9]{1,3}+\.)[0-9]{1,3}"</log-match>
+			<no-error-check />
+		</step>
+		<step no="4.4">
+			<desc>
+				check ping to gateway
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_ping_control -intf_handleList [keylget allIntfH port.${sw1.port1.ixia_port}.interface_handle.${sw1.port1.ixia_port.if1.mac}] -destination_ip ${tb.vlan1.ip} -count 4"
+				-v ""
+			</ssh>
+			<log-match>-re -i "Response received from ${tb.vlan1.ip}\. Sequence Number [0-9]+"</log-match>
+			<no-error-check />
+		</step>
+		<step no="4.5">
+			<desc>show log buf</desc>
+			<log-file>check_auth1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "RADIUS: The RADIUS server accepted user \'${pub.ad1.username}\' through the NAS at ${sw1.forward.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "bind as ${pub.ad1.binddn} to ${pub.ad1.ip}:(389|0)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Bind was successful" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<step no="5">
+			<desc>reboot DUT</desc>
+			<console target="sw1">
+				-v "save config"
+				-v "save server-files"
+				-v "reboot"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="6.1">
+			<desc>show running-config</desc>
+			<console target="sw1">
+				-v "show running-config"
+			</console>
+		</step>
+		<step no="6.2" delay="25">
+			<desc>show log buf</desc>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+				-v "_debug radiusd excessive"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="6.3" delay="20">
+			<desc>show status of radius server on AP1</desc>
+			<console target="sw1">
+				-v "show aaa radius-server"
+				-v "show memory detail"
+			</console>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-i "primary active-directory (active)"</log-match>
+		</step>
+		<step no="7.1">
+			<desc>
+				config eap protocol and start
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_dhcp_config -portList ${sw1.port1.ixia_port} -enable false"
+				-v "ixn_allprotocols_control -action stop"
+				-v "sleep 3"
+				-v "ixn_allprotocols_control -action start -clearStatsEnable enable"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="7.2" type="loop-check" loop-max-times="5" loop-interval="3">
+			<desc>
+				config eap protocol and start
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "sleep 3"
+				-v "ixn_emulation_8021x_stats -protocol peap"
+			</ssh>
+			<log-match>-re -e "{PEAP Success} [12]"</log-match>
+			<no-error-check />
+		</step>
+		<step no="7.3">
+			<desc>
+				create protocol interface, get dhcp and ping
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_dhcp_config -portList ${sw1.port1.ixia_port} -enable true"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="7.4" type="loop-check" loop-max-times="5" loop-interval="3">
+			<desc>
+				check ${sw1.port1.ixia_port.if1.mac} gets ip addr
+			</desc>
+			<log-file>dhcp_check${loop_check.idx}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_dhcp_info -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-re -i "${sw1.port1.ixia_port}\.${sw1.port1.ixia_port.if1.mac}.ip=([0-9]{1,3}+\.)[0-9]{1,3}"</log-match>
+			<no-error-check />
+		</step>
+		<step no="7.5">
+			<desc>
+				check ping to gateway
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_ping_control -intf_handleList [keylget allIntfH port.${sw1.port1.ixia_port}.interface_handle.${sw1.port1.ixia_port.if1.mac}] -destination_ip ${tb.vlan1.ip} -count 4"
+				-v ""
+			</ssh>
+			<log-match>-re -i "Response received from ${tb.vlan1.ip}\. Sequence Number [0-9]+"</log-match>
+			<no-error-check />
+		</step>
+		<step no="7.6">
+			<desc>show log buf</desc>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="8">
+			<desc>disable then enable local radius server</desc>
+			<telnet target="sw1">
+				-v "no aaa radius-server local enable"
+				-v "aaa radius-server local enable"
+				-v "_debug radiusd excessive"
+			</telnet>
+		</step>
+		<step no="9.1" delay="10">
+			<desc>
+				config eap protocol and start
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_dhcp_config -portList ${sw1.port1.ixia_port} -enable false"
+				-v "ixn_allprotocols_control -action stop"
+				-v "sleep 3"
+				-v "ixn_allprotocols_control -action start -clearStatsEnable enable"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="9.2" type="loop-check" loop-max-times="5" loop-interval="3">
+			<desc>
+				config eap protocol and start
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "sleep 3"
+				-v "ixn_emulation_8021x_stats -protocol peap"
+			</ssh>
+			<log-match>-re -e "{PEAP Success} [12]"</log-match>
+			<no-error-check />
+		</step>
+		<step no="9.3">
+			<desc>
+				create protocol interface, get dhcp and ping
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_dhcp_config -portList ${sw1.port1.ixia_port} -enable true"
+				-v "sleep 5"
+				-v "ixn_interface_dhcp_info -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="9.4" type="loop-check" loop-max-times="5" loop-interval="3">
+			<desc>
+				check ${sw1.port1.ixia_port.if1.mac} gets ip addr
+			</desc>
+			<log-file>dhcp_check${loop_check.idx}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_dhcp_info -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-re -i "${sw1.port1.ixia_port}\.${sw1.port1.ixia_port.if1.mac}.ip=([0-9]{1,3}+\.)[0-9]{1,3}"</log-match>
+			<no-error-check />
+		</step>
+		<step no="9.5">
+			<desc>
+				check ping to gateway
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_ping_control -intf_handleList [keylget allIntfH port.${sw1.port1.ixia_port}.interface_handle.${sw1.port1.ixia_port.if1.mac}] -destination_ip ${tb.vlan1.ip} -count 4"
+				-v ""
+			</ssh>
+			<log-match>-re -i "Response received from ${tb.vlan1.ip}\. Sequence Number [0-9]+"</log-match>
+			<no-error-check />
+		</step>
+		<step no="9.6">
+			<desc>show log buf</desc>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<step no="post1">
+				<ssh timeout="180" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+					-v ""
+					-v "ixn_allprotocols_control -action stop"
+				</ssh>
+			</step>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

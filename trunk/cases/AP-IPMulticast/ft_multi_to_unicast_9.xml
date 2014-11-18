@@ -1,0 +1,465 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>In auto mode, multicast to unicast is converted or not converted dynamically when cu changes dynamically</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		on portal:
+		Laptop1 connect to portal on wifi0.1 interface, through ssid A
+		ssid A multicast conversion-to-unicast auto
+		ssid A multicast cu-threshold 10%
+		ssid A multicast member-threshold 2
+		Active multicast stream is :238.1.1.1
+		Open debug
+
+		Test Procedure:
+		1. Laptop1 reports to join group 238.1.1.1
+		make sure channel's total channel utilization minus portal self's Tx utilization less
+		than cu-threshold 10%, check multicast packet forwarding
+		2. Add some APs, with same channel of portal.
+		make sure channel's total channel utilization minus portal self's Tx utilization
+		larger than cu-threshold 10%, check multicast packet forwarding
+		3. Remove some APs, which in same channel of portal
+		make sure channel's total channel utilization minus portal self's Tx utilization less
+		than cu-threshold 10%, check multicast packet forwarding
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="sta1.capture.packet.result" value="sta1.capture.packet.result" />
+	<property name="sta1.second.capture.packet.result" value="sta1.second.capture.packet.result" />
+	<property name="sta1.third.capture.packet.result" value="sta1.third.capture.packet.result" />
+	<property name="file.dir" value="/tmp" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				on portal:
+				Laptop1 connect to portal on wifi0.1 interface, through ssid A
+				ssid A multicast conversion-to-unicast auto
+				ssid A multicast cu-threshold 10%
+				ssid A multicast member-threshold 2
+				Active multicast stream is :238.1.1.1
+				Open debug
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name} multicast conversion-to-unicast auto"
+				-v "ssid ${ssid.name} multicast member-threshold 2"
+				-v "ssid ${ssid.name} multicast cu-threshold 99"
+				-v "exec capture remote-sniffer"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				open debug on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "_ff dst-ip ${pub.mtcast1.group1.ip}"
+				-v "_kdebug wifi-driver wifi0.1 awemcast"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="2.1">
+			<desc>
+				get sta1's mac with five delimiter style
+			</desc>
+			<setvar name="sta1.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				show interface wifi0
+			</desc>
+			<log-file>step3_show_interface_wifi0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				touch a file and write group1's mac(for example :0100:5e01:010a) in it
+			</desc>
+			<log-file>step3.1_group1_mac.log</log-file>
+			<script>
+				echo "${pub.mtcast1.group1.mac}" &gt; ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="3.2">
+			<desc>Get pub multicast group1's mac with 5 delimiter style</desc>
+			<setvar name="pub.multicast.group1.mac">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.1_group1_mac.log -p "(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" --script "':'.join(m.groups())"
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				delete local files
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f ${file.dir}/${sta1.capture.packet.result}"
+				-v "rm -f ${file.dir}/${sta1.second.capture.packet.result}"
+				-v "rm -f ${file.dir}/${sta1.third.capture.packet.result}"
+			</ssh>
+		</step>
+
+		<step no="4">
+			<desc>
+				capture packet on sta1
+			</desc>
+			<log-file>step4_capture_packet.log</log-file>
+			<ssh target="sta1">
+				-v "nohup tshark -i ${sta1.tif.name} dst port ${pub.mtcast1.group1.port} -V &gt; ${file.dir}/${sta1.capture.packet.result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get pid of "tshark" on sta1
+			</desc>
+			<setvar name="sta1.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4_capture_packet.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				Laptop1 report to join group 238.1.1.1,
+			</desc>
+			<log-file>step5_join_group.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ./mrecv -d ${pub.mtcast1.group1.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				get pid of "mrecv" on sta1
+			</desc>
+			<setvar name="sta1.join.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_join_group.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>set filter</desc>
+			<log-file>step6_show_filter.log</log-file>
+			<telnet target="ap1">
+				-v "no capture interface wifi0"
+				-v "filter 1 l3 dst-ip ${pub.mtcast1.group1.ip}"
+				-v "show filter"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>save capture</desc>
+			<log-file>step6.1_set_default_capture_file.log</log-file>
+			<telnet target="ap1">
+				-v "capture save interface wifi0 step6.1_${job.id}_wifi0.dmp"
+			</telnet>
+		</step>
+
+		<step no="6.2">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "capture interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="7" delay="60">
+			<desc>
+				kill process which run in background.
+			</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				cat files on sta1
+			</desc>
+			<log-file>step7.1_check_result.log</log-file>
+			<ssh target="sta1" timeout="180">
+				-v "cat ${file.dir}/${sta1.capture.packet.result}"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "(?i)Dst:.*\(${sta1.mac}\)" -p "Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)" -e "User Datagram Protocol" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-n -i "Dst:" -i "(${pub.multicast.group1.mac})"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1" timeout="180">
+				-v "save capture local step6.1_${job.id}_wifi0.dmp tftp://${mpc.tif.ip}:/step6.1_${job.id}_wifi0.dmp"
+			</telnet>
+		</step>
+
+		<step no="8.1" delay="10">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>step8.1_check_wifi0_result.log</log-file>
+			<script>
+				tshark -r /tftpboot/step6.1_${job.id}_wifi0.dmp -V &gt; ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "(?i)Destination address:.*\(${sta1.mac}\)" -p "Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)" -e "User Datagram Protocol" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-n -i "Dst:" -i "(${pub.multicast.group1.mac})"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				2. change cu-threshold in order to make sure total channel utilization minus portal self's Tx utilization
+				larger than cu-threshold
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name} multicast cu-threshold 1"
+			</telnet>
+		</step>
+
+		<step no="9.1" delay="5">
+			<desc>
+				show interface wifi0
+			</desc>
+			<log-file>step9.1_show_interface_wifi0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="10">
+			<desc>
+				capture packet on sta1
+			</desc>
+			<log-file>step10_capture_packet.log</log-file>
+			<ssh target="sta1">
+				-v "nohup tshark -i ${sta1.tif.name} dst port ${pub.mtcast1.group1.port} -V &gt; ${file.dir}/${sta1.second.capture.packet.result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				get pid of "tshark" on sta1
+			</desc>
+			<setvar name="sta1.tshark.pid.second">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step10_capture_packet.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="11">
+			<desc>set filter</desc>
+			<log-file>step11_show_filter.log</log-file>
+			<telnet target="ap1">
+				-v "no capture interface wifi0"
+				-v "filter 1 l3 dst-ip ${pub.mtcast1.group1.ip}"
+				-v "show filter"
+			</telnet>
+		</step>
+
+		<step no="11.1">
+			<desc>save capture</desc>
+			<log-file>step11.1_set_default_capture_file.log</log-file>
+			<telnet target="ap1">
+				-v "capture save interface wifi0 step11.1_${job.id}_wifi0.dmp"
+			</telnet>
+		</step>
+
+		<step no="11.2">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "capture interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="12" delay="60">
+			<desc>
+				kill process which run in background.
+			</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.tshark.pid.second}"
+			</ssh>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				cat files on sta1
+			</desc>
+			<log-file>step12.1_check_result.log</log-file>
+			<ssh target="sta1" timeout="180">
+				-v "cat ${file.dir}/${sta1.second.capture.packet.result}"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "(?i)Dst:.*\(${pub.multicast.group1.mac}\)" -p "Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)" -e "User Datagram Protocol" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-n -i "Dst:" -i "(${sta1.mac})"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1" timeout="180">
+				-v "save capture local step11.1_${job.id}_wifi0.dmp tftp://${mpc.tif.ip}:/step11.1_${job.id}_wifi0.dmp"
+			</telnet>
+		</step>
+
+		<step no="13.1" delay="10">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>step13.1_check_wifi0_result.log</log-file>
+			<script>
+				tshark -r /tftpboot/step11.1_${job.id}_wifi0.dmp -V &gt; ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "(?i)Destination address:.*\(${pub.multicast.group1.mac}\)" -p "Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)" -e "User Datagram Protocol" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-n -i "Dst:" -i "(${sta1.mac})"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				3. change cu-threshold in order to make sure total channel utilization minus portal self's Tx utilization
+				less than cu-threshold
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name} multicast cu-threshold 99"
+			</telnet>
+		</step>
+
+		<step no="14.1" delay="5">
+			<desc>
+				show interface wifi0
+			</desc>
+			<log-file>step14.1_show_interface_wifi0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="14.2">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="15">
+			<desc>
+				capture packet on sta1
+			</desc>
+			<log-file>step15_capture_packet.log</log-file>
+			<ssh target="sta1">
+				-v "nohup tshark -i ${sta1.tif.name} dst port ${pub.mtcast1.group1.port} -V &gt; ${file.dir}/${sta1.third.capture.packet.result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="15.1">
+			<desc>
+				get pid of "tshark" on sta1
+			</desc>
+			<setvar name="sta1.tshark.pid.third">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step15_capture_packet.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="16">
+			<desc>set filter</desc>
+			<log-file>step16_show_filter.log</log-file>
+			<telnet target="ap1">
+				-v "no capture interface wifi0"
+				-v "filter 1 l3 dst-ip ${pub.mtcast1.group1.ip}"
+				-v "show filter"
+			</telnet>
+		</step>
+
+		<step no="16.1">
+			<desc>save capture</desc>
+			<log-file>step16.1_set_default_capture_file.log</log-file>
+			<telnet target="ap1">
+				-v "capture save interface wifi0 step16.1_${job.id}_wifi0.dmp"
+			</telnet>
+		</step>
+
+		<step no="16.2">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "capture interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="17" delay="60">
+			<desc>
+				kill process which run in background.
+			</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.tshark.pid.third}"
+			</ssh>
+		</step>
+
+		<step no="17.1">
+			<desc>
+				cat files on sta1
+			</desc>
+			<log-file>step17.1_check_result.log</log-file>
+			<ssh target="sta1" timeout="180">
+				-v "cat ${file.dir}/${sta1.third.capture.packet.result}"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "(?i)Dst:.*\(${sta1.mac}\)" -p "Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)" -e "User Datagram Protocol" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-n -i "Dst:" -i "(${pub.multicast.group1.mac})"</log-match>
+		</step>
+
+		<step no="18">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1" timeout="180">
+				-v "save capture local step16.1_${job.id}_wifi0.dmp tftp://${mpc.tif.ip}:/step16.1_${job.id}_wifi0.dmp"
+			</telnet>
+		</step>
+
+		<step no="18.1" delay="10">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>step18.1_check_wifi0_result.log</log-file>
+			<script>
+				tshark -r /tftpboot/step16.1_${job.id}_wifi0.dmp -V &gt; ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "(?i)Destination address:.*\(${sta1.mac}\)" -p "Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)" -e "User Datagram Protocol" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-n -i "Dst:" -i "(${pub.multicast.group1.mac})"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+
+		<stage>
+			<step no="0">
+				<desc>
+					kill process which run in background.
+				</desc>
+				<ssh target="sta1">
+					-v "killall tshark -q"
+					-v "killall ./mrecv -q"
+					-v "rm -f ${file.dir}/${sta1.capture.packet.result}"
+					-v "rm -f ${file.dir}/${sta1.second.capture.packet.result}"
+					-v "rm -f ${file.dir}/${sta1.third.capture.packet.result}"
+				</ssh>
+			</step>
+
+			<step no="1">
+				<desc>
+					delete local files on mpc
+				</desc>
+				<script>
+					rm -f /tftpboot/step6.1_${job.id}_wifi0.dmp /tftpboot/step11.1_${job.id}_wifi0.dmp /tftpboot/step16.1_${job.id}_wifi0.dmp
+				</script>
+			</step>
+		</stage>
+	</post-process>
+</testcase>

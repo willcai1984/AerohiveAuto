@@ -1,0 +1,417 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check if "Show ssid XX counter station""show ssid XX counter station XXXX.XXXX.XXXX" "clear ssid XX counter station""clear ssid XX counter station XXXX.XXXX.XXXX" work normal or not</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Initial configuration:
+		Radio profile ng phymode 11ng
+		Radio profile na phymode 11na
+		In wifi0 radio profile ng
+		In wifi1 radio profile na
+		hive statistics
+		In mgt0 hive statistics
+		Ssid ${ssid.name}-1
+		Ssid ${ssid.name}-2
+		In wifi0 ssid ${ssid.name}-1
+		In wifi1 ssid ${ssid.name}-2
+
+		Test Procedure:
+		1) Push initial configuration to AP
+		2) Connect client to AP ssid ${ssid.name}-1
+		3) Run iperf in AP as client mode, run iperf in client as server mode
+		Cli:"show station" to get client ip address
+		"iperf client XX.XX.XX.XX window 64 time 65535 parallel 4"
+		4) Check if ssid counter have been displayed correctly by CLi:
+		"show ssid XX counter station"
+		"show ssid XX counter station XXXX.XXXX.XXXX"
+		And content "rx data frames""tx data frames" should have the value
+		value0.
+		5) Clear interface wifi0.1 counter to check if the above value value0 have
+		been decreased
+		CLI:"clear ssid XX counter station"
+		"Show ssid XX counter station"
+		"clear ssid XX counter station XXXX.XXXX.XXXX"
+		"Show ssid XX counter station
+		XXXX.XXXX.XXXX"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				Initial configuration:
+				Radio profile ng phymode 11ng
+				In wifi0 radio profile ng
+				Hive statistics
+				In mgt0 hive statistics
+				Ssid ${ssid.name}-1
+				Ssid ${ssid.name}-2
+				In wifi0 ssid ${ssid.name}-1
+			</desc>
+			<telnet target="ap1">
+				-v "radio profile ng phymode 11ng"
+				-v "interface wifi0 radio profile ng"
+				-v "hive statistics"
+				-v "interface mgt0 hive statistics"
+				-v "ssid ${ssid.name}-1"
+				-v "security-object ${ssid.name}-1"
+				-v "ssid ${ssid.name}-1 security-object ${ssid.name}-1"
+				-v "ssid ${ssid.name}-2"
+				-v "security-object ${ssid.name}-2"
+				-v "ssid ${ssid.name}-2 security-object ${ssid.name}-2"
+				-v "security-object ${ssid.name}-1 security protocol-suite wpa-auto-psk ascii-key aerohive"
+				-v "security-object ${ssid.name}-2 security protocol-suite wpa-auto-psk ascii-key aerohive"
+				-v "interface wifi0 ssid ${ssid.name}-1"
+			</telnet>
+		</step>
+		
+		<step no="1.1">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				Initial configuration:
+				Radio profile na phymode 11na
+				In wifi1 radio profile na
+				In wifi1 ssid ${ssid.name}-2
+			</desc>
+			<telnet target="ap1">
+				-v "radio profile na phymode 11na"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 ssid ${ssid.name}-2"
+			</telnet>
+		</step>
+	
+
+		<step no="w0a.2">
+			<desc>
+				Generate wifi_aerohive_test profile for ssid ${ssid.name}-1
+			</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/winprof.xml -o w0a.step2_wifi_prof.xml -s "${ssid.name}-1" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="w0a.2.1">
+			<desc>
+				Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password
+			</desc>
+			<script>
+				staf local fs copy file ${log.dir}/w0a.step2_wifi_prof.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+
+		<step no="w0a.2.2">
+			<desc>
+				verify profile copied
+			</desc>
+			<log-file>w0a.step2.2_cat_profile_sta.log</log-file>
+			<ssh target="sta1">
+				-v "cat /cygdrive/c/staf/wifi_aerohive_test.xml | grep ${ssid.name}-1"
+			</ssh>
+			<log-match>-e "&lt;name&gt;${ssid.name}-1&lt;/name&gt;"</log-match>
+		</step>
+
+		<step no="w0a.2.3">
+			<desc>
+				Delete all current Wireless profile of host ${sta1.mif.ip}
+				Bring down the client Wireless ${sta1.mif.ip}
+				Bring up the client Wireless on host ${sta1.mif.ip}
+				Add new profile for ssid ${ssid.name}-1 to host ${sta1.mif.ip}
+				Check profile for ssid ${ssid.name}-1 on host ${sta1.mif.ip}
+			</desc>
+			<log-file>w0a.step2.3_wlan_conf_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan delete profile name=* interface=\"${sta1.tif.name}\""
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=DISABLED"
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=ENABLED"
+				-v "netsh wlan add profile filename=\"c:\\staf\\wifi_aerohive_test.xml\" interface=\"${sta1.tif.name}\""
+				-v "netsh wlan show profiles ${ssid.name}-1"
+			</ssh>
+			<log-match>-e "SSID name" -i "${ssid.name}-1"</log-match>
+		</step>
+
+		<step no="w0a.2.4" type="loop-check" loop-max-times="40" loop-interval="5">
+			<desc>
+				show wlan network on host ${sta1.mif.ip}
+			</desc>
+			<log-file>w0a.step2.4_wlan_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show network | grep SSID"
+			</ssh>
+			<log-match>-e "SSID" -i "${ssid.name}-1"</log-match>
+		</step>
+
+		<step no="w0a.2.5">
+			<desc>
+				connect to ssid ${ssid.name}-1 on host ${sta1.mif.ip}
+			</desc>
+			<log-file>w0a.step2.5_wlan_conn_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan connect ssid=${ssid.name}-1 name=${ssid.name}-1 interface=\"${sta1.tif.name}\""
+			</ssh>
+		</step>
+
+		<step no="w0a.2.6" type="loop-check" loop-max-times="40" loop-interval="5">
+			<desc>
+				wait until ssid ${ssid.name}-1 connected on host ${sta1.mif.ip}
+			</desc>
+			<log-file>w0a.step2.6_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-e "State" -i " connected"</log-match>
+		</step>
+
+		<step no="w0a.2.7" type="loop-check" loop-max-times="40" loop-interval="5">
+			<desc>
+				wait until ip assigned on host ${sta1.mif.ip}
+			</desc>
+			<log-file>w0a.step2.7_wlan_ip_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+			<log-match>-e "IPv4 Address" -i "192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="w0a.2.8">
+			<desc>
+				Dump all interfaces data from remote host ${sta1.mif.ip}
+			</desc>
+			<log-file>w0a.step2.8_wlan_ip_dump_sta.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+		</step>
+
+		<step no="w0a.2.9">
+			<desc>
+				Get station's MAC
+			</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/w0a.step2.8_wlan_ip_dump_sta.log -i Wireless -o win -m -width
+			</setvar>
+		</step>
+
+		<step no="w0a.2.10">
+			<desc>
+				Get station's ip
+			</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/w0a.step2.8_wlan_ip_dump_sta.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+
+		<step no="w0a.2.11">
+			<desc>
+				Run iperf in client as server mode
+			</desc>
+			<ssh target="sta1">
+				-v "killall iperf"
+				-v "nohup iperf -s -p 65535 &gt; nohup.out 2&gt;&amp;1 &amp;"
+        -v "ps ajx | grep iperf"
+			</ssh>
+		</step>
+
+		<step no="w0a.2.12" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Run iperf in AP as client mode
+			</desc>
+			<log-file>w0a.step2.12_iperf_client_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "iperf client ${sta1.tif.ip} port 65535 window 64 time 20 parallel 4"
+			</telnet>
+			<log-match>-n -e "connect failed"</log-match>
+			<log-match>-n -e "write1 failed"</log-match>
+		</step>
+
+		<step no="w0a.3" delay="15">
+			<desc>
+				Check if ssid counter have been displayed correctly by CLi:
+				"show ssid XX counter station"
+				And content "rx data frames" "tx data frames" should have the value
+				value0.
+			</desc>
+			<log-file>w0a.step3_show_ssid_counter.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}-1 counter station"
+			</telnet>
+			<log-match>-e "rx data frames"</log-match>
+			<log-match>-e "tx data frames"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="w0a.3.1">
+			<desc>
+				Get ssid ${ssid.name}-1 counter station "rx data frames"
+			</desc>
+			<setvar name="wifi0.1_content_1_1">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+rx data frames" -f ${log.dir}/w0a.step3_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="w0a.3.2">
+			<desc>
+				Get ssid ${ssid.name}-1 counter station "tx data frames"
+			</desc>
+			<setvar name="wifi0.1_content_1_2">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+tx data frames" -f ${log.dir}/w0a.step3_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="w0a.4" delay="15">
+			<desc>
+				"show ssid XX counter station XXXX.XXXX.XXXX"
+				And content "rx data frames" "tx data frames" should have the value
+				value0.
+			</desc>
+			<log-file>w0a.step4_show_ssid_counter.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}-1 counter station ${sta1.tif.mac}"
+			</telnet>
+			<log-match>-e "rx data frames"</log-match>
+			<log-match>-e "tx data frames"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="w0a.4.1">
+			<desc>
+				Get ssid ${ssid.name}-1 counter station ${sta1.tif.mac} "rx data frames"
+			</desc>
+			<setvar name="wifi0.1_content_2_1">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+rx data frames" -f ${log.dir}/w0a.step4_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="w0a.4.2">
+			<desc>
+				Get ssid ${ssid.name}-1 counter station ${sta1.tif.mac} "tx data frames"
+			</desc>
+			<setvar name="wifi0.1_content_2_2">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+tx data frames" -f ${log.dir}/w0a.step4_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="w0a.5" delay="15">
+			<desc>
+				Clear interface wifi0.1 counter to check if the above value value0 have
+				been decreased
+				CLI:"clear ssid XX counter station"
+				"Show ssid XX counter station"
+			</desc>
+			<log-file>w0a.step5_show_ssid_counter.log</log-file>
+			<telnet target="ap1">
+				-v "clear ssid ${ssid.name}-1 counter station"
+				-v "show ssid ${ssid.name}-1 counter station"
+			</telnet>
+			<log-match>-e "rx data frames"</log-match>
+			<log-match>-e "tx data frames"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="w0a.5.1">
+			<desc>
+				Get show ssid ${ssid.name}-1 counter station "rx data frames"
+			</desc>
+			<setvar name="wifi0.1_content_3_1">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+rx data frames" -f ${log.dir}/w0a.step5_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="w0a.5.2">
+			<desc>
+				Get show ssid ${ssid.name}-1 counter station "tx data frames"
+			</desc>
+			<setvar name="wifi0.1_content_3_2">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+tx data frames" -f ${log.dir}/w0a.step5_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="w0a.6" delay="5">
+			<desc>
+				"clear ssid XX counter station XXXX.XXXX.XXXX"
+				"Show ssid XX counter station XXXX.XXXX.XXXX"
+			</desc>
+			<log-file>w0a.step6_show_ssid_counter.log</log-file>
+			<telnet target="ap1">
+				-v "clear ssid ${ssid.name}-1 counter station ${sta1.tif.mac}"
+				-v "show ssid ${ssid.name}-1 counter station ${sta1.tif.mac}"
+			</telnet>
+			<log-match>-e "rx data frames"</log-match>
+			<log-match>-e "tx data frames"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="w0a.6.1">
+			<desc>
+				Get show ssid ${ssid.name}-1 counter station ${sta1.tif.mac} "rx data frames"
+			</desc>
+			<setvar name="wifi0.1_content_4_1">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+rx data frames" -f ${log.dir}/w0a.step6_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="w0a.6.2">
+			<desc>
+				Get show ssid ${ssid.name}-1 counter station ${sta1.tif.mac} "tx data frames"
+			</desc>
+			<setvar name="wifi0.1_content_4_2">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+tx data frames" -f ${log.dir}/w0a.step6_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="w0a.6.3">
+			<desc>
+				compare "rx data frames"
+			</desc>
+			<script>
+				if [ ${wifi0.1_content_3_1} \&lt; ${wifi0.1_content_1_1} ]
+				then
+				exit 0
+				fi
+				exit 1
+			</script>
+		</step>
+
+		<step no="w0a.6.4">
+			<desc>
+				compare "tx data frames"
+			</desc>
+			<script>
+				if [ ${wifi0.1_content_3_2} \&lt; ${wifi0.1_content_1_2} ]
+				then
+				exit 0
+				fi
+				exit 1
+			</script>
+		</step>
+
+		<step no="w0a.6.5">
+			<desc>
+				compare "rx data frames"
+			</desc>
+			<script>
+				if [ ${wifi0.1_content_4_1} \&lt; ${wifi0.1_content_2_1} ]
+				then
+				exit 0
+				fi
+				exit 1
+			</script>
+		</step>
+
+		<step no="w0a.6.6">
+			<desc>
+				compare "tx data frames"
+			</desc>
+			<script>
+				if [ ${wifi0.1_content_4_2} \&lt; ${wifi0.1_content_2_2} ]
+				then
+				exit 0
+				fi
+				exit 1
+			</script>
+		</step>
+	</stage>
+</testcase>

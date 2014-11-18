@@ -1,0 +1,155 @@
+<testcase>
+	<brief>DHCP client is under mp, portal is Dhcp-server</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+	<description>
+		Topology to use
+		Laptop1---Mp----Portal------Switch------DHCP server
+		Objective
+		DHCP client is under mp, portal is Dhcp-server
+		Pre-condition
+		Make sure that Dhcp server can not receive the broadcast from Portal.
+		Make sure wifi0 and wifi1 are up on portal AP(You can bind a ssid to wifi0 and make a neighbor via wifi1)
+		Test procedure
+		-laptop connects to portal
+		-set mgt0 as dhcp-server on portal. laptop will send dhcp discovery pkt to get ip address
+		check the FE debug to see.
+		Meet result 1,2,3,4,5
+		-repeated the above step when dhcp-server is set in mgt0.x
+		Expect result
+		1:Laptop can get ip address
+		2:Mp will do special handle for DHCP discovery/request pkt:
+		Only send this pkt to wifi1,pls make sure not send to wifi0
+		3:Portal will receive the pkt from wifi1 and forward it to mgt0 and eth0.
+		4:Mgt0 will send offer/ack pkt and Portal only forward it to wifi1.
+		5:Mp will receive the pkt from Portal and forward it only by specific wifi0.x not other wifi0.x and wifi1.
+	</description>
+	<stage>
+		<step no="1">
+			<desc>Set up Portal interface through sw menu</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "interface mgt0 hive ${hive.name}"
+				-f basic_apsetup.cfg
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>Set up MP interface through sw menu</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "interface mgt0 hive ${hive.name}"
+				-f basic_apsetup.cfg
+			</console>
+		</step>
+
+		<step no="4">
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<desc>Set up AP2 interface through sw menu via console  </desc>
+			<console target="ap2">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>Set up Portal as dhcp-server through sw menu</desc>
+			<telnet target="ap1">
+				-v "interface mgt0.1 vlan ${tb.vlan2}"
+				-v "interface mgt0.1 ip 192.168.${tb.vlan2}.200/24"
+				-v "interface mgt0.1 dhcp-server ip-pool ${tb.vlan2.dhcp_start} ${tb.vlan2.dhcp_end}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${tb.vlan2.gw}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>Set SSID for mp  </desc>
+			<console target="ap2">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</console>
+		</step>
+
+		<include prefix="4" file="subs/ap_amrp_neighbor_check.xml" args="ap1, ap2" />
+
+		<step no="5">
+			<desc>Set up MP interface through sw menu</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="10">
+			<desc>add a _ff and open fe debug on Portal </desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11">
+			<desc>add a _ff and open fe debug on MP </desc>
+			<console target="ap2">
+				-v "_ff id 1 dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="12">
+			<desc> laptop get ip-address </desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ipconfig/release \"${sta1.tif.name}\"" -v "ipconfig/renew \"${sta1.tif.name}\"" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="13">
+			<desc>show log buffer at Portal</desc>
+			<log-file>buffer_portal.log</log-file>
+			<telnet target="ap1" timeout="150">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i '(o) eth0 0.0.0.0->255.255.255.255' -i 'DHCP Discover'</log-match>
+			<log-match>-c -i '(u) mgt0 0.0.0.0->255.255.255.255' -i 'DHCP Discover'</log-match>
+		</step>
+
+		<step no="14">
+			<desc>show log buffer at MP </desc>
+			<log-file>buffer_mp.log</log-file>
+			<console target="ap2" timeout="150">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i '(o) wifi1.1 0.0.0.0->255.255.255.255' -i 'DHCP Discover'</log-match>
+			<log-match>-c -i 'Tx:wifi1.1:1> ${sta1.tif.mac}->ffff:ffff:ffff'</log-match>
+			<log-match>-c -i "DHCP bcast set?" -i "client mac ${sta1.tif.mac}, out_ifp wifi0.1"</log-match>
+		</step>
+	</stage>
+</testcase>

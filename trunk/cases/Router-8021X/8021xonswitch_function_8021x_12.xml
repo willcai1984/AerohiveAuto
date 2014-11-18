@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>When VLAN assignment from Radius is set to port, any change to the configured VLAN does not take effect , access port Platform Dependence SR2024</brief>
+	<priority>Low</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Auth is port based, 802.1X enabled in the port,
+		security-object &lt;security-object name&gt;
+		security-object &lt;security-object name&gt; security aaa radius-
+		server primary &lt;ip address of radius server&gt; shared-secret
+		&lt;share-key&gt;
+		security-object &lt;security-object name&gt; security aaa radius-
+		server accounting primary &lt;ip address of radius server&gt;
+		shared-secret &lt;share-key&gt;
+		security-object &lt;security-object name&gt; security protocol-
+		suite 802.1x
+		security-object &lt;security-object name&gt; security auth-mode
+		host-based
+		interface &lt;ethx/y&gt; switchport mode access
+		interface &lt;ethx/y&gt; security-object &lt;security-object name&gt;
+		vlan 10
+		vlan 20
+		vlan 30
+		Port configured VLAN 10,
+		Radius server response user1 return VLAN 20, user2 return VLAN 30, user3 return
+		VLAN20
+		Radius users configure(free radius)
+		a. Return vlan id directly
+		user1 User-Password := &lt;password&gt;
+		Tunnel-Type = 13,
+		Tunnel-Medium-Type = 6,
+		Tunnel-Private-Group-ID = 20
+		user2
+		User-Password := &lt;password&gt;
+		Tunnel-Type = 13,
+		Tunnel-Medium-Type = 6,
+		Tunnel-Private-Group-ID = 30
+		user3 User-Password := &lt;password&gt;
+		Tunnel-Type = 13,
+		Tunnel-Medium-Type = 6,
+		Tunnel-Private-Group-ID = 20
+		b. Return upid
+		user1 User-Password := &lt;password&gt;
+		Tunnel-Type = 10,
+		Tunnel-Medium-Type = 1,
+		Tunnel-Private-Group-ID = 20
+		user2 User-Password := &lt;password&gt;
+		Tunnel-Type = 10,
+		Tunnel-Medium-Type = 1,
+		Tunnel-Private-Group-ID = 30
+		user3 User-Password := &lt;password&gt;
+		Tunnel-Type = 10,
+		Tunnel-Medium-Type = 1,
+		Tunnel-Private-Group-ID = 20
+		In this case, we need configure user profile in switch, the clis is:
+		user-profile upid20 qos-policy def-user-qos vlan-id 20
+		attribute 20
+		user-profile upid30 qos-policy def-user-qos vlan-id 30
+		attribute 30
+		PC1 didn't do auth
+
+		Test Procedure:
+
+		1. PC1 do auth with user1, check port access, result 1
+		2. Change port VLAN to 30, result2
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="acct1.vlan" value="${br1.vpc2.vlan}" />
+
+	<stage>
+		<include prefix="add.account1" file="subs/ldap_add.xml" args="${job.sid}-aerohive, aerohive" obj-args="acct1" />
+
+		<step no="pre_step">
+			<desc>configure mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask ${br.route.netmask}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.2 vlan ${br1.vpc3.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask ${br.route.netmask}"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				1. Set one security-object with radius-server
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object lan1"
+				-v "security-object lan1 security protocol-suite 802.1x"
+				-v "security-object lan1 security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Set one user-profile and define the attribute x,
+				3. Set the eth1 mode as bridge-access and bind the attribute to it
+				4. Bind the security-object to the eth1.
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute ${br1.vpc2.vlan}"
+				-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vpc2.vlan}"
+				-v "interface eth1 security-object lan1"
+				-v "interface eth1 mac-learning enable"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				6. Connect one laptop to the l2switch and auth successfully.
+			</desc>
+			<log-file>step3_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="60">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="3.1a">
+			<desc>get raw mac of vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step3_ifconfig_vpc1_.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.1b">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show br eth1 interface
+			</desc>
+			<log-file>step3.2_show_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth1"
+			</telnet>
+		</step>
+
+		<step no="3.2b">
+			<desc>get br1 eth1 raw mac</desc>
+			<setvar name="br1.eth1.mac">
+				echo $(${bin.dir}/getbyrexp.py -p "MAC addr=([\da-fA-F:]+)" -f ${log.dir}/step3.2_show_interface.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.2c">
+			<desc>get mac1 of br1.eth1</desc>
+			<setvar name="br1.eth1.mac1">
+				echo $(echo ${br1.eth1.mac} | sed -e 's/:../&amp;:/g' -e 's/^../&amp;:/')
+			</setvar>
+		</step>
+
+		<step no="3.2d">
+			<desc>get tmp.mac of br1.eth1</desc>
+			<setvar name="br1.eth1.tmp.mac">
+				echo $(echo ${br1.eth1.mac1} | tr : - )
+			</setvar>
+		</step>
+
+		<step no="3.2e">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step3.2e_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.br.mgt0.1.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.3a">
+			<desc>
+				prepare config file with username and wrong password
+			</desc>
+			<log-file>step3.3a_auth_log.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "echo -e \&quot; ctrl_interface=DIR=/var/run/wpa_supplicant \\n ap_scan=0 \\n network={ \\n key_mgmt=IEEE8021X \\n eap=MD5 \\n identity=\\x22${job.sid}-aerohive\\x22 \\n password=\\x22aerohive\\x22 \\n eapol_flags=0 \\n } \&quot; &gt; /tmp/wpa_supplicant.conf"
+			</ssh>
+		</step>
+
+		<step no="3.3b">
+			<desc>
+				Laptop auth success
+			</desc>
+			<log-file>step3.3b_auth_log.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "wpa_supplicant -B -i ${br1.vpc1.tif.name} -c /tmp/wpa_supplicant.conf -D wired"
+			</ssh>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step3.4_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.4b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.5" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show 802.1x-mac-table
+			</desc>
+			<log-file>step3.5_show_8021x_mac.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table"
+			</telnet>
+			<log-match>-c -i "${br1.vpc1.tif.mac}" -i "eth1" -i "CLOSE"</log-match>
+		</step>
+
+		<step no="3.5a">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step3.5a_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface eth1"
+			</telnet>
+			<log-match>-c -i "${br1.vpc1.tif.mac}" -i "done" -i "${job.sid}-aerohive"</log-match>
+		</step>
+
+		<step no="3.5b" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step3.5b_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "Station ${br1.vpc1.tif.mac} is authenticated to" -i "thru SSID lan1"</log-match>
+			<log-match>-c -i "IEEE 802.1X: ${br1.vpc1.tif.mac} BE_AUTH entering state SUCCESS"</log-match>
+			<log-match>-c -i "STA(${br1.vpc1.tif.mac}) login to SSID(eth1) by user_name=${job.sid}-aerohive"</log-match>
+			<log-match>-c -i "Station is authenticated: SPA=${br1.vpc1.tif.mac}" -i "if=eth1" -i "VLAN-ID=${br1.vpc2.vlan}/${br1.vpc2.vlan}" -i "ssid=lan1"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				change interface vlan,check port vlan
+			</desc>
+			<log-file>step4_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc3.vlan} attribute ${br1.vpc2.vlan}"
+				-v "show 802.1x-mac-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}[\t ]+${br1.vpc2.vlan}[\t ]+eth1[\t ]+CLOSE[\t ]+N/A" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="del.account1" file="subs/ldap_delete.xml" args="${job.sid}-aerohive" />
+
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

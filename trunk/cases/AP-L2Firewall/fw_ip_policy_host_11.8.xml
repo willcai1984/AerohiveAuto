@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>"Before" and "After" operation test</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Configure the dns server right which can resolve the hostname in ip-policy, and 4 items maximum
+
+		Test Procedure:
+		1) Laptop ping Server, result 1
+		2) Configure a L3 policy with hostname and ip, including many ID:
+		"ip-policy FW"
+		"ip-policy FW id 1 from &lt;hostname1&gt; action deny"
+		"ip-policy FW id 2 from &lt;hostname1&gt; action permit"
+		"ip-policy FW id 3 from &lt;laptop_ip&gt; action permit"
+		"user-profile FW security ip-policy from-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Show ip-policy, result 1
+		4) Laptop ping Server, result 2
+		5) Show ip-policy by internal cli "Show inter-ip-policy FW to display", result 3
+		6) Change the id's order by "Before" and "After" operation
+		7) Check the rules by internal cli "Show inter-ip-policy FW to display", result 4
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FW" />
+	<property name="domain" value="www.${job.id}.com" />
+
+	<stage>
+		<step no="pre1">
+			<desc>
+				-Laptop uses user-profile "FW"
+			</desc>
+			<telnet target="ap1">
+				-v "dns server-ip ${pub.dns1.ip}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+
+		<include prefix="pre2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="pre3" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${domain}, ${tb.unreach.ip1}" />
+
+		<step no="pre4">
+			<desc>main case</desc>
+			<ssh host="${pub.dns1.ip}">
+				-v "host ${domain}"
+			</ssh>
+		</step>
+
+		<step no="open.debug">
+			<desc>
+				open debug mode
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_ping.xml" args="sta1, ${pub.dns1.ip}, 4" />
+
+		<step no="3">
+			<desc>
+				-Configure a L3 policy with hostname and ip, including many ID:
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${domain} action deny"
+				-v "ip-policy ${user_id} id 2 from ${domain} action permit"
+				-v "ip-policy ${user_id} id 3 from ${sta1.tif.ip} action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>
+				2) Show ip-policy, result 1
+			</desc>
+			<log-file>step4_show_ip_policy.log</log-file>
+			<telnet target="ap1">
+				-v "show ip-policy ${user_id} _"
+			</telnet>
+			<log-match>-c -i "1 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *deny"</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "1 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *deny" -l "2 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *permit" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "2 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *permit" -l "3 *${sta1.tif.ip}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *permit" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="5" file="subs/sta_ping.xml" args="sta1, ${pub.dns1.ip}, 4" />
+
+		<step no="6" delay="30">
+			<desc>
+				5) Show ip-policy by internal cli "Show inter-ip-policy FW to display", result 3
+			</desc>
+			<log-file>step6_show_ip_policy.log</log-file>
+			<telnet target="ap1">
+				-v "show ip-policy ${user_id} _"
+			</telnet>
+			<log-match>-c -i "1 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *deny"</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "1 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *deny" -l "2 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *permit" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "2 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *permit" -l "3 *${sta1.tif.ip}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *permit" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7" delay="5">
+			<desc>
+				6) Change the id's order by "Before" and "After" operation
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id} id 1 after id 3"
+				-v "ip-policy ${user_id} id 3 before id 2"
+			</telnet>
+		</step>
+
+		<step no="8" delay="30">
+			<desc>
+				7) Check the rules by internal cli "Show inter-ip-policy FW to display", result 4
+			</desc>
+			<log-file>step8_show_ip_policy.log</log-file>
+			<telnet target="ap1">
+				-v "show ip-policy ${user_id} _"
+			</telnet>
+			<log-match>-c -i "3 *${sta1.tif.ip}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *permit"</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "3 *${sta1.tif.ip}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *permit" -l "2 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *permit" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "2 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *permit" -l "1 *${tb.unreach.ip1}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *deny" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="del" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${domain}, ${tb.unreach.ip1}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

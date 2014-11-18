@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>wan port check</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		bug 19869, 19999
+		Topology to use	
+		IXIA++++++ Switch
+
+		Description: should delete static entry when a port change to wan mode, add static MAC on wan port should fail, wan port' MAC should not display
+		Platform Dependence	Chesapeake
+		Pre-condition	?	PC1 connect to switch port1
+		PC1 is in vlan1
+		Test procedure	Dynamic unicast mac entries
+		1.	config port 1 as wan mode
+		2.  add static MAC on port 1, should fail
+		3.  push MAC into port 1
+		4.	Check learned MACs of port 1, should be null
+	</description>
+
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<comment>
+		sw1.port1=eth1/5;
+		sw1.port2=eth1/6;
+		sw1.port3=eth1/13;
+		sw1.port4=eth1/14;
+		sw1.port3.ixia_port
+		sw1.port1.ixia_port=1/2/7;
+		sw1.port2.ixia_port=1/2/8;
+		sw1.port1.ixia_port=1/2/9;
+		sw1.port2.ixia_port=1/2/10;
+		sw1.terminal.ip=10.155.32.105;
+		sw1.terminal.port=2054;
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclclient1.ip=10.155.40.10;
+
+		mpc.mif.ip=10.155.32.128;
+		mpc.tif.ip=10.68.136.253;
+		mpc.user=root;
+		mpc.passwd=aerohive;
+		mpc.prompt=".*#";
+		mpc.tif.name=eth1;
+		tb.nvlan=100;
+		tb.vlans=100,200,300;
+		tb.vlan1=100;
+		tb.vlan2=200;
+		tb.vlan3=300;
+	</comment>
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+		<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+		<property name="sw1.port3.ixia_port.mac" value="0000.0000.0013"/>
+		<property name="static_mac" value="0001.0000.0011"/>
+		<property name="agg1" value="1"/>
+		<step no="0">
+			<desc>
+				add static mac on port 1
+			</desc>
+			<telnet target="sw1">
+				-v "clear mac-address-table all"
+				-v "mac-address-table static ${static_mac} vlan ${tb.vlan1} interface ${sw1.port1}"
+				-v "show mac-address-table interface ${sw1.port1}"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${static_mac}\s*${sw1.port1}\s*yes"</log-match>
+		</step>
+		
+		<step no="1">
+			<desc>
+				configure ports 1 as wan mode
+			</desc>
+			<telnet target="sw1">
+				-v "interface ${sw1.port1} mode wan"
+				-v "show mac-address-table interface ${sw1.port1}"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "${tb.vlan1}\s*${static_mac}\s*${sw1.port1}\s*yes" -n</log-match>
+		</step>
+		
+		<step no="1.1">
+			<desc>set static mac on port 1</desc>
+			<telnet target="sw1">
+				-v "mac-address-table static ${static_mac} vlan ${tb.vlan1} interface ${sw1.port1}"
+			</telnet>
+			<log-match>-e "Can't set a static mac entry for wan port"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				push mac into port 1
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff 
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800"
+				-v ""
+				
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		
+		<step no="2.2">
+			<desc>check FDB, mac entries learned from port 1 should not display</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table interface ${sw1.port1}"
+			</telnet>
+			<log-match>-e "Total mac entry num: 0"</log-match>
+		</step>
+		
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

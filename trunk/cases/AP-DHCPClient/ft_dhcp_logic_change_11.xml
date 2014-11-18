@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>When could not obtain DNS/NTP/Syslog/Capwap from DHCP server, check if will use configured by manual</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Exist useable DHCP server(don’t config DNS/NTP/Syslog/ Capwap in server)
+		Not config static ip address to interface mgt0
+
+		Test Procedure:
+		1.Login AP
+		2.Run interface mgt0 dhcp client
+		3.Check ip address
+		4.Check DNS/NTP/Syslog/Capwap
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="tb.vlan7.dhcp_start" value="192.168.${tb.vlan7}.200" />
+	<property name="tb.vlan7.dhcp_end" value="192.168.${tb.vlan7}.222" />
+	<property name="tb.vlan7.gw" value="192.168.${tb.vlan7}.254" />
+	<property name="mgt0.1_ip" value="192.168.${tb.vlan7}.100" />
+
+	<stage>
+		<step no="pre.0">
+			<desc>
+				-shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="pre.1">
+			<desc>
+				-shutdown eth1
+			</desc>
+			<if>"${ap2.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<include prefix="add.ap1.permit.vlan" file="subs/l2swcfg_port_newvlan.xml" args="${ap1.eth0.swport}, ${tb.vlan7}" />
+
+		<include prefix="modify.vlan" file="subs/l2swcfg_port_vlan.xml" args="${ap2.eth0.swport}, ${tb.vlan7}, ${tb.vlan7}" />
+
+		<step no="0">
+			<desc>
+				Config mgt0.1 as a dhcp server
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0.1 vlan ${tb.vlan7}"
+				-v "interface mgt0.1 ip ${mgt0.1_ip}/24"
+				-v "interface mgt0.1 dhcp-server ip-pool ${tb.vlan7.dhcp_start} ${tb.vlan7.dhcp_end}"
+				-v "interface mgt0.1 dhcp-server options lease-time 100"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${tb.vlan7.gw}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "_ff id 1 dst-port 67 bidirectional"
+				-v "_debug dhcpd basic"
+				-v "_debug dhcpc basic"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config hive info
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="3" delay="5">
+			<desc>
+				- open dhcp client
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step4_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "Get IP address 192.168.${tb.vlan7}.\d+ from the server ${mgt0.1_ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "DNS server \(option number 6\):\s+\d+\.\d+\.\d+\.\d+" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Log server \(option number 7\):\s+\d+\.\d+\.\d+\.\d+" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "NTP server \(option number 42\):\s+\d+\.\d+\.\d+\.\d+" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5" delay="5">
+			<desc>
+				use configured by manual
+			</desc>
+			<console target="ap2">
+				-v "dns server-ip ${pub.dns1.ip}"
+				-v "ntp server ${pub.ntp.ip}"
+				-v "logging server ${pub.syslog1.ip}"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="6.1">
+			<desc>Check DNS</desc>
+			<log-file>step4.1_show_dns.log</log-file>
+			<console target="ap1">
+				-v "show dns"
+			</console>
+			<log-match>-i "Primary *: ${pub.dns1.ip}"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>Check NTP</desc>
+			<log-file>step4.2_show_ntp.log</log-file>
+			<console target="ap1">
+				-v "show ntp"
+			</console>
+			<log-match>-i "First *${pub.ntp.ip}"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>Check Syslog</desc>
+			<log-file>step4.3_show_syslog.log</log-file>
+			<console target="ap1">
+				-v "show logging"
+			</console>
+			<log-match>-i "${pub.syslog1.ip}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="recover.vlan" file="subs/l2swcfg_port_vlan.xml" args="${ap2.eth0.swport}, ${tb.nvlan}, ${tb.vlans}" />
+
+			<step no="0">
+				<desc>
+					cancel new vlan
+				</desc>
+				<telnet host="${tb.l2sw}" prompt=".*[>|#]">
+					-v "enable"
+					-v "config"
+					-v "vlan database"
+					-v "no vlan ${tb.vlan7}"
+					-v "end"
+					-v "show vlan"
+				</telnet>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

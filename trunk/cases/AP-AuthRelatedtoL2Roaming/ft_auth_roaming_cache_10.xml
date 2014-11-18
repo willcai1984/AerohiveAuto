@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>clear roaming cache for certain STA</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-AP1 and AP2 are roaming neighbours
+		-config the same ssid on both APs
+		-STA1,2 connects to ssid, no matter which AP is connected
+		Test Procedure:
+		-check roaming cache on AP1, result 1
+		-clear roaming cache of STA1 on AP1
+		‘cle auth roaming-cache mac xxxxxxxxx’
+		-check roaming cache on AP1, result 2
+		-check roaming cache on AP2, result 3
+		-clear roaming cache of STA2 on AP2, result 4
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="SetUpAP1.1">
+			<desc>Set up AP1</desc>
+			<log-file>setup_ap1.log</log-file>
+			<console target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-psk ascii aerohive"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${ap.def.passwd}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "_de auth info"
+				-v "_de auth basic"
+				-v "save config"
+			</console>
+		</step>
+			<step no="GetAP1.IP.1" delay="15">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>ap1_mgt_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		<step no="GetAP1.IP.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ap1_mgt_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		<step no="SetUpAP2.1">
+			<desc>Set up AP2</desc>
+			<log-file>setup_ap2.log</log-file>
+			<console target="ap2">
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-psk ascii aerohive"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${ap.def.passwd}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "_de auth info"
+				-v "_de auth basic"
+				-v "save config"
+			</console>
+		</step>
+			<step no="GetAP2.IP.1" delay="15">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>ap2_mgt_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		<step no="GetAP2.IP.2">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ap2_mgt_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		<step no="SetUpAP2.2">
+			<if>"${ap1.eth1.existed}"=="true"</if>
+			<desc>Set up AP2</desc>
+			<log-file>setup_eth1_ap2.log</log-file>
+			<console target="ap2">
+				-v "hive ${hive.name} manage Telnet"
+				-v "interface eth1 shutdown"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="GetAP1.MAC.1" delay="30">
+			<desc>show interface of ap1</desc>
+			<log-file>show_portal_interface.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="GetAP1.MAC.2">
+			<desc>get the eth0 mac address of ap1</desc>
+			<setvar name="ap1.eth0.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_portal_interface.log -k eth0 -p 2
+			</setvar>
+		</step>
+
+		<step no="GetAP2.MAC.1">
+			<desc>show interface of AP2</desc>
+			<log-file>show_ap2_interface.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="GetAP2.MAC.2">
+			<desc>get the eth0 mac address of AP2</desc>
+			<setvar name="ap2.eth0.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_ap2_interface.log -k eth0 -p 2
+			</setvar>
+		</step>
+
+		<step no="CheckAP1RoamingNeighbor1" type="loop-check" loop-max-times="50" loop-interval="10">
+			<desc>show roaming neighbor 1 of ap1</desc>
+			<log-file>show_roaming_neighbor1_ap1_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-i "${ap2.mgt0.ip}" -i "${ap2.eth0.w4mac}" -p 4 -i "D" -c </log-match>
+		</step>
+		<step no="CheckAP2RoamingNeighbor1" type="loop-check" loop-max-times="50" loop-interval="10">
+			<desc>show roaming neighbor 1 of ap2</desc>
+			<log-file>show_roaming_neighbor1_ap2_${loop_check.idx}.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-i "${ap1.mgt0.ip}" -i "${ap1.eth0.w4mac}" -p 4 -i "D" -c </log-match>
+		</step>
+		<step no="CheckAmrpNeighbour.1" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show Portal amrp neighbor
+			</desc>
+			<log-file>show_portal_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show amrp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.eth0.w4mac}\s+${ap2.mgt0.ip}\s" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="CheckAmrpNeighbour.2" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show MP amrp neighbor
+			</desc>
+			<log-file>show_mp_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.eth0.w4mac}\s+${ap1.mgt0.ip}\s" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="SetUpAP2.3">
+			<desc>Set up AP2</desc>
+			<log-file>setup_eth1_1_ap2.log</log-file>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+				-v "save config"
+				-v "_debug auth all"
+			</console>
+		</step>
+
+		<include prefix="2.1" file="subs/wpa_supplicant_start.xml" args="sta1" />
+		<step no="2.2" delay="30">
+			<desc>
+				config the laptop to apply the ssid profile,then start to associate
+			</desc>
+			<ssh target="sta1" prompt=">|.*#" timeout="30">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-PSK"
+				-v "set_network 0 proto WPA"
+				-v "set_network 0 pairwise TKIP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 psk \"aerohive\""
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+		<include prefix="2.3" file="subs/chk_conn_in_sta.xml" args="sta1" />
+		<step no="2.4" delay="10">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+		<step no="2.5">
+			<desc>Get sta1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+		<step no="2.6">
+			<desc>Get sta1's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<include prefix="3.1" file="subs/wpa_supplicant_start.xml" args="sta2" />
+		<step no="3.2" delay="30">
+			<desc>
+				config the laptop to apply the ssid profile,then start to associate
+			</desc>
+			<ssh target="sta2" prompt=">|.*#" timeout="30">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-PSK"
+				-v "set_network 0 proto WPA"
+				-v "set_network 0 pairwise TKIP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 psk \"aerohive\""
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+		<include prefix="3.3" file="subs/chk_conn_in_sta.xml" args="sta2" />
+		<step no="3.4" delay="10">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig_sta2.log</log-file>
+			<ssh target="sta2" timeout="80">
+				-v "ifconfig ${sta2.tif.name}"
+			</ssh>
+		</step>
+		<step no="3.5">
+			<desc>Get sta2's ip</desc>
+			<setvar name="sta2.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta2.log -i ${sta2.tif.name} -nomask
+			</setvar>
+		</step>
+		<step no="3.6">
+			<desc>Get sta2's mac</desc>
+			<setvar name="sta2.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta2.log -i ${sta2.tif.name} -m -width
+			</setvar>
+		</step>
+		<step no="CheckAP1RoamingCache1.1" type="loop-check" loop-max-times="50" loop-interval="10">
+			<desc>show roaming cache 1 of ap1</desc>
+			<log-file>show_roaming_cache1_ap1_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-i "${sta1.tif.mac}" -c -p 12 -i "YNNN"</log-match>
+			<log-match>-i "${sta2.tif.mac}" -c -p 12 -i "YNNN"</log-match>
+			<log-match>-i "Broadcast way" -i "access" -i "backhaul"</log-match>
+		</step>
+		<step no="ClearRoamingCacheAP1.1">
+			<desc>
+				clear roaming cache on ap1
+			</desc>
+			<log-file>clear_roaming_cache_ap1.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "clear auth roaming-cache mac ${sta1.tif.mac}"
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-i "${sta2.tif.mac}" -c -p 12 -i "YNNN"</log-match>
+			<log-match>-i "${sta1.tif.mac}" -c -p 12 -i "YNNN" -n</log-match>
+		</step>
+		<step no="CheckAP2RoamingCache1.1" type="loop-check" loop-max-times="50" loop-interval="10">
+			<desc>show roaming cache 1 of ap2</desc>
+			<log-file>show_roaming_cache1_ap2_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show roaming cache"
+			</console>
+			<log-match>-i "${sta1.tif.mac}" -c -p 12 -i "YNNN"</log-match>
+			<log-match>-i "${sta2.tif.mac}" -c -p 12 -i "YNNN"</log-match>
+			<log-match>-i "Broadcast way" -i "access" -i "backhaul"</log-match>
+		</step>
+		<step no="ClearRoamingCacheAP2.1">
+			<desc>
+				clear roaming cache on ap2
+			</desc>
+			<log-file>clear_roaming_cache_ap2.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "clear auth roaming-cache mac ${sta2.tif.mac}"
+				-v "show roaming cache"
+			</console>
+			<log-match>-i "${sta1.tif.mac}" -c -p 12 -i "YNNN"</log-match>
+			<log-match>-i "${sta2.tif.mac}" -c -p 12 -i "YNNN" -n</log-match>
+		</step>
+	</stage>
+</testcase>
+
+

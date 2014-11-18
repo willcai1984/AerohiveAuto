@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>create idm user</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>Pre-Condition:
+
+		Test Procedure:
+		1:create a admin group with some privileges 		2:create user with created admin group
+		3:delete  useraccount and admingoup</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<numofwpc>1</numofwpc>
+	<tbtype>windows</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-tkip-psk" />
+	<property name="conn1.psk" value="aerohive" />
+
+	<stage>
+		<include prefix="start_selenium_server1" file="subs/start_selenium_server.xml" args="${wpc1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<include prefix="start_selenium_server2" file="subs/start_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<step no="0">
+			<desc>
+				AP connect with HM
+			</desc>
+			<telnet target="ap1">
+				-v "capwap client enable"
+				-v "capwap client server name ${pub.hm1.ip}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				create policy ssid name
+			</desc>
+			<log-file>create_policy_ssid.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/policy_config.py -r http://${wpc1.mif.ip}:4444/wd/hub --parameters policy.name=ssid ssid.name=${ssid.name} -t ff -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				create policy user-policy (default)
+			</desc>
+			<log-file>create_policy_default.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/policy_config.py -r http://${wpc1.mif.ip}:4444/wd/hub --parameters policy.name=user_profile user_profile.name=1_default${job.sid} user_profile.attribute=1 user_profile.vlan=1 -t ff -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				create policy user-policy(register)
+			</desc>
+			<log-file>create_policy_register.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/policy_config.py -r http://${wpc1.mif.ip}:4444/wd/hub --parameters policy.name=user_profile user_profile.name=1_register${job.sid} user_profile.attribute=2 user_profile.vlan=1 -t ff -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+
+		<step no="0.4">
+			<desc>
+				create radius server
+			</desc>
+			<log-file>create_radius_server.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/policy_config.py -r http://${wpc1.mif.ip}:4444/wd/hub --parameters policy.name='aaa_client cwp' cwp.name=default${job.sid} cwp.vlan=1 aaa_client.name=pub_radius_server${job.sid} aaa_client.ip=${pub.radius1.ip} aaa_client.shared_secret=${pub.radius1.sharesecret} -t ff -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+
+		<step no="0.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Check the HiveAPs capwap state.
+			</desc>
+			<log-file>check_hiveaps_capwap_state_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show capwap client"
+			</telnet>
+			<log-match>-i "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+
+		<step no="1">
+			<desc>
+				config passthrough cwp on hm
+			</desc>
+			<log-file>config_passthrough_cwp.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/new_policy.py -r http://${wpc1.mif.ip}:4444/wd/hub --parameters policy.name=${job.sid} hive.name='hive0 (not secure)' ssid.name=${ssid.name} cwp.name=default${job.sid} radius.name=pub_radius_server${job.sid} user_profile.default_user='1_default${job.sid}(1)' user_profile.registration_user='1_register${job.sid}(2)' -t ff -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				upload the cwp config to ap
+			</desc>
+			<log-file>upload_policy.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/upload_config_new.py -r http://${wpc1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l debug --parameters login.server=https://${pub.hm1.ip}/ upload.policy=${job.sid} upload.type=complete ap.mgt0_ip=${ap1.mgt0.ip}
+			</script>
+		</step>
+
+		<step no="1.2" delay="120">
+			<desc>
+				config ppsk mode on ap(becase of uploading config should lead to ap reboot,so should use console instead of telnet)
+			</desc>
+			<console target="ap1">
+				-v "security-object ${ssid.name} security protocol-suite wpa-tkip-psk ascii-key aerohive"
+				-v "security-object ${ssid.name} security private-psk"
+				-v "security-object ${ssid.name} security private-psk default-psk-disabled"
+				-v "security-object ${ssid.name} security private-psk mac-binding-enable"
+				-v "security-object ${ssid.name} security private-psk ppsk-server ${ap1.mgt0.ip}"
+				-v "user ppsk_user"
+				-v "user ppsk_user password aerohive"
+				-v "user-group userGroup"
+				-v "user ppsk_user group userGroup"
+				-v "user-group userGroup user-attribute 1"
+				-v "user-group userGroup vlan-id 1"
+				-v "no user-group userGroup psk-format character-pattern digits"
+				-v "no user-group userGroup psk-format character-pattern special-characters"
+				-v "user-group userGroup psk-format combo-pattern and"
+				-v "ssid ${ssid.name} user-group userGroup"
+			</console>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				let interface eth0 manage all
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 manage all"
+				-v "interface wifi1 ssid ${ssid.name} shutdown"
+			</console>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				show running-config
+			</desc>
+			<log-file>step1.4_show_running_config.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+			<log-match>-i "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret"</log-match>
+			<log-match>-i "security-object ${ssid.name} security additional-auth-method captive-web-portal pass-through vlan 1"</log-match>
+			<log-match>-i "user-profile 1_default${job.sid} qos-policy def-user-qos vlan-id 1 attribute 1"</log-match>
+			<log-match>-i "user-profile 1_register${job.sid} qos-policy def-user-qos vlan-id 1 attribute 2"</log-match>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				access public hm through CWP
+			</desc>
+			<log-file>cwp_ct_auth_3_log_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -f ${log.dir}/${log.file} -l info --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step4_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}\s*wifi0.1\s*04\s*${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step5_show_roam.log</log-file>
+			<telnet target="ap1">
+				-v "show roam cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YYNN"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				do log out operate
+			</desc>
+			<log-file>cwp_ct_auth_3_log_out.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -f ${log.dir}/${log.file} -l info --session-id ${session.id}
+			</script>
+		</step>
+
+		<step no="7" delay="10">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step7_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}\s*wifi0.1\s*01\s*${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step8_show_roam.log</log-file>
+			<telnet target="ap1">
+				-v "show roam cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YNNN"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					upload other config to ap(it's aim to let policy which config previous isn't in use)
+				</desc>
+				<log-file>upload_other_config.html</log-file>
+				<script timeout="500">
+					export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/upload_config_new.py -r http://${wpc1.mif.ip}:4444/wd/hub --parameters upload.policy=QuickStart-Wireless-Only upload.type=complete ap.mgt0_ip="${ap1.mgt0.ip}" -t ff -f ${log.dir}/${log.file} -l info
+				</script>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					delete policy
+				</desc>
+				<log-file>delete_policy.html</log-file>
+				<script timeout="500">
+					export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/tools.py -r http://${wpc1.mif.ip}:4444/wd/hub --parameters tool.name=remove_policy remove_policy.name=${job.sid} ssid.name=${ssid.name} user_profile.name='1_default${job.sid} 1_register${job.sid}' cwp.name=default${job.sid} aaa_client.name=pub_radius_server${job.sid} -t ff -f ${log.dir}/${log.file} -l info
+				</script>
+			</step>
+
+			<include prefix="stop_selenium_server1" file="subs/stop_selenium_server.xml" args="${wpc1.mif.ip}, ${job_selenium_workload}" />
+
+			<include prefix="stop_selenium_server2" file="subs/stop_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_workload}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

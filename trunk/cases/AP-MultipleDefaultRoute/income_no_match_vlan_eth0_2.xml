@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Incoming pkt match the rang(old and new vlan) vlan then it is deny when pass through eth0</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		1. Add one route vlan in eth1
+		2. Pkt from eth0 backhaul to wifi access, if match the two cfg vlan, result 1
+		3. Set a rang route vlan in eth1
+		4. Pkt from eth0 backhaul to wifi access, if match the cfg vlan, result 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap1.eth1.existed}" == "true"</if>
+
+		<step no="pre.0">
+			<desc>
+				config ssid
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<include prefix="pre.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				"_ff id 1 src-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${mpc.tif.ip} dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug eth vlan"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<include prefix="cfg.l2sw" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth0.swport}, ${tb.vlan4}, ${tb.vlan1}" />
+
+		<step no="1">
+			<desc>
+				1. Add one route vlan in eth1
+			</desc>
+			<console target="ap1">
+				-v "forwarding-engine l2-default-route interface eth1 vlan ${tb.vlan1}"
+				-v "clear log all"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+			</console>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				mpc ping sta1
+			</desc>
+			<log-file>step2.1_ping_sta.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 5 &gt; ${log.dir}/${log.file} ; exit 0
+			</script>
+		</step>
+
+		<step no="2.2" delay="30">
+			<desc>
+				2. Pkt from eth0 backhaul to wifi access, if match the two cfg vlan, result 1
+			</desc>
+			<log-file>step2.2_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="500">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "\(!\) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "\(\i\) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-c -i "pkt arrived on incorrect interface \[eth0\], route for ${tb.vlan1.gw.mac} is on \[eth1\]"</log-match>
+			<log-match>-c -i "def-route lookup based on vlan ${tb.vlan1}"</log-match>
+			<failed>next</failed>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				3. Set a rang route vlan in eth1
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 src-ip ${mpc.tif.ip} dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug eth vlan"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "forwarding-engine l2-default-route interface eth1 vlan ${tb.vlan1} - ${tb.vlan3}"
+				-v "clear log all"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+			</console>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				mpc ping sta1
+			</desc>
+			<log-file>step4.1_ping_sta1.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 5 &gt; ${log.dir}/${log.file} ; exit 0
+			</script>
+		</step>
+
+		<step no="4.2" delay="60">
+			<desc>
+				4. Pkt from eth0 backhaul to wifi access, if match the cfg vlan, result 1
+			</desc>
+			<log-file>step4.2_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="500">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "\(!\) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "\(\i\) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-c -i "pkt arrived on incorrect interface \[eth0\], route for ${tb.vlan1.gw.mac} is on \[eth1\]"</log-match>
+			<log-match>-c -i "def-route lookup based on vlan ${tb.vlan1}"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="reset.cfg.l2sw" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth0.swport}, ${tb.vlan1}, ${tb.vlan1}\,${tb.vlan2}\,${tb.vlan3}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

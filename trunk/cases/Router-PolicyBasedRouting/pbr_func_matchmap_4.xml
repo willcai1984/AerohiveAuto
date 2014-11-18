@@ -1,0 +1,597 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Match-map is from&lt;any/ip-range/network&gt; Platform Dependence BR100,BR200,BR200-WP,BRAP330,BRAP350,BRAP121,BRAP141</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		1. Set interface wifi0 mode wan
+		2. Establish a tunnel between BR eth0 and CVG
+
+		Test Procedure:
+		1. Create a routing policy aaa
+		Routing policy aaa
+		2. Set match-map from any
+		3. Set a route-map, to vpn network traffic via tunnel interface on eth0, and
+		to internet traffic via wifi0 interface
+		4. Bind one match-map to routing policy
+		5. Laptop connect to the BR any access mode interface(eth1~4,wifi0~1)
+		6. Laptop send traffic to vpn network, check result1
+		7. Laptop send traffic to internet, check result2
+		8. Set a match-map from ip-range
+		9. Set a route-map, to vpn network traffic via tunnel interface on eth0, and
+		to internet traffic via wifi0 interface
+		10. Bind one match-map to routing policy
+		11. Laptop connect to BR, get the ip address is in the ip-range
+		12. Laptop send traffic to vpn network, check result1
+		13. Laptop send traffic to internet, check result2
+		14. Laptop connect to BR, get the ip address is not in the ip-range
+		15. Laptop send traffic to vpn network, check result3
+		16. Laptop send traffic to internet, check result3
+		17. Set a match-map from network
+		18. Set a route-map, to vpn network traffic via tunnel interface on eth0, and
+		to internet traffic via wifi0 interface
+		19. Bind one match-map to routing policy
+		20. Laptop connect to BR, get the ip address is in the network
+		21. Laptop send traffic to vpn network, check result1
+		22. Laptop send traffic to internet, check result2
+		23. Laptop connect to BR, get the ip address is not in network
+		24. Laptop send traffic to vpn network, check result3
+		25. Laptop send traffic to internet, check result3
+	</description>
+	<numofbr>2</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-1" />
+
+	<stage>
+		<include prefix="0" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+		
+		<!--step1 is set wifi0 as wan  -->
+		
+		<step no="1.1">
+			<desc>
+				config ssid1 on  br2
+			</desc>
+			<telnet target="${br2.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br2.vlan1}"
+				-v "interface mgt0.1 ip ${br2.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br2.br.mgt0.1.ip_pool_start} ${br2.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br2.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "security-object sta1"
+				-v "security-object sta1 default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object sta1"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "user-profile sta1 qos-policy def-user-qos vlan-id ${br2.vlan1} attribute 1"
+			</telnet>
+		</step>
+		<step no="1.2">
+			<desc>
+				config wifi0 as wan-client on br1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface wifi0  mode wan-client"
+				-v "client-mode ssid ${conn1.ssid}"
+				-v "client-mode connect ssid ${conn1.ssid}"
+			</telnet>
+		</step>
+		
+		<step no="1.3" delay="60" type="loop-check" loop-max-times="10" loop-interval="20">
+			<desc>
+				show l3 interface ,check the wifi0.2 get ip address
+			</desc>
+			<log-file>step1.3_Get_wifi0.2_wan.ip.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show l3 interface"
+			</telnet>
+			<log-match>-n -i "wifi0.2.*0.0.0.0"</log-match>
+		</step>
+		
+		<step no="1.4">
+			<desc>get wifi0.2 ip address on BR side</desc>
+			<setvar name="br1.wifi0.2.wan.ip">
+				cat  ${log.dir}/step1.3_Get_wifi0.2_wan.ip.log|grep wifi0.2|awk '{print $2}'
+			</setvar>
+		</step>
+
+
+		<step no="2">
+			<desc>
+				config mgt0.1 and mgt0.4 with dhcp service enable,dns service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vlan1}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.4 vlan ${br1.vlan4}"
+				-v "interface mgt0.4 ip ${br1.br.mgt0.4.ip}/${br.lan.netmask}"
+				-v "interface mgt0.4 dhcp-server ip-pool ${br1.br.mgt0.4.ip_pool_start} ${br1.br.mgt0.4.ip_pool_end}"
+				-v "interface mgt0.4 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.4 dhcp-server options default-gateway ${br1.br.mgt0.4.ip}"
+				-v "interface mgt0.4 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.4 dhcp-server enable"
+			</telnet>
+		</step>
+ 
+		<step no="2.1">
+			<desc>
+				Create user-profile bind eth1 and eth4
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "security-object lan1"
+				-v "security-object lan1 default-user-profile-attr 1"
+				-v "interface eth1 security-object lan1"
+				-v "user-profile fw qos-policy def-user-qos vlan-id ${br1.vlan1} attribute 1"
+				-v "interface eth4 mode bridge-access user-profile-attribute 4"
+				-v "interface eth4 mac-learning enable"
+				-v "security-object lan4"
+				-v "security-object lan4 default-user-profile-attr 4"
+				-v "interface eth4 security-object lan4"
+				-v "user-profile fw4 qos-policy def-user-qos vlan-id ${br1.vlan4} attribute 4"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				
+				Set a match-map from any to private
+				Set a match-map from any to any 
+				Set a route-map via encrypted
+				Set a route-map via wifi0 interface
+				Bind one match-map to routing policy
+			</desc>
+			<log-file>step2.2_Set_match_map.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "routing match-map ma from any to private"
+				-v "routing match-map mb from any to any"
+				-v "routing route-map ra via encrypted"
+				-v "routing route-map rb via wifi0"
+				-v "routing policy pa id 1 match-map ma route-map ra"
+				-v "routing policy pb id 2 match-map mb route-map rb"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				Laptop connect to the BR eth1 interface and get ip address from br mgt0.1 
+			</desc>
+			<log-file>step3_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>get raw mac of vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step3_ifconfig_vpc1_.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				show ip rule on br and check the iprule match the routing policy
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip rule"
+			</telnet>
+		</step>
+
+		<step no="open.debug">
+			<desc>
+				open debug switch on br
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				Laptop(br1.vpc1) send traffic to vpn network,ping is successful
+			</desc>
+			<log-file>step5_ping_cvg1.vpc1_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="5.1" delay="20">
+			<desc>
+				show logging buffered on br,the ping traffic is forwarded on tunnel,match routing policy pa
+			</desc>
+			<log-file>step5.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) tunnel0 ${br1.vpc1.tif.ip}->${cvg1.vpc1.tif.ip}\(\d+\) ttl\(\d+\) mtu\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth1 ${br1.vpc1.tif.ip}->${cvg1.vpc1.tif.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				Laptop(br1.vpc1) send traffic to internet,ping is successful
+			</desc>
+			<log-file>step6_ping_ftp_server.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.ftp1.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.ftp1.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="6.1" delay="20">
+			<desc>
+				show logging buffered on br,ping traffic is forwarded on wifi0.2,match routing policy pb
+			</desc>
+			<log-file>step6.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) wifi0.2 ${br1.wifi0.2.wan.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth1 ${br1.vpc1.tif.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+		
+		<step no="7">
+			<desc>
+				
+				Set a match-map from network to private
+				Set a match-map from network to any 
+				Set a route-map via encrypted
+				Set a route-map via wifi0 interface
+				Bind one match-map to routing policy
+			</desc>
+			<log-file>step7_Set_match_map.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no routing policy pa"
+				-v "no routing policy pb"
+				-v "no routing route-map ra"
+				-v "no routing route-map rb"
+				-v "routing match-map ma from network ${br1.br.mgt0.1.route}/24  to private"
+				-v "routing match-map mb from network ${br1.br.mgt0.1.route}/24 to any"
+				-v "routing route-map ra via encrypted"
+				-v "routing route-map rb via wifi0"
+				-v "routing policy pa id 1 match-map ma route-map ra"
+				-v "routing policy pb id 2 match-map mb route-map rb"
+			</telnet>
+		</step>
+
+		<step no="8" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				Laptop(br1.vpc1) send traffic to vpn network,ping is successful
+			</desc>
+			<log-file>step8_ping_cvg1.vpc1_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="8.1" delay="20">
+			<desc>
+				show logging buffered on br,the ping traffic is forwarded on tunnel,match routing policy pa
+			</desc>
+			<log-file>step8.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) tunnel0 ${br1.vpc1.tif.ip}->${cvg1.vpc1.tif.ip}\(\d+\) ttl\(\d+\) mtu\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth1 ${br1.vpc1.tif.ip}->${cvg1.vpc1.tif.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				Laptop(br1.vpc1) send traffic to internet,ping is successful
+			</desc>
+			<log-file>step9_ping_ftp_server.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.ftp1.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.ftp1.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="9.1" delay="20">
+			<desc>
+				show logging buffered on br,ping traffic is forwarded on wifi0.2,match routing policy pb
+			</desc>
+			<log-file>step9.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) wifi0.2 ${br1.wifi0.2.wan.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth1 ${br1.vpc1.tif.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		
+		<step no="10">
+			<desc>
+				Laptop(br1.vpc4) connect to the BR eth4 interface and get ip address from br mgt0.4 
+			</desc>
+			<log-file>step10_ifconfig_vpc4_.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ifconfig ${br1.vpc4.tif.name} down"
+				-v "ifconfig ${br1.vpc4.tif.name} up"
+				-v "dhclient ${br1.vpc4.tif.name} -r"
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>get raw mac of vpc4</desc>
+			<setvar name="br1.vpc4.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step3_ifconfig_vpc1_.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="10.2">
+			<desc>get mac of br1.vpc4</desc>
+			<setvar name="br1.vpc4.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc4.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc4.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc4.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<step no="10.3">
+			<desc>set br1.vpc4.tif.ip var for vpc4 on BR side</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="open.debug">
+			<desc>
+				open debug switch on br
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no _ff id 1"
+				-v "_ff id 1 src-ip ${br1.vpc4.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+		
+		<step no="11" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				Laptop(br1.vpc4 is not in  the match-map network) send traffic to internet,ping is successful
+			</desc>
+			<log-file>step11_ping_ftp_server.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ping ${pub.ftp1.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.ftp1.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="11.1" delay="20">
+			<desc>
+				show logging buffered on br,ping traffic is forwarded on eth0,match main route tables
+			</desc>
+			<log-file>step11.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 ${br1.br.wan.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "routing done, ${br1.vpc4.tif.ip} -> ${pub.ftp1.ip}.*found route in table:Main" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth4 ${br1.vpc4.tif.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="12">
+			<desc>
+				
+				Set a match-map from iprange to private
+				Set a match-map from iprange to any 
+				Set a route-map via encrypted
+				Set a route-map via wifi0 interface
+				Bind one match-map to routing policy
+			</desc>
+			<log-file>step12_Set_match_map.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no routing policy pa"
+				-v "no routing policy pb"
+				-v "no routing route-map ra"
+				-v "no routing route-map rb"
+				-v "routing match-map ma from iprange ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end} to private"
+				-v "routing match-map mb from iprange ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end} to any"
+				-v "routing route-map ra via encrypted"
+				-v "routing route-map rb via wifi0"
+				-v "routing policy pa id 1 match-map ma route-map ra"
+				-v "routing policy pb id 2 match-map mb route-map rb"
+			</telnet>
+		</step>
+		
+		<step no="open.debug">
+			<desc>
+				open debug switch on br
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no _ff id 1"
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+		
+		<step no="12.1" delay="10">
+			<desc>
+				show ip rule
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip rule"
+			</telnet>
+		</step>
+		
+		<step no="13" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				Laptop(br1.vpc1 is in the match-map iprange) send traffic to vpn network,ping is successful
+			</desc>
+			<log-file>step13_ping_cvg1.vpc1_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="13.1" delay="20">
+			<desc>
+				show logging buffered on br,the ping traffic is forwarded on tunnel,match routing policy pa
+			</desc>
+			<log-file>step13.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) tunnel0 ${br1.vpc1.tif.ip}->${cvg1.vpc1.tif.ip}\(\d+\) ttl\(\d+\) mtu\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth1 ${br1.vpc1.tif.ip}->${cvg1.vpc1.tif.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="14" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				Laptop(br1.vpc1 is in the match-map iprange) send traffic to internet,ping is successful
+			</desc>
+			<log-file>step14_ping_ftp_server.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.ftp1.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.ftp1.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="14.1" delay="20">
+			<desc>
+				show logging buffered on br,ping traffic is forwarded on wifi0.2,match routing policy pb
+			</desc>
+			<log-file>step14.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) wifi0.2 ${br1.wifi0.2.wan.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth1 ${br1.vpc1.tif.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.vpc1.static.ip=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).20"
+			</multi-setvar>
+		</step>
+		
+		
+		<step no="15">
+			<desc>
+				Laptop connect to the BR eth1 interface and config the br1.vpc1 static ip address  and the ip address is out of the iprange
+			</desc>
+			<log-file>step15_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+				-v "ifconfig ${br1.vpc1.tif.name} ${br1.vpc1.static.ip}"
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+				-v "route add default gw ${br1.br.mgt0.1.ip}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		
+		<step no="open.debug">
+			<desc>
+				open debug switch on br
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no _ff id 1"
+				-v "_ff id 1 src-ip ${br1.vpc1.static.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+		
+		<step no="16" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				Laptop(br1.vpc1 is out the match-map iprange) send traffic to internet,ping is successful
+			</desc>
+			<log-file>step16_ping_ftp_server.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.ftp1.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.ftp1.ip}" -i "ttl="</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="16.1" delay="20">
+			<desc>
+				show logging buffered on br,ping traffic is forwarded on eth0,match main route table
+			</desc>
+			<log-file>step16.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 ${br1.br.wan.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) eth1 ${br1.vpc1.static.ip}->${pub.ftp1.ip}.*icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+	</stage>
+</testcase>

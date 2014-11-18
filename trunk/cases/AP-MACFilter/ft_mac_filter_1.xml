@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mac-filter apply to ssid to allow specific STA mac to connect, default is deny</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a mac-filter policy, default is deny,
+		'security mac-filter aaa default deny'
+		-config an allowed mac addr for this mac filter,
+		'security mac-filter aaa address 1111:1111:1111 permit'
+		-bind the mac-filter to ssid,
+		'ssid xxx security mac-filter aaa'
+
+		Test Procedure:
+		-check the mac-filter detail,
+		'sh security mac-filter aaa'
+		-STA1 is not in allowed list, connects to ssid, check the result
+		-STA2 is in allowed list, connects to ssid, check the result
+		
+		Expect result:
+		1.	The default action and other items are correct
+		2.	STA1 can connect to ssid, permit by mac-filter
+		3.	STA2 can’t associate to ssid successfully		
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1.1">
+			<desc>get mac of sta1</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+		<step no="1.2">
+			<desc>Get sta1's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+		
+		<step no="2.1">
+			<desc>
+				-config a mac-filter policy, default is deny,
+				'security mac-filter aaa default deny'
+			</desc>
+			<telnet target="ap1">
+				-v "security mac-filter aaa default deny"
+				-v "security mac-filter aaa address ${sta1.tif.mac} permit"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security mac-filter aaa"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				-check the mac-filter detail,
+				'sh security mac-filter aaa'
+			</desc>
+			<log-file>show_security_mac_filter_aaa.log</log-file>
+			<telnet target="ap1">
+				-v "show security mac-filter aaa"
+			</telnet>
+			<log-match>-e "Name=aaa;\ default\ action=deny;"</log-match>
+			<log-match>-c -e "MAC=${sta1.tif.mac};\ action=permit;"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				open the switch of debug and clear log
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "logging debug"
+				-v "_kdebug wifi-driver wifi0.1 assoc"
+			</telnet>
+		</step>
+		
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta1, ap1" />
+		
+		<step no="4.1">
+			<desc>change sta1's mac address format</desc>
+			<setvar name="sta1.tif.5mac">
+				perl -e '$s="${sta1.tif.mac}";$s=~s/(\w\w):?(?!$)/$1:/g;print $s'
+			</setvar>
+		</step>
+		<step no="4.2">
+			<desc>
+				check the debug with ap connects with sta1
+			</desc>
+			<log-file>show_log_buffered_sta1.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>
+				-re -c -e "wifi0.1:\s+\[${sta1.tif.5mac}\]station associated"
+			</log-match>
+		</step>
+
+		<step no="5">
+			<desc>Clear log</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+		
+		<step no="6.1">
+			<desc>run ifconfig on sta2</desc>
+			<log-file>ifconfig_sta2.log</log-file>
+			<ssh target="sta2">
+				-v "ifconfig ${sta2.tif.name}"
+			</ssh>
+		</step>
+		<step no="6.2">
+			<desc>Get sta2's mac</desc>
+			<setvar name="sta2.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta2.log -i ${sta2.tif.name} -m -width
+			</setvar>
+		</step>
+		<step no="4.1">
+			<desc>change sta2's mac address format</desc>
+			<setvar name="sta2.tif.5mac">
+				perl -e '$s="${sta2.tif.mac}";$s=~s/(\w\w):?(?!$)/$1:/g;print $s'
+			</setvar>
+		</step>
+		
+		<property name="conn2.auth_negative_test" value="true" />
+		<include prefix="7" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="8">
+			<desc>
+				check the debug with ap connects with sta2
+			</desc>
+			<log-file>show_log_buffered_sta2.log</log-file>
+			<telnet target="ap1">
+				-v "show log buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>
+				-re -c -e "(?i)wifi0.1: \[${sta2.tif.5mac}\] auth: disallowed by ACL"
+			</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step4.1_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth "
+			</telnet>
+			<log-match>-c -e "${sta1.tif.mac}"</log-match>
+			<log-match>-n -c -e "${sta2.tif.mac}"</log-match>
+		</step>
+		<step no="9.2">
+			<desc>
+				show roaming cache
+			</desc>
+			<log-file>step4.2_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -e "${sta1.tif.mac}"</log-match>
+			<log-match>-n -c -e "${sta2.tif.mac}"</log-match>
+		</step>
+		<step no="9.3">
+			<desc>
+				-Sta1 ping ap
+			</desc>
+			<log-file>show_ping.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${ap1.mgt0.ip} -c 5"
+			</ssh>
+			<log-match>-e " 0% packet loss"</log-match>
+		</step>
+	</stage>
+</testcase>

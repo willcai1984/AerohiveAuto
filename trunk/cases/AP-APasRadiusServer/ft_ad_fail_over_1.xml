@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>When primary AD server is unreachable,failover to backup server</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configured first
+		-AP's clock should be sync to the AD server via a ntp server
+		-config a primary AD server,admin user configed
+		-config a backup AD server,use exec net-join
+		-the primary server and backup server are in the same domain
+		-setup a ssid using wpa2-tkip-802.1x,radius server is local
+
+		Test Procedure:
+		-shutdown the primary AD server's interface
+		-_de radi ex to check the failover
+		-client connect to ssid(try all EAP methods??)
+		-bringup the primary server's interface
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-tkip-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<step no="1">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security protocol-suite wpa2-tkip-8021x"
+				-v "security-object autoap security aaa radius primary ${ap1.mgt0.ip}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set local radius parameters</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local db-type active-directory primary server ${pub.ad3.ip}"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad3.domain} fullname ${pub.ad3.realm} default"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad3.domain} binddn ${pub.ad3.binddn} password ${pub.ad3.bindpwd}"
+				-v "aaa radius-server local db-type active-directory primary login admin-user ${pub.ad3.admin} password ${pub.ad3.adminpwd}"
+				-v "aaa radius-server local db-type active-directory backup1 server ${pub.ad2.ip}"
+				-v "aaa radius-server local db-type active-directory backup1 domain ${pub.ad2.domain} fullname ${pub.ad2.realm} default"
+				-v "aaa radius-server local db-type active-directory backup1 domain ${pub.ad2.domain} binddn ${pub.ad2.binddn} password ${pub.ad2.bindpwd}"
+				-v "aaa radius-server local retry-interval 60 "
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>config ssid and bind it to interface</desc>
+			<log-file>step2.1_net_join.log</log-file>
+			<telnet target="ap1">
+				-v "exec aaa net-join domain ${pub.ad2.domain} fullname ${pub.ad2.realm} server ${pub.ad2.ip} username ${pub.ad2.admin} password ${pub.ad2.adminpwd}"
+			</telnet>
+			<log-match>-c -i "successfully joined the Active Directory domain ${pub.ad2.domain}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="2.2">
+			<desc>config ssid and bind it to interface</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local en"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ttt vlan-id 1 attribute 1"
+				-v "interface wifi0 radio channel 1"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-show running config to check
+			</desc>
+			<log-file>step3_show_runn.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>open debug all and clear log all</desc>
+			<telnet target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-shutdown the primary AD server's interface
+			</desc>
+			<telnet target="ap1">
+				-v "ip route host ${pub.ad3.ip} gateway ${mpc.tif.ip}"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				-show aaa to check
+			</desc>
+			<log-file>step5_show_aaa_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-i "Remote Retry Period: *30 secs"</log-match>
+			<log-match>-i "primary active-directory (active)"</log-match>
+			<log-match>-i "backup1 active-directory:"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "primary active-directory \(active\)" -ps p1 "Full Domain Name:\s*${pub.ad3.realm}" p1 "Domain Name\s*${pub.ad3.domain}" p1 "Server:\s*${pub.ad3.ip}" p1 "BindDN:\s*${pub.ad3.binddn}" -e "backup1 active-directory:" -f "${log.dir}/${log.file}"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "backup1 active-directory:" -ps p1 "Full Domain Name:\s*${pub.ad2.realm}" p1 "Domain Name\s*${pub.ad2.domain}" p1 "Server:\s*${pub.ad2.ip}" p1 "BindDN:\s*${pub.ad2.binddn}" -f "${log.dir}/${log.file}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="7" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step7_show_logging_buffered.log" />
+
+		<step no="8">
+			<desc>check if failover successful</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<log-match>-c -i "${pub.ad3.binddn} bind to ${pub.ad3.ip}:" -i "Can't contact LDAP server"</log-match>
+			<log-match>-c -i "keep attemptting to this LDAP server within"</log-match>
+			<log-match>-c -i "switch to backup1 active directory"</log-match>
+			<log-match>-i "will keep on the LDAP server (${pub.ad2.ip}) within"</log-match>
+			<log-match>-i "Bind was successful"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="8.1">
+			<desc>Get the first times of sending message to primary active directory</desc>
+			<setvar name="first.primary.sending.times">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*connect to ${pub.ad3.ip}:\d+, authentication 0" -t str -g-1 -s none
+			</setvar>
+		</step>
+
+		<step no="8.2">
+			<desc>Get the first times of sending messages to backup directory</desc>
+			<setvar name="first.backup1.sending.times">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*switch to backup1 active directory" -t str -g-1 -s none
+			</setvar>
+		</step>
+
+		<step no="8.3">
+			<desc>
+				check if the interval is between 30 to 50.
+			</desc>
+			<log-file>step8.3_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.backup1.sending.times}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.primary.sending.times}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt;= 30.0 and (mktime(datetime.strptime('${first.backup1.sending.times}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.primary.sending.times}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt;= 50.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="8.4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				-show aaa to check
+			</desc>
+			<log-file>step8.4_show_aaa_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-n -c -i "primary active-directory (active)"</log-match>
+			<log-match>-c -i "backup1 active-directory (active)"</log-match>
+		</step>
+
+	<step no="9">
+		<desc>terminate the wireless connection</desc>
+		<ssh target="sta1" prompt="root@.*#|>" >
+			-v "wpa_cli"
+			-v "termi"
+			-v "quit"
+		</ssh>
+	</step>
+	
+		<step no="9.1">
+			<desc>
+				-up the primary AD server's interface
+			</desc>
+			<telnet target="ap1">
+				-v "no ip route host ${pub.ad3.ip} gateway ${mpc.tif.ip}"
+				-v "clear auth sta"
+				-v "clear auth roam"
+				-v "clear auth local"
+				-v "show auth"
+				-v "show sta"
+			</telnet>
+		</step>
+		
+		<step no="9.2">
+			<desc>wait for 80 sec</desc>
+			<script>
+				sleep 80
+				exit 0
+			</script>
+		</step> 
+
+		<step no="10">
+			<desc>clear log all</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="11" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="12" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step12_show_logging_buffered.log" />
+
+		<step no="13" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				-show aaa to check
+			</desc>
+			<log-file>step13_show_aaa_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-c -i "primary active-directory (active)"</log-match>
+			<log-match>-n -c -i "backup1 active-directory (active)"</log-match>
+		</step>
+	</stage>
+</testcase>

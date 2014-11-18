@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>probe-resp flood attack could be detected on hive at the station-level</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		-create a hive, bind it to AP
+		-check the radio interface name of hive, 'show interface' to make sure
+		-check the default status of wlan dos detection on hive, 'sh hive xxx
+		security wlan dos'
+		-disable all hive-level and station-level dos detection except probe-resp
+		-check the Threshold and Alarm interval by default
+		-other AP launchs probe-resp flood attack, check the debug info on AP
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<property name="proberesp.threshold" value="3" />
+
+		<step no="1.1">
+			<desc>Set up ap1</desc>
+			<console target="ap1" timeout="80">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${ap.def.passwd}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object ${ssid.name}"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "security-object ${ssid.name} security protocol-suite wpa-aes-8021x"
+				-v "security-object ${ssid.name} security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "save config"
+			</console>
+		</step>
+		<step no="1.2">
+			<desc>Set up ap2</desc>
+			<console target="ap2" timeout="80">
+				-v "hive ${hive.name}_1"
+				-v "hive ${hive.name}_1 password ${ap.def.passwd}"
+				-v "interface mgt0 hive ${hive.name}_1"
+				-v "security-object ${ap2.name}"
+				-v "user-profile ${ap2.name} qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "security-object ${ap2.name} security protocol-suite wpa-aes-8021x"
+				-v "security-object ${ap2.name} security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object ${ap2.name} default-user-profile-attr 1"
+				-v "ssid ${ap2.name}"
+				-v "ssid ${ap2.name} security-object ${ap2.name}"
+				-v "interface wifi0 ssid ${ap2.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "interface wifi1 radio channel 36"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+				-v "user-profile ${ap2.name} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "save config"
+			</console>
+		</step>
+		<step no="GetAP2.MAC.1">
+			<desc>show interface of AP2</desc>
+			<log-file>show_ap2_interface.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+		<step no="GetAP2.MAC.2">
+			<desc>get the eth0 mac address of AP2</desc>
+			<setvar name="ap2.eth0.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_ap2_interface.log -k eth0 -p 2
+			</setvar>
+		</step>
+		<step no="GetAP2.MAC.3">
+			<desc>get the wifi1 mac address of AP2</desc>
+			<setvar name="ap2.wifi1.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_ap2_interface.log -k wifi1 -p 2
+			</setvar>
+		</step>
+		<step no="2.1">
+			<desc>show interface on AP1</desc>
+			<log-file>show_interface_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show interface"
+			</telnet>
+		</step>
+		<step no="2.2">
+			<desc>get ssid interface on AP1</desc>
+			<setvar name="ap1.backhaul.interface">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap1.log -k "dual" -k "radio" -k "." -p 1 | awk '{print tolower($0)}'
+			</setvar>
+		</step>
+		<step no="2.3">
+			<desc>get ssid interface on AP1</desc>
+			<setvar name="ap1.access.interface">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap1.log -k "access" -k "radio" -k "." -p 1
+			</setvar>
+		</step>
+		<step no="3.1">
+			<desc>show running config on AP1</desc>
+			<log-file>show_run_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show run"
+			</telnet>
+			<log-match>-i "interface wifi0 ssid ${ssid.name}"</log-match>
+		</step>
+		<step no="3.2">
+			<desc>show ssid on AP1</desc>
+			<log-file>show_ssid_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+			<log-match>-i "Bind interfaces" -i "${ap1.access.interface}"</log-match>
+		</step>
+		<step no="3.3">
+			<desc>show ssid security wlan dos on AP1</desc>
+			<log-file>show_ssid_security_wlan_dos_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show hive ${hive.name} security wlan dos"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Station\s+probe-resp\s+Enabled\s+2400\s+60\s+$" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Hive.*Enabled" -c 8 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Station.*Enabled" -c 8 -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="3.4">
+			<desc>set ssid security wlan dos on AP1</desc>
+			<log-file>set_ssid_security_wlan_dos_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "no hive ${hive.name} security wlan dos hive-level frame-type all"
+				-v "no hive ${hive.name} security wlan dos station-level frame-type all"
+				-v "hive ${hive.name} security wlan dos station-level frame-type probe-resp"
+				-v "show hive ${hive.name} security wlan dos"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Station\s+probe-resp\s+Enabled\s+2400\s+60\s+$" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Hive.*Enabled" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>set ssid security wlan dos threshold on AP1</desc>
+			<log-file>set_ssid_security_wlan_dos_threshold_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "clear log buf"
+				-v "_kde wifi all"
+				-v "hive ${hive.name} security wlan dos station-level frame-type probe-resp threshold ${proberesp.threshold}"
+			</telnet>
+		</step>
+		<step no="4.2" delay="90">
+			<desc>show log buffered on AP1</desc>
+			<log-file>show_log_buf_1_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show log buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "[wifi]" -i "L2 DoS" -i "interface ${ap1.backhaul.interface}" -i "receiving probe resp frames exceed ${proberesp.threshold} PPM" -c</log-match>
+		</step>
+		<step no="4.3" delay="60">
+			<desc>show log buffered on AP1</desc>
+			<log-file>show_log_buf_2_ap1.log</log-file>
+			<telnet target="ap1" timeout="10">
+				-v "show log buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "[wifi]" -i "L2 DoS" -i "interface ${ap1.backhaul.interface}" -i "receiving probe resp frames exceed ${proberesp.threshold} PPM" -c </log-match>
+		</step>
+		<step no="4.4">
+			<desc>get all alarm station on AP1</desc>
+			<setvar name="alarm.station.all">
+				perl ${bin.dir}/getbyrexp.py -p ".*?info.*?wifi.*?L2 DoS.*?interface.*?station (\S{4}):(\S{4}):(\S{4}): receiving probe resp frames exceed ${proberesp.threshold} PPM" -f ${log.dir}/show_log_buf_1_ap1.log -t str --script "':'.join(m.groups())"
+			</setvar>
+		</step>
+		<step no="4.5">
+			<desc>get all alarm station on AP1</desc>
+			<setvar name="alarm.station1">
+				echo ${alarm.station.all} | awk -F , '{print $1}'
+			</setvar>
+		</step>
+
+		<step no="5.1">
+			<desc>get all alarm time on AP1</desc>
+			<setvar name="alarm.time.all">
+				${bin.dir}/getbyrexp.py -p "(\d+-\d+-\d+\s+\d+:\d+:\d+)\s+info.*?wifi.*?L2 DoS.*?interface.*?station ${alarm.station1}: receiving probe resp frames exceed ${proberesp.threshold} PPM" -f ${log.dir}/show_log_buf_2_ap1.log --script "time.mktime(time.strptime(m.group(1), '%Y-%m-%d %H:%M:%S'))"
+			</setvar>
+		</step>
+		<step no="5.2">
+			<desc>get alarm time2 on AP1</desc>
+			<setvar name="alarm2.time">
+				echo ${alarm.time.all} | awk -F , '{print $1}'
+			</setvar>
+		</step>
+		<step no="5.3">
+			<desc>get alarm time1 on AP1</desc>
+			<setvar name="alarm1.time">
+				echo ${alarm.time.all} | awk -F , '{if (NF > 1 ) {print $2} else print ${alarm2.time} + 60}'
+			</setvar>
+		</step>
+		<step no="5.4">
+			<desc>
+				check interval time
+			</desc>
+			<log-file>check_interval_time.log</log-file>
+			<script>
+				python -c "print 'pass' if(${alarm1.time}-${alarm2.time}) &gt; 55 else 'fail'" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "pass"</log-match>
+		</step>
+
+	</stage>
+
+</testcase>

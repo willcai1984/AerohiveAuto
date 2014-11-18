@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>
+		AP add the client MAC address into the 5GHz capable client MAC list
+		when it receives the probes/auth/association sent out by clients on the 5GHz radio
+	</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		In wifi0 mode access
+		In wifi1 mode access
+		Ssid tz-density
+		In wifi0 ssid tz-density
+		In wifi1 ssid tz-density
+		Hive tiezhu
+		In mgt0 hive tiezhu
+		Radio profile ng phymode 11ng
+		Radio profile na phymode 11na
+		In wifi0 radio profile ng
+		In wifi1 radio profile na
+		Radio profile ng high-density enable
+		Radio profile na high-density enable
+		radio profile ng high-density broadcast-probe-suppress enable
+		radio profile ng high-density weak-snr-suppress threshold 40
+		radio profile na high-density broadcast-probe-suppress enable
+		radio profile na high-density weak-snr-suppress threshold 40
+
+		Test Procedure:
+
+		1. AP receives the probes/auth/association sent out by clients on the 5GHz
+		radio. Result 1
+		2. The table can be shown by show cmd.
+		3. When AP receives the probe/auth/association again then result 2.
+		4. Do not receive any pkt in the 5GHz after interval of 5*60 seconds.(disable 5Ghz)
+		Result 3.
+		5. Change the wifi1 radio from Access to backhauls, Result 4.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+		<step no="1">
+			<desc>
+				In wifi0 mode access
+				In wifi1 mode access
+				Ssid tz-density
+				In wifi0 ssid tz-density
+				In wifi1 ssid tz-density
+				Hive tiezhu
+				In mgt0 hive tiezhu
+				Radio profile ng phymode 11ng
+				Radio profile na phymode 11na
+				In wifi0 radio profile ng
+				In wifi1 radio profile na
+				Radio profile ng high-density enable
+				Radio profile na high-density enable
+				radio profile ng high-density broadcast-probe-suppress enable
+				radio profile ng high-density weak-snr-suppress threshold 40
+				radio profile na high-density broadcast-probe-suppress enable
+				radio profile na high-density weak-snr-suppress threshold 40
+			</desc>
+			<log-file>save_ap_config_1.log</log-file>
+			<telnet target="ap1">
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}"
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "radio profile na high-density enable"
+				-v "radio profile na band-steering enable"
+				-v "radio profile na high-density continuous-probe-suppress enable"
+				-v "radio profile na high-density broadcast-probe-suppress enable"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 radio channel 165"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+	</stage>
+
+	<stage loop-values="1..10" loop-passed-break="true">
+		<step no="2">
+			<desc>up test interface</desc>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name} down"
+				-v " "
+				-v " "
+				-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+		</step>
+		<step no="2.1" delay="5">
+			<desc>
+				1. client send probe on the 5GHz radio. Result 1
+			</desc>
+			<ssh target="sta1">
+				<!---v "iw dev ${sta1.tif.name} scan ssid ${ssid.name}|grep ${ssid.name}"-->
+				-v "iw dev ${sta1.tif.name} connect ${ssid.name}"
+			</ssh>
+		</step>
+		<step no="3">
+			<desc>get mac from client</desc>
+			<setvar name="sta1.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width |tr 'A-Z' 'a-z'
+			</setvar>
+		</step>
+		<step no="4" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>
+				2. The table can be shown by show cmd.
+			</desc>
+			<log-file>show_hd_5g_client_list_2.log</log-file>
+			<console target="ap1">
+				<!--  -v "sh high-density status" -->
+				-v "sho high-density _drvnt wifi1"
+			</console>
+			<log-match>-c -e "${sta1.mac}"</log-match>
+		</step>
+	</stage>
+
+	<stage>
+		<step no="5">
+			<desc>
+				check whether client mac and active status on AP 5g client list
+			</desc>
+			<log-file>get_client_active_1.log</log-file>
+			<setvar name="sta1.active1">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_hd_5g_client_list_2.log -k ${sta1.mac} -p 2
+			</setvar>
+		</step>
+		<step no="6">
+			<desc>
+				check client active value
+			</desc>
+			<log-file>check_client_active_1.log</log-file>
+			<script>if [ ${sta1.active1} -lt 1 ] || [ ${sta1.active1} -gt 30 ] ; then exit 1; fi</script>
+		</step>
+		<step no="7">
+			<desc>
+				3. When AP receives the probe/auth/association again then result 2.
+			</desc>
+			<log-file>sta_config_2.log</log-file>
+			<ssh target="sta1">
+				<!---v "iwlist ${sta1.tif.name} scanning essid ${ssid.name}"-->
+				-v "iw dev ${sta1.tif.name} scan ssid ${ssid.name} 1>/dev/null &amp;"
+			</ssh>
+		</step>
+		<step no="8">
+			<desc>
+				2. The table can be shown by show cmd.
+			</desc>
+			<log-file>show_hd_5g_client_list_3.log</log-file>
+			<console target="ap1">
+				<!--  -v "sh high-density status" -->
+				-v "sho high-density _drvnt wifi1"
+			</console>
+		</step>
+		<step no="9">
+			<desc>
+				check whether client mac and active status on AP 5g client list
+			</desc>
+			<log-file>get_client_active_2.log</log-file>
+			<setvar name="sta1.active2">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_hd_5g_client_list_3.log -k ${sta1.mac} -p 2
+			</setvar>
+		</step>
+		<step no="10">
+			<desc>
+				check client active value
+			</desc>
+			<log-file>check_client_active_2.log</log-file>
+			<script>if [ ${sta1.active2} -lt 25 ] || [ ${sta1.active2} -gt 30 ] ; then exit 1; fi</script>
+		</step>
+		<step no="11">
+			<desc>
+				disable client 5Ghz interface
+			</desc>
+			<log-file>sta_config_4.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name} down"
+			</ssh>
+		</step>
+		<step no="12.1" delay="240">
+			<desc>delay 4 minutes</desc>
+		</step>
+
+		<step no="12" type="loop-check" loop-max-times="3" loop-interval="60">
+			<desc>
+				4. show 5g client list after 360s
+			</desc>
+			<log-file>show_hd_5g_client_list_4.log</log-file>
+			<console target="ap1">
+				<!--  -v "sh high-density status" -->
+				-v "sho high-density _drvnt wifi1"
+			</console>
+			<log-match>-n -e "${sta1.mac}"</log-match>
+		</step>
+		<step no="13">
+			<desc>up client test interface</desc>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+		</step>
+		<step no="14" delay="5">
+			<desc>
+				make client do active scan
+			</desc>
+			<log-file>sta_config_6.log</log-file>
+			<ssh target="sta1">
+				<!---v "iwlist ${sta1.tif.name} scanning essid ${ssid.name}"-->
+				-v "iw dev ${sta1.tif.name} scan ssid ${ssid.name} 1>/dev/null &amp;"
+			</ssh>
+		</step>
+		<step no="15" delay="2">
+			<desc>
+				5. Change the wifi1 radio from Access to backhauls, Result 4.
+			</desc>
+			<log-file>save_ap_config_2.log</log-file>
+			<telnet target="ap1">
+				-v "no interface wifi1 ssid ${ssid.name}"
+				-v "interface wifi1 mode backhaul"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="16" delay="10">
+			<desc>
+				4. show 5g client list after 60s
+			</desc>
+			<log-file>show_hd_5g_client_list_5.log</log-file>
+			<console target="ap1" prompt="suppress client list:|AH.*#">
+				<!--  -v "sh high-density status" -->
+				-v "sho high-density _drvnt wifi1"
+			</console>
+			<log-match>
+				<!-- -n -e "1\s*[a-z0-9]*:" -->
+				-c -e "\w{4}:\w{4}:\w{4}" -re -n
+			</log-match>
+		</step>
+	</stage>
+</testcase>

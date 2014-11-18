@@ -1,0 +1,239 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the 3G connection status via USB modem</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Precondition:
+		1) Config usbmodem mode as on-demand
+		2) The 3g service is activated and available
+		Test Step:
+		1) Check the usbmodem status while WAN is eth0 by default
+		2) Trigger failover to usbmodem WAN via shut eth0
+		3) Check the WAN and usbmodem status
+		4) Trigger failback to eth0 WAN via enable eth0
+		5) Repeat step 3)
+		Expect Result:
+		1) WAN is eth0 by default, and 3g connection is “Backup” and “Attached”
+		2) WAN is usbmodem once failover, and 3g connection is "Backup" and "Failover”
+		3) WAN is eth0 after failback, and 3g connection is "Backup" and "Attached”
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<br-opt-modem>1</br-opt-modem>
+	<tbtype>winlin</tbtype>
+
+	<property name="apn.name" value="3gnet" />
+	<property name="des.addr" value="0.0.0.0" />
+	<property name="gw.addr" value="192.168.10.254" />
+	<property name="gw.addr.1" value="8.8.8.8" />
+
+	<stage>
+		<step no="0" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show usbmodem info
+			</desc>
+			<log-file>step0_show_usbmodem_info_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show usbmodem info"
+			</telnet>
+			<log-match>-c -i "Manufacturer"</log-match>
+			<log-match>-c -i "Model:"</log-match>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				show usbmodem info
+			</desc>
+			<log-file>step0.1_show_usbmodem_info.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show usbmodem info"
+			</telnet>
+			<log-match>-c -i "Manufacturer"</log-match>
+			<log-match>-c -i "Model:"</log-match>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				get dns server tshark process
+			</desc>
+			<setvar name="modem.name_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step0.1_show_usbmodem_info.log -p "Manufacturer:\s+(\w+)" -t str
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				get dns server tshark process
+			</desc>
+			<setvar name="modem.name_2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step0.1_show_usbmodem_info.log -p "Model:\s+(\S+)" -t str
+			</setvar>
+		</step>
+
+		<step no="0.4">
+			<desc>
+				get dns server tshark process
+			</desc>
+			<setvar name="modem.name">
+				echo "${modem.name_1}_${modem.name_2}" | tr "A-Z" "a-z"
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step1_check_vlan.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step2_check_vlan.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match>-i "eth1 *eth2 *eth3 *eth4 *1"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				Config parameters for usbmodem (mode, apn)
+				Config track ip parameters for wan failover test
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no track-wan use-for-wan-usbnet0 ip 192.168.10.254"
+			        -v "track-wan use-for-wan-usbnet0 default-gateway" 
+			        -v "usbmodem reset-device"
+				-v "usbmodem mode on-demand"
+				-v "usbmodem modem-id ${modem.name} apn ${apn.name}"
+				-v "usbmodem enable"
+			</telnet>
+		</step>
+
+		<step no="4" delay="10">
+			<desc>
+				Check the usbmodem status while WAN is eth0 by default
+			</desc>
+			<log-file>step4_check_default_usbmodem.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show usbmodem modem-id ${modem.name}"
+			</telnet>
+			<log-match>-c -i "Enabled: yes"</log-match>
+			<log-match>-c -i "Mode: on-demand"</log-match>
+			<log-match>-c -i "APN: *3gnet"</log-match>
+		</step>
+
+		<step no="4.1" delay="30" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				Check the usbmodem status
+			</desc>
+			<log-file>step4.1_check_usbmodem_status_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show usbmodem status"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "PPP Interface Status:" -ps p "NONE" -e "Connection closed" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.2" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				show wan interface
+			</desc>
+			<log-file>step4.2_show_wan_interface_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show wan interface"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "ifname: eth0" -ps p "kifname: eth0" p "priority: 1" p "is_wan: 1" p "is_default_wan: 1" -e "ifname: usbnet0" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "ifname: usbnet0" -ps p "kifname:" p "priority: 600" p "is_wan: 1" p "is_default_wan: 0" -e "nat_policy_id" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				show wan failover
+			</desc>
+			<log-file>step4.3_show_wan_failover.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show wan failover"
+			</telnet>
+			<log-match>-c -i "curr_state: CONNECTED"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				shutdown interface eth0
+			</desc>
+			<console target="br1.br">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5.1" delay="10">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step5.1_check_vlan.log</log-file>
+			<console target="br1.br">
+				-v "show lan port-config"
+			</console>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step6_check_vlan.log</log-file>
+			<console target="br1.br">
+				-v "show lan vlan-table"
+			</console>
+			<log-match>-i "eth1 *eth2 *eth3 *eth4 *1"</log-match>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				Check the usbmodem status
+			</desc>
+			<log-file>step6.1_check_usbmodem_status_${loop_check.idx}.log</log-file>
+			<console target="br1.br" timeout="300">
+				-v "show usbmodem status"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "PPP Interface Status:" -ps p "State: up" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				show wan interface
+			</desc>
+			<log-file>step6.3_show_wan_interface.log</log-file>
+			<console target="br1.br" timeout="300">
+				-v "show wan interface"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "ifname: eth0" -ps p "kifname: eth0" p "priority: 1" p "is_wan: 1" p "is_default_wan: 0" -e "ifname: usbnet0" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "ifname: usbnet0" -ps p "kifname: ppp0" p "priority: 600" p "is_wan: 1" p "is_default_wan: 1" -e "nat_policy_id" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.4">
+			<desc>
+				show wan failover
+			</desc>
+			<log-file>step6.4_show_wan_failover.log</log-file>
+			<console target="br1.br">
+				-v "show wan failover"
+			</console>
+			<log-match>-c -i "curr_state: FAILOVER"</log-match>
+		</step>	
+		
+	</stage>
+</testcase>

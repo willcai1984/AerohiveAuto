@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Proxy ARP between ap and mgt0 interfaces in portal topo</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-laptops are in same vlan
+
+		Test Procedure:
+
+		- clear arp table on laptop1
+		- clear arp table on ap
+		- laptop1 ping unknown host result 1
+		- clear arp table on laptop1
+		- laptop1 ping ap result 2
+		- ap ping laptop1 (delete arp entry in shell mode) result 3
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}_8_2_6_1" />
+
+	<stage>
+		<if>"${ap1.wifi1.existed}" =="true"</if>
+
+		<step no="pre1.1">
+			<desc>
+				-configure AP1 as Portal1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface wifi1 radio channel 48"
+			</telnet>
+		</step>
+
+		<step no="pre1.1b">
+			<desc>
+				-if eth1 exist on AP1,shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="pre1.1c">
+			<desc>
+				-show interface in portal1
+			</desc>
+			<log-file>step_pre1.1c_show_interface_portal1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="pre1.1d">
+			<desc>
+				Get mgt0 mac in portal1
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step_pre1.1c_show_interface_portal1.log -t str
+			</setvar>
+		</step>
+
+		<include prefix="pre2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="translate_mac">
+			<multi-setvar>
+				echo "sta1.tif.mac=$(echo ${sta1.tif.mac} | tr "A-F" "a-f")"
+			</multi-setvar>
+		</step>
+
+		<step no="1.1a">
+			<desc>
+				-clear arp on windows laptop1
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step1.1a_clear_sta1_arp.log</log-file>
+			<staf target="sta1">
+				-v "arp -d"
+			</staf>
+		</step>
+
+		<step no="1.1b">
+			<desc>
+				-clear arp on linux laptop1
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step1.1b_clear_sta1_arp.log</log-file>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				- clear arp table on AP
+			</desc>
+			<log-file>step2.2_arp_clear.log</log-file>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v ""
+				-v ""
+				-v ""
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<include prefix="2" file="subs/sta_ping.xml" args="sta1,${tb.unreach.ip1}, 4, negative" />
+
+		<step no="2.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				show arp cache on MP, sta1.tif.mac is added into arp table
+			</desc>
+			<log-file>step2.1_show_arp_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "AP" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				open debug
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe_arp basic"
+				-v "_ff id 1 protocol 1"
+				-v "_ff id 2 etype 0806"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3.1a">
+			<desc>
+				-clear arp on windows laptop1
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step3.1a_clear_sta1_arp.log</log-file>
+			<staf target="sta1">
+				-v "arp -d"
+			</staf>
+		</step>
+
+		<step no="3.1b">
+			<desc>
+				-clear arp on linux laptop1
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step3.1b_clear_sta1_arp.log</log-file>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<include prefix="3.2" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 3" />
+
+		<step no="3.3">
+			<desc>
+				arp request is still delivered to mgt0, proxy-arp doesn’t work
+			</desc>
+			<log-file>step3.3_show_log_buff.log</log-file>
+			<telnet target="ap1" timeout="240">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) wifi0.\d+ ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${ap1.mgt0.ip}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(u\) mgt0 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${ap1.mgt0.ip}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) mgt0 ${ap1.mgt0.mac}-&gt;${sta1.tif.mac} arp ${ap1.mgt0.ip}\(${ap1.mgt0.mac}\)-&gt;${sta1.tif.ip}\(${sta1.tif.mac}\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(o\) wifi0.\d+ ${ap1.mgt0.mac}-&gt;${sta1.tif.mac} arp ${ap1.mgt0.ip}\(${ap1.mgt0.mac}\)-&gt;${sta1.tif.ip}\(${sta1.tif.mac}\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.1">
+			<desc>
+				delete arp entry in shell mode
+			</desc>
+			<log-file>step4.1_clear_arp_in_shell_mode.log</log-file>
+			<telnet target="ap1" prompt="AH.*$">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "arp -d ${sta1.tif.ip}"
+				-v "exit 0"
+				-v ""
+				-v "clear log all"
+				-v ""
+				-v ""
+				-v "ping ${sta1.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.2">
+			<desc>
+				ap does proxy-arp to reply the request
+			</desc>
+			<log-file>step4.2_show_log_buff.log</log-file>
+			<telnet target="ap1" timeout="240">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(i\) mgt0 ${ap1.mgt0.mac}-&gt;ffff:ffff:ffff arp ${ap1.mgt0.ip}\(${ap1.mgt0.mac}\)-&gt;${sta1.tif.ip}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(r\) wifi0.\d+ ${sta1.tif.mac}-&gt;${ap1.mgt0.mac} arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${ap1.mgt0.ip}\(${ap1.mgt0.mac}\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\(u\) mgt0 ${sta1.tif.mac}-&gt;${ap1.mgt0.mac} arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${ap1.mgt0.ip}\(${ap1.mgt0.mac}\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+
+</testcase>
+

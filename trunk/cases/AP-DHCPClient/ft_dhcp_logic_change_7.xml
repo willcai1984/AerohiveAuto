@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>After set interface mgt0 dhcp client address-only, only use IP address and gateway from DHCP server, other parameters will use set by CLI</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Exist useable DHCP server, no static IP be configured in AP
+
+		Test Procedure:
+		1. Login AP
+		2. Run interface mgt0 dhcp client
+		3. Check all parameters which from DHCP server
+		4. Set interface mgt0 dhcp client address-only
+		5. Check if parameters from DHCP server be used
+		6. Set all parameters by manual
+		7. Check if parameters set by CLI be used
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="domain_name" value="qaauto.aerohive.com" />
+	<property name="hostname" value="hztb-ip2" />
+	<property name="hostname_ip" value="192.168.10.104" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				1. Login AP
+				2. Run interface mgt0 dhcp client
+			</desc>
+			<telnet target="ap1">
+				-v "interface mgt0 dhcp client"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				3. Check all parameters which from DHCP server
+			</desc>
+			<log-file>get_interface_mgt0_dhcp_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				get ip address from dhcp client
+			</desc>
+			<setvar name="ip_address">
+				${bin.dir}/getbyrexp.py -p " Get\s+IP\s+address\s+(\d+).(\d+).(\d+).(\d+)" -f ${log.dir}/get_interface_mgt0_dhcp_info.log -t str --script "'.'.join(m.groups())"
+			</setvar>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				get netmask from dhcp client
+			</desc>
+			<setvar name="netmask">
+				${bin.dir}/getbyrexp.py -p "Netmask.*:\s+(\d+).(\d+).(\d+).(\d+)" -f ${log.dir}/get_interface_mgt0_dhcp_info.log -t str --script "'.'.join(m.groups())"
+			</setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				get dns server ip from dhcp client
+			</desc>
+			<setvar name="dns_server">
+				${bin.dir}/getbyrexp.py -p "DNS server.*:\s+(\d+).(\d+).(\d+).(\d+)" -f ${log.dir}/get_interface_mgt0_dhcp_info.log -t str --script "'.'.join(m.groups())"
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				get dns server ip from dhcp client
+			</desc>
+			<setvar name="dns_domain">
+				${bin.dir}/getbyrexp.py -p "DNS\s+domain.*:(.*)" -f ${log.dir}/get_interface_mgt0_dhcp_info.log -t str --script "'.'.join(m.groups())"
+			</setvar>
+		</step>
+
+		<step no="2.5">
+			<desc>
+				check dns is usable.
+			</desc>
+			<log-file>enable.dns.dhcp_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${hostname} count 5"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ping\s+${hostname}\.${domain_name}\s+\(${hostname_ip}\)\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="2.6">
+			<desc>
+				check ip address ,gateway is usable.
+			</desc>
+			<log-file>step2.7_ping_result.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p ",\s*(\d+)% packet loss" -f ${log.dir}/enable.dns.dhcp_ping.log --script "int(m.group(1))&lt;20" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				4. Set interface mgt0 dhcp client address-only
+			</desc>
+			<telnet target="ap1">
+				-v "interface mgt0 dhcp client address-only"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				5. Check if parameters from DHCP server be used
+			</desc>
+			<log-file>show_mgt0_get_dhcp_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+				-v "show dns"
+			</telnet>
+			<log-match>-e "IP addr=${ip_address}"</log-match>
+			<log-match>-e "Netmask=${netmask}"</log-match>
+			<log-match>-e "Default Gateway:${tb.vlan1.gw}"</log-match>
+			<log-match>-n -e "Primary" -i "${dns_server}"</log-match>
+			<log-match>-n -e "Domain name" -i "${dns_domain}"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				check dns is unusable.
+			</desc>
+			<log-file>disable.dns.1_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${hostname}"; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ping\s+${hostname}\.${domain_name}\s+\(${hostname_ip}\)\s+" -f ${log.dir}/${log.file} -c 0</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				check default gateway is usable.
+			</desc>
+			<log-file>step4.1_default_gateway_info.log</log-file>
+			<telnet target="ap1">
+				-v "show ip route"
+			</telnet>
+			<log-match>-e "0.0.0.0" -i "${tb.vlan1.gw}" -p 1</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				6. Set dns server ip
+			</desc>
+			<telnet target="ap1">
+				-v "dns domain-name ${domain_name}"
+				-v "dns server-ip ${pub.dns1.ip}"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				check dns server ip is used
+			</desc>
+			<log-file>show_dns_server_info.log</log-file>
+			<telnet target="ap1">
+				-v "show dns"
+			</telnet>
+			<log-match>-e "Domain name suffix" -i "${domain_name}"</log-match>
+			<log-match>-e "Primary" -i "${pub.dns1.ip}"</log-match>
+			<log-match>-e "Secondary" -i "0.0.0.0"</log-match>
+			<log-match>-e "Tertiary" -i "0.0.0.0"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				check dns is usable.
+			</desc>
+			<log-file>enable.dns.config_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${hostname} count 5"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ping\s+${hostname}\.${domain_name}\s+\(${hostname_ip}\)\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				6. Set ntp server ip
+			</desc>
+			<telnet target="ap1">
+				-v "ntp server 2.2.2.2"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				check ntp server ip is used
+			</desc>
+			<log-file>show_ntp_server_info.log</log-file>
+			<telnet target="ap1">
+				-v "show ntp"
+			</telnet>
+			<log-match>-e "First" -i "2.2.2.2"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				6. Set NMS server ip
+			</desc>
+			<if> "${img.prodtype}" != "APTBBR100" || "${img.prodtype}" != "BR100" </if>
+			<telnet target="ap1">
+				-v "snmp trap-host v1 3.3.3.3"
+			</telnet>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				check NMS server ip is used
+			</desc>
+			<if> "${img.prodtype}" != "APTBBR100" || "${img.prodtype}" != "BR100" </if>
+			<log-file>show_NMS_server_info.log</log-file>
+			<telnet target="ap1">
+				-v "show snmp"
+			</telnet>
+			<log-match>-e "trap-host 1" -i "3.3.3.3"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				6. Set log server ip
+			</desc>
+			<telnet target="ap1">
+				-v "logging server 4.4.4.4"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				check log server ip is used
+			</desc>
+			<log-file>show_log_server_info.log</log-file>
+			<telnet target="ap1">
+				-v "show logging"
+			</telnet>
+			<log-match>-e "4.4.4.4" -p 3</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				set a static ip
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 ip 172.168.10.53/16"
+				-v "ip route default gateway 172.168.10.254"
+			</console>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				check static ip ,default gateway is used
+			</desc>
+			<log-file>show_static_ip_used_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+				-v "show ip route"
+			</console>
+			<log-match>-e "IP addr=172.168.10.53"</log-match>
+			<log-match>-e "Netmask=255.255.0.0"</log-match>
+			<log-match>-e "Default Gateway:172.168.10.254"</log-match>
+			<log-match>-e "0.0.0.0" -i "172.168.10.254" -p 1</log-match>
+		</step>
+	</stage>
+</testcase>

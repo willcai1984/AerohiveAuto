@@ -1,0 +1,817 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Specific multicast packets selective forwarding on dynamic gre tunnel</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Active multicast source group is 238.1.1.1,and 238.1.1.2
+		Laptop1 connects to portal1, and be authenticated
+		dynamic tunnel(DNXP) is set up between portal1 and portal2
+
+		Test Procedure:
+		1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+		packet forwarding on tunnel of portal1,verify debug on portal2
+		2. laptop1 roaming to portal2, after be authenticated, reports to join group 238.1.1.1
+		and 238.1.1.2
+		3. On portal1, allow all multicast packet except group 238.1.1.1 to verify
+		CLI:
+		forwarding-engine tunnel selective-multicast-forward allow-all except 238.1.1.1
+		4. On portal1, cancel the allow-all except ip and then set except list with netmask to
+		check multicast packet forwarding on gre tunnel:
+		CLI push:
+		no forwarding-engine tunnel selective-multicast-forward allow-all except
+		238.1.1.1
+		no forwarding-engine tunnel selective-multicast-forward allow-all except
+		238.1.1.2
+		forwarding-engine tunnel selective-multicast-forward allow-all except 236.0.0.0/3
+		5. On
+		portal1, cancel the allow-all except list, then set block all multicast packet to
+		verify
+		CLI:
+		no forwarding-engine tunnel selective-multicast-forward allow-all except
+		224.0.0.0/3
+		forwarding-engine tunnel selective-multicast-forward block-all
+		6. On portal1, block all multicast packet except 238.1.1.1 to verify
+		CLI:
+		forwarding-engine tunnel selective-multicast-forward block-all except 238.1.1.1
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="sta1.capture.igmp.query.result" value="sta1.capture.igmp.query.result" />
+	<property name="file.dir" value="/tmp" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				On portal1
+				mgt0 ip: 20.20.1.1/24
+				user-profile vlan 10, attribute 77,binding mobility-policy sj
+				ssid A security-object sj
+				mobility-policy sj dnxp
+				interface wifi0 ssid A
+				exec capture remote-sniffer
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				close dhcp client
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				open dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>step1.3_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.4">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.3_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				get mgt0's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step1.3_show_interface_mgt0_info.log -i mgt0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				On portal1
+				mgt0 ip: 20.20.1.1/24
+				user-profile vlan 10, attribute 77,binding mobility-policy sj
+				ssid A security-object sj
+				mobility-policy sj dnxp
+				interface wifi0 ssid A
+				exec capture remote-sniffer
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} multicast conversion-to-unicast auto"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 77"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy FWtest attribute 77"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "exec capture remote-sniffer"
+				-v "no bon enable"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="2.1">
+			<desc>
+				show sta
+			</desc>
+			<log-file>step2.1_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				Active multicast source group is 238.1.1.1,and 238.1.1.2
+				Laptop1 connects to portal1, and be authenticated
+				dynamic tunnel(DNXP) is set up between portal1 and portal2
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} multicast conversion-to-unicast auto"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 77"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy FWtest attribute 77"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "exec capture remote-sniffer"
+				-v "interface wifi0 radio channel 1"
+				-v "no bon enable"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>show_interface_wifi0_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				get wifi0's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap1.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi0_info.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step3.3_show_interface_mgt0_info.log</log-file>
+			<telnet target="ap2">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				get mgt0's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap2.mgt0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step3.3_show_interface_mgt0_info.log -i mgt0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				clear log all on ap1 and open debug mode.
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 protocol 47 bidirectional"
+				-v "_ff id 2 src-ip ${pub.mtcast1.ip} bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				clear log all on ap2 and open debug mode.
+			</desc>
+			<telnet target="ap2">
+				-v "_ff id 1 protocol 47 bidirectional"
+				-v "_ff id 2 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_ff id 3 src-ip ${pub.mtcast1.ip} bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				Laptop1 report to join group 238.1.1.1,
+			</desc>
+			<log-file>step5_join_group.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ./mrecv -d ${pub.mtcast1.group1.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				get pid of "mrecv" on sta1
+			</desc>
+			<setvar name="sta1.join.group1.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_join_group.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				Laptop1 report to join group 238.1.1.2
+			</desc>
+			<log-file>step6_join_group.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ./mrecv -d ${pub.mtcast1.group2.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				get pid of "mrecv" on sta1
+			</desc>
+			<setvar name="sta1.join.group2.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_join_group.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Show roaming cache
+			</desc>
+			<log-file>step7_show_roaming_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${ap1.wifi0.mac}"</log-match>
+		</step>
+
+		<step no="7.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show amrp dnxp neighbor
+			</desc>
+			<log-file>show_amrp_dnxp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2.mgt0.mac} *${ap2.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				capture packet on sta1
+			</desc>
+			<log-file>step8_capture_packet.log</log-file>
+			<ssh target="sta1">
+				-v "nohup tshark -i ${sta1.tif.name} igmp &gt; ${file.dir}/${sta1.capture.igmp.query.result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				get pid of "tshark" on sta1
+			</desc>
+			<setvar name="sta1.igmp.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step8_capture_packet.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="9">
+			<desc>
+				shutdown wifi0 on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="9.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Reduce the portal1's power
+			</desc>
+			<log-file>step9.1_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-i "mgt0" -i "LTO"</log-match>
+		</step>
+
+		<step no="9.2" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Reduce the portal1's power
+			</desc>
+			<log-file>step9.2_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-i "wifi0.1" -i "LTO"</log-match>
+		</step>
+
+		<step no="10" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show station on ap2
+			</desc>
+			<log-file>step10_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="10.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step10.1_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="10.2" delay="60">
+			<desc>
+				kill tshark process.
+			</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.igmp.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="10.3">
+			<desc>
+				cat files
+			</desc>
+			<log-file>step10.3_check_result.log</log-file>
+			<ssh target="sta1">
+				-v "cat ${file.dir}/${sta1.capture.igmp.query.result}"
+			</ssh>
+			<log-match>-i "${tb.vlan1.gw} -&gt; 224.0.0.1 *IGMP V2 Membership Query, general"</log-match>
+			<log-match>-i "${sta1.tif.ip} -&gt; ${pub.mtcast1.group1.ip} *IGMP V2 Membership Report / Join group ${pub.mtcast1.group1.ip}"</log-match>
+			<log-match>-i "${sta1.tif.ip} -&gt; ${pub.mtcast1.group2.ip} *IGMP V2 Membership Report / Join group ${pub.mtcast1.group2.ip}"</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				clear log all on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				clear log all on ap2
+			</desc>
+			<telnet target="ap2">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="12" delay="30">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step12_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(o) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step12.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(r\) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}.*${pub.mtcast1.protocol}" -ps p "\[fe\]: GRE decap pkt with tunnel" p "\(u\) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.*proto\(47\)" -e "\(i\) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.*proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(r\) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}.*${pub.mtcast1.protocol}" -ps p "\[fe\]: GRE decap pkt with tunnel" p "\(u\) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.*proto\(47\)" -e "\(i\) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.*proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				3. On portal1, allow all multicast packet except group 238.1.1.1 to verify
+				CLI:
+				forwarding-engine tunnel selective-multicast-forward allow-all except 238.1.1.1
+			</desc>
+			<telnet target="ap1">
+				-v "forwarding-engine tunnel selective-multicast-forward allow-all except ${pub.mtcast1.group1.ip}"
+			</telnet>
+		</step>
+
+		<step no="13.1">
+			<desc>
+				clear log all on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="13.2">
+			<desc>
+				clear log all on ap2
+			</desc>
+			<telnet target="ap2">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="14" delay="30">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step14_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(o) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="14.1">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step14.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(r\) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}.*${pub.mtcast1.protocol}" -ps p "\[fe\]: GRE decap pkt with tunnel" p "\(u\) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.*proto\(47\)" -e "\(i\) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.*proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-n -c -i "(r) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="15">
+			<desc>
+				On portal1, allow all multicast packet except group 238.1.1.2 to verify
+				CLI:
+				forwarding-engine tunnel selective-multicast-forward allow-all except 238.1.1.2
+			</desc>
+			<telnet target="ap1">
+				-v "forwarding-engine tunnel selective-multicast-forward allow-all except ${pub.mtcast1.group2.ip}"
+			</telnet>
+		</step>
+
+		<step no="15.1">
+			<desc>
+				clear log all on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="15.2">
+			<desc>
+				clear log all on ap2
+			</desc>
+			<telnet target="ap2">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="16" delay="30">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step16_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(o) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="16.1">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step16.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-n -c -i "(r) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(r) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="17">
+			<desc>
+				4. On portal1, cancel the allow-all except ip and then set except list with netmask to
+				check multicast packet forwarding on gre tunnel:
+				CLI push:
+				no forwarding-engine tunnel selective-multicast-forward allow-all except
+			</desc>
+			<telnet target="ap1">
+				-v "no forwarding-engine tunnel selective-multicast-forward allow-all except ${pub.mtcast1.group1.ip}"
+				-v "no forwarding-engine tunnel selective-multicast-forward allow-all except ${pub.mtcast1.group2.ip}"
+				-v "forwarding-engine tunnel selective-multicast-forward allow-all except ${pub.mtcast1.group1.ip}/3"
+			</telnet>
+		</step>
+
+		<step no="18">
+			<desc>
+				clear log all on ap1 and open debug mode.
+			</desc>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="18.1">
+			<desc>
+				clear log all on ap2 and open debug mode.
+			</desc>
+			<telnet target="ap2">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="19" delay="30">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step19_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(o) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="19.1">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step19.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-n -c -i "(r) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(r) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="20">
+			<desc>
+				4. On portal1, cancel the allow-all except ip and then set except list with netmask to
+				check multicast packet forwarding on gre tunnel:
+				CLI push:
+				no forwarding-engine tunnel selective-multicast-forward allow-all except
+			</desc>
+			<telnet target="ap1">
+				-v "no forwarding-engine tunnel selective-multicast-forward allow-all except ${pub.mtcast1.group1.ip}/3"
+				-v "forwarding-engine tunnel selective-multicast-forward block-all"
+			</telnet>
+		</step>
+
+		<step no="21">
+			<desc>
+				clear log all on ap1 and open debug mode.
+			</desc>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="21.1">
+			<desc>
+				clear log all on ap2 and open debug mode.
+			</desc>
+			<telnet target="ap2">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="22" delay="30">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step22_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(o) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="22.1">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step22.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-n -c -i "(r) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(r) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="23">
+			<desc>
+				6. On portal1, block all multicast packet except 238.1.1.1 to verify
+				CLI:
+				forwarding-engine tunnel selective-multicast-forward block-all except 238.1.1.1
+			</desc>
+			<telnet target="ap1">
+				-v "forwarding-engine tunnel selective-multicast-forward block-all except ${pub.mtcast1.group1.ip}"
+			</telnet>
+		</step>
+
+		<step no="24">
+			<desc>
+				clear log all on ap1 and open debug mode.
+			</desc>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="24.1">
+			<desc>
+				clear log all on ap2 and open debug mode.
+			</desc>
+			<telnet target="ap2">
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="25" delay="30">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step25_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(o) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-i "(i) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-c -i "(i) eth0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+
+		<step no="25.1">
+			<desc>
+				1. Laptop1 reports to join multicast group 238.1.1.1 and 238.1.1.2, check multicast
+				packet forwarding on tunnel of portal1,verify debug on portal2
+			</desc>
+			<log-file>step25.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(r\) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}.*${pub.mtcast1.protocol}" -ps p "\[fe\]: GRE decap pkt with tunnel" p "\(u\) mgt0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.*proto\(47\)" -e "\(i\) eth0 ${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}.*proto\(47\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-n -c -i "(r) mgt0 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group1.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${pub.mtcast1.ip}-&gt;${pub.mtcast1.group2.ip}" -i "${pub.mtcast1.protocol}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					kill process which run in background.
+				</desc>
+				<ssh target="sta1">
+					-v "kill ${sta1.join.group1.pid}"
+					-v "kill ${sta1.join.group2.pid}"
+					-v "kill ${sta1.igmp.tshark.pid}"
+					-v "rm -f ${file.dir}/${sta1.capture.igmp.query.result}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

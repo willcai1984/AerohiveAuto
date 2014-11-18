@@ -1,0 +1,794 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>TCP MSS of L3VPN without NAT when encryption-algorithm is different</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1. Setup L3VPN in BR and CVG with NAT
+		2. Ip tcp-mss-threshold enable in both BR and CVG
+		3. Set the tcp-mss-threshold enable
+		4. Connect one laptop to BR
+		5. Send TCP traffic that go through L3vpn from BR to CVG, result 1
+		6. Send TCP traffic that go through L3vpn from CVG to BR, result 1
+		7. Set the cli "vpn ipsec-tunnel ss ike phase1 encryption-algorithm 3des" in
+		CVG and BR
+		8. Send TCP traffic that go through L3vpn from BR to CVG, result 2
+		9. Send TCP traffic that go through L3vpn from CVG to BR, result 2
+		10. Set the cli "vpn ipsec-tunnel ss ike phase1 encryption-algorithm aes192"
+		in CVG and BR
+		11. Send TCP traffic that go through L3vpn from BR to CVG, result 1
+		12. Send TCP traffic that go through L3vpn from CVG to BR, result 1
+		13. Set the cli "vpn ipsec-tunnel ss ike phase1 encryption-algorithm aes256"
+		in CVG and BR
+		14. Send TCP traffic that go through L3vpn from BR to CVG, result 1
+		15. Send TCP traffic that go through L3vpn from CVG to BR, result 1
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>
+	
+	<property name="create.file" value="test_file.log" />
+	<property name="create.file_2" value="test_file_2.log" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				config CVG act as l3 VPN server
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="3">
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:certs/server_cert.pem"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:certs/server_key.pem"
+				-v "vpn xauth-client-list ${hive.name}_List local"
+				-v "vpn xauth-client-list ${hive.name}_List client-name ${br1.br.name} password aerohive"
+				-v "vpn server-ipsec-tunnel ${hive.name}_Server vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${hive.name}_Server client-list ${hive.name}_List"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel ${hive.name}_Server"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.mgt0.supermask}"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				enable ospf on CVG eth1
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="3">
+				-v "routing protocol ospf advertise eth1"
+				-v "routing protocol ospf router-id ${cvg1.cvg.lan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				config BR with WAN interface, nat enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "interface mgt0 ip ${br1.br.mgt0.ip}/${cvg1.cvg.wan.netmask}"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Show interface eth0 dhcp client to check if DNS server be obtained
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0 dhcp client"
+			</telnet>
+			<log-match>-i "DNS server" -i "${pub.dns_server.ip}"</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				config mgt0.1 with dhcp service enable,dns service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				Create ssid
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+			</telnet>
+		</step>
+		
+		 <step no="2.3b">
+			<desc>br1.vpc1 as Laptop3 connect to lan ports eth1, dhclient retrieve ip address</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.3c">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				config BR as l3 VPN client
+			</desc>
+			<console target="br1.br">
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "vpn client-ipsec-tunnel ${br1.br.name}_client_ipsec_1 vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${br1.br.name}_client_ipsec_1 gateway ${cvg1.cvg.mip.ip} client-name ${br1.br.name} password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel ${br1.br.name}_client_ipsec_1 primary"
+				-v "routing route-request enable"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${cvg1.cvg.wan.netmask}"
+			</console>
+		</step>
+
+		<step no="3" delay="20" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				check vpn ike sa on BR1 side
+			</desc>
+			<log-file>step3_ike_sa_br_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.mip.ip}\[4500\]"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				check vpn ike sa on CVG side
+			</desc>
+			<log-file>step3.1_ike_sa_cvg_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="3">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "R" -i "${pub.br_fw.ip}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.2">
+			<desc>
+				check gre tunnel on br1 side
+			</desc>
+			<log-file>step3.2_show_gre_tunnel_br.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.mip.ip}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.3">
+			<desc>
+				check gre tunnel on cvg side
+			</desc>
+			<log-file>step3.3_show_gre_tunnel_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="3">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.4">
+			<desc>
+				BR check route
+			</desc>
+			<log-file>step3.4_show_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				cvg1 check route
+			</desc>
+			<log-file>step3.5_show_ip_route.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				ip tcp-mss-threshold enable in BR
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip tcp-mss-threshold enable"
+			</telnet>
+		</step>
+
+		<step no="3.7">
+			<desc>
+				ip tcp-mss-threshold enable in CVG
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "ip tcp-mss-threshold enable"
+			</telnet>
+		</step>	
+
+		<step no="4">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "_ff id 2 src-ip ${cvg1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				delete file
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "rm -f /tmp/${create.file}"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Create file
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "dd if=/dev/zero of=${create.file} bs=100K count=1"
+				-v "chmod 777 ${create.file}"
+			</ssh>
+		</step>
+
+		<step no="5.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				send TCP traffic that pass through l3 Tunnel from BR to CVG
+			</desc>
+			<log-file>step5.2_download_files_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${cvg1.vpc1.tif.ip}/${create.file} -o /tmp/${create.file}"
+			</ssh>
+			<log-match>-n -c -i "couldn't connect to host"</log-match>
+		</step>
+
+		<step no="6" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "set tcp mss to 1358 sucessfully"</log-match>
+			<log-match>-c -i "TCP syn pkt, try to clamp tcp mss to 1358:"</log-match>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 1"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(clamp\): ${br1.vpc1.tif.ip}:\d+->${cvg1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1436\),dst_mtu=1476" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6.1">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step6.1_check_file.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+
+		<step no="6.2" delay="60">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				delete file
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				Create file
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dd if=/dev/zero of=${create.file_2} bs=100K count=1"
+				-v "chmod 777 ${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="7.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				send TCP traffic that pass through l3 Tunnel from BR to CVG
+			</desc>
+			<log-file>step7.2_download_files_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2}"
+			</ssh>
+			<log-match>-n -c -i "couldn't connect to host"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="9">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step9_check_file.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				clear sta file
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "rm -f /tmp/${create.file}"
+			</ssh>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				clear vpc from
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="10">
+			<desc>
+				Set the cli “vpn ipsec-tunnel ss ike phase1 encryption-algorithm 3des” in BR
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vpn ipsec-tunnel ${br1.br.name}_client_ipsec_1 ike phase1 encryption-algorithm 3des"
+			</telnet>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				Set the cli “vpn ipsec-tunnel ss ike phase1 encryption-algorithm 3des” in CVG
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "vpn ipsec-tunnel ${hive.name}_Server ike phase1 encryption-algorithm 3des"
+			</telnet>
+		</step>
+
+		<step no="11" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				send TCP traffic that go through l3 vpn from BR to CVG
+			</desc>
+			<log-file>step11_download_files_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${cvg1.vpc1.tif.ip}/${create.file} -o /tmp/${create.file}"
+			</ssh>
+			<log-match>-n -c -i "couldn't connect to host"</log-match>
+		</step>
+
+		<step no="12" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step12_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "set tcp mss to 1358 sucessfully"</log-match>
+			<log-match>-c -i "TCP syn pkt, try to clamp tcp mss to 1358:"</log-match>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 1"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(clamp\): ${br1.vpc1.tif.ip}:\d+->${cvg1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1436\),dst_mtu=1476" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="12.1">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step12.1_check_file.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+
+		<step no="12.2" delay="60">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="13" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				send TCP traffic that go through l3 vpn from cvg to br
+			</desc>
+			<log-file>step14_download_files_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2}"
+			</ssh>
+			<log-match>-n -c -i "couldn't connect to host"</log-match>
+		</step>
+
+		<step no="14" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step14_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="15">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step15_Check_file_size.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+
+		<step no="15.1">
+			<desc>
+				clear sta file
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "rm -f /tmp/${create.file}"
+			</ssh>
+		</step>
+
+		<step no="15.2">
+			<desc>
+				clear vpc from
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="16">
+			<desc>
+				Set the cli “vpn ipsec-tunnel ss ike phase1 encryption-algorithm aes192” in BR
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vpn ipsec-tunnel ${br1.br.name}_client_ipsec_1 ike phase1 encryption-algorithm aes192"
+			</telnet>
+		</step>
+
+		<step no="16.1">
+			<desc>
+				Set the cli “vpn ipsec-tunnel ss ike phase1 encryption-algorithm aes192” in CVG
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "vpn ipsec-tunnel ${hive.name}_Server ike phase1 encryption-algorithm aes192"
+			</telnet>
+		</step>
+		
+		
+		<step no="16.2" delay="20" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				check vpn ike sa on BR1 side
+			</desc>
+			<log-file>step16.2_ike_sa_br_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.mip.ip}\[4500\]"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="17" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				send TCP traffic that go through l3 vpn from BR to CVG
+			</desc>
+			<log-file>step17_download_files_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${cvg1.vpc1.tif.ip}/${create.file} -o /tmp/${create.file}"
+			</ssh>
+			<log-match>-n -c -i "couldn't connect to host"</log-match>
+		</step>
+
+		<step no="18" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step18_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "set tcp mss to 1358 sucessfully"</log-match>
+			<log-match>-c -i "TCP syn pkt, try to clamp tcp mss to 1358:"</log-match>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="18.1">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step18.1_check_file.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+
+		<step no="18.2" delay="60">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="19" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				send TCP traffic that go through l3 vpn from CVG to BR
+			</desc>
+			<log-file>step19_download_files_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2}"
+			</ssh>
+			<log-match>-n -c -i "couldn't connect to host"</log-match>
+		</step>
+
+		<step no="20" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step20_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="21">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step21_Check_file_size.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+
+		<step no="21.1">
+			<desc>
+				clear sta file
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "rm -f /tmp/${create.file}"
+			</ssh>
+		</step>
+
+		<step no="21.2">
+			<desc>
+				clear vpc from
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="22">
+			<desc>
+				Disable NAT. repeat the upper step
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface eth0 mode wan nat"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="23">
+			<desc>
+				Set the cli “vpn ipsec-tunnel ss ike phase1 encryption-algorithm aes256” in BR
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vpn ipsec-tunnel ${br1.br.name}_client_ipsec_1 ike phase1 encryption-algorithm aes256"
+			</telnet>
+		</step>
+
+		<step no="23.1">
+			<desc>
+				Set the cli “vpn ipsec-tunnel ss ike phase1 encryption-algorithm aes256” in CVG
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "vpn ipsec-tunnel ${hive.name}_Server ike phase1 encryption-algorithm aes256"
+			</telnet>
+		</step>
+
+		<step no="test.1">
+			<desc>
+				The cfg do not lost after reboot
+			</desc>
+			<console target="br1.br">
+				-v "show running-config"
+			</console>
+		</step>
+
+		<step no="test.2">
+			<desc>
+				The cfg do not lost after reboot
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="25" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				send TCP traffic that go through l3 vpn from BR to CVG
+			</desc>
+			<log-file>step25_download_files_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${cvg1.vpc1.tif.ip}/${create.file} -o /tmp/${create.file}"
+			</ssh>
+			<log-match>-n -c -i "couldn't connect to host"</log-match>
+		</step>
+
+		<step no="26" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step26_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<!--<log-match>-c -i "set tcp mss to 1358 sucessfully"</log-match>-->
+			<!--<log-match>-c -i "TCP syn pkt, try to clamp tcp mss to 1358:"</log-match>-->
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="26.1">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step26.1_check_file.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+
+		<step no="26.2" delay="60">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="27" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				send TCP traffic that go through l3 vpn from CVG to BR
+			</desc>
+			<log-file>step27_download_files_${loop_check.idx}.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2}"
+			</ssh>
+			<log-match>-n -c -i "couldn't connect to host"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="28" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step28_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="28.1">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step28.1_check_file.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+
+		<step no="28.2">
+			<desc>
+				clear sta file
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "rm -f /tmp/${create.file}"
+			</ssh>
+		</step>
+
+		<step no="28.3">
+			<desc>
+				clear vpc from
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear sta file
+				</desc>
+				<ssh target="br1.sta1">
+					-v "rm -f /tmp/${create.file}"
+					-v "rm -f /tmp/${create.file_2}"
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					clear vpc flie
+				</desc>
+				<ssh host="${cvg1.vpc1.mif.ip}">
+					-v "rm -f /tmp/${create.file}"
+					-v "rm -f /tmp/${create.file_2}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

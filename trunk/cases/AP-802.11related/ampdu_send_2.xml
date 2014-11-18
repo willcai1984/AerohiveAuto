@@ -1,0 +1,131 @@
+<testcase>
+	<brief>Default auth type is open</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+	<description>
+		Description
+		Verify that AMPDU takes effective in wifi1.
+		Test procedure
+		1. Verify that AMPDU takes effective. Result 1
+		2. Verify that the AMPDU not takes effective by cmd: no radio profile
+		xxxx ampdu. Result 2
+		Expect result
+		1. The AMPDU takes effective
+		2. The AMPDU not takes effective
+	</description>
+	<stage>
+		<step no="2">
+			<desc>setup AP1</desc>
+			<telnet target="ap1">
+				-v "radio profile driver_na"
+				-v "radio profile driver_na phymode 11na"
+				-v "interface wifi1 radio profile driver_na"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>Set config for AP1 via telnet</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="5" delay="20">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi1_ssid_station.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|Total station count.*#" timeout="80">
+				-v "show ssid ${ssid.name} station"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>Get laptop1 ip in AP1  </desc>
+			<setvar name="sta1_ip_in_ap">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi1_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+		<step no="7">
+			<desc>Compare laptop1 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${sta1_ip_in_ap} != ${sta1.tif.ip}"
+				if [ "${sta1_ip_in_ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<!-- step 17: generate iperf packet -->
+		<include prefix="8" file="${case.dir}/conf/sub_run_iperf.xml" />
+		<step no="9">
+			<desc>Show ssid counter in AP1 </desc>
+			<log-file>show_in_wifi1_counter.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 counter | in aggregated"
+			</telnet>
+		</step>
+
+		<step no="10">
+			<desc>Check whether exists ampdu packets</desc>
+			<script>
+				export ampdu_pkt=$(cat ${log.dir}/show_in_wifi1_counter.log | perl -ne '/([0-9]+)\s+tx aggregated/and print $1')
+				echo ampdu_pkt = "$ampdu_pkt"
+				if [ "$ampdu_pkt" == "0" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="11">
+			<desc>No short guard interval </desc>
+			<telnet target="ap1">
+				-v "no radio profile driver_na ampdu"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="12">
+			<desc>Clear ssid counter </desc>
+			<telnet target="ap1">
+				-v "clear interface wifi1 counter"
+			</telnet>
+		</step>
+
+		<!-- step 22: generate iperf packet -->
+		<include prefix="13" file="cases/802.11related/conf/sub_run_iperf.xml" />
+
+		<step no="14" delay="220">
+			<desc>Show ssid ${ssid.name} counter in AP1 </desc>
+			<log-file>show_in_wifi1_counter_later.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 counter | in aggregated"
+			</telnet>
+		</step>
+
+		<step no="15">
+			<desc>Check whether exists ampdu packets</desc>
+			<script>
+				export ampdu_pkt=$(cat ${log.dir}/show_in_wifi1_counter_later.log | perl -ne '/([0-9]+)\s+tx aggregated/and print $1')
+				echo ampdu_pkt = "$ampdu_pkt"
+				if [ "$ampdu_pkt" != "0" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+</testcase>

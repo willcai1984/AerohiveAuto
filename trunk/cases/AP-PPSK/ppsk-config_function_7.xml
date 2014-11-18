@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that user group config and other config (e.g. config of SSID) refers to the user groups can be configured separately thru CLI.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1. Configure a PPSK SSID.
+		2. Set a user group 'ug01' (not configured yet) to the PPSK SSID. [result 1]
+		3. Configure the user group 'ug01' and configure some user for it. [result 2]
+		4. Check the running config and 'users' running config. [result 3]
+		5. Try to connect to the PPSK SSID using the user accounts of user group
+		'ug01'. [result 4]
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-tkip-psk" />
+	<property name="conn1.psk" value="group1user" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Config ap1
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key aerohive"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "security-object ppsk security private-psk"
+				-v "user-profile sss vlan-id ${tb.vlan1} attribute 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup1"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-Configure the user group 'ug01' and configure some user for it
+			</desc>
+			<ssh target="ap1">
+				-v "user-group userGroup1"
+				-v "user group1_user"
+				-v "user group1_user password group1user"
+				-v "user group1_user group userGroup1"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				-Check the running config users of schedule.
+			</desc>
+			<log-file>step3_show_run_config_user.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config user"
+			</telnet>
+			<log-match>-c -i "user-group userGroup1"</log-match>
+			<log-match>-c -i "user group1_user"</log-match>
+			<log-match>-c -i "user group1_user password"</log-match>
+			<log-match>-c -i "user group1_user group userGroup1"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-Check the running config of schedule.
+			</desc>
+			<log-file>step3.1_show_run_config.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+			<log-match>-c -i "ssid ${ssid.name}"</log-match>
+			<log-match>-c -i "ssid ${ssid.name} user-group userGroup1"</log-match>
+			<log-match>-c -i "interface wifi0 ssid ${ssid.name}"</log-match>
+			<log-match>-c -i "ssid ${ssid.name} security-object ppsk"</log-match>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="5">
+			<desc>
+				-check the attributes got is correct, the same as default ssid,sh ssid xxx st
+			</desc>
+			<log-file>step5_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step5.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step5.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "WPA/TKIP" -i "group1_user" -p 7 -i "done"</log-match>
+		</step>
+	</stage>
+</testcase>

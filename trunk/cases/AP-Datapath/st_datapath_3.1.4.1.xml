@@ -1,0 +1,96 @@
+<testcase>
+	<brief> DHCP pkt process for portal</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Topology to use
+		Portal------Switch------DHCP server
+		Objective
+		DHCP pkt process for portal
+		Pre-condition
+		Portal and DHCP server are in same vlan
+		Make sure wifi0 and wifi1 are up on portal AP(You can bind a ssid to wifi0 and make a neighbor via wifi1)
+		Test procedure
+		-“no in mgt0 dhcp client” and then “in mgt0 dhcp client”
+		Portal will send dhcp discovery pkt, check the FE debug to see.
+		Meet result 1,2,3,4
+		- after get ip address, execute “inter mgt0 dhcp client” again.
+		Should meet result 3
+		Expect result
+		1:Portal can get ip address
+		2:Portal will do special handle for DHCP discovery/request pkt:
+		Only send this pkt to eth0 interface, pls make sure not send to wifi0 or wifi1.
+		3: ap refreshes ip successfully
+		4.Dhcp offer/ack pkt should be sent to mgt0 only not to other wifi interfaces
+	</description>
+	<stage>
+		<step no="1">
+			<desc>Set up interface through sw menu</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-psk ascii aerohive"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name} "
+				-f basic_apsetup.cfg
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>Set SSID for ap1 </desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>add _ff to AP</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-port 67"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>show mgt0's ip of ap1</desc>
+			<console target="ap1" delay="10">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="5">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>mgt0_info.log</log-file>
+			<telnet target="ap1" delay="10">
+				-v "show interface mgt0"
+			</telnet>
+			<log-match>-i "${tb.vlan1}" -e "192.168"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>show_log_buffer.log</log-file>
+			<telnet target="ap1" delay="10">
+				-v "show logging buffered"
+			</telnet>
+			<log-match> -n -e "(o) wifi0.1" -e "(o) wifi1.1"</log-match>
+			<log-match>-e "special handling for DHCP request pkts, tx on eth0"</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+</testcase>

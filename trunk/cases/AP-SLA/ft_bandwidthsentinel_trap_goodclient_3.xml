@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>
+		Verify that when a trap is sent to HM when a good client’s SLA is not met
+	</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		pre-condition
+		1. Bandwidth Sentinel is enabled on a user profile user_profile_1
+		2. Configure one SSID and its default user profile is set to user_profile_1
+		3. Configure one radio profile and bind it to wifi0
+		4. Enable DAS
+		Test Procedure:
+		• Using veriwave dynamix to connect one g(54M) and one b (11M)client
+		• Sending downstream UDP traffic to both clients: packet size 1518 bytes and pps is set to 1k.
+		• Change the user profile minimum bandwidth to a higher value such as 5M
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+	
+	<property name="guaranteed.bandwidth" value="100000" />
+	
+	<stage>
+		<step no="1.1">
+			<desc>configure AP</desc>
+			<telnet target="ap1">
+				-v "security-object aaa"
+				-v "security-object aaa default-user-profile-attr 2"
+				-v "qos airtime enable"
+				-v "qos policy bbb"
+				-v "user-profile cpliang qos-policy bbb vlan-id 1 attribute 2"
+				-v "user-profile cpliang performance-sentinel enable"
+				-v "user-profile cpliang performance-sentinel guaranteed-bandwidth ${guaranteed.bandwidth}"
+				-v "performance-sentinel notification-interval 60"
+				-v "ssid ${ssid.name}1"
+				-v "ssid ${ssid.name}2"
+				-v "ssid ${ssid.name}2 security-object aaa"
+				-v "ssid ${ssid.name}1 security-object aaa"
+				-v "hive ${hive.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "report statistic period 1"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="1.2">
+		  <if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>configure AP</desc>
+			<telnet target="ap1">
+				-v "interface wifi1 radio channel 161"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="1.3">
+			<desc>disable reporting</desc>
+			<telnet target="ap1">
+				-v "no report statistic enable"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="2.0">
+			<desc>STA up wifi interface</desc>
+			<ssh target="sta1" prompt=">|.*#">
+			-v "ifconfig ${sta1.tif.name} down"
+			-v ""
+			-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+		</step>		
+		
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}1"
+			</multi-setvar>
+		</step>
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="2.3">
+			<desc>Show ssid station in AP1</desc>
+			<log-file>show_wifi0_ssid_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}1 station"
+				-v ""
+			</telnet>
+		</step>
+		<step no="2.4">
+			<desc>Get laptop1 ip in AP1</desc>
+			<setvar name="laptop1.ip.in.ap">
+				${bin.dir}/getstring.pl -k "${sta1.tif.mac}" -p 2 \
+				-f ${log.dir}/show_wifi0_ssid_station.log
+			</setvar>
+		</step>
+		<step no="2.5">
+			<desc>Compare laptop1 show ip to AP1 show station ip </desc>
+			<script>
+				echo "${laptop1.ip.in.ap} != ${sta1.tif.ip}"
+				if [ "${laptop1.ip.in.ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		
+		<!-- step 16: generate iperf packet -->
+		<step no="3.1">
+			<desc>start iperf client in sta1</desc>
+			<log-file>sta1_start_iperf_1.log</log-file>
+			<ssh target="sta1">
+				-v "nohup iperf -s -p 65530 &amp;"
+				-v ""
+			</ssh>
+		</step>
+		<step no="4.2">
+			<desc>get sta1's process id of iperf server</desc>
+			<setvar name="sta1.iperf.pid1">
+				${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/sta1_start_iperf_1.log
+			</setvar>
+		</step>
+		<step no="4.3">
+			<desc>start iperf client on mpc</desc>
+			<log-file>tbserver_start_iperf_1.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup iperf -c ${sta1.tif.ip} -b 7M -t 300 -p 65530 -P 5 -i 10 &amp;"
+			</ssh>
+		</step>
+		<step no="4.4">
+			<desc>get tbserver1's process id of iperf client</desc>
+			<setvar name="tbserver1.iperf.pid1">
+				${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/tbserver_start_iperf_1.log
+			</setvar>
+		</step>
+
+		<!--<include prefix="3" file="${case.dir}/conf/sub_run_iperf_downlink_sta.xml" />-->
+		
+		<step no="4.1">
+			<desc>enable reporting</desc>
+			<telnet target="ap1">
+				-v "report statistic enable"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="4.2">
+			<desc>show ssid counter station status</desc>
+			<log-file>show_ssid_counter_station_wifi0.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}1 counter station"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="4.3" delay="60">
+			<desc>get sla status</desc>
+			<log-file>show_ssid_counter_station_wifi0_sla.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}1 counter station | include SLA"
+			</console>
+			<log-match>
+				-e "SLA enabled status good_and_not_meet" -e "SLA enabled status bad"
+			</log-match>
+			<log-match>-e "${guaranteed.bandwidth} Kbps SLA BW"</log-match>
+		</step>
+		<step no="4.4">
+			<desc>Get trap</desc>
+			<setvar name="sta1.trap.wifi0">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+SLA violation traps sent" \
+				-f ${log.dir}/show_ssid_counter_station_wifi0_sla.log
+			</setvar>
+		</step>
+		<step no="4.5">
+			<desc>check trap</desc>
+			<script>
+				if [ ${sta1.trap.wifi0} -eq 0 ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="5.1">
+			<desc>stop iperf server</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.iperf.pid1}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="5.2">
+			<desc>stop iperf client</desc>
+			<ssh host="${tb.server1}">
+				-v "kill ${tbserver1.iperf.pid1}"
+			</ssh>
+		</step>
+	</stage>
+	
+	<stage>
+		<if>"${ap1.wifi1.existed}" =="true"</if>
+		
+		<step no="6.0">
+			<desc>STA up wifi interface</desc>
+			<ssh target="sta1" prompt=">|.*#">
+			-v "ifconfig ${sta1.tif.name} down"
+			-v ""
+			-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+		</step>	
+		
+		<step no="6.1">
+			<multi-setvar>
+				echo "conn2.ssid=${ssid.name}2"
+			</multi-setvar>
+		</step>
+		<include prefix="6.2" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn2, sta1, ap1" />
+		
+		<step no="6.3">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi1_ssid_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}2 station"
+				-v ""
+			</telnet>
+		</step>
+		<step no="6.4">
+			<desc>Get laptop ip in AP1</desc>
+			<setvar name="laptop2.ip.in.ap">
+				${bin.dir}/getstring.pl -k "${sta1.tif.mac}" -p 2 \
+				-f ${log.dir}/show_wifi1_ssid_station.log
+			</setvar>
+		</step>
+		<step no="6.5">
+			<desc>Compare laptop show ip to AP1 show station ip</desc>
+			<script>
+				echo "${laptop2.ip.in.ap} != ${sta1.tif.ip}"
+				if [ "${laptop2.ip.in.ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<!-- step 41: generate iperf packet -->
+		<step no="7.1">
+			<desc>start iperf client in sta1</desc>
+			<log-file>sta1_start_iperf_2.log</log-file>
+			<ssh target="sta1">
+				-v "nohup iperf -s -p 65530 &amp;"
+				-v ""
+			</ssh>
+		</step>
+		<step no="7.2">
+			<desc>get sta1's process id of iperf server</desc>
+			<setvar name="sta1.iperf.pid2">
+				${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/sta1_start_iperf_2.log
+			</setvar>
+		</step>
+		<step no="7.3">
+			<desc>start iperf client on mpc</desc>
+			<log-file>tbserver_start_iperf_2.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup iperf -c ${sta1.tif.ip} -b 14M -t 300 -p 65530 -P 5 -i 10 &amp;"
+			</ssh>
+		</step>
+		<step no="7.4">
+			<desc>get tbserver1's process id of iperf client</desc>
+			<setvar name="tbserver1.iperf.pid2">
+				${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/tbserver_start_iperf_2.log
+			</setvar>
+		</step>
+		<!--<include prefix="7" file="${case.dir}/conf/sub_run_iperf_downlink_sta2.xml" />-->
+		
+		<step no="8.1">
+			<desc>show ssid counter station status</desc>
+			<log-file>show_ssid_counter_station_wifi1.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}2 counter station"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="8.2" delay="60">
+			<desc>get sla status</desc>
+			<log-file>show_ssid_counter_station_wifi1_sla.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}2 counter station | include SLA"
+			</console>
+			<log-match>
+				-e "SLA enabled status good_and_not_meet" -e "SLA enabled status bad"
+			</log-match>
+			<log-match>-e "${guaranteed.bandwidth} Kbps SLA BW"</log-match>
+		</step>
+		<step no="8.3">
+			<desc>Get trap</desc>
+			<setvar name="sta1.trap.wifi1">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+SLA violation traps sent" \
+				-f ${log.dir}/show_ssid_counter_station_wifi1_sla.log
+			</setvar>
+		</step>
+		<step no="8.4">
+			<desc>check trap  </desc>
+			<script>
+				if [ ${sta1.trap.wifi1} -eq 0 ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+	
+	<post-process>
+		<stage>
+			<step no="p1">
+				<desc>kill iperf servers and clients</desc>
+				<ssh target="sta1">
+					-v "kill ${sta1.iperf.pid1}"
+					-v "kill ${sta1.iperf.pid2}";exit 0
+				</ssh>
+			</step>
+			<step no="p2">
+				<desc>kill iperf servers and clients</desc>
+				<ssh host="${tb.server1}">
+					-v "kill ${tbserver1.iperf.pid1}"
+					-v "kill ${tbserver1.iperf.pid2}";exit 0
+				</ssh>
+			</step>
+		</stage>
+		<include prefix="dp" file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

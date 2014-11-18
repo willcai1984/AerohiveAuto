@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mgt0 communicates device through backhaul</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) AP1 and gateway of SW ping each other
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				get ap1's mgt0's mac address
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step0_show_interface_mgt0_info.log -i mgt0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="clear.session">
+			<desc>
+				-open debug mode
+			</desc>
+			<telnet target="ap1">
+				-v "clear forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				AP1 ping server
+			</desc>
+			<log-file>step1_ap1_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${pub.tftp1.tip}"
+			</telnet>
+			<log-match>-c -i "from ${pub.tftp1.tip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				server ping ap1
+			</desc>
+			<log-file>step2_server_ping_ap1_successfully.log</log-file>
+			<ssh host="${pub.tftp1.tip}">
+				-v "ping ${ap1.mgt0.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Server ping Laptop in background
+			</desc>
+			<log-file>step2.1_server_start_ping.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "nohup ping ${ap1.mgt0.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				get server ping id
+			</desc>
+			<setvar name="server.pingid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1_server_start_ping.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				3) Check the mac-session table on AP1
+			</desc>
+			<log-file>step3_show_mac_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine mac-sessions"
+			</telnet>
+			<log-match>-c -i "${ap1.mgt0.mac}-&gt;${tb.vlan1.gw.mac}"</log-match>
+			<log-match>-c -i "${tb.vlan1.gw.mac}-&gt;${ap1.mgt0.mac}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>
+					kill server ping process
+				</desc>
+				<ssh host="${pub.tftp1.ip}">
+					-v "killall -q ping"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

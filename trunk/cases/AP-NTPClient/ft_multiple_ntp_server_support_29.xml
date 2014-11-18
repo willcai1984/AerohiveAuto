@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>When ntpclient process be killed then restart, verify if configuration of NTP can be recovered, verify if AP can sync with NTP server normal</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Configure four NTP server that accessible and NTP service be
+		enabled
+		Configute interval
+		Save config
+		Open _debug ntp all and debug console
+
+		Test Procedure:
+		1. Check running config
+		2. Check NTP by show ntp
+		3. Kill ntpclient process in shell, after ntpclient process restart,
+		check running-config
+		4. Check NTP and check if time synchronization
+		5. Reboot, verify if NTP work normal
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="third.ntp.server" value="3.3.3.3" />
+	<property name="fourth.ntp.server" value="4.4.4.4" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Clear NTP server configure
+			</desc>
+			<telnet target="ap1">
+				-v "no ntp server ${pub.ntp.ip}"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Configure 4 NTP server in DHCP server
+				The first and the second and the third servers are unaccessible or
+				NTP service not be enabled, only the fourth server is accessible and
+				NTP service be enabled
+			</desc>
+			<telnet target="ap1">
+				-v "ntp server ${pub.ntp.ip}"
+				-v "ntp server ${pub.ntp2.ip} second"
+				-v "ntp server ${third.ntp.server} third"
+				-v "ntp server ${fourth.ntp.server} fourth"
+				-v "save config"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				show running-config
+			</desc>
+			<log-file>step2_show_running_config.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+			<log-match>-c -i "ntp server ${pub.ntp.ip}"</log-match>
+			<log-match>-c -i "ntp server ${pub.ntp2.ip} second"</log-match>
+			<log-match>-c -i "ntp server ${third.ntp.server} third"</log-match>
+			<log-match>-c -i "ntp server ${fourth.ntp.server} fourth"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Check NTP by show ntp
+			</desc>
+			<log-file>step2.1_show_ntp.log</log-file>
+			<telnet target="ap1">
+				-v "show ntp"
+			</telnet>
+			<log-match>-c -i "State: *Enable"</log-match>
+			<log-match>-c -i "First *${pub.ntp.ip}(active)"</log-match>
+			<log-match>-c -i "Second *${pub.ntp2.ip}"</log-match>
+			<log-match>-c -i "Third *${third.ntp.server}"</log-match>
+			<log-match>-c -i "Fourth *${fourth.ntp.server}"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				-Disable mgt0 dhcp client and open ntp debug switch
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+				-v "_ff id 1 dst-port 123 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_debug ntp all"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				Enable mgt0 dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				Kill all ntpclient process
+			</desc>
+			<log-file>step3.2_Killall_ntpclient_process.log</log-file>
+			<telnet target="ap1" prompt="AH.*$|#">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "killall -9 ntpclient"
+				-v "ps"
+				-v "exit 0"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="3.3" delay="10">
+			<desc>
+				check ntpclient process
+			</desc>
+			<log-file>step3.3_check_ntpclient_process.log</log-file>
+			<telnet target="ap1" prompt="AH.*$|#">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "ps"
+				-v "exit 0"
+				-v ""
+			</telnet>
+			<log-match>-c -i "ntpclient"</log-match>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				show running-config
+			</desc>
+			<log-file>step3.4_show_running_config.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+			<log-match>-c -i "ntp server ${pub.ntp.ip}"</log-match>
+			<log-match>-c -i "ntp server ${pub.ntp2.ip} second"</log-match>
+			<log-match>-c -i "ntp server ${third.ntp.server} third"</log-match>
+			<log-match>-c -i "ntp server ${fourth.ntp.server} fourth"</log-match>
+		</step>
+
+		<step no="3.5" delay="30">
+			<desc>
+				Check time synchronization status
+			</desc>
+			<log-file>step3.5_check_time_synchronization_log.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="4">
+			<desc>
+				Check NTP server
+			</desc>
+			<log-file>step4_check_ntp_server.log</log-file>
+			<telnet target="ap1">
+				-v "show ntp"
+			</telnet>
+			<log-match>-c -i "State: *Enable"</log-match>
+			<log-match>-c -i "First *${pub.ntp.ip}(active)"</log-match>
+			<log-match>-c -i "Second *${pub.ntp2.ip}"</log-match>
+			<log-match>-c -i "Third *${third.ntp.server}"</log-match>
+			<log-match>-c -i "Fourth *${fourth.ntp.server}"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step5_check_time.log</log-file>
+			<telnet target="ap1">
+				-v "show clock"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step5.1_check_time.log</log-file>
+			<ssh host="${pub.ntp.ip}">
+				-v "clock"
+			</ssh>
+		</step>
+
+		<step no="6">
+			<desc>
+				Reboot then check the above again
+			</desc>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="7" delay="60">
+			<desc>
+				Enable mgt0 dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				show dhcp client status
+			</desc>
+			<log-file>step7.1_dhcp_client_status.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-i "NTP server" -i "${pub.ntp.ip}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				Check NTP server
+			</desc>
+			<telnet target="ap1">
+				-v "show ntp"
+			</telnet>
+			<log-match>-c -i "State: *Enable"</log-match>
+			<log-match>-c -i "First *${pub.ntp.ip}(active)"</log-match>
+			<log-match>-c -i "Second *${pub.ntp2.ip}"</log-match>
+			<log-match>-c -i "Third *${third.ntp.server}"</log-match>
+			<log-match>-c -i "Fourth *${fourth.ntp.server}"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step9_check_time.log</log-file>
+			<console target="ap1">
+				-v "show clock"
+			</console>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step9.1_check_time.log</log-file>
+			<ssh host="${pub.ntp.ip}">
+				-v "clock"
+			</ssh>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Incoming pkt match the vlan then it is route to pass through eth1</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		1. Set one route vlan in eth1
+		2. Pkt from eth1 backhaul to wifi access, if match the cfg vlan, result 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap1.eth1.existed}" == "true"</if>
+
+		<step no="pre.0">
+			<desc>
+				config ssid
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<include prefix="pre.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				"_ff id 1 src-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<include prefix="cfg.l2sw" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth1.swport}, ${tb.vlan4}, ${tb.vlan1}" />
+
+		<step no="1">
+			<desc>
+				1. Set one route vlan in eth1
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+				-v "forwarding-engine l2-default-route interface eth1 vlan ${tb.vlan1}"
+				-v "clear log all"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+			</console>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				mpc ping sta1
+			</desc>
+			<log-file>ping_sta.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 5; exit 0
+			</script>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				2. Pkt from eth1 backhaul to wifi access, if match the cfg vlan, result 1
+			</desc>
+			<log-file>step2.2_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(eth1\)" -e "\(i\) eth1 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="reset.cfg.l2sw" file="subs/l2swcfg_port_vlan.xml" args="${ap1.eth1.swport}, ${tb.vlan1}, ${tb.vlan1}\,${tb.vlan2}\,${tb.vlan3}" />
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

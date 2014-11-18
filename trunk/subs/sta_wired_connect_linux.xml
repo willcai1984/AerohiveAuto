@@ -1,0 +1,180 @@
+<include obj-arg-names="__CONN__, __STA__, __DUT__" arg-names="debug_level">
+
+	<comment>
+		properties belong to conn:
+		__CONN__.proto # open, wep-shared, wpa-tkip-psk, wpa-aes-psk, wpa2-tkip-psk, wpa2-aes-psk, wpa-tkip-8021x, wpa-aes-8021x, wpa2-tkip-8021x, wpa2-aes-8021x,wep-40-8021x,wep-1-4-8021x,
+		__CONN__.eap_type # PEAP, TLS, LEAP, TTLS
+		__CONN__.inner_auth # PAP, CHAP, MSCHAPV2
+		__CONN__.username
+		__CONN__.passwd
+		__CONN__.auth_negative_test
+		__CONN__.if physical interface
+		belong to sta:
+		__STA__.tif.mac
+		__STA__.tif.ip
+		properties belong to ap
+	</comment>
+
+	<step no="pre.eap_type">
+		<desc>set default eap_type</desc>
+		<if>"${__CONN__.eap_type}" == ""</if>
+		<setvar name="__CONN__.eap_type">
+			echo "md5"
+		</setvar>
+	</step>
+	<step no="pre.inner_auth">
+		<desc>set default inner_auth</desc>
+		<if>"${__CONN__.inner_auth}" == ""</if>
+		<setvar name="__CONN__.inner_auth">
+			echo "MSCHAPV2"
+		</setvar>
+	</step>
+	<step no="pre.sta.tif.mac">
+		<desc>get mac of __STA__</desc>
+		<setvar name="__STA__.tif.mac">
+			${bin.dir}/getrmtip.pl -d ${__STA__.mif.ip} -u ${__STA__.user} -p ${__STA__.passwd} -i ${__STA__.tif.name} -m -width 2 | tr '[A-F]' '[a-f]'
+		</setvar>
+	</step>
+	<step no="pre.e">
+		<desc>transport 3 certificate files to __STA__</desc>
+		<if>"${__CONN__.eap_type}" == "TLS"</if>
+		<ssh target="__STA__">
+			-v "cd /tmp"
+			-v "tftp ${pub.tftp1.ip} -c get certs/cacert.pem"
+			-v "tftp ${pub.tftp1.ip} -c get certs/${__CONN__.username}_cert.pem"
+			-v "tftp ${pub.tftp1.ip} -c get certs/${__CONN__.username}_key.pem"
+		</ssh>
+	</step>
+	<step no="pre.f">
+		<desc>set default debug level</desc>
+		<if>"${debug_level}" == ""</if>
+		<setvar name="debug_level">
+			echo "0"
+		</setvar>
+	</step>
+	<step no="1">
+		<if>"${__CONN__.eap_type}" == "md5"</if>
+		<desc>prepare config file with right username and password</desc>
+		<ssh target="__STA__">
+			-v "echo -e \&quot; ctrl_interface=DIR=/var/run/wpa_supplicant \\n ap_scan=0 \\n network={ \\n key_mgmt=IEEE8021X \\n eap=MD5 \\n identity=\\x22${__CONN__.user}\\x22 \\n password=\\x22${__CONN__.passwd}\\x22 \\n eapol_flags=0 \\n } \&quot; &gt; /tmp/wpa_supplicant.conf"
+		</ssh>
+	</step>
+	
+	<step no="2" delay="5">
+		<desc>start the wpa_supplicant on __STA__</desc>
+		<ssh target="__STA__">
+			-v "wpa_supplicant -B -i eth1 -c /tmp/wpa_supplicant.conf -D wired"
+		</ssh>
+	</step>
+	
+	<step no="5.a" type="loop-check" loop-max-times="10" loop-interval="15">
+		<desc>check if __STA__ is associated successful</desc>
+		<if> "${__CONN__.auth_negative_test}" != "true"</if>
+		<log-file>wpa_stat___STA___${include.prefix}_${loop_check.idx}.log</log-file>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "stat"
+			-v "quit"
+		</ssh>
+		<log-match>-e "wpa_state=COMPLETED"</log-match>
+	</step>
+	<step no="5.b" delay="25">
+		<desc>check if __STA__ is associated unsuccessful</desc>
+		<if> "${__CONN__.auth_negative_test}" == "true"</if>
+		<log-file>${include.prefix}_wpa_stat___STA___.log</log-file>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "stat"
+			-v "quit"
+		</ssh>
+		<log-match>-e "wpa_state=COMPLETED" -n</log-match>
+	</step>
+	<step no="6.1">
+		<desc>enable debug on demand to trace DHCP issue</desc>
+		<if>${debug_level} == 1
+			|| ${debug_level} >= 5
+		</if>
+		<telnet target="__DUT__.wan.ip">
+			-v "_ff id 1 src-port 68 bidirectional"
+			-v "_kdebug fe basic"
+		</telnet>
+	</step>
+	<step no="6.2">
+		<desc>__STA__ gets IP by DHCP</desc>
+		<if> "${__CONN__.auth_negative_test}" != "true"</if>
+		<ssh target="__STA__" slow="true">
+			-v "dhclient ${__STA__.tif.name}";exit 0
+		</ssh>
+		<no-error-check />
+	</step>
+	<step no="6.3">
+		<desc>check debug on demand to trace DHCP issue</desc>
+		<if>${debug_level} == 1
+			|| ${debug_level} >= 5
+		</if>
+		<log-file>trace___STA__dhcp.log</log-file>
+		<telnet target="__DUT__.wan.ip">
+			-v "show logging buffered"
+		</telnet>
+		<no-error-check />
+	</step>
+	<step no="check_ip">
+		<desc>check if __STA__ gets ip success</desc>
+		<if> "${__CONN__.auth_negative_test}" != "true" &amp;&amp; "${__CONN__.dhcp_negative_test}" != "true"  </if>
+		<log-file>${include.prefix}_ifconfig___STA___neg.log</log-file>
+		<ssh target="__STA__">
+			-v "ifconfig ${__STA__.tif.name}"
+		</ssh>
+		<log-match>-e "inet addr"</log-match>
+	</step>
+
+	<step no="check_ip_netgative">
+		<desc>check if __STA__ gets ip success</desc>
+		<if> "${__CONN__.auth_negative_test}" == "true" || "${__CONN__.dhcp_negative_test}" == "true" </if>
+		<log-file>${include.prefix}_ifconfig___STA__.log</log-file>
+		<ssh target="__STA__">
+			-v "ifconfig ${__STA__.tif.name}"
+		</ssh>
+		<log-match> -n -e "inet addr"</log-match>
+	</step>
+
+	<step no="7">
+		<desc>get wired IP from __STA__</desc>
+		<if> "${__CONN__.auth_negative_test}" != "true" &amp;&amp; "${__CONN__.dhcp_negative_test}" != "true"</if>
+		<setvar name="__STA__.tif.ip">
+			${bin.dir}/getrmtip.pl -d ${__STA__.mif.ip} -u ${__STA__.user} -p ${__STA__.passwd} -i ${__STA__.tif.name} -nomask
+		</setvar>
+	</step>
+
+	<!--	<step no="xx">
+		<desc>show interface of mgt0 on AP1</desc>
+		<if> "${__CONN__.auth_negative_test}" != "true" &amp;&amp; "${__CONN__.dhcp_negative_test}" != "true"  </if>
+		<log-file>show_${include.prefix}___DUT___int_mgt0.log</log-file>
+		<console target="__DUT__">
+			-v "show interface mgt0"
+			-v ""
+			-v "show interface ${__CONN__.pif}.1"
+			-v ""
+			-v "show station"
+		</console>
+	</step> -->
+
+	<step no="9" type="loop-check" loop-max-times="3" loop-interval="5">
+		<desc>ping from DUT to station</desc>
+		<if> "${__CONN__.auth_negative_test}" != "true" &amp;&amp; "${__CONN__.dhcp_negative_test}" != "true"</if>
+		<log-file>ping_${include.prefix}_from_ap_to__STA___${__STA__.tif.ip}_${loop_check.idx}.log</log-file>
+		<telnet target="${__DUT__.wan.ip}">
+			-v "ping ${__STA__.tif.ip} count 10"
+		</telnet>
+		<log-match>-c -i " from " -i " ttl="</log-match>
+	</step>
+		
+	<step no="10" type="loop-check" loop-max-times="3" loop-interval="5">
+		<desc>ping from station to DUT</desc>
+		<if> "${__CONN__.auth_negative_test}" != "true" &amp;&amp; "${__CONN__.dhcp_negative_test}" != "true"</if>
+		<ssh target="__STA__">
+			-v "ping ${__DUT__.mgt0.ip} -c 10"
+		</ssh>
+		<log-match>-c -i " from " -i " ttl="</log-match>
+	</step>
+</include>

@@ -1,0 +1,173 @@
+<testcase>
+	<brief>Perform a radius server probe manually on auth port</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Description
+		Verify that short guard interval takes effective.
+		Test procedure
+		1. Verify that short guard interval takes effective in 20M channel width. Result 1
+		2. Verify that the short guard interval not takes effective by cmd: no radio profile xxxx short-guard-interval. Result 2
+
+		Expect result
+		1. The short guard interval takes effective
+		2. The short guard interval not takes effective
+	</description>
+	
+	<stage>
+		<step no="1.1">
+			<desc>Set config for AP1 via console to </desc>
+			<telnet target="ap1">
+				-v "interface wifi1 mode access"
+				-v "radio profile driver_na"
+				-v "radio profile driver_na phymode 11na"
+				-v "radio profile driver_na short-guard-interval"
+				-v "interface wifi1 radio profile driver_na"
+				-v "hive driver_hive"
+				-v "interface mgt0 hive driver_hive"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="1.2">
+			<desc>Set config for AP1 via telnet</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi1 ssid ${ssid.name}1"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="1.3">
+			<desc>Show run config of AP1 </desc>
+			<log-file>show_run_config_1.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+		</step>
+		
+		<step no="2.1">
+			<desc>Show interface wifi1.1 of AP1 </desc>
+			<log-file>show_interface_wifi11.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+			</telnet>
+		</step>
+		<step no="2.2">
+			<desc>Get_mac of wifi1.1 on AP1 </desc>
+			<setvar name="ap1.wifi11.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi11.log -i wifi1.1 -o aero -m
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 src-mac ${ap1.wifi11.mac}"
+				-v "capture save interface wifi1 tftp://${mpc.tif.ip}:ws_has_sgi_${jod.sid}.pcap"
+				-v "capture interface wifi1 count 1 filter 1"
+			</telnet>
+		</step>
+		<step no="3.2">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>ts_has_sgi.log</log-file>
+			<script>
+				tshark -r /tftpboot/ws_has_sgi_${jod.sid}.pcap -V > ${log.dir}/ts_has_sgi.log
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="4.1">
+			<desc>Get SGI bit on wifi1.1 BI in beacon frame</desc>
+			<setvar name="sgi_20_na">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_has_sgi.log -k ${ap1.wifi11.mac} -o "HT Short GI for 20MHz"
+			</setvar>
+		</step>
+		<step no="4.2">
+			<desc>Check SGI bit</desc>
+			<script>
+				echo "sgi_20_na= ${sgi_20_na}"
+				if [ "${sgi_20_na}" != "Supported" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="5.1">
+			<desc>No short guard interval </desc>
+			<telnet target="ap1">
+				-v "no radio profile driver_na short-guard-interval"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="5.2">
+			<desc>Show run config of AP1 </desc>
+			<log-file>show_run_config_2.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "no capture interface wifi1"
+				-v "no capture save interface wifi1"
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 src-mac ${ap1.wifi11.mac}"
+				-v "capture save interface wifi1 tftp://${mpc.tif.ip}:ws_no_sgi_${jod.sid}.pcap"
+				-v "capture interface wifi1 count 1 filter 1"
+			</telnet>
+		</step>
+		<step no="6.2" delay="5">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>ts_no_sgi.log</log-file>
+			<script>
+				tshark -r /tftpboot/ws_no_sgi_${jod.sid}.pcap -V > ${log.dir}/ts_no_sgi.log
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>Get SGI bit on wifi1.1 BI in beacon frame</desc>
+			<setvar name="nosgi_20_na">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_no_sgi.log -k ${ap1.wifi11.mac} -o "HT Short GI for 20MHz"
+			</setvar>
+		</step>
+		<step no="7.2">
+			<desc>Check SGI bit</desc>
+			<script>
+				echo "nosgi_20_na = ${nosgi_20_na}"
+				if [ "${nosgi_20_na}" != "Notsupported" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+	
+	<post-process>
+		<stage>
+			<step no="p1">
+				<desc>clear ap config</desc>
+				<console target="ap1">
+					-v "no filter 1"
+					-v "no capture interface w1"
+					-v "no capture save interface w1"
+				</console>
+			</step>
+			<step no="p2">
+				<desc>remove temporary files</desc>
+				<script>
+					rm -f /tftpboot/ws_no_sgi_${jod.sid}.pcap
+					rm -f /tftpboot/ws_has_sgi_${jod.sid}.pcap
+				</script>
+			</step>
+		</stage>
+		
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

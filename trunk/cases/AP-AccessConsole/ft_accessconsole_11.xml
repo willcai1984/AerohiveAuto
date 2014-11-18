@@ -1,0 +1,171 @@
+<testcase>
+	<brief>Check if can ping AP via access console after AP losses connections to backhaul network</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		TOPO:
+		AP1------SW------DHCP server
+
+		Description:
+		Check if can ping AP via access console after AP losses connections to backhaul network
+		Pre-condition:
+		Login AP1 via console
+		AP1 can obtain ip address from DHCP server
+
+		Test procedure:
+		1. Set access console with auto mode in AP1(default access console is auto mode)
+		2. Set track action enable-access-console and set track default-gateway in AP1
+		3. Set wifi1 to access mode and shutdown interface eth0 and eth1 in AP1
+		4. Check track result by show track xxx
+		5. Check access console state by show access console _
+		6. Use a laptop to connect to access console SSID
+		7. Ping internal ip address of interface from laptop
+
+		Expect result:
+		1. Show access console display mode: auto
+		2. Show running-config can see these two commands:
+		tack xxx action enable-access-console
+		tack xxx default-gateway
+		3. Show interface can see wifi1 with state “D” or with access mode
+		4. Track result: targets unreachable
+		5. Access console with running state
+		6. Laptop can connect to access
+		console SSID, and obtain a internal ip address
+		7. Can ping internal ip address of interface from laptop
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.proto" value="wpa-aes-psk" />
+	<property name="conn1.psk" value="aerohive" />
+
+	<stage>
+
+		<step no="1">
+			<desc>Set access console with auto mode in AP1</desc>
+			<telnet target="ap1">
+				-v "access-console mode auto"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>Show access console display mode</desc>
+			<log-file>step1.1_show_access_console.log</log-file>
+			<telnet target="ap1">
+				-v "show access-console"
+			</telnet>
+			<log-match>-i "Mode" -i "auto" -c</log-match>
+		</step>
+
+		<step no="2">
+			<desc>Set track config for AP1 via console</desc>
+			<telnet target="ap1" timeout="60">
+				-v "track ${tb.name} enable "
+				-v "track ${tb.name} action enable-access-console"
+				-v "track ${tb.name} default-gateway"
+			</telnet>
+		</step>
+
+		<step no="3" delay="10">
+			<desc>Check track result on AP1 via console</desc>
+			<log-file>step3.1_show_track.log</log-file>
+			<telnet target="ap1" timeout="60">
+				-v "show track"
+			</telnet>
+			<log-match>-c -i "${tb.name} *Reachable"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>Show running-config</desc>
+			<log-file>step3.2_show_running_config.log</log-file>
+			<telnet target="ap1" timeout="60">
+				-v "show running"
+			</telnet>
+			<log-match>-c -i "track ${tb.name} default-gateway"</log-match>
+			<log-match>-c -i "track ${tb.name} action enable-access-console"</log-match>
+		</step>
+
+		<step no="4">
+		  <if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>Set interface wifi1 to access mode by CLI on AP1 via console</desc>
+			<telnet target="ap1" timeout="80">
+				-v "interface wifi1 mode access"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+		  <if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>Show interface</desc>
+			<log-file>step4.1_show_interface.log</log-file>
+			<telnet target="ap1" timeout="60">
+				-v "show interface"
+			</telnet>
+			<log-match>-c -i "wifi1" -i "access"</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>Shutdown interface eth0 and eth1 by CLI on AP1 via console</desc>
+			<console target="ap1" timeout="80">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="4.3">
+			<desc>Shutdown interface eth1</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<console target="ap1" timeout="60">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="5" delay="30">
+			<desc>Check track result by CLI via console on AP1</desc>
+			<log-file>step5_show_track.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show track"
+			</console>
+			<log-match>-c -i "${tb.name} *Unreachable"</log-match>
+		</step>
+
+		<step no="6" delay="30">
+			<desc>Check access console state of AP1</desc>
+			<log-file>step6_show_acc_console.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show access-console _"
+			</console>
+			<log-match>-c -i "Current state: *running"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>Get access console SSID</desc>
+			<setvar name="conn1.ssid">
+				cat ${log.dir}/step6_show_acc_console.log | awk -F ':' '/Selected SSID/{split($2,a," "); print a[1]}'
+			</setvar>
+		</step>
+
+		<step no="8" delay="5">
+			<desc>Show interface wifi0.1 of AP1</desc>
+			<log-file>show_interface_wifi0.1.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi0.1"
+			</console>
+			<log-match>-c -i "SSID=\\\&quot;${conn1.ssid}\\\&quot;"</log-match>
+		</step>
+
+		<step no="9" delay="5">
+		  <if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>Show interface wifi1.1 of AP1</desc>
+			<log-file>show_interface_wifi1.1.log</log-file>
+			<console target="ap1" timeout="60">
+				-v "show interface wifi1.1"
+			</console>
+			<log-match>-c -i "SSID=\\\&quot;${conn1.ssid}\\\&quot;"</log-match>
+		</step>
+
+		<include prefix="10" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="12" file="subs/sta_ping.xml" args="sta1, ${sta1.tif.ip}, 4" />
+	</stage>
+</testcase>

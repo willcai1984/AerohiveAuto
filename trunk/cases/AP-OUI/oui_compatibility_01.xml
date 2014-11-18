@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief></brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+        Case Description: 
+		Device with old OUI and old image can upgrade to new image without change OUI.
+		
+		Platform: AP230/AP330
+		
+		Topo:
+		    SW-AP230/AP330
+			
+		Terms:			
+		old OUI: 00:19:77, 08:EA:44, 40:18:B1, E0:1C:41, 9C:5D:12, F0:9C:E9.			
+		new OUI: OUI that supported only in 6.2r1 now, including 88:58:DD, B8:7C:F2.			
+		old image: image that only support old OUI, doesn't support new OUI.			
+		new image: image that support both old OUI and new OUI.			
+    </description>
+	
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+    <!--Change the property defined below as you need.-->
+	<property name="def_bootload_passwd" value="administrator" />
+	<property name="new_version" value="6.2r1" />
+	<property name="old_version" value="6.1r6" />
+	<property name="mpc.tif.ip" value="192.169.31.1" />
+	<property name="old.img.ap350" value="AP350-HiveOS-6-1r6-Guadalupe-April-20-2014-20140615-2885.img" />
+	<property name="new.img.ap350" value="AP350-HiveOS-6-2r1-Hollywood-April-20-2014-20140615-2886.img" />
+	<property name="old.img.ap230" value="AP230-HiveOS-6-1r6-Guadalupe-April-20-2014-20140615-2885.img" />
+	<property name="new.img.ap230" value="AP230-HiveOS-6-2r1-Hollywood-April-20-2014-20140615-2886.img" />
+	
+	
+	<stage>
+
+	 <step no="pre_01">
+	       <desc>Check APx use old OUI.</desc>
+	       <log-file>old_oui_original.log</log-file>
+	       <console target="ap1" prompt="AH-[0-9A-Za-z]*#">
+	       -v "show hw"
+	       </console>
+	       <log-match>-e "Ethernet\s*MAC\s*address.\s*(0019:77|08ea:44|4018:b1|e01c:41|9c5d:12|f09c:e9)" -re</log-match>
+	 </step>
+	 
+	 <step no="pre_02">
+		   <desc>Get APx original MAC address.</desc>
+		   <log-file>old_mac_original.log</log-file>
+		   <setvar name="old_mac">
+		   ${bin.dir}/getstring.pl -f ${log.dir}/old_oui_original.log -k "Ethernet\s*MAC\s*address" -p 4 > ${log.dir}/${log.file}
+		   </setvar>
+	 </step>
+	 
+	 <step no="pre_03">
+	       <desc>Get APx new MAC address.</desc>
+		   <setvar name="new_mac">
+		   sed 's/^\w\w\w\w:\w\w/b87c:f2/' ${log.dir}/old_mac_original.log 
+		   </setvar>
+	 </step>
+	 
+	 <step no="pre_04">
+	       <desc>Show APx current version.</desc>
+		   <log-file>show_version_original.log</log-file>
+		   <console target="ap1" prompt="AH-[0-9A-Za-z]*#">
+		   -v "show version"
+		   -v "show version detail"
+		   </console>
+	 </step>
+	 
+	 <step no="pre_05">
+	       <desc>Get APx current version.</desc>
+		   <setvar name="original_version">
+		   ${bin.dir}/getstring.pl -f ${log.dir}/show_version_original.log -k "release" -p 3 
+		   </setvar>
+	 </step>
+	 
+	 <step no="pre_06">
+	       <desc>Get APx platform.</desc>
+		   <setvar name="ap1_platform">
+		   ${bin.dir}/getstring.pl -f ${log.dir}/show_version_original.log -k "Platform" -p 2 
+		   </setvar>
+	 </step>
+	 
+	 <step no="pre_07">
+		<desc>show interface of mgt0 on AP1</desc>
+		<log-file>show_ap1_int_mgt0.log</log-file>
+		<console target="ap1" prompt="AH-[0-9A-Za-z]*#">
+			-v "show interface mgt0"
+		</console>
+	 </step>
+	
+	 <step no="pre_08">
+		<desc>get IP of mgt0 on AP1</desc>
+		<setvar name="ap1.mgt0.ip"> 
+			perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_int_mgt0.log -i mgt0 -o aero -nomask
+		</setvar>
+	 </step>
+	
+	 <step no="pre_09">
+		<desc>mpc ping ap1 to check if ap1 is reachable</desc>
+		<script>
+			${bin.dir}/ping.pl -l ${log.dir} -d ${ap1.mgt0.ip}
+		</script>
+	 </step>
+	</stage>
+
+	
+	
+	<stage>
+	       <if>"${ap1_platform}"=="HiveAP350" || "${ap1_platform}"=="AP350"</if>
+	 <step no="stage1_01">
+	       <desc>Check AP350/AP330 use old image.</desc>
+		   <!--
+		   <if>"${original_version}"=="${new_version}"</if>
+		   -->
+		   <log-file>old_image_upgrade_AP350_1.log</log-file>
+		   <console target="ap1" timeout="480">
+			-v "save image tftp://${mpc.tif.ip}:${old.img.ap350}"
+			-v "reboot"
+		   </console>
+		   <log-match>-n -i "ERROR.\s*Save\s*image\s*failed" -re</log-match>
+	 </step>
+	 
+	 <step no="stage1_02" >
+	       <desc>Check AP350/AP330 use old image again to make sure APx dual image all old image.</desc>
+		   <log-file>old_image_upgrade_AP350_2.log</log-file>
+		   <console target="ap1" timeout="480">
+			-v "save image tftp://${mpc.tif.ip}:${old.img.ap350}"
+			-v "reboot"
+		   </console>
+		   <log-match>-n -i "ERROR.\s*Save\s*image\s*failed" -re</log-match>
+	 </step>
+	 
+	 <step no="stage1_03" >
+	       <desc>Check AP350/AP330 has upgraded to old image.</desc>
+		   <log-file>old_version_AP350.log</log-file>
+		   <console target="ap1" timeout="480">
+			-v "show version detail"
+		   </console>
+		   <log-match>-e "Current\s*version.\s*HiveOS\s*${old_version}" -re</log-match>
+		   <log-match>-e "Backup\s*version.\s*HiveOS\s*${old_version}" -re</log-match>
+	 </step>
+		
+	 <step no="stage1_04">
+	       <desc>Upgrade AP350/AP330 to new image.</desc>
+		   <log-file>new_image_upgrade_AP350.log</log-file>
+		   <console target="ap1" timeout="480">
+			-v "save image tftp://${mpc.tif.ip}:${new.img.ap350}"
+			-v "reboot"
+		   </console>
+		   <log-match>-n -i "The kernel image currently in flash is the same as the image you are attempting to load"</log-match>
+		   <log-match>-n -i "The application image currently in flash is the same as the image you are attempting to load"</log-match>
+		   <log-match>-n -i "ERROR.\s*Save\s*image\s*failed" -re</log-match>
+	 </step>
+	 
+	 <step no="stage1_05" >
+	       <desc>Check AP350/AP330 has upgraded to new image.</desc>
+		   <log-file>new_version_AP350.log</log-file>
+		   <console target="ap1" timeout="480">
+			-v "show version detail"
+		   </console>
+		   <log-match>-e "Current\s*version.\s*HiveOS\s*${new_version}" -re</log-match>
+		   <log-match>-e "Backup\s*version.\s*HiveOS\s*${old_version}" -re</log-match>
+	 </step>
+
+	</stage>
+	
+	
+	
+	<stage>
+	       <if>"${ap1_platform}"=="HiveAP230" || "${ap1_platform}"=="AP230"</if>
+	<step no="stage2_01" >
+	       <desc>Check AP230 use old image.</desc>
+		   <log-file>old_image_upgrade_AP230_1.log</log-file>
+		   <console target="ap1" timeout="480">
+			-v "save image tftp://${mpc.tif.ip}:${old.img.ap230}"
+			-v "reboot"
+		   </console>
+		   <log-match>-n -i "ERROR.\s*Save\s*image\s*failed" -re</log-match>
+	 </step>
+	 
+	 <step no="stage2_02" delay="80">
+	       <desc>Check AP230 use old image again to make sure APx dual image all old image.</desc>
+		   <log-file>old_image_upgrade_AP230_2.log</log-file>
+		   <console target="ap1" timeout="480">
+			-v "save image tftp://${mpc.tif.ip}:${old.img.ap230}"
+			-v "reboot"
+		   </console>
+		   <log-match>-n -i "ERROR.\s*Save\s*image\s*failed" -re</log-match>
+	 </step>
+	 
+	 <step no="stage2_03">
+	       <desc>Check AP230 has upgraded to old image.</desc>
+		   <log-file>old_version_AP230.log</log-file>
+		   <console target="ap1" timeout="480">
+			-v "show version detail"
+		   </console>
+		   <log-match>-e "Current\s*version.\s*HiveOS\s*${old_version}" -re</log-match>
+		   <log-match>-e "Backup\s*version.\s*HiveOS\s*${old_version}" -re</log-match>
+	 </step>
+	 
+	 <step no="stage2_04" delay="80">
+	       <desc>Upgrade AP230 to new image.</desc>
+		   <log-file>new_image_upgrade_AP230.log</log-file>
+		   <console target="ap1" timeout="480">
+			-v "save image tftp://${mpc.tif.ip}:${new.img.ap230}"
+			-v "reboot"
+		   </console>
+		   <log-match>-n -i "The kernel image currently in flash is the same as the image you are attempting to load"</log-match>
+		   <log-match>-n -i "The application image currently in flash is the same as the image you are attempting to load"</log-match>
+           <log-match>-n -i "ERROR.\s*Save\s*image\s*failed" -re</log-match>
+	 </step>
+	 
+	 <step no="stage2_05">
+	       <desc>Check AP230 has upgraded to new image.</desc>
+		   <log-file>new_version_AP230.log</log-file>
+		   <console target="ap1" timeout="480">
+			-v "show version detail"
+		   </console>
+		   <log-match>-e "Current\s*version.\s*HiveOS\s*${new_version}" -re</log-match>
+		   <log-match>-e "Backup\s*version.\s*HiveOS\s*${old_version}" -re</log-match>
+	 </step>
+	
+	</stage>
+	
+</testcase>
+	

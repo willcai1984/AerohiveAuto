@@ -1,0 +1,699 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>wifi1 can switch default route when one portal unreachable</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Test Procedure:
+		1. MP estabilish wifi neighbor with porta1 and porta2.
+		2. MP select portal1 as default route.(metric is least).
+		3. Unplug the Ethernet cable from portal1, result 2.
+		Test Result:
+		1. MP select portal2 as default route immediately
+	</description>
+	<numofap>3</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap.eth1.existed}" == "true" &amp;&amp;"${ap.wifi1.existed}" == "true"</if>
+		<step no="1">
+			<desc>
+				configure portal AP1 wifi1 to dual mode
+			</desc>
+			<log-file>step1_config_ap1_wifi1.log</log-file>
+			<telnet target="ap1">
+				-v "interface wifi1 mode dual"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 radio channel 157"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				configure mesh AP2 wifi1 to dual mode
+			</desc>
+			<log-file>step2_config_ap2_wifi1.log</log-file>
+			<telnet target="ap2">
+				-v "interface wifi1 mode dual"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 radio channel 157"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-show interface in ap2
+			</desc>
+			<log-file>step3_show_interface_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				Get mgt0 mac in ap2
+			</desc>
+			<setvar name="ap2.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step3_show_interface_ap2.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				Get wifi1.1 mac in ap2
+			</desc>
+			<setvar name="ap2.wifi11.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1 *(\S+) dual" -f ${log.dir}/step3_show_interface_ap2.log -t str
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				show route in ap2
+			</desc>
+			<log-file>step4_ap2_show_route.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-e "0000:0000:0000\s+${ap2.mgt0.mac}\s+eth[01]" -re</log-match>
+		</step>
+
+
+		<step no="5">
+			<desc>
+				Shutdown AP2 ethernet interface
+			</desc>
+			<log-file>step5_ap2_eth_shutdown.log</log-file>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-show interface in ap2
+			</desc>
+			<log-file>step5.1_show_interface_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="6">
+			<desc>
+				-show interface in ap1
+			</desc>
+			<log-file>step6_show_interface_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				Get mgt0 mac in ap1
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step6_show_interface_ap1.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				Get wifi1.1 mac in ap1
+			</desc>
+			<setvar name="ap1.wifi11.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1 *(\S+) dual" -f ${log.dir}/step6_show_interface_ap1.log -t str
+			</setvar>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				check ap2 hive neighbor list to confirm ap1 and ap2 have established hive neighbor
+			</desc>
+			<log-file>step7_ap2_show_hive_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show hive ${hive.name} neighbor"
+			</console>
+			<no-error-check />
+			<log-match>-i "Auth" -i "${ap1.wifi11.mac}" -i "${hive.name}"</log-match>
+		</step>
+
+		<step no="8" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				check ap1 hive neighbor list to confirm ap1 and ap2 have established hive neighbor
+			</desc>
+			<log-file>step8_ap1_show_hive_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show hive ${hive.name} neighbor"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "Auth" -i "${ap2.wifi11.mac}" -i "${hive.name}"</log-match>
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step9_amrp_neighbor_check_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="50">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.wifi11.mac}\s+${ap1.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				show route in ap2
+			</desc>
+			<log-file>step10_ap2_show_route.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-e "0000:0000:0000\s+${ap1.wifi11.mac}\s+wifi1.1" -re</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				show route in ap1
+			</desc>
+			<log-file>step11_ap1_show_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-e "${ap2.mgt0.mac}\s+${ap2.wifi11.mac}\s+wifi1\.1" -re </log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				ap1 ping ap2
+			</desc>
+			<log-file>step12_ap1_ping_ap2.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${ap2.mgt0.ip}"
+			</telnet>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				configure portal AP3 wifi1 to dual mode
+			</desc>
+			<log-file>step13_config_ap3_wifi1.log</log-file>
+			<telnet target="ap3">
+				-v "interface wifi1 mode dual"
+				-v "ssid ${ssid.name}3"
+				-v "interface wifi1 ssid ${ssid.name}3"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 radio channel 157"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="14">
+			<desc>
+				-show interface in ap3
+			</desc>
+			<log-file>step14_show_interface_ap3.log</log-file>
+			<telnet target="ap3">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="14.1">
+			<desc>
+				Get mgt0 mac in ap3
+			</desc>
+			<setvar name="ap3.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step14_show_interface_ap3.log -t str
+			</setvar>
+		</step>
+
+		<step no="14.2">
+			<desc>
+				Get wifi1.1 mac in ap3
+			</desc>
+			<setvar name="ap3.wifi11.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1 *(\S+) dual" -f ${log.dir}/step14_show_interface_ap3.log -t str
+			</setvar>
+		</step>
+
+		<step no="15" type="loop-check" loop-max-times="25" loop-interval="10">
+			<desc>
+				check ap3 hive neighbor list to confirm ap1 and ap2 and ap3 have established hive neighbor
+			</desc>
+			<log-file>step15_ap3_show_hive_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap3">
+				-v "show hive ${hive.name} neighbor"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "Auth" -i "${ap1.wifi11.mac}" -i "${hive.name}"</log-match>
+			<log-match>-i "Auth" -i "${ap2.wifi11.mac}" -i "${hive.name}"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				show route in ap1
+			</desc>
+			<log-file>step16_ap2_show_route.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+		</step>
+
+		<step no="17">
+			<desc>
+				Shutdown AP1 ethernet interface and wifi1.1 interface
+			</desc>
+			<log-file>step17_ap1_eth_shutdown.log</log-file>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+				-v "interface eth1 shutdown"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+			</console>
+		</step>
+
+		<step no="17.1">
+			<desc>
+				show interface in ap1
+			</desc>
+			<log-file>step17.1_ap1_show_interface.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="17.2" delay="60">
+			<desc>
+				delay 1 min in order ap2 delete amrp neighbor of ap1
+			</desc>
+		</step>
+
+		<step no="18" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step18_amrp_neighbor_check_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="50">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap3.wifi11.mac}\s+${ap3.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="19">
+			<desc>
+				show route in ap2
+			</desc>
+			<log-file>step19_ap2_show_route.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-e "0000:0000:0000\s+${ap3.wifi11.mac}\s+wifi1.1" -re</log-match>
+		</step>
+
+		<step no="20">
+			<desc>
+				show route in ap3
+			</desc>
+			<log-file>step20_ap3_show_route.log</log-file>
+			<telnet target="ap3">
+				-v "show route"
+			</telnet>
+			<log-match>-e "${ap2.mgt0.mac}\s+${ap2.wifi11.mac}\s+wifi1\.1" -re </log-match>
+		</step>
+
+		<step no="21">
+			<desc>
+				ap3 ping ap2
+			</desc>
+			<log-file>step20_ap3_ping_ap2.log</log-file>
+			<telnet target="ap3">
+				-v "ping ${ap2.mgt0.ip}"
+			</telnet>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+	</stage>
+
+	<stage>
+		<if>"${ap.eth1.existed}" != "true" &amp;&amp;"${ap.wifi1.existed}" == "true"</if>
+		<step no="31">
+			<desc>
+				configure portal AP1 wifi1 to dual mode
+			</desc>
+			<log-file>step1_config_ap1_wifi1.log</log-file>
+			<telnet target="ap1">
+				-v "interface wifi1 mode dual"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 radio channel 157"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="32">
+			<desc>
+				configure mesh AP2 wifi1 to dual mode
+			</desc>
+			<log-file>step2_config_ap2_wifi1.log</log-file>
+			<telnet target="ap2">
+				-v "interface wifi1 mode dual"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 radio channel 157"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="33">
+			<desc>
+				-show interface in ap2
+			</desc>
+			<log-file>step3_show_interface_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="33.1">
+			<desc>
+				Get mgt0 mac in ap2
+			</desc>
+			<setvar name="ap2.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step3_show_interface_ap2.log -t str
+			</setvar>
+		</step>
+
+		<step no="33.2">
+			<desc>
+				Get wifi1.1 mac in ap2
+			</desc>
+			<setvar name="ap2.wifi11.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1 *(\S+) dual" -f ${log.dir}/step3_show_interface_ap2.log -t str
+			</setvar>
+		</step>
+
+		<step no="34">
+			<desc>
+				show route in ap2
+			</desc>
+			<log-file>step4_ap2_show_route.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-e "0000:0000:0000\s+${ap2.mgt0.mac}\s+eth[01]" -re</log-match>
+		</step>
+
+
+		<step no="35">
+			<desc>
+				Shutdown AP2 ethernet interface
+			</desc>
+			<log-file>step5_ap2_eth_shutdown.log</log-file>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="35.1">
+			<desc>
+				-show interface in ap2
+			</desc>
+			<log-file>step5.1_show_interface_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="36">
+			<desc>
+				-show interface in ap1
+			</desc>
+			<log-file>step6_show_interface_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="36.1">
+			<desc>
+				Get mgt0 mac in ap1
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step6_show_interface_ap1.log -t str
+			</setvar>
+		</step>
+
+		<step no="36.2">
+			<desc>
+				Get wifi1.1 mac in ap1
+			</desc>
+			<setvar name="ap1.wifi11.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1 *(\S+) dual" -f ${log.dir}/step6_show_interface_ap1.log -t str
+			</setvar>
+		</step>
+
+		<step no="37" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				check ap2 hive neighbor list to confirm ap1 and ap2 have established hive neighbor
+			</desc>
+			<log-file>step7_ap2_show_hive_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show hive ${hive.name} neighbor"
+			</console>
+			<no-error-check />
+			<log-match>-i "Auth" -i "${ap1.wifi11.mac}" -i "${hive.name}"</log-match>
+		</step>
+
+		<step no="38" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				check ap1 hive neighbor list to confirm ap1 and ap2 have established hive neighbor
+			</desc>
+			<log-file>step8_ap1_show_hive_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show hive ${hive.name} neighbor"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "Auth" -i "${ap2.wifi11.mac}" -i "${hive.name}"</log-match>
+		</step>
+
+		<step no="39" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step9_amrp_neighbor_check_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="50">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.wifi11.mac}\s+${ap1.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="40">
+			<desc>
+				show route in ap2
+			</desc>
+			<log-file>step10_ap2_show_route.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-e "0000:0000:0000\s+${ap1.wifi11.mac}\s+wifi1.1" -re</log-match>
+		</step>
+
+		<step no="41">
+			<desc>
+				show route in ap1
+			</desc>
+			<log-file>step11_ap1_show_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-e "${ap2.mgt0.mac}\s+${ap2.wifi11.mac}\s+wifi1\.1" -re </log-match>
+		</step>
+
+		<step no="42">
+			<desc>
+				ap1 ping ap2
+			</desc>
+			<log-file>step12_ap1_ping_ap2.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${ap2.mgt0.ip}"
+			</telnet>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<step no="43">
+			<desc>
+				configure portal AP3 wifi1 to dual mode
+			</desc>
+			<log-file>step13_config_ap3_wifi1.log</log-file>
+			<telnet target="ap3">
+				-v "interface wifi1 mode dual"
+				-v "ssid ${ssid.name}3"
+				-v "interface wifi1 ssid ${ssid.name}3"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 radio channel 157"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="44">
+			<desc>
+				-show interface in ap3
+			</desc>
+			<log-file>step14_show_interface_ap3.log</log-file>
+			<telnet target="ap3">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="44.1">
+			<desc>
+				Get mgt0 mac in ap3
+			</desc>
+			<setvar name="ap3.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step14_show_interface_ap3.log -t str
+			</setvar>
+		</step>
+
+		<step no="44.2">
+			<desc>
+				Get wifi1.1 mac in ap3
+			</desc>
+			<setvar name="ap3.wifi11.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1 *(\S+) dual" -f ${log.dir}/step14_show_interface_ap3.log -t str
+			</setvar>
+		</step>
+
+		<step no="45" type="loop-check" loop-max-times="25" loop-interval="10">
+			<desc>
+				check ap3 hive neighbor list to confirm ap1 and ap2 and ap3 have established hive neighbor
+			</desc>
+			<log-file>step15_ap3_show_hive_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap3">
+				-v "show hive ${hive.name} neighbor"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "Auth" -i "${ap1.wifi11.mac}" -i "${hive.name}"</log-match>
+			<log-match>-i "Auth" -i "${ap2.wifi11.mac}" -i "${hive.name}"</log-match>
+		</step>
+
+		<step no="46">
+			<desc>
+				show route in ap1
+			</desc>
+			<log-file>step16_ap2_show_route.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+		</step>
+
+		<step no="47">
+			<desc>
+				Shutdown AP1 ethernet interface and wifi1.1 interface
+			</desc>
+			<log-file>step17_ap1_eth_shutdown.log</log-file>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+			</console>
+		</step>
+
+		<step no="47.1">
+			<desc>
+				show interface in ap1
+			</desc>
+			<log-file>step17.1_ap1_show_interface.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="47.2" delay="60">
+			<desc>
+				delay 1 min in order ap2 delete amrp neighbor of ap1
+			</desc>
+		</step>
+
+		<step no="48" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step18_amrp_neighbor_check_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="50">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap3.wifi11.mac}\s+${ap3.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="49">
+			<desc>
+				show route in ap2
+			</desc>
+			<log-file>step19_ap2_show_route.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-e "0000:0000:0000\s+${ap3.wifi11.mac}\s+wifi1.1" -re</log-match>
+		</step>
+
+		<step no="50">
+			<desc>
+				show route in ap3
+			</desc>
+			<log-file>step20_ap3_show_route.log</log-file>
+			<telnet target="ap3">
+				-v "show route"
+			</telnet>
+			<log-match>-e "${ap2.mgt0.mac}\s+${ap2.wifi11.mac}\s+wifi1\.1" -re </log-match>
+		</step>
+
+		<step no="51">
+			<desc>
+				ap3 ping ap2
+			</desc>
+			<log-file>step20_ap3_ping_ap2.log</log-file>
+			<telnet target="ap3">
+				-v "ping ${ap2.mgt0.ip}"
+			</telnet>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+	</stage>
+
+
+</testcase>

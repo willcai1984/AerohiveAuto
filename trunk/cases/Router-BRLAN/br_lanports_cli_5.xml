@@ -1,0 +1,359 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Shutdown lan ports eth1/eth2/eth3/eth4</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Laptop1 connect to lan port eth1
+		BR connect to switch
+
+		Test Procedure:
+
+		1. Shutdown interface eth1
+		CLI:
+		Interface eth1 shutdown
+		2. Laptop1 ping laptop2 Result1
+		3. No shutdown interface eth1
+		CLI:
+		No interface eth1 shutdown
+		4. Laptop1 ping laptop2 Result2
+		5. Execute the CLIs for eth2 Result3
+
+		6. Execute the CLIs for eth3 Result3
+
+		7. Execute the CLIs for eth4 Result3
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+	<stage>
+
+		<step no="1.1">
+			<desc>Enable mgt0 dhcp/dns server</desc>
+			<log-file>step1.1_mgt0_status.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show run | in mgt0"
+			</telnet>
+			<log-match>-i "interface mgt0 ip ${br1.br.mgt0.ip}"</log-match>
+			<log-match>-i "interface mgt0 dhcp-server ip-pool ${br1.br.mgt0.ip_pool_start}"</log-match>
+			<log-match>-i "interface mgt0 dhcp-server enable"</log-match>
+			<log-match>-i "interface mgt0 dns-server enable"</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				1. Lan port eth2 work with bridge-802.1q mode
+				Configure native-vlan for eth1/eth4 mapped from mgt0 native-vlan, such as native-vlan 10
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth2 mode bridge-802.1q"
+				-v "interface mgt0 vlan ${br1.vpc2.vlan}"
+			</telnet>
+		</step>
+
+		<step no="1.3a">
+			<desc>
+				Laptop1 connect to lan port eth2
+				BR connect to switch
+			</desc>
+			<log-file>ifconfig_vpc2_.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.3b">
+			<desc>set br1.vpc2.tif.ip var for vpc2 on BR side</desc>
+			<setvar name="br1.vpc2.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc2.mif.ip} -u ${br1.vpc2.user} -p ${br1.vpc2.passwd} -i ${br1.vpc2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="1.4" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>BR ping pub.dns1</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${pub.dns1.ip}"
+			</telnet>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Shutdown interface eth2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth2 shutdown"
+			</telnet>
+		</step>
+
+		<step no="2.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				3. Laptop1 ping laptop2 failed
+			</desc>
+			<log-file>step2.1_ping.log</log-file>
+			<ssh target="br1.vpc2">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step2.2_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 3 -i "N" -p 4 -i "trunk" </log-match>
+			<log-match>-p 1 -i "eth3" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				4. no Shutdown interface eth2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface eth2 shutdown"
+			</telnet>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				5. Laptop1 ping laptop2 success
+			</desc>
+			<log-file>step3.1_ping.log</log-file>
+			<ssh target="br1.vpc2">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match> -c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step3.2_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 3 -i "Y" -p 4 -i "trunk" </log-match>
+			<log-match>-p 1 -i "eth3" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Shutdown interface eth1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step4.1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 3 -i "N" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 3 -i "Y" -p 4 -i "trunk" </log-match>
+			<log-match>-p 1 -i "eth3" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				no Shutdown interface eth1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step5.1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 3 -i "Y" -p 4 -i "trunk" </log-match>
+			<log-match>-p 1 -i "eth3" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				Shutdown interface eth3
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth3 shutdown"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step6.1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 3 -i "Y" -p 4 -i "trunk" </log-match>
+			<log-match>-p 1 -i "eth3" -p 3 -i "N" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				no Shutdown interface eth3
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface eth3 shutdown"
+			</telnet>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step7.1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 3 -i "Y" -p 4 -i "trunk" </log-match>
+			<log-match>-p 1 -i "eth3" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				Shutdown interface eth4
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth4 shutdown"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step8.1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 3 -i "Y" -p 4 -i "trunk" </log-match>
+			<log-match>-p 1 -i "eth3" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 3 -i "N" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				no Shutdown interface eth4
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface eth4 shutdown"
+			</telnet>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step9.1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 3 -i "Y" -p 4 -i "trunk" </log-match>
+			<log-match>-p 1 -i "eth3" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				Shutdown interface eth0
+			</desc>
+			<console target="br1.br" slow="yes">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="10.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Laptop1 ping laptop2 success
+			</desc>
+			<ssh target="br1.vpc2">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step10.2_show_lan_portconfig.log</log-file>
+			<console target="br1.br" slow="yes">
+				-v "show lan port-config"
+			</console>
+			<log-match>-p 1 -i "eth1" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 3 -i "Y" -p 4 -i "trunk" </log-match>
+			<log-match>-p 1 -i "eth3" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				no Shutdown interface eth0
+			</desc>
+			<console target="br1.br" slow="yes">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="11.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Laptop1 ping laptop2 success
+			</desc>
+			<ssh target="br1.vpc2">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="11.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show lan port-config
+			</desc>
+			<log-file>step11.2_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth2" -p 3 -i "Y" -p 4 -i "trunk" </log-match>
+			<log-match>-p 1 -i "eth3" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+			<log-match>-p 1 -i "eth4" -p 3 -i "Y" -p 4 -i "port-based" -p 5 -i "1"</log-match>
+		</step>
+
+	</stage>
+
+</testcase>

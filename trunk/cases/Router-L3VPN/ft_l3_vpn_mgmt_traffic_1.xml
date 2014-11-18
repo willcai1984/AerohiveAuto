@@ -1,0 +1,232 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>traffic from BR to dest which is behind the remote CVG should passed successfully through VPN tunnel</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a remote CVG, there is several LANs behind it
+		-there are some services in CVG's LANs
+		-BR setup VPN connection with the CVG
+
+		Test Procedure:
+		-BR trigger icmp traffic to the LAN behind remote CVG
+		-BR trigger udp traffic to the LAN behind remote CVG
+		-BR trigger tcp traffic to the LAN behind remote CVG
+	</description>
+	<numofcvg>1</numofcvg>
+	<numofbr>1</numofbr>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>
+
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="create.file_2" value="test_file_2.log" />
+
+	<stage>
+		<include prefix="0" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.vpc1.route=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>step1_show_route_cvg_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="1.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>step1.1_show_l3_ip_route_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>config mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask ${br.route.netmask}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>configure eth1's mode</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "user-profile sta qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				Laptop1 connect to lan port eth1
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>enable vpn debug</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_debug vpn debug"
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 2 protocol 47 bidirectional"
+				-v "_ff id 3 protocol 50 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buf"
+			</telnet>
+		</step>
+
+		<step no="3" type="loop-check" loop-max-times="10" loop-interval="10" >
+			<desc>
+				-ping from vpc1 to a dst behind CVG
+			</desc>
+			<log-file>step3_log_br_vpc1_to_cvg1.vpc1.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.1" delay="10">
+			<desc>show log buf</desc>
+			<log-file>step3.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(o) tunnel0 ${br1.vpc1.tif.ip}-&gt;${cvg1.vpc1.tif.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "GRE-encap packet: ${br1.vpc1.tif.ip}-&gt;${cvg1.vpc1.tif.ip} ttl" -i "proto(1)"</log-match>
+			<log-match>-c -i "GRE-encap packet done =&gt;${br1.br.mgt0.ip}-&gt;${cvg1.cvg.wan.ip} ttl" -i "proto(47)"</log-match>
+			<log-match>-c -i "encap outgoing packet ${br1.br.mgt0.ip}-&gt;${cvg1.cvg.wan.ip} ttl" -i "proto(47)"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>clear log all</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no _ff id 1"
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 17 bidirectional"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				-ping from vpc1 to a dst behind CVG
+			</desc>
+			<log-file>step4_log_br_vpc1_to_cvg1.vpc1.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "hping ${cvg1.vpc1.tif.ip} -2 -c 5 -s 5000 -p 3000"
+			</ssh>
+		</step>
+
+		<step no="4.1" delay="10">
+			<desc>show log buf</desc>
+			<log-file>step4.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(o) tunnel0 ${br1.vpc1.tif.ip}-&gt;${cvg1.vpc1.tif.ip}" -i "UDP"</log-match>
+			<log-match>-c -i "GRE-encap packet: ${br1.vpc1.tif.ip}-&gt;${cvg1.vpc1.tif.ip} ttl" -i "proto(17)"</log-match>
+			<log-match>-c -i "GRE-encap packet done =&gt;${br1.br.mgt0.ip}-&gt;${cvg1.cvg.wan.ip} ttl" -i "proto(47)"</log-match>
+			<log-match>-c -i "encap outgoing packet ${br1.br.mgt0.ip}-&gt;${cvg1.cvg.wan.ip} ttl" -i "proto(47)"</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>clear log all</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no _ff id 1"
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="5">
+			<desc>
+				Create file
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}" timeout="200">
+				-v "dd if=/dev/zero of=${create.file_2} bs=100K count=1"
+				-v "chmod 777 ${create.file_2}"
+				-v "service vsftpd restart"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-Download files
+			</desc>
+			<log-file>step5.1_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="200">
+				-v "curl -u ${cvg1.vpc1.user}:${cvg1.vpc1.passwd} ftp://${cvg1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2} --connect-timeout 100"
+			</ssh>
+		</step>
+
+		<step no="5.2" delay="10">
+			<desc>show log buf</desc>
+			<log-file>step5.2_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "(?i)\(o\) tunnel0 ${br1.vpc1.tif.ip}-&gt;${cvg1.vpc1.tif.ip}\(\d+\) ttl\(\d+\) mtu\(\d+\) TCP \d+-&gt;21 \d+ bytes" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-c -i "GRE-encap packet: ${br1.vpc1.tif.ip}-&gt;${cvg1.vpc1.tif.ip} ttl" -i "proto(6)"</log-match>
+			<log-match>-c -i "GRE-encap packet done =&gt;${br1.br.mgt0.ip}-&gt;${cvg1.cvg.wan.ip} ttl" -i "proto(47)"</log-match>
+			<log-match>-c -i "encap outgoing packet ${br1.br.mgt0.ip}-&gt;${cvg1.cvg.wan.ip} ttl" -i "proto(47)"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear vpc file
+				</desc>
+				<ssh target="br1.vpc1">
+					-v "rm -f /tmp/${create.file_2}"
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					clear vpc flie
+				</desc>
+				<ssh host="${cvg1.vpc1.mif.ip}">
+					-v "rm -f ${create.file_2}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

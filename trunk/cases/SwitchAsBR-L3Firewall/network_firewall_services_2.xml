@@ -1,0 +1,266 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>FTP(port mode) enable alg influence on network Firewall rules </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP
+		Enable 1 dhcp server（mgt0.1）
+		Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+		Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+		AP get IPaddr(interface wan) &lt;IP1&gt; from server
+		-Configure Server
+		Enable FTP function port mode
+
+		Test Procedure:
+		1) Configure network firewall rule
+		"network-firewall name 1001 to network 192.168.1.1 255.255.255.255 service
+		ftp action permit logging off"
+		"network-firewall name 1002 from any to any action deny logging off"
+		2) Laptop1 uses FTP connect to server and download/upload files
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+	
+	<property name="br1.vpc1.mac" value="255.255.255.255" />
+	<property name="upload.file" value="upload_file" />
+	<property name="file.path" value="/home/logger" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP
+				Enable 1 dhcp server（mgt0.1）
+				Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+				Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${cvg1.cvg.wan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask 255.255.255.0"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server enable"
+				-v "dns server-ip ${pub.dns1.ip}"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				Set interface eth0 to wan mode,eth1/eth2 to access mode and enable mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+			    -v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"						
+			</telnet>
+		</step>
+		
+		<step no="2.1">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		
+		<step no="2.2">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				Configure network firewall rule
+				“network-firewall name 1001 service ftp action permit logging on”
+				“network-firewall name 1002 from any to any action deny logging on”
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "network-firewall name 1001 service ftp action permit logging on"
+				-v "network-firewall name 1002 from any to any action deny logging on"
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show network-firewall
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show network-firewall"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				Delete file
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "rm -f ${pub.ftp1.file2_medium}"
+			</ssh>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				check file Size
+			</desc>
+			<log-file>step3.3_check_file_size.log</log-file>
+			<ssh host="${pub.ftp1.ip}">
+				-v "ll -n cd /home/logger/"
+				-v "rm -f ${file.path}/${upload.file}"
+			</ssh>
+		</step>
+
+		<step no="3.4">
+			<desc>get from-access counters</desc>
+			<setvar name="file.size">
+				${bin.dir}/getbyrexp.py -p "\S+\s+\d+\s+\d+\s+\d+\s+(\d+).*${pub.ftp1.file2_medium}" -f ${log.dir}/step3.3_check_file_size.log
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				Laptop1 uses FTP connect to server and download files
+			</desc>
+			<log-file>step4_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "curl -u ${pub.ftp1.username}:${pub.ftp1.passwd} ftp://${pub.ftp1.ip}/${pub.ftp1.file2_medium} -o ${pub.ftp1.file2_medium} -p ${br1.sta1.tif.ip} --disable-eprt"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="4.1">
+			<desc>
+				check file
+			</desc>
+			<log-file>test.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ll -n"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\S+\s+\d+\s+\d+\s+\d+\s+${file.size}.*${pub.ftp1.file2_medium}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="5" file="subs/save_ap_log.xml" args="show logging buffered, br1.br, step5_show_logging_buffered.log" />
+
+		<step no="6">
+			<desc>
+				check log
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ACCEPT PACKET: SRC=${br1.vpc1.tif.ip} DST=${pub.ftp1.ip} PROTO=TCP SPT=\d+ DPT=\d+ \(RULE=1001\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6.1">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				Laptop1 uses FTP connect to server and upload files
+			</desc>
+			<log-file>step7_upload_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "curl -u ${pub.ftp1.username}:${pub.ftp1.passwd} ftp://${pub.ftp1.ip}/${upload.file} -T ${pub.ftp1.file2_medium} -p ${br1.sta1.tif.ip} --disable-eprt"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>
+				check file Size
+			</desc>
+			<log-file>step7.1_check_file_size.log</log-file>
+			<ssh host="${pub.ftp1.ip}">
+				-v "ll -n cd /home/logger/"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\S+\s+\d+\s+\d+\s+\d+\s+${file.size}.*${upload.file}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="8" file="subs/save_ap_log.xml" args="show logging buffered, br1.br, step8_show_logging_buffered.log" />
+
+		<step no="9">
+			<desc>
+				check log
+			</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ACCEPT PACKET: SRC=${br1.vpc1.tif.ip} DST=${pub.ftp1.ip} PROTO=TCP SPT=\d+ DPT=\d+ \(RULE=1001\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>
+				check file to ftp server
+			</desc>
+			<log-file>step10_check_file.log</log-file>
+			<ssh host="${pub.ftp1.ip}">
+				-v "cd ${file.path}"
+				-v "ls"
+			</ssh>
+			<log-match>-i "${upload.file}"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				clear file to sta
+			</desc>
+			<log-file>step10.1_clear_file.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "rm -f ${pub.ftp1.file2_medium}"
+			</ssh>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				clear file to ftp server
+			</desc>
+			<log-file>step10.2_clear_file.log</log-file>
+			<ssh host="${pub.ftp1.ip}">
+				-v "rm -f ${file.path}/${upload.file}"
+			</ssh>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear file to sta
+				</desc>
+				<ssh target="br1.vpc1" timeout="120">
+					-v "rm -f ${pub.ftp1.file2_medium}"
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					clear file to ftp server
+				</desc>
+				<ssh host="${pub.ftp1.ip}">
+					-v "rm -f ${file.path}/${upload.file}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

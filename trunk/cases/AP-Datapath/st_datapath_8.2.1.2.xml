@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Proxy ARP between ethx interfaces in portal topo</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+		-laptops are in same vlan
+
+		Test procedure:
+		- clear arp table on both laptop1,laptop2
+		- clear arp table on ap
+		- laptop1 ping laptop2, should be successful
+		- clear arp table on laptop2(execute “arp –d” cmd)
+		Laptop2 send arp request to get mac of laptop1. Result 1
+
+		Expect result:
+		1: AP drop this request and do not flood it to wifi0 and wifi1 interface.
+		(“_kdebu fe basic” and “_kdebug fe_arp basic” to see)
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>show interface of mpc</desc>
+			<log-file>step1_show_mpc_interface.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name} &gt; ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="1.1">
+			<desc>get mac of mpc</desc>
+			<setvar name="mpc.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1_show_mpc_interface.log -i ${mpc.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				-clear arp-table
+			</desc>
+			<console target="ap1">
+				-v "clear arp-cache"
+			</console>
+		</step>
+
+		<step no="4">
+			<desc>
+				-clear arp-table
+			</desc>
+			<log-file>step4_ping.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "ping ${mpc.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${mpc.tif.ip}" -i "ttl="</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="5" delay="10">
+			<desc>
+				- clear arp table on ap
+			</desc>
+			<log-file>step5_arp_clear.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${mpc.tif.mac}" -i "ETH *${mpc.tif.ip}"</log-match>
+			<log-match>-c -i "ETH *${tb.server1}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="6">
+			<desc>
+				-open debug
+			</desc>
+			<console target="ap1">
+				-v "_kdebug fe_arp basic"
+				-v "_kdebu fe basic"
+				-v "_kdebu fe detail"
+				-v "_ff id 1 src-mac ${mpc.tif.mac} etype 0806 bidirectional"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-clear arp on linux sta PC3
+			</desc>
+			<log-file>step6.1_clear_arp.log</log-file>
+			<script>
+				ip neigh flush dev ${mpc.tif.name} &gt; ${log.dir}/${log.file}
+			</script>
+			<failed>next</failed>
+		</step>
+
+		<step no="7">
+			<desc>-pc ping laptop, result 3</desc>
+			<log-file>step7_ping.log</log-file>
+			<script>
+				ping ${tb.server1} -c 10 &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${tb.server1}" -i "ttl="</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="8" delay="10">
+			<desc>
+				show logging buffered on ap
+			</desc>
+			<log-file>step8_show_logging_bufffered.log</log-file>
+			<console target="ap1" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "\[fe_arp\]: ARP REQ(ethernet-&gt;ethernet) dropped: IP=${mpc.tif.ip}"</log-match>
+			<log-match>-c -i "\[fe\]: drop ARP REQ"</log-match>
+			<log-match>-c -i "\[fe\]: (!) eth0 ${mpc.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+		</step>
+	</stage>
+</testcase>

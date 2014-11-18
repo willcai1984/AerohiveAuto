@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Configuration overwrite with hostname to ip </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Configure the dns server right which can resolve the hostname in ip-policy, and 4 items
+		maximum
+
+		Test Procedure:
+
+		1) Laptop ping www.google.com.hk, result 1
+		2) Configure a L3 policy with ip and action is deny:
+		"ip-policy FW"
+		"ip-policy FW id 1 from &lt;laptop_ip&gt; action deny"
+		"user-profile FW security ip-policy from-access FW"
+		3) Show ip-policy, result 1
+		4) Laptop ping www.google.com.hk, result 2
+		5) Overwrite configuration ip-policy by hostname and action is permit:
+		"ip-policy FW id 1 from &lt;hostname1&gt; action permit"
+		6) Check the overwrite id's order, result 3
+		7) Laptop ping Server, result 4
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FW" />
+	<property name="domain" value="${job.id}" />
+	<property name="domain2" value="${job.id}-sta" />
+
+	<stage>
+		<step no="pre1">
+			<desc>
+				-Laptop uses user-profile "FW"
+			</desc>
+			<console target="ap1">
+				-v "dns server-ip ${pub.dns1.ip}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="pre2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="1" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${domain}, ${pub.tftp1.tip}" />
+
+		<include prefix="1.1" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${domain}, ${pub.ad2.ip}" />
+
+		<include prefix="1.2" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${domain}, ${pub.ad1.ip}" />
+
+		<include prefix="1.3" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${domain}, ${tb.http_server}" />
+
+		<include prefix="pre3" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${domain2}, ${sta1.tif.ip}" />
+
+		<step no="pre4">
+			<desc>main case</desc>
+			<ssh host="${pub.dns1.ip}">
+				-v "host ${domain}"
+				-v "host ${domain2}"
+			</ssh>
+		</step>
+
+		<step no="open.debug">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				config dns server-ip
+			</desc>
+			<telnet target="ap1">
+				-v "dns server-ip ${pub.dns1.ip}"
+			</telnet>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				ap ping domain
+			</desc>
+			<telnet target="ap1">
+				-v "ping ${domain}"
+				-v "ping ${domain2}"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_ping.xml" args="sta1, ${domain}, 4" />
+
+		<step no="2.1">
+			<desc>
+				check log
+			</desc>
+			<log-file>step2.1_show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				2) Configure a L3 policy with ip and action is deny:
+				"ip-policy FW"
+				"ip-policy FW id 1 from &lt;laptop_ip&gt; action deny"
+				"user-profile FW security ip-policy from-access FW"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${sta1.tif.ip} action deny"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id} to-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				3) Show ip-policy, result 1
+			</desc>
+			<log-file>Show_ip_policy.log</log-file>
+			<telnet target="ap1">
+				-v "show ip-policy ${user_id}"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.ip}/255.255.255.255 *0.0.0.0/0.0.0.0 *any *deny"</log-match>
+		</step>
+
+		<include prefix="5" file="subs/sta_ping.xml" args="sta1, ${domain}, 4, negative" />
+
+		<step no="5.1">
+			<desc>
+				check log
+			</desc>
+			<log-file>step5.1_show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta1.tif.ip}-&gt;\d+.\d+.\d+.\d+\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[${user_id}\] id \[1\] \[deny\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;\d+.\d+.\d+.\d+\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5.2">
+			<desc>get server ip</desc>
+			<setvar name="serverip">
+				${bin.dir}/getbyrexp.py -p "\(\!\) wifi0.1 ${sta1.tif.ip}-&gt;(\d+.\d+.\d+.\d+)\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/step5.1_show_log_buffered.log -t str -g 0
+			</setvar>
+		</step>
+
+		<step no="5.3">
+			<desc>check server ip</desc>
+			<if>"${serverip}" != "${pub.tftp1.tip}" &amp;&amp; "${serverip}" != "${pub.ad2.ip}" &amp;&amp; "${serverip}" != "${pub.ad1.ip}" &amp;&amp; "${serverip}" != "${tb.http_server}"</if>
+			<script>
+				exit 1
+			</script>
+		</step>
+
+		<step no="6">
+			<desc>
+				5) Overwrite configuration ip-policy by hostname and action is permit:
+				"ip-policy FW id 1 from &lt;hostname1&gt; action permit"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id} id 1 from ${domain2} action permit"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				6) Check the overwrite id's order, result 3
+			</desc>
+			<log-file>Show_ip_policy3.log</log-file>
+			<telnet target="ap1">
+				-v "show ip-policy ${user_id}"
+			</telnet>
+			<log-match>-c -i "${domain2} *0.0.0.0/0.0.0.0 *any *permit"</log-match>
+		</step>
+
+		<include prefix="8" file="subs/sta_ping.xml" args="sta1, ${domain}, 4" />
+
+		<step no="9">
+			<desc>
+				check log
+			</desc>
+			<log-file>step9_show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;\d+.\d+.\d+.\d+\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[${user_id}\] id \[1\] \[permit\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;\d+.\d+.\d+.\d+\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="9.1">
+			<desc>get server ip</desc>
+			<setvar name="serverip2">
+				${bin.dir}/getbyrexp.py -p "\(o\) eth0 ${sta1.tif.ip}-&gt;(\d+.\d+.\d+.\d+)\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/step9_show_log_buffered.log -t str -g 0
+			</setvar>
+		</step>
+
+		<step no="9.2">
+			<desc>check server ip</desc>
+			<if>"${serverip2}" != "${pub.tftp1.tip}" &amp;&amp; "${serverip2}" != "${pub.ad2.ip}" &amp;&amp; "${serverip2}" != "${pub.ad1.ip}" &amp;&amp; "${serverip2}" != "${tb.http_server}"</if>
+			<script>
+				exit 1
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="del1" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${domain}, ${pub.tftp1.tip}" />
+
+			<include prefix="del2" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${domain}, ${pub.ad2.ip}" />
+
+			<include prefix="del3" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${domain}, ${pub.ad1.ip}" />
+
+			<include prefix="del4" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${domain}, ${tb.http_server}" />
+
+			<include prefix="del5" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${domain2}, ${sta1.tif.ip}" />
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

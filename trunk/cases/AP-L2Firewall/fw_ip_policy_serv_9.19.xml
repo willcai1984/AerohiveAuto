@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Radius service.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-Laptop uses user-profile "FW"
+
+		Test
+		Procedure:
+
+		1) Config a radius-server on AP1
+		"user-group &lt;group_name&gt;"
+		"user-group &lt;group_name&gt; user-attribute [num]"
+		"aaa radius-server local user-group &lt;group_name&gt;"
+		"aaa radius-server local db-type local"
+		"aaa radius-server local enable"
+		"ssid &lt;ssid_name&gt; security aaa radius-server primary
+		&lt;AP1_ip&gt;"
+		"ssid &lt;ssid_name&gt; security protocol-suite wpa-auto-8021x"
+		"user-profile &lt;user-profile_string&gt; qos-policy def-user-qos vlan-id [num] attribute [num]"
+		2) Laptop ping server
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="user_id" value="FW" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Laptop uses user-profile "FW"
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security protocol-suite wpa-aes-8021x"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				1) Config a radius-server on AP1
+				"user-group &lt;group_name&gt;"
+				"user-group &lt;group_name&gt; user-attribute [num]"
+				"aaa radius-server local user-group &lt;group_name&gt;"
+				"aaa radius-server local db-type local"
+				"aaa radius-server local enable"
+				"ssid &lt;ssid_name&gt; security aaa radius-server primary &lt;AP1_ip&gt;"
+				"ssid &lt;ssid_name&gt; security protocol-suite wpa-auto-8021x"
+				"user-profile &lt;user-profile_string&gt; qos-policy def-user-qos vlan-id [num] attribute [num]"
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name} security aaa radius-server primary ${ap1.mgt0.ip}"
+				-v "ssid ${ssid.name} security protocol-suite wpa-auto-8021x"
+				-v "user-group autotest"
+				-v "user-group autotest user-attribute 1"
+				-v "aaa radius-server local db-type local"
+				-v "aaa radius-server local user-group autotest"
+				-v "aaa radius-server local enable"
+				-v "user ${pub.radius1.username}"
+				-v "user ${pub.radius1.username} pass ${pub.radius1.passwd}"
+				-v "user ${pub.radius1.username} group autotest"
+				-v "save config"
+				-v "save config users"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="config.policy">
+			<desc>
+				Config the ip-policy that permit any traffic between Laptop
+				and Server
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${sta1.tif.ip} action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+		<step no="4.1">
+			<desc>
+				Laptop ping ap
+			</desc>
+			<log-file>sta_ping_ap.log</log-file>
+			<ssh target="sta1" prompt=".*#">
+				-v "nohup ping ${ap1.mgt0.ip} -c 500 &gt; null &amp;"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="5">
+			<desc>
+				3) Show the ip-session
+			</desc>
+			<log-file>step5_show_forwarding_engine_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match>-c -i "${ap1.mgt0.ip}" -i "${sta1.tif.ip}" -i "Proto 1"
+			</log-match>
+		</step>
+	</stage>
+</testcase>

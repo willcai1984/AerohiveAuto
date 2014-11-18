@@ -1,0 +1,359 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>IP-session setup.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP1
+		"security-object FWtest"
+		"security-object FWtest default-user-profile-attr 1"
+		"ssid FWtest"
+		"ssid FWtest security-object FWtest"
+		"interface wifi0 ssid FWtest"
+		"interface wifi1 ssid FWtest"
+		"user-profile FW qos-policy def-user-qos vlan-id lt;mgt0 vlangt; attribute 1"
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Config ip-policy which permit Laptop's ip_address
+		"ip-policy FW"
+		"ip-policy FW to lt;Laptop ip addrgt; action permit"
+		"user-profile FW security ip-policy to-access FW"
+		"clear forwarding-engine ip-sessions"
+		2) Server ping Laptop
+		3) Check the ip-session table on AP1
+		"show forwarding-engine ip-sessions"
+		4) Clear ip-session table, delete the ip-policy and reconfig ip-policy deny the
+		traffic from and to Laptop
+		"no ip-policy FW"
+		"ip-policy FW"
+		"ip-policy FW to lt;Laptop ip addrgt; action deny"
+		"user-profile FW security ip-policy to-access FW"
+		"clear forwarding-engine ip-sessions"
+		5) Server ping
+		Laptop
+		6) Check the ip-session table on AP1
+		"show forwarding-engine ip-sessions"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				Configure AP1
+				security-object FWtest
+				security-object FWtest default-user-profile-attr 1
+				ssid FWtest
+				ssid FWtest security-object FWtest
+				interface wifi0 ssid FWtest
+				interface wifi1 ssid FWtest
+				user-profile FW qos-policy def-user-qos vlan-id ;mgt0 vlan; attribute 1
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 native-vlan ${tb.vlan1}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "security-object FWtest security protocol-suite open"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile FW qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				Laptop has been associated with AP1 and assigned an ip address
+				create config file of wpa_supplicant
+			</desc>
+			<ssh target="sta1">
+				-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+				-v "ifconfig ${sta1.tif.name} down"
+				-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+		</step>
+
+		<step no="2.1" delay="5">
+			<desc>
+				start wpa_supplicant
+			</desc>
+			<ssh target="sta1">
+				-v "killall wpa_supplicant"
+				-v "wpa_supplicant -i ${sta1.tif.name} ${sta1.wpa_flag} -c /tmp/wpa_supplicant.cfg -B"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="2.3" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check if the client was associated successfully</desc>
+			<log-file>step2.3_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>client gets IP by dhclient</desc>
+			<ssh target="sta1">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.5" delay="10">
+			<desc>ifconfig to show the ip adrr</desc>
+			<log-file>step2.5_ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match> -e "inet addr"</log-match>
+		</step>
+
+		<step no="2.6" delay="10">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.7">
+			<desc>Get laptop1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.8">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="2.9" delay="10">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>ap1_info.log</log-file>
+			<console target="ap1" timeout="80">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="2.10">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ap1_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="2.11">
+			<desc>
+				"_ff id 1 src-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>
+				1) Config ip-policy which permit Laptop's ip_address
+				"ip-policy FW"
+				"ip-policy FW to lt;Laptop ip addrgt; action permit"
+				"user-profile FW security ip-policy to-access FW"
+				"clear forwarding-engine ip-sessions"
+			</desc>
+			<console target="ap1">
+				-v "ip-policy FW"
+				-v "ip-policy FW to ${sta1.tif.ip} action permit"
+				-v "user-profile FW security ip-policy to-access FW"
+				-v "clear forwarding-engine ip-sessions"
+			</console>
+		</step>
+
+		<step no="4">
+			<desc>
+				2) Server ping Laptop
+			</desc>
+			<log-file>step4_server_ping_laptop.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-e "from ${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				Server ping Laptop in background
+			</desc>
+			<log-file>step4.1_server_start_ping.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "nohup ping ${sta1.tif.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				get server ping id
+			</desc>
+			<setvar name="server.pingid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4.1_server_start_ping.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				3) Check the mac-session table on AP1
+				"show forwarding-engine ip-sessions"
+			</desc>
+			<log-file>step5_show_forwarding_engine_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}.*?-&gt;.*?${pub.tftp1.tip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${pub.tftp1.tip}.*?-&gt;.*?${sta1.tif.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				clear log buffered
+				"clear forwarding-engine ip-sessions"
+			</desc>
+			<console target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</console>
+		</step>
+
+		<include prefix="5.2" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step5.2_show_logging_buffered.log" />
+
+		<step no="5.2">
+			<desc>
+				kill server ping process
+			</desc>
+			<ssh host="${pub.tftp1.ip}">
+				-v "kill ${server.pingid}"
+			</ssh>
+		</step>
+
+		<step no="6">
+			<desc>
+				4) Clear ip-session table, delete the ip-policy and reconfig ip-policy deny the
+				traffic from and to Laptop
+				"no ip-policy FW"
+				"ip-policy FW"
+				"ip-policy FW to lt;Laptop ip addrgt; action deny"
+				"user-profile FW security ip-policy to-access FW"
+				"clear log buffered"
+				"clear forwarding-engine ip-sessions"
+			</desc>
+			<console target="ap1">
+				-v "no ip-policy FW"
+				-v "ip-policy FW"
+				-v "ip-policy FW to ${sta1.tif.ip} action deny"
+				-v "user-profile FW security ip-policy to-access FW"
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</console>
+		</step>
+
+		<step no="7">
+			<desc>
+				5) Server ping Laptop
+			</desc>
+			<log-file>step7_server_ping_laptop.log</log-file>
+			<ssh host="${pub.tftp1.ip}" timeout="60">
+				-v "ping ${sta1.tif.ip} -c 5";exit 0
+			</ssh>
+			<log-match>-n -e "from ${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				Server ping Laptop in background
+			</desc>
+			<log-file>step7.1_server_start_ping.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "nohup ping ${sta1.tif.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				get server ping id
+			</desc>
+			<setvar name="server.pingid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7.1_server_start_ping.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="8">
+			<desc>
+				6) Check the ip-session table on AP1
+				"show forwarding-engine ip-sessions"
+			</desc>
+			<log-file>step8_show_forwarding_engine_ip_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}.*?-&gt;.*?${pub.tftp1.tip}" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${pub.tftp1.tip}.*?-&gt;.*?${sta1.tif.ip}" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				clear log buffered
+				"clear forwarding-engine ip-sessions"
+			</desc>
+			<console target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</console>
+		</step>
+
+		<include prefix="8.2" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step8.2_show_logging_buffered.log" />
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					kill server ping process
+				</desc>
+				<ssh host="${pub.tftp1.ip}">
+					-v "kill ${server.pingid}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

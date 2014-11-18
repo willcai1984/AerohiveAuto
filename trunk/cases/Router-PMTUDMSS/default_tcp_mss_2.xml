@@ -1,0 +1,404 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Default value of TCP MSS in L3 VPN without NAT is 1358 in default setup(encryption-algorithm is AES)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1. Setup one vpn topo without NAT between BR and CVG
+		2. ip tcp-mss-threshold enable in both BR and CVG
+		3. connect one laptop to BR
+		4. send TCP traffic that pass through l3 Tunnel from BR to CVG, result 1
+		5. Send TCP Traffic that pass through l3 Tunnel from CVG to BR, result 1
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<property name="create.file" value="test_file.log" />
+	<property name="create.file_2" value="test_file_2.log" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				config CVG act as l3 VPN server
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="3">
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:certs/server_cert.pem"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:certs/server_key.pem"
+				-v "vpn xauth-client-list ${hive.name}_List local"
+				-v "vpn xauth-client-list ${hive.name}_List client-name ${br1.br.name} password aerohive"
+				-v "vpn server-ipsec-tunnel ${hive.name}_Server vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${hive.name}_Server client-list ${hive.name}_List"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel ${hive.name}_Server"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.mgt0.supermask}"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				enable ospf on CVG eth1
+			</desc>
+			<if>"${cvg1.cvg.arm_type}" == "two"</if>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="3">
+				-v "routing protocol ospf advertise eth1"
+				-v "routing protocol ospf router-id ${cvg1.cvg.lan.ip}"
+				-v "routing protocol type ospf"
+				-v "routing protocol enable"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				config BR with WAN interface, nat enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "interface mgt0 ip ${br1.br.mgt0.ip}/${cvg1.cvg.wan.netmask}"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Show interface eth0 dhcp client to check if DNS server be obtained
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0 dhcp client"
+			</telnet>
+			<log-match>-i "DNS server" -i "${pub.dns_server.ip}"</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				config mgt0.1 with dhcp service enable,dns service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				configure eth1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+			</telnet>
+		</step>
+
+                <step no="2.4">
+			<desc>br1.vpc1 as Laptop3 connect to lan ports eth1, dhclient retrieve ip address</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.4b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+
+		<step no="2.5">
+			<desc>
+				config BR as l3 VPN client
+			</desc>
+			<console target="br1.br">
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "vpn client-ipsec-tunnel ${br1.br.name}_client_ipsec_1 vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${br1.br.name}_client_ipsec_1 gateway ${cvg1.cvg.mip.ip} client-name ${br1.br.name} password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel ${br1.br.name}_client_ipsec_1 primary"
+				-v "routing route-request enable"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${cvg1.cvg.wan.netmask}"
+			</console>
+		</step>
+
+		<step no="3" delay="20" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				check vpn ike sa on BR1 side
+			</desc>
+			<log-file>step3_ike_sa_br_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.mip.ip}\[4500\]"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				check vpn ike sa on CVG side
+			</desc>
+			<log-file>step3.1_ike_sa_cvg_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="3">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "R" -i "${pub.br_fw.ip}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.2">
+			<desc>
+				check gre tunnel on br1 side
+			</desc>
+			<log-file>step3.2_show_gre_tunnel_br.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.mip.ip}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.3">
+			<desc>
+				check gre tunnel on cvg side
+			</desc>
+			<log-file>step3.3_show_gre_tunnel_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="3">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.4">
+			<desc>
+				BR check route
+			</desc>
+			<log-file>step3.4_show_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			
+		</step>
+
+		<step no="3.5">
+			<desc>
+				cvg1 check route
+			</desc>
+			<log-file>step3.5_show_ip_route.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				ip tcp-mss-threshold enable in both BR
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip tcp-mss-threshold enable"
+			</telnet>
+		</step>
+
+		<step no="3.7">
+			<desc>
+				ip tcp-mss-threshold enable in both CVG
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "ip tcp-mss-threshold enable"
+			</telnet>
+		</step>	
+
+		<step no="4">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "_ff id 2 src-ip ${cvg1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				delete file
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "rm -f ${create.file}"
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				Create file
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "dd if=/dev/zero of=${create.file} bs=100K count=1"
+				-v "chmod 777 ${create.file}"
+				-v "service vsftpd restart"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="6.2" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>
+				send TCP traffic that pass through l3 Tunnel from BR to CVG
+			</desc>
+			<log-file>step6.2_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${cvg1.vpc1.tif.ip}/${create.file} -o /tmp/${create.file}"
+			</ssh>
+			<no-error-check />
+			<log-match>-n -c -i "couldn't connect to host"</log-match>
+		</step>
+
+		<step no="7" delay="30">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step7show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<!--<log-match>-c -i "set tcp mss to 1358 sucessfully"</log-match>-->
+			<!--<log-match>-c -i "TCP syn pkt, try to clamp tcp mss to 1358:"</log-match>-->
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 1"</log-match>
+			<!--<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(clamp\): ${br1.vpc1.tif.ip}:\d+->${cvg1.vpc1.tif.ip}:21 changed TCP MSS option \(from 1460 to \d+\),dst_mtu=\d+" -f ${log.dir}/${log.file}</log-match>-->
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step7.1_check_file.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>
+				delete file
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "rm -f ${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				Create file
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dd if=/dev/zero of=${create.file_2} bs=100K count=1"
+				-v "chmod 777 ${create.file_2}"
+				-v "service vsftpd restart"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="8.2">
+			<desc>
+				send TCP traffic that pass through l3 Tunnel from CVG to BR
+			</desc>
+			<log-file>step8.2_download_files.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="9" delay="30">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>			
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 1"</log-match>			
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step10_Check_file_size.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+
+		<step no="delete.sta.file">
+			<desc>
+				clear sta file
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "rm -f /tmp/${create.file}"
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="delete.vpc.file">
+			<desc>
+				clear vpc from
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "rm -f /tmp/${create.file}"
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear sta file
+				</desc>
+				<ssh target="br1.vpc1" timeout="120">
+					-v "rm -f /tmp/${create.file}"
+					-v "rm -f /tmp/${create.file_2}";exit 0
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					clear vpc from
+				</desc>
+				<ssh host="${cvg1.vpc1.mif.ip}">
+					-v "rm -f /tmp/${create.file}"
+					-v "rm -f /tmp/${create.file_2}";exit 0
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

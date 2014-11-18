@@ -1,0 +1,286 @@
+<testcase>
+	<brief>Eth0 and eth1 both are bound to red0, 1:datapath of unicast and broadcast is right, 2:redundant link</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Topology to use
+		+++++++(eth0)
+		pc++++++sw Portal(AP)------laptop
+		+++++++(eth1)
+		Objective
+		Eth0 and eth1 both are bound to red0, 1:datapath of unicast and broadcast is right, 2:redundant link
+		Pre-condition
+		-construct this topology
+		Test procedure
+		-connect eth0 and eth1 to one same switch
+		-bind eth0/eth1 to red0 interface via this cmd “interface eth0/eth1 bind red0”
+		-connect laptop to ap,check the route table result 5
+		-laptop sends unicast pkt like ICMP request to ap
+		Set a fe filter, “kdebug fe basic” to check, result 1
+		-laptop sends a broadcast pkt like ARP request to ap (laptop ping a un-exists host in its vlan)
+		Set a fe filter, “kdebug fe basic” to check, result 2
+		-pc sends known unicast pkt to ap through eth0 and eth1(pc ping laptop continuously and clear mac table on sw)
+		Set a fe filter, “kdebug fe basic” to check, result 3
+		-pc sends a broadcast pkt to ap (pc ping a un-exists host in its vlan)
+		Set a fe filter, “kdebug fe basic” to check, result 3
+		-pc send a unknown unicast pkt to ap result
+		3
+		(example: add a static arp entry on pc like 1.1.1.100-11-22-33-44-55, then pc ping 1.1.1.1)
+		-plug out eth0 cable, result 4
+		-plug in eth0 cable,shutdown/unshutdown red0 interface,result 6
+		Expect result
+		Result 1: this traffic should only be sent out to eth0
+		Result 2: this traffic should only be sent out to eth0
+		Result 3: Portal will receive this traffic both on eth0 and eth1,but
+		portal should drop the traffic that received on eth1
+		Result 4: eth1 will take over the traffic and the traffic should be
+		recover quickly; the default route is still point to red0
+		Result 5: the default route is point to red0 interface
+		Result 6: the traffic will be recovered
+	</description>
+	<stage>
+		<if>"${ap.eth1.existed}" == "true" &amp;&amp; "${ap.wifi1.existed}" == "true"</if>
+		<property name="tmp.mac" value="00:11:22:33:44:55" />
+		<step no="0">
+			<desc>Set up Portal1 interface through sw menu</desc>
+			<console target="ap1">
+				-v "user-profile datapath qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+			</console>
+		</step>
+
+		<step no="pre1.1">
+			<desc>
+				-show interface mgt0 in ap1
+			</desc>
+			<log-file>step_pre1.1c_show_interface_mgt0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="pre1.2">
+			<desc>
+				Get mgt0 ap in ap1
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step_pre1.1c_show_interface_mgt0_ap1.log -t str
+			</setvar>
+		</step>
+
+		<step no="2.1">
+			<desc>show wifi1.1's mac of portal</desc>
+			<log-file>eth0_mac_portal.log</log-file>
+			<console target="ap1">
+				-v "show interface eth0"
+				-v ""
+			</console>
+		</step>
+
+		<step no="2.2">
+			<desc>get the wifi1 mac of ap1</desc>
+			<setvar name="ap1.eth0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/eth0_mac_portal.log -i eth0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>show interface of Portal1</desc>
+			<log-file>show_route.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${ap1.eth0.mac} *eth0"</log-match>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+
+		<step no="get_mpc_ip_info">
+			<desc>Show interface on PC</desc>
+			<log-file>ifconfig_mpc.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name} > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="get_mpc_tif_mac">
+			<desc>Get the PC's MAC address </desc>
+			<setvar name="mpc.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -m -f ${log.dir}/ifconfig_mpc.log -i ${mpc.tif.name} -w
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>bind eth0 and eth1 to red0 </desc>
+			<console target="ap1">
+				-v "no interface eth0 manage telnet"
+				-v "no interface eth0 manage snmp"
+				-v "interface eth0 bind red0"
+				-v "interface eth1 bind red0"
+			</console>
+		</step>
+
+		<step no="6">
+			<desc>show route after bind</desc>
+			<log-file>show_route_bind.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${ap1.eth0.mac}" -i "red0"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>add a _ff and open fe debug on Portal1 </desc>
+			<console target="ap1">
+				-v "_ff id 1 dst-mac ${sta1.tif.mac} etype 0806 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+
+		<include prefix="8" file="subs/sta_send_arp.xml" args="sta1,${tb.unreach.ip1} , 2" />
+
+		<step no="9">
+			<desc>show log buffer at Portal1</desc>
+			<log-file>sta_broadcast.log</log-file>
+			<console target="ap1" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "flood the packet out wifi0.1"</log-match>
+			<log-match>-i "flood the packet out wifi1.1"</log-match>
+			<log-match>-i "eth0 is member interface, don't flood"</log-match>
+			<log-match>-i "eth1 is member interface, don't flood"</log-match>
+			<failed>next</failed>
+		</step>
+
+
+		<step no="10">
+			<desc>add a _ff and open fe debug on Portal1 </desc>
+			<console target="ap1">
+				-v "no _ff id 1"
+				-v "_ff id 1 etype 0806 bidirectional"
+				-v "clear log buffered"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe all"
+			</console>
+		</step>
+
+		<include prefix="11" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+
+		<step no="11">
+			<desc>show log buffer at Portal1</desc>
+			<log-file>sta_unicast.log</log-file>
+			<console target="ap1">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "flood the packet out wifi0.1"</log-match>
+			<log-match>-i "flood the packet out wifi1.1"</log-match>
+			<log-match>-i "eth0 is member interface, don't flood"</log-match>
+			<log-match>-i "eth1 is member interface, don't flood"</log-match>
+			<failed>next</failed>
+		</step>
+
+
+
+		<step no="12">
+			<desc>pc sends known unicast</desc>
+			<script>
+				perl ${bin.dir}/ping.pl -l ${log.dir}/ping.log -d ${sta1.tif.ip}
+			</script>
+		</step>
+
+		<step no="13">
+			<desc>show log buffer at Portal1</desc>
+			<log-file>pc_known_unicast.log</log-file>
+			<console target="ap1" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "(o) (eth0) eth0"</log-match>
+			<log-match>-i "drop broadcast pkt on non-primrary interface eth1" </log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="14">
+			<desc>clear log buff on portal</desc>
+			<console target="ap1">
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="15">
+			<desc>pc sends a broadcast</desc>
+			<script>
+				perl ${bin.dir}/ping.pl -l ${log.dir}/ping_testip.log -d ${tb.unreach.ip1}; exit 0;
+			</script>
+		</step>
+
+		<step no="16">
+			<desc>show log buffer at Portal1</desc>
+			<log-match>pc_sends_broadcast.log</log-match>
+			<console target="ap1" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "flood the packet out wifi0.1"</log-match>
+			<log-match>-i "flood the packet out wifi1.1"</log-match>
+			<log-match>-i "eth0 is member interface, don't flood"</log-match>
+			<log-match>-i "eth1 is member interface, don't flood"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="17">
+			<desc>add a route on mpc</desc>
+			<script>
+				arp -s ${tb.unreach.ip1} ${tmp.mac} -i ${mpc.tif.name}
+			</script>
+		</step>
+
+		<step no="18">
+			<desc>clear log buff on portal</desc>
+			<console target="ap1">
+				-v "clear log buffered"
+			</console>
+		</step>
+		<step no="19">
+			<desc>pc sends a unknown unicast </desc>
+			<script>
+				perl ${bin.dir}/ping.pl -l ${log.dir}/ping_testip.log -d ${tb.unreach.ip2}; exit 0;
+			</script>
+		</step>
+
+		<step no="20">
+			<desc>show log buffer at Portal1</desc>
+			<log-match>pc_unknown_unicast .log</log-match>
+			<console target="ap1" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "flood the packet out wifi0.1"</log-match>
+			<log-match>-i "flood the packet out wifi1.1"</log-match>
+			<log-match>-i "eth0 is member interface, don't flood"</log-match>
+			<log-match>-i "eth1 is member interface, don't flood"</log-match>
+			<failed>next</failed>
+		</step>
+	</stage>
+</testcase>

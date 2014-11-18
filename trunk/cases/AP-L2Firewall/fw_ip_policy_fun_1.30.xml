@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Config single "to" policy(related mgt0, through eth0)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Configure a ip-policy which deny Laptop2's ip-address on MP and bind it to
+		FW:
+		"ip-policy FW"
+		"ip-policy FW to &lt;Laptop2 ip addr&gt; action [permit/deny]"
+		"user-profile FW security ip-policy to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Laptop and AP1 ping each other
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" =="true"</if>
+		<include prefix="pre0.1" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="pre0.2">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="pre0.3" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>pre0.3_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="pre0.4">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/pre0.3_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+
+		<step no="1">
+			<desc>
+				-Laptop has been associated with AP1 and assigned an ip address
+			</desc>
+			<telnet target="ap1">
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</telnet>
+		</step>
+
+		<include prefix="1.1" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<step no="2">
+			<desc>
+				1) Configure a ip-policy which permit Laptop2's ip-address on MP and bind it to FW
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy FW"
+				-v "ip-policy FW id 1 to ${bpc1.tif.ip} action permit"
+				-v "user-profile ttt security ip-policy to-access FW"
+				-v "clear forwarding-engine ip-sessions"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff src-ip ${bpc1.tif.ip} bidirectional"
+				-v "clear log all"
+				-v "cons page 0"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				bpc ping ap
+			</desc>
+			<log-file>step3_bpc_ping_ap1.log</log-file>
+			<ssh target="bpc1" timeout="60">
+				-v "ping ${ap1.mgt0.ip} -I ${bpc1.tif.name} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${ap1.mgt0.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				ap ping bpc
+			</desc>
+			<log-file>step4_ap_ping_bpc.log</log-file>
+			<telnet target="ap1" timeout="60">
+				-v "ping ${bpc1.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${bpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth1 ${ap1.mgt0.ip}-&gt;${bpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] group \[FW\] id \[1\] \[permit\] mirror \[no\]" -e "\(i\) mgt0 ${ap1.mgt0.ip}-&gt;${bpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) eth1 ${bpc1.tif.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[1\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) eth1 ${bpc1.tif.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				Configure a ip-policy which deny Laptop2's ip-address on MP and bind it to FW
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy FW id 1 to ${bpc1.tif.ip} action deny"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				ap ping bpc
+			</desc>
+			<log-file>step7_ap_ping_bpc.log</log-file>
+			<telnet target="ap1" timeout="60">
+				-v "ping ${bpc1.tif.ip}"
+			</telnet>
+			<log-match>-n -c -i "from ${bpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				laptop ping ap1
+			</desc>
+			<log-file>step8_bpc_ping_ap1.log</log-file>
+			<ssh target="bpc1" timeout="80">
+				-v "ping ${ap1.mgt0.ip} -I ${bpc1.tif.name} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${ap1.mgt0.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) mgt0 ${ap1.mgt0.ip}-&gt;${bpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] group \[FW\] id \[1\] \[deny\] mirror \[no\]" -e "\(i\) mgt0 ${ap1.mgt0.ip}-&gt;${bpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) eth1 ${bpc1.tif.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[1\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) eth1 ${bpc1.tif.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

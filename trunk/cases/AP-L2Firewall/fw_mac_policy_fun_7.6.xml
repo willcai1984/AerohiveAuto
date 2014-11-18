@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Add/Delete policy while traffic is on-going(to-access permit+deny)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Laptop and gateway of SW ping each other continuance
+		2) Configure a L2 policy and bind it to FW:
+		"mac-policy FW"
+		"mac-policy FW to &lt;Laptop mac addr&gt; action permit"
+		"user-profile FW security mac-policy to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Check the ping pkt
+		4) Add the deny policy
+		"mac-policy FW to &lt;Laptop mac addr&gt; action deny"
+		5) Check the ping pkt
+		6) Delete the permit policy
+		"no user-profile FW security mac-policy to-access"
+		"no mac-policy FW id [num=permit policy num]"
+		7) Check the ping pkt
+		8) Delete the deny policy
+		"no user-profile FW security mac-policy to-access"
+		"no mac-policy FW id [num=deny policy num]"
+		9) Check the ping pkt
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id 1 attribute 1"
+			</console>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_ff id 2 src-ip ${pub.tftp1.tip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				Server ping Laptop
+			</desc>
+			<log-file>step2_server_start_ping.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<include prefix="3" file="subs/sta_ping.xml" args="sta1, ${pub.tftp1.tip}, 5" />
+
+		<step no="4">
+			<desc>
+				- Configure a mac-policy and bind it to FW:
+				"mac-policy FW"
+				"mac-policy FW to &lt;Laptop mac addr&gt; action permit"
+				"user-profile FW security mac-policy to-access FW"
+			</desc>
+			<telnet target="ap1">
+				-v "mac-policy ${user_id}"
+				-v "mac-policy ${user_id} id 1 to ${sta1.tif.mac} action permit"
+				-v "user-profile ${user_id} security mac-policy to-access ${user_id}"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear arp-cache"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				Server ping Laptop
+			</desc>
+			<log-file>step5_server_start_ping.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step5.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${pub.tftp1.tip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[to-air\] group \[${user_id}\] id \[1\] \[permit\]" -e "\(i\) eth0 ${pub.tftp1.tip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="6" file="subs/sta_ping.xml" args="sta1, ${pub.tftp1.tip}, 5, negative" />
+
+		<step no="6.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step6.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="7">
+			<desc>
+				Add the deny policy
+				“mac-policy FW from &lt;Laptop ip addr&gt; action deny”
+			</desc>
+			<telnet target="ap1">
+				-v "mac-policy ${user_id} id 2 to ${sta1.tif.mac} action deny"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear arp-cache"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>
+				Server ping Laptop
+			</desc>
+			<log-file>step8_server_start_ping.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="8.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log all"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<include prefix="9" file="subs/sta_ping.xml" args="sta1, ${pub.tftp1.tip}, 5, negative" />
+
+		<step no="9.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step9.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>
+				- Delete the policy config
+				"no mac-policy FW id [num]"
+			</desc>
+			<telnet target="ap1">
+				-v "no mac-policy ${user_id} id 1"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear arp-cache"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11">
+			<desc>
+				Server ping Laptop
+			</desc>
+			<log-file>step11_server_start_ping.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="11.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step11.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) eth0 ${pub.tftp1.tip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[to-air\] group \[${user_id}\] id \[2\] \[deny\]" -e "\(i\) eth0 ${pub.tftp1.tip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="12" file="subs/sta_ping.xml" args="sta1, ${pub.tftp1.tip}, 5, negative" />
+
+		<step no="12.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step12.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta1.tif.ip}-&gt;${pub.tftp1.tip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${pub.tftp1.tip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="13">
+			<desc>
+				- Delete the policy config
+				"no mac-policy FW id [num]"
+			</desc>
+			<telnet target="ap1">
+				-v "no mac-policy ${user_id} id 2"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="14">
+			<desc>
+				Server ping Laptop
+			</desc>
+			<log-file>step14_server_start_ping.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="14.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step14.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) eth0 ${pub.tftp1.tip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] upid default action \[deny\]" -e "\(i\) eth0 ${pub.tftp1.tip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="15" file="subs/sta_ping.xml" args="sta1, ${pub.tftp1.tip}, 5, negative" />
+
+		<step no="15.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step15.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta1.tif.ip}-&gt;${pub.tftp1.tip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${pub.tftp1.tip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

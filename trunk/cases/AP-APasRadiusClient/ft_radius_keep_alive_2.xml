@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Enable radius server keep alive on radius accounting server</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a ssid with radius auth
+		-config a primary radius acct server on the ssid, reachable
+		-config a backup1 acct server, unreachable
+		-config a backup2 acct server, reachable
+		-config a backup3 acct server, reachable
+
+		Test Procedure:
+		-check the keepalive status by default, result 1
+		-enable radius probe, result 2
+		'aaa radius-server keepalive enable', wait for a while
+		-check all of the server status are correct
+		-change the primary acct server to be unreachable,wait a while,check the
+		server status, result 3
+		-client connected to ssid again, result 4,5
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-config a ssid with radius auth
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object autoap"
+				-v "security-object autoap security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server dynamic-auth-extension"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "_debug auth all"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config a primary radius-accounting server on the ssid, reachable
+				-config a backup1 accounting server,unreachable
+				-config a backup2 accounting server,reachable
+				-config a backup3 accounting server,reachable
+			</desc>
+			<ssh target="ap1">
+				-v "security-object autoap security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting backup1 ${pub.unreach.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting backup2 ${pub.radius2.ip} shared-secret ${pub.radius2.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting backup3 ${pub.radius3.ip} shared-secret ${pub.radius3.sharesecret}"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				-check the keepalive status by default, result 1
+			</desc>
+			<log-file>step3_show_aaa.log</log-file>
+			<ssh target="ap1">
+				-v "show aaa"
+			</ssh>
+			<log-match>-i "Keepalive: Disable"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				-enable radius probe, result 2
+				'aaa radius-server keepalive enable'
+			</desc>
+			<ssh target="ap1">
+				-v "aaa radius-server keepalive enable"
+			</ssh>
+		</step>
+
+		<step no="5" delay="60" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				-check the keepalive status is enabled
+				-check all of the server status are correct
+			</desc>
+			<log-file>step5_show_aaa.log</log-file>
+			<ssh target="ap1">
+				-v "show aaa"
+			</ssh>
+			<log-match>-i "Keepalive: Enable"</log-match>
+			<log-match>-c -i "primary" -i "${pub.radius1.ip}" -i "${pub.radius1.acctport}" -i "N Y"</log-match>
+			<log-match>-c -i "backup1" -i "${pub.unreach.ip}" -i "N N"</log-match>
+			<log-match>-c -i "backup2" -i "${pub.radius2.ip}" -i "${pub.radius2.acctport}" -i "N Y"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step6_show_logging.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered | in auth"
+			</ssh>
+			<no-error-check />
+			<log-match>-i "no reply from RADIUS server ${pub.unreach.ip}:${pub.radius1.acctport}"</log-match>
+			<log-match>-i "RADIUS ACCT server ${pub.unreach.ip} status is 1"</log-match>
+			<log-match>-i "Update status of RADIUS ACCT server ${pub.unreach.ip}: unreachable"</log-match>
+			<log-match>-i "Check ACCT server ${pub.radius1.ip} status..."</log-match>
+			<log-match>-i "Send Accounting-Request to ${pub.radius1.ip}"</log-match>
+			<log-match>-i "RADIUS ACCT server ${pub.radius1.ip} status is 0"</log-match>
+			<log-match>-i "Update status of RADIUS ACCT server ${pub.radius1.ip}: reachable"</log-match>
+			<log-match>-i "Check ACCT server ${pub.radius2.ip} status..."</log-match>
+			<log-match>-i "Send Accounting-Request to ${pub.radius2.ip}"</log-match>
+			<log-match>-i "RADIUS ACCT server ${pub.radius2.ip} status is 0"</log-match>
+			<log-match>-i "Update status of RADIUS ACCT server ${pub.radius2.ip}: reachable"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				-change the primary auth server to be unreachable
+			</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+				-v "ip route host ${pub.radius1.ip} gateway ${tb.vlan1.dhcp_start}"
+			</ssh>
+		</step>
+
+		<step no="7.1" delay="120" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				check the server status
+			</desc>
+			<log-file>step7_show_aaa.log</log-file>
+			<ssh target="ap1">
+				-v "show aaa"
+			</ssh>
+			<log-match>-c -i "primary" -i "${pub.radius1.ip}" -i "${pub.radius1.acctport}" -i "N *N"</log-match>
+			<log-match>-c -i "backup1" -i "${pub.unreach.ip}" -i "N *N"</log-match>
+			<log-match>-c -i "backup2" -i "${pub.radius2.ip}" -i "${pub.radius2.acctport}" -i "N *Y"</log-match>
+		</step>
+
+		<include prefix="8" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="9.1">
+			<desc>
+				check the server status
+			</desc>
+			<log-file>step9_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}"</log-match>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step9.2_show_logging.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-i "RADIUS ACCT server ${pub.radius2.ip}:${pub.radius2.acctport} is reachable, make it as current server."</log-match>
+			<log-match>-i "No response from Accounting server ${pub.radius1.ip}:${pub.radius1.acctport} - failover"</log-match>
+			<log-match>-i "Select a new reachable radius server"</log-match>
+			<log-match>-i "no reply from RADIUS server ${pub.radius1.ip}:${pub.radius1.authport}"</log-match>
+			<log-match>-i "\[auth_probe\]: RADIUS ACCT server ${pub.radius1.ip} status is 1"</log-match>
+			<log-match>-i "\[auth_probe\]: Update status of RADIUS ACCT server ${pub.radius1.ip}: unreachable"</log-match>
+			<log-match>-i "no reply from RADIUS server ${pub.unreach.ip}:${pub.radius1.acctport}"</log-match>
+			<log-match>-i "\[auth_probe\]: RADIUS ACCT server ${pub.unreach.ip} status is 1"</log-match>
+			<log-match>-i "\[auth_probe\]: Update status of RADIUS ACCT server ${pub.unreach.ip}: unreachable"</log-match>
+			<log-match>-i "\[auth_probe\]: RADIUS ACCT server ${pub.radius2.ip} status is 0"</log-match>
+			<log-match>-i "\[auth_probe\]: Update status of RADIUS ACCT server ${pub.radius2.ip}: reachable"</log-match>
+		</step>
+	</stage>
+</testcase>

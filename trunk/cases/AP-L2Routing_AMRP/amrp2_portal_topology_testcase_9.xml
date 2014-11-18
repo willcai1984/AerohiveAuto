@@ -1,0 +1,742 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief> Two portals boot up, BDA up/down check route converge(this case don't check how long the route change).</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+			-configure two Portals in the same subnet and same hive, full mesh.
+			-boot portal1 first and then portal2 
+			- Create  a SSID on wifi0  and two clients associate two AP, pass authentication
+		Test procedure	
+			1.	 When AP boot up, show   amrp interface eth0, show amrp neighbor in Portal 1 and portal 2.
+			2.	Two clients associate to two APs, and send unicast, broadcast pkt. 
+				client ping  each other. 
+				Client ping PC(debug FE)
+				Client ping portal1 and Portal2
+			3.	 Plug out cable of Portal 2’s eth0, check route converge time, check route table. Check client ‘s traffic  
+			4.	Plug in cable of Portal 2’s eth0, check route converge time, check route table. Check client ‘s traffic
+			5.	Fast plug out/in cable of  Portal 2’s eth0, Fast plug out/in cable of  Portal 2’s eth0
+		Expect result	
+			1.	 Portal 1 should be DA, Portal 2 should be BDA, Portal 1 and Portal 2  are  wifi neighbors.
+			2.	Data forward and handle should right, ping should successfully. 
+			3.	Portal 2 will change to DA quickly, Portal 1 will be MP, selecting Portal 2 as Master Portal.  Traffic will recover quickly
+				Calculate  how long portal1’s default route will be wifi1.1, how long Portal2 change route to Portal1 became wifi1.1
+			4.	Portal 1 will be BDA quickly, Portal 2 still act as DA( show  amrp interface eth0) Traffic will recover quickly, portal1change default route to wifi1.1( how long), Portal2 change route to Portal1 became wifi1.1( how long)
+			5.	Route table will not turbulence.
+
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+	<stage>
+		<step no="0.1">
+			<desc>
+				-when ap1 has eth1,shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				-when ap2 has eth1,shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.3_1">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap1">
+				-v "hive ${hive.name}1"
+				-v "hive ${hive.name}1 password ${hive.name}1"
+				-v "interface mgt0 hive ${hive.name}1"
+				-v "interface wifi1 radio channel 44"
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "save config"
+			</console>
+		</step>
+		
+		<step no="0.3_2">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap1">
+				-v "hive ${hive.name}1"
+				-v "hive ${hive.name}1 password ${hive.name}1"
+				-v "interface mgt0 hive ${hive.name}1"				
+				-v "ssid ${ssid.name}1"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="0.4_1">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap2">
+				-v "hive ${hive.name}1"
+				-v "hive ${hive.name}1 password ${hive.name}1"
+				-v "interface mgt0 hive ${hive.name}1"
+				-v "interface wifi1 radio channel 44"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi0 ssid ${ssid.name}2"
+				-v "save config"
+			</console>
+		</step>
+		
+		<step no="0.4_2">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap2">
+				-v "hive ${hive.name}1"
+				-v "hive ${hive.name}1 password ${hive.name}1"
+				-v "interface mgt0 hive ${hive.name}1"
+				-v "ssid ${ssid.name}2"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+				-v "interface wifi0 ssid ${ssid.name}2"		
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="1.1_1">
+			<desc>
+				-reboot AP2 to let AP1 become DA
+			</desc>
+			<console target="ap2">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="1.1_2" delay="30">
+			<desc>
+				-show interface for AP1
+			</desc>
+			<log-file>show_interface_ap1.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="1.1_3">
+			<desc>
+				-Get AP1's mgt0 mac
+			</desc>
+			<setvar name="ap1_m0_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap1.log -k "Mgt0" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.1_4">
+			<desc>
+				-Get AP1's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="ap1_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap1.log -k "Wifi1" -p 2
+			</setvar>
+		</step>
+		
+		<step no="1.1_5">
+			<desc>
+				-Get AP1's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="ap1_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap1.log -k "Wifi0" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.2_1">
+			<desc>
+				-show interface for AP2
+			</desc>
+			<log-file>show_interface_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="1.2_2">
+			<desc>
+				-Get AP2's mgt0 mac
+			</desc>
+			<setvar name="ap2_m0_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap2.log -k "Mgt0" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.2_3">
+			<desc>
+				-Get AP2's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="ap2_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap2.log -k "Wifi1" -p 2
+			</setvar>
+		</step>
+		
+		<step no="1.2_4">
+			<desc>
+				-Get AP2's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="ap2_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_interface_ap2.log -k "Wifi0" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.3_1">
+			<desc>
+				-show interface of mgt0 on AP1
+			</desc>
+			<log-file>show_ap1_int_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.3_2">
+			<desc>
+				-get IP of mgt0 on AP1
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_int_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.4_1">
+			<desc>
+				-show interface of mgt0 on AP2
+			</desc>
+			<log-file>show_ap2_int_mgt0.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.4_2">
+			<desc>
+				-get IP of mgt0 on AP2
+			</desc>
+			<setvar name="ap2.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_int_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				-Check AP2 is AP1's neighbor
+			</desc>
+			<log-file>show_amrp_neighbor_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp neighbor"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2_w1_mac} ${ap2.mgt0.ip}\s+TWO-WAY" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="1.6" delay="60">
+			<desc>
+				-show amrp interface eth0 in AP1
+			</desc>
+			<log-file>show_amrp_interface_eth0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state\s+:\s+DA" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>	
+		
+		<step no="1.7">
+			<desc>
+				-Check AP1 is AP2's neighbor
+			</desc>
+			<log-file>show_amrp_neighbor_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp neighbor"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_w1_mac} ${ap1.mgt0.ip}\s+TWO-WAY" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="1.8">
+			<desc>
+				-show amrp interface eth0 in AP2
+			</desc>
+			<log-file>show_amrp_interface_eth0_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state\s+:\s+BDA" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>	
+		
+		<!-- client1 connect to ap1 ssid -->
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}1"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+		
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+		
+		<step no="2.3" delay="10">
+			<desc>ifconfig to show the ip adrr of sta1</desc>
+			<log-file>step2.3_ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match> -e "inet addr"</log-match>
+		</step>
+		
+		<step no="2.4">
+			<desc>Get laptop1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step2.3_ifconfig.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.5.1">
+			<desc>Get station's mac</desc>
+			<setvar name="sta1.tif.mac.tmp">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step2.3_ifconfig.log -t str
+			</setvar>
+		</step>	
+
+        <step no="2.5.2">
+            <desc>get mac of sta1</desc>
+            <setvar name="sta1.tif.mac">
+                 echo $(echo $(echo $(echo ${sta1.tif.mac.tmp} | cut -d : -f1)$(echo ${sta1.tif.mac.tmp} | cut -d : -f2,3)$(echo ${sta1.tif.mac.tmp} | cut -d : -f4,5)$(echo ${sta1.tif.mac.tmp} | cut -d : -f6)) | tr "A-F" "a-f")
+            </setvar>
+        </step>		
+		
+		<!-- client2 connect to ap2 ssid -->
+		<step no="2.6">
+			<multi-setvar>
+				echo "conn2.ssid=${ssid.name}2"
+				echo "conn2.proto=open"
+				echo "conn2.pif=wifi0"
+			</multi-setvar>
+		</step>
+		
+		<include prefix="2.7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap2" />
+
+		<step no="2.8" delay="10">
+			<desc>ifconfig to show the ip adrr of sta1</desc>
+			<log-file>step2.8_ifconfig.log</log-file>
+			<ssh target="sta2">
+				-v "ifconfig ${sta2.tif.name}"
+			</ssh>
+			<log-match> -e "inet addr"</log-match>
+		</step>
+		
+		<step no="2.9">
+			<desc>Get laptop1's ip</desc>
+			<setvar name="sta2.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step2.8_ifconfig.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>			
+
+		<step no="2.10.1">
+			<desc>Get station's mac</desc>
+			<setvar name="sta2.tif.mac.tmp">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step2.8_ifconfig.log -t str
+			</setvar>
+		</step>	
+		
+        <step no="2.10.2">
+            <desc>get mac of sta1</desc>
+            <setvar name="sta2.tif.mac">
+                 echo $(echo $(echo $(echo ${sta2.tif.mac.tmp} | cut -d : -f1)$(echo ${sta2.tif.mac.tmp} | cut -d : -f2,3)$(echo ${sta2.tif.mac.tmp} | cut -d : -f4,5)$(echo ${sta2.tif.mac.tmp} | cut -d : -f6)) | tr "A-F" "a-f")
+            </setvar>
+        </step>	
+
+		<step no="2.11" delay="60">
+			<desc>
+				show ssid station in AP1
+			</desc>
+			<log-file>show_ssid_sta1.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}1 station"
+			</console>
+		</step>
+
+		<step no="2.12">
+			<desc>
+				get sta1 ip in AP1
+			</desc>
+			<setvar name="ap1.sta1.ip">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_ssid_sta1.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+
+		<step no="2.13">
+			<desc>
+				compare sta1 show ip to AP1 show station ip
+			</desc>
+			<script>
+				if [ ${ap1.sta1.ip} != ${sta1.tif.ip} ]; then exit 1;fi
+			</script>
+		</step>
+
+		<step no="2.14">
+			<desc>
+				show ssid station in AP2
+			</desc>
+			<log-file>show_ssid_sta2.log</log-file>
+			<console target="ap2">
+				-v "show ssid ${ssid.name}2 station"
+			</console>
+		</step>
+
+		<step no="2.15">
+			<desc>
+				get sta2 ip in AP2
+			</desc>
+			<setvar name="ap2.sta2.ip">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_ssid_sta2.log -k "${sta2.tif.mac}" -p 2
+			</setvar>
+		</step>
+
+		<step no="2.16">
+			<desc>
+				-Compare sta2 show ip to AP2 show station ip
+			</desc>
+			<script>
+				if [ ${ap2.sta2.ip} != ${sta2.tif.ip} ]; then exit 1;fi
+			</script>
+		</step>
+
+		<step no="2.17">
+			<desc>
+				-enable debug in AP1
+			</desc>
+			<console target="ap1">
+				-v "_kdebug fe basic"
+				-v "_ff id 1 src-mac ${sta1.tif.mac}"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="2.18">
+			<desc>
+				-client1 ping client2
+			</desc>
+			<log-file>step2.18_ping_sta2.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${sta2.tif.ip} -c 2"
+			</ssh>
+			<log-match>-c -i "from ${sta2.tif.ip}: icmp_req" -i "ttl="</log-match>			
+		</step>
+		
+		<step no="2.19">
+			<desc>
+				-client1 ping pc
+			</desc>
+			<log-file>step2.19_ping_pc.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${tb.vlan1.gw} -c 2"
+			</ssh>
+			<log-match>-c -i "from ${tb.vlan1.gw}: icmp_req" -i "ttl="</log-match>	
+		</step>		
+		<step no="2.20">
+			<desc>
+				-client1 ping ap1
+			</desc>
+			<log-file>step2.20_ping_ap1.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${ap1.mgt0.ip} -c 2"
+			</ssh>
+			<log-match>-c -i "from ${ap1.mgt0.ip}: icmp_req" -i "ttl="</log-match>
+		</step>		
+		<step no="2.21">
+			<desc>
+				-client1 ping ap2
+			</desc>
+			<log-file>step2.21_ping_ap2.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${ap2.mgt0.ip} -c 2"
+			</ssh>
+			<log-match>-c -i "from ${ap2.mgt0.ip}: icmp_req" -i "ttl="</log-match>
+		</step>
+		
+		<step no="2.22">
+			<desc>
+				-check the correct logic
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>show_log_buffer_2.22.log</log-file>
+			<telnet target="ap1">
+				-v "show log buffer"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->${sta2.tif.ip}"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->${sta2.tif.ip}"</log-match>
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->${tb.vlan1.gw}"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->${tb.vlan1.gw}"</log-match>
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->${ap1.mgt0.ip}"</log-match>
+			<log-match>-c -e "(u) mgt0 ${sta1.tif.ip}->${ap1.mgt0.ip}"</log-match>
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->${ap2.mgt0.ip}"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->${ap2.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-Shutdown AP1's interface eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				-Show route, default route should be wifi1.1
+			</desc>
+			<log-file>show_ap1_router.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000\s+${ap2_w1_mac}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.3" delay="60">
+			<desc>
+				-show amrp interface eth0 in AP1
+			</desc>
+			<log-file>step3.3_show_amrp_interface_eth0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "amrp can't find eth0" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.4" delay="60">
+			<desc>
+				-show amrp interface eth0 in AP2
+			</desc>
+			<log-file>step3.4_show_amrp_interface_eth0_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state\s+:\s+DA" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.5_1">
+			<desc>
+				-show route AP2
+			</desc>
+			<log-file>step3.5_show_route_ap2.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_w1_mac}\s+${ap1_w1_mac}\s+wifi1.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_m0_mac}\s+${ap1_w1_mac}\s+wifi1.1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="3.5_2">
+			<desc>
+				-show route AP2
+			</desc>
+			<log-file>step3.5_show_route_ap2.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_w1_mac}\s+${ap1_w1_mac}\s+wifi0.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_m0_mac}\s+${ap1_w1_mac}\s+wifi0.1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-Un-shutdown AP1's interface eth0
+			</desc>
+			<console target="ap1">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				-Show route, default route should be eth0
+			</desc>
+			<log-file>step4.2_show_ap1_router.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000\s+${ap1_m0_mac}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.3" delay="60">
+			<desc>
+				-show amrp interface eth0 in AP1
+			</desc>
+			<log-file>step4.3_show_amrp_interface_eth0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state\s+:\s+BDA" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				-show amrp interface eth0 in AP2
+			</desc>
+			<log-file>step4.4_show_amrp_interface_eth0_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state\s+:\s+DA" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				-show route AP2
+			</desc>
+			<log-file>step4.5_show_route_ap2.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000\s+${ap2_m0_mac}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-shutdown/unshutdown AP1's interface eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5.2" delay="15">
+			<desc>
+				-Show route, default route should be eth0
+			</desc>
+			<log-file>step5.2_show_ap1_router.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000\s+${ap1_m0_mac}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.3" delay="60">
+			<desc>
+				-show amrp interface eth0 in AP1
+			</desc>
+			<log-file>step5.3_show_amrp_interface_eth0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state\s+:\s+BDA" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="5.4">
+			<desc>
+				-shutdown AP2's interface eth0
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5.5" delay="15">
+			<desc>
+				-Show route, default route should be wifi in AP2
+			</desc>
+			<log-file>step5.5_show_ap2_router.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000\s+${ap1_w1_mac}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="5.6" delay="60">
+			<desc>
+				-show amrp interface eth0 in AP2
+			</desc>
+			<log-file>step5.6_show_amrp_interface_eth0_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "amrp can't find eth0" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="5.7" delay="60">
+			<desc>
+				-show amrp interface eth0 in AP1
+			</desc>
+			<log-file>step5.7_show_amrp_interface_eth0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state\s+:\s+DA" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="5.8">
+			<desc>
+				-shutdown AP2's interface eth0
+			</desc>
+			<console target="ap2">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+		
+		<step no="5.9" delay="15">
+			<desc>
+				-Show route, default route should be eth0
+			</desc>
+			<log-file>step5.9_show_ap2_router.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000\s+${ap2_m0_mac}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.10" delay="60">
+			<desc>
+				-show amrp interface eth0 in AP2
+			</desc>
+			<log-file>step5.10_show_amrp_interface_eth0_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp interface eth0"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "state\s+:\s+BDA" -f ${log.dir}/${log.file}</log-match>
+		</step>		
+
+	</stage>
+</testcase>

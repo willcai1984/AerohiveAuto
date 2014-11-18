@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Delete network firewall config</brief>
+	<priority>Low</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use	                         Topolopy1
+		Description	Delete network firewall config
+		Pre-condition	-Configure AP
+		“network-firewall name 1001 from any to network 10.0.0.0 255.0.0.0 action deny logging on”
+		“network-firewall name 1002 from user-profile 4 to vpn action permit logging off”
+		Test procedure	1) Delete network firewall 
+		“no network-firewall”
+		2) show network firewall 
+		“show network-firewall”
+		3) show network firewall configure
+		“show running config”
+		Expect result	2) No information is displayed
+		3) No network firewall config is displayed
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+	<stage>
+		<step no="1.1">
+			<desc>set br.lan.nm</desc>
+			<setvar name="br.lan.nm">
+				echo $(ipcalc -m ${br1.br.mgt0.1.ip}/${br.lan.netmask} | cut -d= -f2)
+			</setvar>
+		</step>
+		<step no="1.2">
+			<desc>
+				configure mgt0.1 with dhcp service enable
+			</desc>
+			<telnet host="${br1.br.wan.ip}" timeout="300">
+				-v "interface mgt0.1 vlan ${br1.vlan1}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask ${br.lan.nm}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>
+				configure BR firewall
+			</desc>
+			<telnet host="${br1.br.wan.ip}">
+				-v "network-firewall name 1001 from any to network ${br1.br.mgt0.1.ip} ${br.lan.nm} action deny logging on"
+				-v "user-profile auto"
+				-v "network-firewall name 1002 from user-profile auto to vpn action permit logging off"
+			</telnet>
+		</step>
+		<step no="3">
+			<desc>show network firewall</desc>
+			<log-file>check_firewall1.log</log-file>
+			<telnet host="${br1.br.wan.ip}">
+				-v "sh network-firewall"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "1001[ \t]+any[ \t]+${br1.br.mgt0.1.ip}/${br.lan.nm}[ \t]+any[ \t]+deny[ \t]+on" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "1002[ \t]+user-profile[ \t]+auto[ \t]+vpn[ \t]+any[ \t]+permit[ \t]+off" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="4">
+			<desc>check running config</desc>
+			<log-file>check_firewall2.log</log-file>
+			<telnet host="${br1.br.wan.ip}">
+				-v "show run"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "network-firewall name 1001 to network ${br1.br.mgt0.1.ip} ${br.lan.nm}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "network-firewall name 1002 from user-profile auto to vpn action permit logging off" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="5">
+			<desc>
+				1) Delete network firewall
+				2) show network firewall
+			</desc>
+			<log-file>check_firewall3.log</log-file>
+			<telnet host="${br1.br.wan.ip}">
+				-v "no network-firewall"
+				-v "sh network-firewall"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "network-firewall name 1001 to network ${br1.br.mgt0.1.ip} ${br.lan.nm}" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "network-firewall name 1002 from user-profile auto to vpn action permit logging off" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="6">
+			<desc>check running-configure</desc>
+			<telnet host="${br1.br.wan.ip}">
+				-v "show run"
+			</telnet>
+			<log-match>-e "network-firewall name 1001 to network ${br1.br.mgt0.1.ip} ${br.lan.nm}" -n</log-match>
+			<log-match>-e "network-firewall name 1002 from user-profile auto to vpn action permit logging off" -n</log-match>
+		</step>
+	</stage>
+</testcase>

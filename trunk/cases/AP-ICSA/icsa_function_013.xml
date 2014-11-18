@@ -1,0 +1,1076 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check that drop all not management traffic destined to the HiveAP itself when forwarding-engine drop no-management traffic is enable.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test procedure
+		1. Construct the topo
+		2. laptops and pc send data packet to ap, result 1
+
+		Test Procedure:
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				creat ssid and bind it to wifi0
+				creat user-profile and drop ip-fragmented-packets
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} manage all"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "user-profile FW qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "forwarding-engine drop to-self-non-management-traffic"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				open debug and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-port 6000 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step4_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 6000 -d 200"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show logging buffered an ap1
+			</desc>
+			<log-file>step4.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step5_mpc_send_packet.log</log-file>
+			<script>
+				hping ${ap1.mgt0.ip} -c 3 -s 5000 -p 6000 -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 protocol 1 bidirection"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<include prefix="7" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 5" />
+
+		<step no="8" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "${ap1.mgt0.ip}-&gt;${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="9">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step9_mpc_send_packet.log</log-file>
+			<script>
+				ping ${ap1.mgt0.ip} -c 5 &gt; ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="9.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step9.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "${ap1.mgt0.ip}-&gt;${mpc.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="9.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 23 bidirection"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="10" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step10_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 23 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="10.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step10.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "TCP 5000-&gt;23"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="13">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step13_mpc_send_packet.log</log-file>
+			<script>
+				hping ${ap1.mgt0.ip} -c 3 -s 5000 -p 23 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="13.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step13.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "TCP 5000-&gt;23"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="13.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 22 bidirection"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="14" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step14_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v " hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 22 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="14.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step14.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "TCP 5000-&gt;22"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="14.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="15">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step15_mpc_send_packet.log</log-file>
+			<script>
+				hping ${ap1.mgt0.ip} -c 3 -s 5000 -p 22 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="15.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step15.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "TCP 5000-&gt;22"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="15.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 443 bidirection"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="16" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step16_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 443 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="16.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step16.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "TCP 5000-&gt;443"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="16.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="17">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step17_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 443 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="17.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step17.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "TCP 5000-&gt;443"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="17.2">
+			<desc>clear log buffer in AP1</desc>
+			<ssh target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 80 bidirection"
+				-v "clear log buffer"
+			</ssh>
+		</step>
+
+		<step no="18" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step18_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 80 -k -d 200"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="18.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step18.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "TCP 5000-&gt;80"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="18.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="19">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step19_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -c 3 -s 5000 -p 80 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="19.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step19.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "TCP 5000-&gt;80"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="19.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 3000 bidirection"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="20" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step20_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 3000 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="20.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step20.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;3000"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="20.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="21">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step21_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 3000 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="21.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step21.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;3000"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="21.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 12222 bidirection"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="22" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step22_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 12222 -p 5000 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="22.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step22.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 12222-&gt;5000"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="22.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="23">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step23_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -2 -c 3 -s 12222 -p 5000 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="23.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step23.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 12222-&gt;5000"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="23.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 69 bidirection"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="24" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step24_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 69 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="24.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step24.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;69"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="24.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="25">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step25_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 69 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="25.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step25.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;69"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="25.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 123 bidirection"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="26" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step26_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 123 -p 5000 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="26.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step26.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 123-&gt;5000"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="26.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="27">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step27_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -2 -c 3 -s 123 -p 5000 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="27.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step27.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 123-&gt;5000"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="27.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 67 bidirection"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="28" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step28_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 67 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="28.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step28.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;67"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="28.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="29">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step29_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 67 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="29.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step29.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;67"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="29.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 68 bidirection"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="30" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step30_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 67 -p 68 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="30.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step30.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 67-&gt;68"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="30.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="31">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step31_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -2 -c 3 -s 67 -p 68 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="31.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step31.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 67-&gt;68"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="31.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 53 bidirection"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="32" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step32_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 53 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="32.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step32.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;53"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="32.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="33">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step33_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 53 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="33.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step33.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;53"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="33.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 161 bidirection"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="34" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step34_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 161 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="34.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step34.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;161"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="34.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="35">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step35_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 161 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="35.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step35.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;161"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="35.2">
+			<desc>clear log buffer in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 500 bidirection"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="36" delay="5">
+			<desc>
+				- sta1 send data packet to ap
+			</desc>
+			<log-file>step36_laptops_send_packect.log</log-file>
+			<ssh target="sta1">
+				-v "hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 500 -k -d 200"
+			</ssh>
+		</step>
+
+		<step no="36.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step36.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="80">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;500"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+
+		<step no="36.2">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="37">
+			<desc>
+				- mpc send data packet to ap
+			</desc>
+			<log-file>step37_mpc_send_packet.log</log-file>
+			<script>
+				hping3 ${ap1.mgt0.ip} -2 -c 3 -s 5000 -p 500 -k -d 200 &gt; ${log.dir}/${log.file};
+				exit 0;
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="37.1" delay="5">
+			<desc>
+				- show logging buffered an ap1
+			</desc>
+			<log-file>step37.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) eth0 ${mpc.tif.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 5000-&gt;500"</log-match>
+			<log-match>-n -c -i "\[fe\]: *invalid mgt traffic, *drop pkt"</log-match>
+		</step>
+	</stage>
+</testcase>

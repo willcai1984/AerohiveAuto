@@ -1,0 +1,95 @@
+<testcase>
+	<brief>EAP-TTLS support</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+
+		Topology to use
+		Description
+		EAP-TTLS support
+
+		Pre-condition
+		-setup a ssid with 802.1x auth method
+		-config a radius server on this ssid,the server should support eap-ttls
+		-config on client side,support eap-ttls
+
+		Test procedure
+		-client connect to ssid using eap-peap
+
+		Expect result
+		1.check the config on AP is correct,sh ssid xxx,sh ssid xxx se pro to make sure
+		2.client pass auth successfully
+		3.Client can get IP by DHCP
+		4.Check the connection will not be dropped,we should ping the gateway for 10 minutes,
+		make sure the traffic is not broken abnormal
+		5.Check the roaming cache
+		6.Check the local cache
+
+	</description>
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-auto-8021x" />
+
+		<include prefix="4" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="ex.debug">
+			<desc>enable auth debug</desc>
+			<telnet target="ap1" timeout="10">
+				-v "_de auth all"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 proactive_key_caching 0"
+				-v "set_network 0 key_mgmt WPA-EAP"
+				-v "set_network 0 proto WPA"
+				-v "set_network 0 pairwise CCMP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 eap TTLS"
+				-v "set_network 0 phase2 \"auth=MSCHAPV2\""
+				-v "set_network 0 priority 5"
+				-v "set_network 0 identity \"${pub.radius1.username}\""
+				-v "set_network 0 anonymous_identity \"${pub.radius1.username}\""
+				-v "set_network 0 password \"${pub.radius1.passwd}\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="ex.eap-check" type="loop-check" delay="20" loop-max-times="3" loop-interval="5">
+			<if></if>
+			<desc>check if the client was associated successfully</desc>
+			<log-file>wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "selectedMethod=21 (EAP-TTLS)"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<include prefix="6" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa-aes-8021x, WPA/CCMP, wpa-8021x, aes" />
+
+	</stage>
+</testcase>

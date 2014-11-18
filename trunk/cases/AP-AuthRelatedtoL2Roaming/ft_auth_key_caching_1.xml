@@ -1,0 +1,444 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>STA (re)associate with a valid pmkid</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use
+		AP1-----AP2
+		Description
+		STA (re)associate with a valid pmkid
+		Pre-condition
+		-two Aps,they are roming neighbours
+		-config the same ssid with WPA2 802.1x auth method
+		-STA connect to one AP,with correct credence
+		-make sure the STA supports PMK caching
+		Test procedure
+		-STA roaming to other AP,check the pmk regenerated
+		-then roaming back to the previous AP
+		-the AP has a local cache related to the STA
+		Expect result
+		1.When STA roaming back to the previous AP,
+		it will contain a pmkid in (re)associate request,
+		then both sides start 4 way hankshake using the cached PMK,
+		omit the process of full eap auth
+		2.Sh auth,sh roa ca,sh ssid xxx st to make sure
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}-ROAMING" />
+	<property name="acct1.vlan" value="${tb.vlan1}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${job.sid}_${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<include prefix="0" file="subs/ldap_add.xml" args="${conn1.username}, ${conn1.passwd}" obj-args="acct1" />
+
+		<step no="1">
+			<desc>config hive,vlan info</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="1.1" delay="30">
+			<desc>show interface of mgt0 on AP1</desc>
+			<log-file>show_int_mgt0_ap1.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>get IP of mgt0 on AP1</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_int_mgt0_ap1.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>config hive,vlan info</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="2.1" delay="30">
+			<desc>show interface of mgt0 on AP2</desc>
+			<log-file>show_int_mgt0_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="2.2">
+			<desc>get IP of mgt0 on AP2</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_int_mgt0_ap2.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>Set SSID for ap1</desc>
+			<ssh target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${ssid.name}-ROAMING"
+				-v "ssid ${ssid.name}-ROAMING security-object autoap"
+				-v "user-profile ttt vlan-id ${tb.vlan2} attribute 2"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}-ROAMING"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show interface ${ssid_bind_interface} info
+			</desc>
+			<log-file>step3.1_show_interface_wifi0_info.log</log-file>
+			<ssh target="ap1">
+				-v "show interface ${ssid_bind_interface}"
+			</ssh>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				get ${ssid_bind_interface}'s mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap1.${ssid_bind_interface}.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step3.1_show_interface_wifi0_info.log -i ${ssid_bind_interface} -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>Set SSID for ap2</desc>
+			<ssh target="ap2" timeout="10">
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${ssid.name}-ROAMING"
+				-v "ssid ${ssid.name}-ROAMING security-object autoap"
+				-v "security-object autoap security preauth"
+				-v "user-profile ttt vlan-id ${tb.vlan2} attribute 2"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}-ROAMING"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}-ROAMING shutdown"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show interface ${ssid_bind_interface} info
+			</desc>
+			<log-file>step4.1_show_interface_wifi0_info.log</log-file>
+			<ssh target="ap2">
+				-v "show interface ${ssid_bind_interface}"
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				get ${ssid_bind_interface}'s mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap2.${ssid_bind_interface}.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step4.1_show_interface_wifi0_info.log -i ${ssid_bind_interface} -o aero -m -width
+			</setvar>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>show auth on AP1</desc>
+			<log-file>step6_show_auth_ap1.log</log-file>
+			<ssh target="ap1" timeout="10">
+				-v "show auth"
+			</ssh>
+			<log-match>-i "${sta1.tif.mac} *2" -i "${conn1.username}"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>show station on AP1</desc>
+			<log-file>step7_show_station_ap1.log</log-file>
+			<ssh target="ap1" timeout="10">
+				-v "show ssid ${ssid.name}-ROAMING station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${tb.vlan1} *Yes *2"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>show roaming cache on AP1</desc>
+			<log-file>step8_show_roaming_cache_ap1.log</log-file>
+			<ssh target="ap1" timeout="10">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-i "0 *YNNN" -i "${sta1.tif.mac}"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>show roaming cache on AP2</desc>
+			<log-file>step8.1_show_roaming_cache_ap2.log</log-file>
+			<ssh target="ap2" timeout="10">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-i "1 *YNNN" -i "${sta1.tif.mac}"</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc> get new PMK for ap1</desc>
+			<setvar name="ap1.pmk">
+				${bin.dir}/getstring.pl -f ${log.dir}/step8_show_roaming_cache_ap1.log -p 6 -k ${sta1.tif.mac}
+			</setvar>
+		</step>
+
+		<step no="8.3">
+			<desc>get bssid on AP1</desc>
+			<setvar name="ap1.bssid">
+				${bin.dir}/getstring.pl -f ${log.dir}/step6_show_auth_ap1.log -k SSID=${ssid.name}-ROAMING -k1 AA= -k2 \;|sed 's/://g;s/../&amp;:/g;s/.$//'
+			</setvar>
+		</step>
+
+		<step no="8.4">
+			<desc>enable ssid ${ssid.name}-ROAMING on AP2</desc>
+			<ssh target="ap2" timeout="10">
+				-v "no interface ${ssid_bind_interface} ssid ${ssid.name}-ROAMING shutdown"
+			</ssh>
+		</step>
+
+		<step no="9">
+			<desc>enable auth debug on AP2</desc>
+			<ssh target="ap2">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} etype 88c7 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_debug auth all"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="9.1">
+			<desc>show auth on AP2</desc>
+			<log-file>step9.1_show_auth_ap2.log</log-file>
+			<ssh target="ap2" timeout="10">
+				-v "show auth"
+			</ssh>
+		</step>
+
+		<step no="9.2">
+			<desc>get bssid on AP2</desc>
+			<setvar name="ap2.bssid">
+				${bin.dir}/getstring.pl -f ${log.dir}/step9.1_show_auth_ap2.log -k SSID=${ssid.name}-ROAMING -k1 AA= -k2 \;|sed 's/://g; s/../&amp;:/g;s/.$//'
+			</setvar>
+		</step>
+
+		<step no="9.3">
+			<desc>client does preauth against AP2</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "preauthenticate ${ap2.bssid}"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="10" delay="20" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check pre-auth success</desc>
+			<log-file>step10_preauth_check_${loop_check.idx}.log</log-file>
+			<ssh target="ap2" timeout="10">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "pre-authentication for station ${sta1.tif.mac} succeeded"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>enable auth debug on AP2</desc>
+			<ssh target="ap2">
+				-v "no _kde fe basic"
+				-v "_debug auth all"
+				-v "clear log buffered"
+			</ssh>
+		</step>
+
+		<step no="11">
+			<desc>client roams to AP2</desc>
+			<ssh target="sta1" timeout="10" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "set_network 0 bssid ${ap2.bssid}"
+				-v "reass"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="12" delay="5" type="loop-check" loop-max-times="3" loop-interval="5">
+			<desc>check if the client was associated successfully</desc>
+			<log-file>step12_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-i "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="13" delay="20" type="loop-check" loop-max-times="3" loop-interval="5">
+			<desc>show logging buffered</desc>
+			<log-file>step13_auth_debug_ap2_${loop_check.idx}.log</log-file>
+			<ssh target="ap2">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "Number of PMKIDs provided by station ${sta1.tif.mac} = 1"</log-match>
+			<log-match>-c -i "Auth info is got from local PMKSA cache: SPA=${sta1.tif.mac}"</log-match>
+			<log-match>-c -i "PMK from PMKSA cache - skip IEEE 802.1X/EAP"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>show roaming cache on AP2</desc>
+			<log-file>step14_show_roaming_cache_ap2.log</log-file>
+			<ssh target="ap2" timeout="10">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-i "0 *YNNN" -i "${sta1.tif.mac}"</log-match>
+			<log-match>-n -i "0 *YNNN" -i "${sta1.tif.mac}" -i "${ap1.pmk}"</log-match>
+		</step>
+
+		<step no="14.1">
+			<desc> get PMK for ap2</desc>
+			<setvar name="ap2.pmk">
+				${bin.dir}/getstring.pl -f ${log.dir}/step14_show_roaming_cache_ap2.log -p 6 -k ${sta1.tif.mac}
+			</setvar>
+		</step>
+
+		<step no="14.2">
+			<desc>show roaming cache on AP1</desc>
+			<log-file>step14.1_show_roaming_cache_ap1.log</log-file>
+			<ssh target="ap1" timeout="10">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-i "1 *YNNN" -i "${sta1.tif.mac}"</log-match>
+			<log-match>-n -i "1 *YNNN" -i "${sta1.tif.mac}" -i "${ap1.pmk}"</log-match>
+		</step>
+
+		<step no="14.3">
+			<desc>show auth on AP2</desc>
+			<log-file>step14.3_show_auth_ap2.log</log-file>
+			<ssh target="ap2" timeout="10">
+				-v "show auth"
+			</ssh>
+			<log-match>-i "${sta1.tif.mac} *2" -i "${conn1.username}" -i "${ap2.pmk}"</log-match>
+			<log-match>-n -i "${sta1.tif.mac} *2" -i "${conn1.username}" -i "${ap1.pmk}"</log-match>
+		</step>
+
+		<step no="14.3a">
+			<desc>show auth on AP1</desc>
+			<log-file>step14.3a_show_auth_ap1.log</log-file>
+			<ssh target="ap1" timeout="10">
+				-v "show auth"
+			</ssh>
+			<log-match>-i "${sta1.tif.mac} *2" -i "${conn1.username}" -i "${ap1.pmk}"</log-match>
+		</step>
+
+		<step no="14.4">
+			<desc>show station on AP2</desc>
+			<log-file>step14.4_show_station_ap2.log</log-file>
+			<ssh target="ap2" timeout="10">
+				-v "show ssid ${ssid.name}-ROAMING station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${tb.vlan1} *Yes *2"</log-match>
+		</step>
+
+		<include prefix="15" file="subs/sta_ping.xml" args="sta1, ${tb.vlan1.gw}, 5" />
+
+		<step no="16">
+			<desc>enable auth debug on AP1</desc>
+			<ssh target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} etype 88c7 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_debug auth all"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="16.1">
+			<desc>client roams to AP1</desc>
+			<ssh target="sta1" timeout="10" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "set_network 0 bssid ${ap1.bssid}"
+				-v "reass"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="16.2" delay="5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check if the client was associated successfully</desc>
+			<log-file>step16.2_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-i "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="17" delay="20" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show logging buffered</desc>
+			<log-file>step17_auth_debug_ap1_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "Number of PMKIDs provided by station ${sta1.tif.mac} = 1"</log-match>
+			<log-match>-c -i "Auth info is got from local PMKSA cache: SPA=${sta1.tif.mac}"</log-match>
+			<log-match>-c -i "PMK from PMKSA cache - skip IEEE 802.1X/EAP"</log-match>
+			<log-match>-c -i "STA\[${sta1.tif.mac}\] PMKID" -i "does match pmksa_cache"</log-match>
+		</step>
+
+		<step no="18">
+			<desc>show auth on AP1</desc>
+			<log-file>step18_show_auth_ap1.log</log-file>
+			<ssh target="ap1" timeout="10">
+				-v "show auth"
+			</ssh>
+			<log-match>-i "${sta1.tif.mac} *2" -i "${conn1.username}" -i "${ap1.pmk}"</log-match>
+		</step>
+
+		<step no="18.1">
+			<desc>show station on AP1</desc>
+			<log-file>step18.1_show_station_ap1.log</log-file>
+			<ssh target="ap1" timeout="10">
+				-v "show ssid ${ssid.name}-ROAMING station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${tb.vlan1} *Yes *2"</log-match>
+		</step>
+
+		<step no="18.2">
+			<desc>show roaming cache on AP2</desc>
+			<log-file>step18.2_show_roaming_cache_ap2.log</log-file>
+			<ssh target="ap1" timeout="10">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-i "0 *YNNN" -i "${sta1.tif.mac}" -i "${ap1.pmk}"</log-match>
+		</step>
+
+		<include prefix="19" file="subs/sta_ping.xml" args="sta1, ${tb.vlan1.gw}, 5" />
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="delete_account1" file="subs/ldap_delete.xml" args="${conn1.username}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

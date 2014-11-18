@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test L7 service classification, package of FTP mapping aerohive-calss 5</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Test Procedure:
+
+		1. STA1 connects to portal on eth0, and obtain ip; 
+		2. portal and mp are amrp neighber;
+		3. create ssid on mp;
+		4. STA3 connects to mp; 
+		5. STA1 generates FTP packet;
+		6. check log
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+       <step no="0">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="1">
+			<desc>Set qos classifier profile and use it on eth0</desc>
+			<log-file>classifier_8021p.log</log-file>
+			<telnet target="ap1">
+			    -v "service L7-FTP app-id 217"
+				-v "service L7-FTPData app-id 219"
+				-v "service L7-FTPCtrl app-id 218"
+				-v "qos classifier-map service L7-FTP qos 5"
+				-v "qos classifier-map service L7-FTPData qos 5"
+				-v "qos classifier-map service l7-FTPCtrl qos 5"
+				-v "qos classifier-profile eth0 service"
+				-v "interface eth0 qos-classifier eth0"
+			</telnet>
+		</step>
+		
+        <include prefix="2" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.gw}, 4" />
+
+		<include prefix="3" file="subs/sta_ping.xml" args="sta1, ${mpc.tif.ip}, 4" />
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+		<include prefix="5" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step5_show_logging_buffered.log" />
+		
+		<step no="6">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} protocol 6 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				-Laptop connect to FTP server and download files
+				-Clear local file
+			</desc>
+			<ssh target="sta1">
+				-v "rm -f ${ftp_test_file_local_dir}/${tb.ftp.file3_small}"
+				-v "rm -f ${ftp_test_file_local_dir}/2.2_stdout.log"
+				-v "rm -f ${ftp_test_file_local_dir}/3.2_stdout.log"
+			</ssh>
+		</step>
+
+		<step no="8" delay="10">
+			<desc>
+				-Get file from ftp server
+			</desc>
+			<log-file>7.1_curl_pid.log</log-file>
+			<ssh target="sta1">
+				-v "nohup curl -u ${tb.ftp.user}:${tb.ftp.passwd} ftp://${tb.ftp}/${tb.ftp.file3_small} -o ${ftp_test_file_local_dir}/${tb.ftp.file3_small} --limit-rate 50k --connect-timeout 20 --disable-eprt > ${ftp_test_file_local_dir}/3.2_stdout.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="9">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>ft_1_log_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered | in eth0"
+			</telnet>
+			<log-match>-re -i "\(i\) eth0" -i "TCP \d+->\d+"</log-match>
+			<log-match>-i "qos=5 profile=1" -i "pkt forwarded (eth0)"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

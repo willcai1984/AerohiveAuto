@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test Bonjour Gateway failure replacement</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		pre-condition:
+		CVG1, AP330 and AP350 are in hive1, vlan 109(mgt0). They connect to a trunk port which permits vlan 1, 109,110
+		CVG2, AP141 and BR200-WP are in hive2, vlan 111(mgt0). They connect to a trunk port which permits vlan 1,111,112
+		AppleTV connects to an access port with vlan 112
+		CVG2’s priority is set as 45
+		CVG1 and CVG2 are BDDs and bonjour neighbor
+		Services in vlan 109 and 110 can be advertised to vlan 111 and 112
+
+		test procedure:
+		1. shutdown CVG2(shutdown eth0/eth1 or disable bonjour-gateway, etc)
+		2. check BDD re-election result, Result1
+ 		  show bonjour-gateway status
+		3. check advertising result. Result2
+ 		  show bonjour-gateway service local
+		
+		expect result:
+		Result1, BR200-WP is elected as the new BDD
+		Result2, services in VLAN 109,110 can still be seen on VLAN 111, 112
+	
+	</description>
+	<numofap>3</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+	
+		<include prefix="0" file="subs/l3swcfg_port_vlan.xml" args="${tb.apple.l3sw.port}, ${tb.vlan1}, ${tb.vlans}" />
+		
+		<step no="1">
+    		<desc>
+       			config ap1
+    		</desc>
+    		<log-file>ap1_config.log</log-file>
+    		<console target="ap1">
+       			-v "interface mgt0 vlan ${tb.vlan1}"
+       			-v "interface mgt0 native-vlan ${tb.vlan1}"
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}"
+       			-v "interface mgt0 hive ${hive.name}"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan1} ${tb.vlan3}"
+    		</console>
+		</step>
+		
+		<step no="2">
+			<desc>config filter rule on ap1</desc>
+			<log-file>config_filter.log</log-file>
+			<console target="ap1">
+				-v "vlan-group 1 ${tb.vlan2}"
+				-v "bonjour-gateway filter rule 1 * to 1"
+			</console>
+		</step>
+	
+		<step no="3">
+			<desc>config ap2</desc>
+			<log-file>ap2_config.log</log-file>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan2}"   			
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}1"
+       			-v "interface mgt0 hive ${hive.name}1"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan2}"
+			</console>
+		</step>
+		
+		<step no="4">
+			<desc>config ap3</desc>
+			<log-file>ap3_config.log</log-file>
+			<console target="ap3">
+				-v "interface mgt0 vlan ${tb.vlan2}"   			
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}1"
+       			-v "interface mgt0 hive ${hive.name}1"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway priority 5"
+       			-v "bonjour-gateway vlan ${tb.vlan2}"
+			</console>
+		</step>
+				
+		<step no="5" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>check bonjour-gateway status on ap1</desc>
+			<log-file>step5_show_bon_sta.log</log-file>
+			<console target="ap1">
+				-v "show bonjour-gateway status"
+			</console>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="6" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>check bonjour-gateway status on ap1</desc>
+			<log-file>step6_show_bon_sta.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway status"
+			</console>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>	
+		
+		<step no="7"  type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap1</desc>
+			<log-file>step7_show_local_service.log</log-file>
+			<console target="ap1">
+				-v "show bonjour-gateway service local"
+			</console>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>	
+					
+		<step no="8" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap2</desc>
+			<log-file>step8_show_local_service.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway service local"
+			</console>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="9">
+			<desc>change ap3's priority</desc>
+			<log-file>step9_change_pri.log</log-file>
+			<console target="ap3">
+				-v "bonjour-gateway priority 100"
+			</console>
+		</step>
+					
+		<step no="10" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>check bonjour-gateway status on ap3</desc>
+			<log-file>step10_show_bon_sta.log</log-file>
+			<console target="ap3">
+				-v "show bonjour-gateway status"
+			</console>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="11"  type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap3</desc>
+			<log-file>step11_show_local_service.log</log-file>
+			<console target="ap3">
+				-v "show bonjour-gateway service local"
+			</console>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+	
+		<step no="12">
+			<desc>show local service on ap2</desc>
+			<log-file>step12_show_local_service.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway service local"
+			</console>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-n -p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+	
+	</stage>
+</testcase>

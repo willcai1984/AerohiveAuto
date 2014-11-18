@@ -1,0 +1,514 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>TCP MSS should be not changed when MSS value is smaller than the TCP-MSS threshold set in CLI</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use TOPO 3
+		Description TCP MSS should be not changed when MSS value is smaller than the TCP-MSS threshold set in CLI
+		Pre-condition
+		Test procedure 1. Setup L3VPN in BR with CVG
+		2. Ip tcp-mss-threshold enable in both BR and CVG
+		3. Set vpn tcp-mss as 1056 in BR
+		4. Set vpn tcp-mss as 1356 in CVG
+		5. Send TCP traffic that go through L3vpn from BR to CVG, result 1
+		6. Send TCP traffic that go through L3vpn from CVG to BR, result 1
+		Expect result
+		Test Result 1. TCP MSS is set to 1056 in both SYN and SYN ACK pkt
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<property name="create.file" value="test_file.log" />
+	<property name="create.file_2" value="test_file_2.log" />
+	<property name="create.file_3" value="test_file_3.log" />
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+		<include prefix="1" file="subs/vpn_setup_one_sw.xml" obj-args="cvg1, br1" />
+
+		<step no="1.1">
+			<desc>
+				config BR with WAN interface, nat enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+		<step no="1.2">
+			<desc>
+				Show interface eth0 dhcp client to check if DNS server be obtained
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0 dhcp client"
+			</telnet>
+			<log-match>-i "DNS server" -i "${pub.dns_server.ip}"</log-match>
+		</step>
+		<step no="1.3">
+			<desc>
+				config mgt0.1 with dhcp service enable,dns service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask ${br.route.netmask}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+		<step no="1.4">
+			<desc>
+				Set interface eth0 to wan mode,eth1/eth2 to access mode and enable mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface ${br1.br.lan.int1} mode bridge-access user-profile-attribute 1"
+				-v "interface ${br1.br.lan.int1} mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				BR check route
+			</desc>
+			<log-file>step3.4_show_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+		</step>
+		<step no="2.2">
+			<desc>
+				cvg1 check route
+			</desc>
+			<log-file>step3.5_show_ip_route.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				ip tcp-mss-threshold enable in BR
+				Set the tcp-mss-threshold of l3vpn to 1056
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip tcp-mss-threshold enable"
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1056"
+				-v "sh ip tcp-mss-threshold"
+			</telnet>
+		</step>
+		<step no="3.2">
+			<desc>
+				ip tcp-mss-threshold enable in CVG
+				Set the tcp-mss-threshold of l3vpn to 1356
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "ip tcp-mss-threshold enable"
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1356"
+				-v "sh ip tcp-mss-threshold"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>step4_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		<step no="4.2">
+			<desc>get raw mac of vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step4_ifconfig_vpc1_.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+		<step no="4.3">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+		<step no="4.4">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				open debug on br
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "_ff id 2 src-ip ${cvg1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+		<step no="5.2">
+			<desc>
+				open debug on cvg
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "_ff id 2 src-ip ${cvg1.vpc1.tif.ip} protocol 6 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff id 3 protocol 50 bidirectional"	
+				-v "_ff id 3 protocol 47 bidirectional"	
+				-v "clear log all"
+			</telnet>
+		</step>
+		<step no="6.1">
+			<desc>
+				delete file on cvg1.vpc1
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "rm -f /tmp/${create.file}"
+			</ssh>
+		</step>
+		<step no="6.2">
+			<desc>
+				Create file on cvg1.vpc1
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "dd if=/dev/zero of=${create.file} bs=100K count=1"
+				-v "chmod 777 ${create.file}"
+				-v "service vsftpd restart"
+			</ssh>
+		</step>
+		<step no="7.1">
+			<desc>
+				send TCP traffic that go through l3vpn from BR to CVG on br1.vpc1
+			</desc>
+			<log-file>step6.2_download_files.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${cvg1.vpc1.tif.ip}/${create.file} -o /tmp/${create.file}"
+			</ssh>
+		</step>
+
+		<step no="7.2" delay="10">
+			<desc>
+				show logging buffered on br
+			</desc>
+			<log-file>show_logging_buffered1.log</log-file>
+			<telnet host="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 0"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${br1.vpc1.tif.ip}:\d+->${cvg1.vpc1.tif.ip}:21 changed TCP MSS option \(from 1460 to 1056\),dst_mtu=1476" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+			<failed>next</failed>
+		</step>
+		<step no="7.3" delay="10">
+			<desc>
+				show logging buffered on CVG
+			</desc>
+			<log-file>show_logging_buffered2.log</log-file>
+			<telnet host="${cvg1.cvg.tunnel.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${cvg1.vpc1.tif.ip}:21->${br1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1356\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${br1.vpc1.tif.ip}:\d+->${cvg1.vpc1.tif.ip}:21 changed TCP MSS option \(from 1056 to 1356\)" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+			<failed>next</failed>
+		</step>
+		<step no="7.4">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>check_file1.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ll -n /tmp/"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="7.5" delay="60">
+			<desc>clear log all</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>Create file on br1.vpc1</desc>
+			<ssh target="br1.vpc1">
+				-v "rm -f /tmp/${create.file_2}"
+				-v "dd if=/dev/zero of=${create.file_2} bs=100K count=1"
+				-v "chmod 777 ${create.file_2}"
+				-v "service vsftpd restart"
+			</ssh>
+		</step>
+		<step no="8.2">
+			<desc>
+				send TCP traffic that go through l3vpn from CVG to BR
+			</desc>
+			<log-file>step9_download_files.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2}"
+			</ssh>
+		</step>
+		<step no="8.3" delay="30">
+			<desc>
+				show logging buffered on BR
+			</desc>
+			<log-file>show_logging_buffered3.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 0"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${br1.vpc1.tif.ip}:\d+->${cvg1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1056\),dst_mtu=\d+" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<step no="8.4" delay="30">
+			<desc>
+				show logging buffered on CVG
+			</desc>
+			<log-file>show_logging_buffered4.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${cvg1.vpc1.tif.ip}:\d+->${br1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1356\),dst_mtu=\d+" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<step no="8.5">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step10_check_file.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+		<step no="8.6">
+			<desc>
+				clear vpc1 file
+			</desc>
+			<ssh target="br1.vpc1">
+				-v "rm -f /tmp/${create.file}"
+			</ssh>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				clear vpc from
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="9.2" delay="30">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="9.3">
+			<desc>
+				delete file
+			</desc>
+			<ssh target="br1.vpc1">
+				-v "rm -f /tmp/${pub.ftp1.file2_medium}"
+			</ssh>
+		</step>
+		<step no="10.1">
+			<desc>
+				ip tcp-mss-threshold enable in BR
+				Set the tcp-mss-threshold of l3vpn to 1356
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1356"
+				-v "sh ip tcp-mss-threshold"
+			</telnet>
+		</step>
+		<step no="10.2">
+			<desc>
+				ip tcp-mss-threshold enable in CVG
+				Set the tcp-mss-threshold of l3vpn to 1056
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "ip tcp-mss-threshold l3-vpn-threshold-size 1056"
+				-v "sh ip tcp-mss-threshold"
+			</telnet>
+			
+		</step>
+		<step no="11.1">
+			<desc>
+				send TCP traffic that go through l3vpn from BR to CVG on br1.vpc1
+			</desc>
+			<ssh target="br1.vpc1">
+				-v "rm -f /tmp/${create.file}"
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${cvg1.vpc1.tif.ip}/${create.file} -o /tmp/${create.file}"
+			</ssh>
+		</step>
+
+		<step no="11.2" delay="10">
+			<desc>
+				show logging buffered on br
+			</desc>
+			<log-file>check_br_tcpmss1.log</log-file>
+			<telnet host="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 0"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${br1.vpc1.tif.ip}:\d+->${cvg1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1356\),dst_mtu=\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${cvg1.vpc1.tif.ip}:\d+->${br1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1056 to 1356\)" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+			<failed>next</failed>
+		</step>
+		<step no="11.3" delay="10">
+			<desc>
+				show logging buffered on CVG
+			</desc>
+			<log-file>check_cvg_tcpmss1.log</log-file>
+			<telnet host="${cvg1.cvg.tunnel.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${cvg1.vpc1.tif.ip}:21->${br1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1056\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+			<failed>next</failed>
+		</step>
+		<step no="11.4">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>check_file1.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ll -n /tmp/"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="11.5" delay="60">
+			<desc>clear log all</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+		<step no="12.1">
+			<desc>Create file on br1.vpc1</desc>
+			<ssh target="br1.vpc1">
+				-v "rm -f /tmp/${create.file_2}"
+				-v "dd if=/dev/zero of=${create.file_2} bs=100K count=1"
+				-v "chmod 777 ${create.file_2}"
+				-v "service vsftpd restart"
+			</ssh>
+		</step>
+		<step no="12.2">
+			<desc>
+				send TCP traffic that go through l3vpn from CVG to BR
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "curl -u ${pc.def.user}:${pub.ftp1.passwd} ftp://${br1.vpc1.tif.ip}/${create.file_2} -o /tmp/${create.file_2}"
+			</ssh>
+		</step>
+		<step no="12.3" delay="30">
+			<desc>
+				show logging buffered on BR
+			</desc>
+			<log-file>check_br_tcpmss2.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "update mtu to 1398 clamp tcp mss flag: 0"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${br1.vpc1.tif.ip}:\d+->${cvg1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1356\),dst_mtu=\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${cvg1.vpc1.tif.ip}:\d+->${br1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1056 to 1356\)" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<step no="12.4" delay="30">
+			<desc>
+				show logging buffered on CVG
+			</desc>
+			<log-file>check_cvg_tcpmss2.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)TCPMSS\(set\): ${cvg1.vpc1.tif.ip}:\d+->${br1.vpc1.tif.ip}:\d+ changed TCP MSS option \(from 1460 to 1356\),dst_mtu=\d+" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<step no="12.5">
+			<desc>
+				Check file size
+			</desc>
+			<log-file>step10_check_file.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "ll -n /tmp/"
+			</ssh>
+		</step>
+		<step no="12.6">
+			<desc>
+				clear vpc1 file
+			</desc>
+			<ssh target="br1.vpc1">
+				-v "rm -f /tmp/${create.file}"
+			</ssh>
+		</step>
+
+		<step no="13.1">
+			<desc>
+				clear vpc from
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "rm -f /tmp/${create.file_2}"
+			</ssh>
+		</step>
+
+		<step no="13.2" delay="30">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="13.3">
+			<desc>
+				delete file
+			</desc>
+			<ssh target="br1.vpc1">
+				-v "rm -f /tmp/${pub.ftp1.file2_medium}"
+			</ssh>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear vpc1 file
+				</desc>
+				<ssh target="br1.vpc1">
+					-v "rm -f /tmp/${create.file}"
+					-v "rm -f /tmp/${create.file_2}"
+					-v "rm -f /tmp/${pub.ftp1.file2_medium}"
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					clear vpc flie
+				</desc>
+				<ssh host="${cvg1.vpc1.mif.ip}">
+					-v "rm -f /tmp/${create.file}"
+					-v "rm -f /tmp/${create.file_2}"
+					-v "rm -f /tmp/${pub.ftp1.file2_medium}"
+				</ssh>
+			</step>
+		</stage>
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

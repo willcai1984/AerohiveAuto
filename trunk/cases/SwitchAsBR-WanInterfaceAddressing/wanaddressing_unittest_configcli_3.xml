@@ -1,0 +1,231 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unit Test 0103: Configuration save, upload config and download config should work for WAN interface</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		After WANAddressing_UnitTest_ConfigCLI_2
+
+		Test Procedure:
+		save config to remote scp server, reset config, reboot, then upload the saved config
+		back to AP, then reboot.
+		CLI commands:
+		save config current scp://user@server_ip:/filename
+		reset config
+		save config
+		reboot
+		save config scp://user@server_ip:/filename current
+		reboot
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<property name="save_document" value="config.log" />
+	<property name="netmask.addr" value="255.255.255.0" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vlan1}"
+				-v "interface mgt0 vlan ${br1.vlan1}"
+				-v "user-profile fw11 qos-policy def-user-qos vlan-id ${br1.vlan1} attribute 1"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vlan1}"
+				-v "dns server-ip ${pub.dns1.ip}"
+				-v "save config"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				show running config
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show running-config"
+			</telnet>
+			<log-match>-c -i "interface ${br1.br.wan.int1} mode wan"</log-match>
+			<log-match>-c -i "interface mgt0 vlan ${br1.vlan1}"</log-match>
+			<log-match>-c -i "interface mgt0 ip ${br1.br.mgt0.ip} ${netmask.addr}"</log-match>
+			<log-match>-c -i "no interface mgt0 dhcp client"</log-match>
+			<log-match>-c -i "interface mgt0 dhcp-server options default-gateway ${br1.br.mgt0.ip}"</log-match>
+			<log-match>-c -i "interface mgt0 dhcp-server options netmask ${netmask.addr}"</log-match>
+			<log-match>-c -i "interface mgt0 dhcp-server options dns1 ${pub.dns1.ip}"</log-match>
+			<log-match>-c -i "interface mgt0 dhcp-server ip-pool ${br1.br.mgt0.ip_pool_start} ${br1.br.mgt0.ip_pool_end}"</log-match>
+			<log-match>-c -i "interface mgt0 dhcp-server enable"</log-match>
+			<log-match>-c -i "interface mgt0 dns-server enable"</log-match>
+			<log-match>-c -i "dns server-ip ${pub.dns1.ip}"</log-match>
+			<log-match>-c -i "interface ${br1.br.lan.int1} switchport access vlan ${br1.vlan1}"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				remove test files
+			</desc>
+			<script>
+				rm -f /tftpboot/${save_document}
+			</script>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				save config from current to server
+			</desc>
+			<console target="br1.br">
+				-v "save config current tftp://${mpc.tif.ip}:${save_document}"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				reset config
+			</desc>
+			<console target="br1.br">
+				-v "reset config"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="3.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>loop check whether get IP addr</desc>
+			<log-file>step3.2_IP_Addr_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "interface ${br1.br.wan.int1} dhcp client"
+				-v "show interface ${br1.br.wan.int1} dhcp client"
+			</console>
+			<log-match>-c -i "Get IP address 0.0.0.0" -n</log-match>
+		</step>
+
+
+		<step no="3.2">
+			<desc>
+				AP config user-profile
+			</desc>
+			<console target="br1.br">
+				-v "vlan ${br1.vlan1}"
+				-v "interface mgt0 vlan ${br1.vlan1}"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${br1.br.mgt0.ip} ${netmask.addr}"
+			</console>
+		</step>
+
+
+		<step no="3.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>loop check ping mpc</desc>
+			<log-file>step3.3_mpc_ping_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "ping ${mpc.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${mpc.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Upload the saved config back to AP and reboot to check
+			</desc>
+			<console target="br1.br">
+				-v "save config tftp://${mpc.tif.ip}:${save_document} current"
+				-v ""
+				-v "show running-config"
+				-v "show config current"
+				-v ""
+				-v "reboot"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show running config
+			</desc>
+			<console target="br1.br">
+				-v "show running-config"
+			</console>
+			<log-match>-c -i "interface ${br1.br.wan.int1} mode wan"</log-match>
+			<log-match>-c -i "interface mgt0 vlan ${br1.vlan1}"</log-match>
+			<log-match>-c -i "interface mgt0 ip ${br1.br.mgt0.ip} ${netmask.addr}"</log-match>
+			<log-match>-c -i "no interface mgt0 dhcp client"</log-match>
+			<log-match>-c -i "interface mgt0 dhcp-server options default-gateway ${br1.br.mgt0.ip}"</log-match>
+			<log-match>-c -i "interface mgt0 dhcp-server options netmask ${netmask.addr}"</log-match>
+			<log-match>-c -i "interface mgt0 dhcp-server options dns1 ${pub.dns1.ip}"</log-match>
+			<log-match>-c -i "interface mgt0 dhcp-server ip-pool ${br1.br.mgt0.ip_pool_start} ${br1.br.mgt0.ip_pool_end}"</log-match>
+			<log-match>-c -i "interface mgt0 dhcp-server enable"</log-match>
+			<log-match>-c -i "interface mgt0 dns-server enable"</log-match>
+			<log-match>-c -i "dns server-ip ${pub.dns1.ip}"</log-match>
+			<log-match>-c -i "interface ${br1.br.lan.int1} switchport access vlan ${br1.vlan1}"</log-match>
+		</step>
+
+
+		<step no="4.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>loop check whether get IP addr</desc>
+			<log-file>step4.2_IP_Addr_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "interface ${br1.br.wan.int1} dhcp client"
+				-v "show interface ${br1.br.wan.int1} dhcp client"
+			</console>
+			<log-match>-c -i "Get IP address 0.0.0.0" -n</log-match>
+		</step>
+
+		<step no="4.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>loop check ping mpc</desc>
+			<log-file>step4.3_mpc_ping_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "ping ${pub.dns1.ip}"
+			</console>
+			<log-match>-c -i "from ${pub.dns1.ip}" -i "ttl="</log-match>
+		</step>
+
+
+		<step no="5.2">
+			<desc>
+				Laptop1 connect to lan port eth1
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				Wired Ping domain name
+			</desc>
+			<log-file>step6_ping_domain_name.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.domain1} -c 5"
+			</ssh>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<step no="clear.file">
+			<desc>
+				remove test files
+			</desc>
+			<script>
+				rm -f /tftpboot/${save_document}
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="clear.file">
+				<desc>
+					remove test files
+				</desc>
+				<script>
+					rm -f /tftpboot/${save_document};exit 0
+				</script>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

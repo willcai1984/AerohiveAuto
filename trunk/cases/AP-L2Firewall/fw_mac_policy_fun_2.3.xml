@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Config "from to" simultaneous policy("from" permit, "to" deny)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Laptop and gateway of SW ping each other through AP1
+		2) Laptop and Server ping each other through AP1
+		3) Laptop and AP1 ping each other
+		4) Configure a L2 policy and bind it to FW:
+		"mac-policy FW"
+		"mac-policy FW from &lt;Laptop mac addr&gt; action permit"
+		"mac-policy FW to &lt;Laptop mac addr&gt; action deny"
+		"user-profile FW security mac-policy from-access FW to-access FW
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		5) Repeat step 1-3
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "cons page 0"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_ping.xml" args="sta1, ${pub.tftp1.tip}, 4" />
+
+		<include prefix="3" file="subs/sta_ping.xml" args="sta1, ${mpc.tif.ip}, 4" />
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+		<step no="5">
+			<desc>
+				server ping sta
+			</desc>
+			<log-file>step5_server_ping_sta_successfully.log</log-file>
+			<ssh host="${pub.tftp1.tip}">
+				-v "ping ${sta1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				mpc ping sta
+			</desc>
+			<log-file>step6_mpc_ping_sta_successfully.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 4 &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				AP1 ping STA
+			</desc>
+			<log-file>step7_ap_ping_sta.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="9">
+			<desc>
+				Configure a L2 policy and bind it to FW:
+				"mac-policy FW"
+				"mac-policy FW from &lt;Laptop mac addr&gt; action permit"
+				"mac-policy FW to &lt;Laptop mac addr&gt; action deny"
+				"user-profile FW security mac-policy from-access FW to-access FW
+				"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+			</desc>
+			<telnet target="ap1">
+				-v "mac-policy ${user_id}"
+				-v "mac-policy ${user_id} id 1 from ${sta1.tif.mac} action permit"
+				-v "mac-policy ${user_id} id 2 to ${sta1.tif.mac} action deny"
+				-v "user-profile ${user_id} security mac-policy from-access ${user_id} to-access ${user_id}"
+				-v "clear log buffered"
+				-v "clear forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<include prefix="10" file="subs/sta_ping.xml" args="sta1, ${mpc.tif.ip}, 4" />
+
+		<step no="10.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step10.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${mpc.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "MAC ACL: matched upid \[1\] dir \[from-air\] group \[${user_id}\] id \[1\] \[permit\] mirror \[no\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${mpc.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="10.2">
+			<desc>
+				clear forwarding-engine mac-sessions
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear arp-cache"
+				-v "no forwarding-engine proxy-arp enable"
+			</telnet>
+		</step>
+
+		<include prefix="11" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+		<step no="11.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step11.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(u\) mgt0 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "MAC ACL: matched upid \[1\] dir \[from-air\] group \[${user_id}\] id \[1\] \[permit\] mirror \[no\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${ap1.mgt0.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+</stage>
+ <stage loop-values="1..10" var-name="country_code" loop-passed-break="true">
+		<step no="11.2">
+			<desc>
+				clear forwarding-engine mac-sessions
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear arp-cache"
+				-v "no forwarding-engine proxy-arp enable"
+			</telnet>
+		</step>
+
+		<step no="12" delay="10">
+			<desc>
+				server ping sta
+			</desc>
+			<log-file>step12_server_ping_sta_unsuccessfully.log</log-file>
+			<ssh host="${pub.tftp1.tip}">
+				-v "ping ${sta1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+</stage>
+<stage>
+		<step no="12.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step12.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b"\(\!\) eth0 ${pub.tftp1.tip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "MAC ACL: matched upid \[1\] dir \[to-air\] group \[${user_id}\] id \[2\] \[deny\] mirror \[no\]" -e "\(i\) eth0 ${pub.tftp1.tip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="test.1" file="subs/sta_ping.xml" args="sta1, ${mpc.tif.ip}, 4" />
+
+		<step no="12.2">
+			<desc>
+				clear forwarding-engine mac-sessions
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear arp-cache"
+				-v "no forwarding-engine proxy-arp enable"
+			</telnet>
+		</step>
+
+		<step no="13">
+			<desc>
+				mpc ping sta
+			</desc>
+			<log-file>step13_mpc_ping_sta_unsuccessfully.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 4 &gt; ${log.dir}/${log.file}; exit 0
+			</script>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="13.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step13.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b"\(\!\) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "MAC ACL: matched upid \[1\] dir \[to-air\] group \[${user_id}\] id \[2\] \[deny\] mirror \[no\]" -e "\(i\) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="test.2" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 4" />
+
+		<step no="13.2">
+			<desc>
+				clear forwarding-engine mac-sessions
+				clear log all
+			</desc>
+			<telnet target="ap1">
+			    -v "ping ${sta1.tif.ip} c 4"
+				-v "clear log all"
+				-v "clear forwarding-engine mac-sessions"
+				-v "no forwarding-engine proxy-arp enable"
+			</telnet>
+		</step>
+
+		<step no="14.1">
+			<desc>
+				AP1 ping STA
+			</desc>
+			<log-file>step14.1_ap_start_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip}"
+			</telnet>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="14.2" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step14.2_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b"\(\!\) mgt0 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "MAC ACL: matched upid \[1\] dir \[to-air\] group \[${user_id}\] id \[2\] \[deny\] mirror \[no\]" -e "\(i\) mgt0 ${ap1.mgt0.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

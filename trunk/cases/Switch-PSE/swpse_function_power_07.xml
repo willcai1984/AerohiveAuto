@@ -1,0 +1,472 @@
+<testcase>
+	<brief>test with just one port on Sifos</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<tbtype>linux</tbtype>
+
+	<description>
+		check operation on Sifos with single port
+	</description>
+	<comment></comment>
+	
+	<property name="pub.tclclient1.ip" value="10.155.31.170" />
+	
+	<property name="sw1.user" value="admin" />
+	<property name="sw1.passwd" value="aerohive" />
+	<property name="sw1.sfs_tcl_server" value="10.155.32.80"/>
+	<property name="sw1.sfs_tcl_server.port" value="6900"/>
+	
+	<property name="sw.port.1" value="eth1/2" />
+	<property name="sw.port.2" value="eth1/3" />
+	<property name="pse.profile.0" value="pse_profile0" />
+	<property name="pse.profile.1" value="pse-at" />
+	<property name="pse.profile.2" value="pse-af" />
+	<property name="power.mode.1" value="AT" />
+	<property name="power.mode.2" value="AF" />
+	<property name="power.limit.1" value="32.0" />
+	<property name="power.limit.2" value="15.4" />
+	<property name="power.limit.customize.1" value="20" />
+	<property name="power.limit.customize.2" value="12" />
+	<property name="payload.0" value="12" /> <!-- class0, 13 -->
+	<property name="payload.1" value="3.5" /> <!-- class1, 3.8 -->
+	<property name="payload.2" value="6" /> <!-- class2, 6.5 -->
+	<property name="payload.3" value="12" /> <!-- class3, 13 -->
+	<property name="payload.4" value="20" /> <!-- class4, 25.5 -->
+	<property name="payload.invalid.1" value="21" /> <!-- at -->	
+	<property name="payload.invalid.2" value="13" /> <!-- af -->	
+	<property name="payload.delta.1" value="2" />
+	<property name="payload.delta.2" value="4" />
+	<property name="pse.status.1" value="Searching" />
+	<property name="pse.status.2" value="delivering" />
+	<property name="pse.status.3" value="fault" />
+	
+	
+<stage>	
+
+		<step no="1.0.1">
+			<desc>
+				Show interface mgt0 to get ip address
+			</desc>
+			<log-file>step1.0.1_mgt0_ip_info.log</log-file>
+			<console target="sw1">
+				-v 'show interface mgt0'
+			</console>
+		</step>
+
+		<step no="1.0.2">
+			<desc>
+				Get mgt0's ip address
+			</desc>
+			<setvar name="sw1.ip">
+				python ${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/step1.0.1_mgt0_ip_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				verify sw pse is enabled by default
+			</desc>
+			<log-file>step1.1_default_pse_state.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show pse'
+			</ssh>
+			<log-match>-i "Max port supported"</log-match>
+			<log-match>-i "Power management type"</log-match>
+		</step>
+	
+		<step no="6.0.1">
+			<desc>
+				config pse profile
+			</desc>
+			<log-file>step6.0.1_CfgPseProfile.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}" timeout="180">
+				-v 'pse profile ${pse.profile.1}'
+				-v 'pse profile ${pse.profile.1} power-mode 802.3${power.mode.1} power-limit ${power.limit.customize.1}000'
+				-v 'pse profile ${pse.profile.2}'
+				-v 'pse profile ${pse.profile.2} power-mode 802.3${power.mode.2} power-limit ${power.limit.customize.2}000'
+				-v 'pse power-management-type static'
+				-v 'pse restart'
+			</ssh>
+		</step>
+		
+		<step no="delay" delay="120">
+			<desc>
+				delay after pse restart
+			</desc>
+			<script>
+				pwd
+			</script>
+		</step>		
+
+		<step no="6.0.2">
+			<desc>
+				check power mode of configured pse profile
+			</desc>
+			<log-file>step6.0.2_CheckPowerMode.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show pse profile'
+			</ssh>
+			<log-match>-c -i "${pse.profile.1}.*802.3.*${power.mode.1}.*${power.limit.customize.1}" -re</log-match>
+			<log-match>-c -i "${pse.profile.2}.*802.3.*${power.mode.2}.*${power.limit.customize.2}" -re</log-match>
+		</step>
+		
+		<step no="6.0.3">
+			<desc>
+				check power power-management-type
+			</desc>
+			<log-file>step6.0.3.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show pse'
+			</ssh>
+			<log-match>-c -i "Power management type" -i "Static"</log-match>
+		</step>		
+
+		<step no="6.1">
+			<desc>
+				bind configure pse profile to eth port
+			</desc>
+			<log-file>step6.1_BindPseProfile.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'in ${sw.port.1} pse profile ${pse.profile.1}'
+				-v 'in ${sw.port.2} pse profile ${pse.profile.2}'
+			</ssh>
+		</step>
+		
+		<step no="6.2.1">
+			<desc>
+				check pse config of eth port
+			</desc>
+			<log-file>step6.2.1_PseCfgOfEthPort.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw.port.1} pse'
+			</ssh>
+			<log-match>-i "Port name *${sw.port.1}"</log-match>
+			<log-match>-c -i "power mode *802.3${power.mode.1}"</log-match>
+			<log-match>-i "Power limit\(W\) *${power.limit.customize.1}.0*" -re</log-match>
+			<log-match>-i "Profile name *${pse.profile.1}"</log-match>
+		</step>
+		
+		<step no="6.2.2">
+			<desc>
+				check pse config of eth port
+			</desc>
+			<log-file>step6.2.2_PseCfgOfEthPort.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw.port.2} pse'
+			</ssh>
+			<log-match>-i "Port name *${sw.port.2}"</log-match>
+			<log-match>-c -i "power mode *802.3${power.mode.2}"</log-match>
+			<log-match>-i "Power limit\(W\) *${power.limit.customize.2}.0*" -re</log-match>
+			<log-match>-i "Profile name *${pse.profile.2}"</log-match>
+		</step>
+		
+		
+		<step no="6.3.1">
+			<desc>simulate pd by sifos with class and payload</desc>
+			<log-file>step6.3.1_sifos.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|.*root@.*#" timeout="200" session-new="${job.user}-${job.sid}-1">
+				<!--  ahsfs initialize  -->
+				-v 'tclsh8.5' 
+				-v 'package req ahsfs' 
+				-v '' 
+				-v 'sfs_connect ${sw1.sfs_tcl_server} ${sw1.sfs_tcl_server.port}' 
+				-v '' 
+				-v 'cmd "psa_getConfig"' 
+				-v 'cmd "psa_emulate_pd 1,2 c 4 p ${payload.4} o 0 alt A pol NEG start"' 
+				-v 'cmd "psa_emulate_pd 2,1 c 0 p ${payload.0} o 0 alt A pol NEG start"' 
+				-v 'after 3000'
+				-v 'cmd "psa_emulate_pd 1,2 stat#105"' 
+				-v 'cmd "psa_emulate_pd 2,1 stat#106"'
+			</ssh>
+			<log-match>-i "cmdSeq 105" -i "Status:;RUNNING" -i "State:;POWERED"</log-match>
+			<log-match>-i "cmdSeq 106" -i "Status:;RUNNING" -i "State:;POWERED"</log-match>
+		</step>
+		
+		<step no="6.3.2">
+			<desc>
+				get power consumption on sifos
+			</desc>
+			<setvar name="power.consump.6.1">
+				grep "cmdSeq 105" ${log.dir}/step6.3.1_sifos.log | awk -F ';' '{ print $24 }'
+			</setvar>
+		</step>
+		
+		<step no="6.3.3">
+			<desc>
+				get power consumption on sifos
+			</desc>
+			<setvar name="power.consump.6.2">
+				grep "cmdSeq 106" ${log.dir}/step6.3.1_sifos.log | awk -F ';' '{ print $24 }'
+			</setvar>
+		</step>
+	
+		<step no="6.4.1">
+			<desc>
+				check power deliver on switch
+			</desc>
+			<log-file>step6.4.1_PowerDeliverOnSwitch.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw.port.1} pse'
+			</ssh>
+			<log-match>-i "Port name *${sw.port.1}"</log-match>
+			<log-match>-i "PSE status *${pse.status.2}"</log-match>
+			<log-match>-c -i "power mode *802.3${power.mode.1}"</log-match>
+			<log-match>-i "Power limit\(W\) *${power.limit.customize.1}.0*" -re</log-match>
+			<log-match>-i "Real consumption\(W\)" -re</log-match>
+			<log-match>-i "Profile name *${pse.profile.1}"</log-match>
+		</step>
+		
+		<step no="6.4.2">
+			<desc>
+				get power delivering on switch
+			</desc>
+			<setvar name="power.deliver.6.1">
+				${bin.dir}/getbyrexp.py -p "consumption\(W\)\s+(\d+\.\d+)" -f ${log.dir}/step6.4.1_PowerDeliverOnSwitch.log -t str
+			</setvar>
+		</step>		
+		
+		<step no="6.4.3">
+			<desc>
+				check power deliver on switch
+			</desc>
+			<log-file>step6.4.3_PowerDeliverOnSwitch.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw.port.2} pse'
+			</ssh>
+			<log-match>-i "Port name *${sw.port.2}"</log-match>
+			<log-match>-i "PSE status *${pse.status.2}"</log-match>
+			<log-match>-c -i "power mode *802.3${power.mode.2}"</log-match>
+			<log-match>-i "Power limit\(W\) *${power.limit.customize.2}.0*" -re</log-match>
+			<log-match>-i "Real consumption\(W\)" -re</log-match>
+			<log-match>-i "Profile name *${pse.profile.2}"</log-match>
+		</step>
+		
+		<step no="6.4.4">
+			<desc>
+				get power delivering on switch
+			</desc>
+			<setvar name="power.deliver.6.2">
+				${bin.dir}/getbyrexp.py -p "consumption\(W\)\s+(\d+\.\d+)" -f ${log.dir}/step6.4.3_PowerDeliverOnSwitch.log -t str
+			</setvar>
+		</step>			
+		
+		<step no="6.5">
+			<desc>stop pd simulation on sifos</desc>
+			<log-file>step6.5_sifos.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|.*root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!--  ahsfs initialize  -->
+				-v ''
+				-v 'cmd "psa_emulate_pd 1,2 stop"' 
+				-v 'cmd "psa_emulate_pd 2,1 stop"' 
+				-v 'after 3000'
+				-v 'cmd "psa_emulate_pd 1,2 stat#205"' 
+				-v 'cmd "psa_emulate_pd 2,1 stat#206"'
+			</ssh>
+			<log-match>-i "cmdSeq 205" -i "Status:;IDLE" -i "State:;UNPOWERED" -i "Pload:;0.0;W"</log-match>
+			<log-match>-i "cmdSeq 206" -i "Status:;IDLE" -i "State:;UNPOWERED" -i "Pload:;0.0;W"</log-match>
+		</step>		
+		
+		<step no="6.6.1">
+			<desc>
+				Check if power consumption on sifos is reasonable
+			</desc>
+			<script>
+				echo ${payload.4} ${power.consump.6.1} ${payload.delta.1} | awk '{
+				 if ( ($1-$2) &lt; $3 &amp;&amp; ($1-$2) &gt; -$3)  
+				 	{exit (0);} 
+				 else 
+				 	{exit (1);} 
+				 }' 
+			</script>
+		</step>
+		
+		<step no="6.6.2">
+			<desc>
+				Check if power deliver on switch is reasonable
+			</desc>
+			<script>
+				echo ${payload.4} ${power.deliver.6.1} ${payload.delta.1} | awk '{
+				 if ( ($1-$2) &lt; $3 &amp;&amp; ($1-$2) &gt; -$3)  
+				 	{exit (0);} 
+				 else 
+				 	{exit (1);} 
+				 }' 
+			</script>
+		</step>
+		
+		<step no="6.6.1">
+			<desc>
+				Check if power consumption on sifos is reasonable
+			</desc>
+			<script>
+				echo ${payload.0} ${power.consump.6.2} ${payload.delta.1} | awk '{
+				 if ( ($1-$2) &lt; $3 &amp;&amp; ($1-$2) &gt; -$3)  
+				 	{exit (0);} 
+				 else 
+				 	{exit (1);} 
+				 }' 
+			</script>
+		</step>
+		
+		<step no="6.6.2">
+			<desc>
+				Check if power deliver on switch is reasonable
+			</desc>
+			<script>
+				echo ${payload.0} ${power.deliver.6.2} ${payload.delta.1} | awk '{
+				 if ( ($1-$2) &lt; $3 &amp;&amp; ($1-$2) &gt; -$3)  
+				 	{exit (0);} 
+				 else 
+				 	{exit (1);} 
+				 }' 
+			</script>
+		</step>
+		
+		<step no="7.3.1">
+			<desc>simulate pd by sifos with class and payload</desc>
+			<log-file>step7.3.1_sifos.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|.*root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!--  ahsfs initialize  -->
+				-v 'tclsh8.5' 
+				-v 'package req ahsfs' 
+				-v '' 
+				-v 'sfs_connect ${sw1.sfs_tcl_server} ${sw1.sfs_tcl_server.port}' 
+				-v '' 
+				-v 'cmd "psa_getConfig"' 
+				-v 'cmd "psa_emulate_pd 1,2 c 4 p ${payload.invalid.1} o 0 alt A pol NEG start"' 
+				-v 'cmd "psa_emulate_pd 2,1 c 0 p ${payload.invalid.2} o 0 alt A pol NEG start"' 
+				-v 'after 3000'
+				-v 'cmd "psa_emulate_pd 1,2 stat#107"' 
+				-v 'cmd "psa_emulate_pd 2,1 stat#108"'
+			</ssh>
+			<log-match>-i "cmdSeq 107" -i "Status:;RUNNING" -i "State:;UNPOWERED" -i "Pload:;0.0;W"</log-match>
+			<log-match>-i "cmdSeq 108" -i "Status:;RUNNING" -i "State:;UNPOWERED" -i "Pload:;0.0;W"</log-match>
+		</step>
+<!--
+		<step no="7.3.2">
+			<desc>
+				get power consumption on sifos
+			</desc>
+			<setvar name="power.consump.7.1">
+				grep "cmdSeq 107" ${log.dir}/step7.3.1_sifos.log | awk -F ';' '{ print $24 }'
+			</setvar>
+		</step>
+		
+		<step no="7.3.3">
+			<desc>
+				get power consumption on sifos
+			</desc>
+			<setvar name="power.consump.7.2">
+				grep "cmdSeq 108" ${log.dir}/step7.3.1_sifos.log | awk -F ';' '{ print $24 }'
+			</setvar>
+		</step>
+-->	
+		<step no="7.4.1">
+			<desc>
+				check power deliver on switch
+			</desc>
+			<log-file>step7.4.1_PowerDeliverOnSwitch.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw.port.1} pse'
+			</ssh>
+			<log-match>-i "Port name *${sw.port.1}"</log-match>
+			<log-match>-i "PSE status *${pse.status.3}"</log-match>
+			<log-match>-c -i "power mode *802.3${power.mode.1}"</log-match>
+			<log-match>-i "Power limit\(W\) *${power.limit.customize.1}.0*" -re</log-match>
+			<log-match>-i "Real consumption\(W\) *0.0*" -re</log-match>
+			<log-match>-i "Profile name *${pse.profile.1}"</log-match>
+		</step>
+		
+		<step no="7.4.2">
+			<desc>
+				get power delivering on switch
+			</desc>
+			<setvar name="power.deliver.7.1">
+				${bin.dir}/getbyrexp.py -p "consumption\(W\)\s+(\d+\.\d+)" -f ${log.dir}/step7.4.1_PowerDeliverOnSwitch.log -t str
+			</setvar>
+		</step>		
+		
+		<step no="7.4.3">
+			<desc>
+				check power deliver on switch
+			</desc>
+			<log-file>step7.4.3_PowerDeliverOnSwitch.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw.port.2} pse'
+			</ssh>
+			<log-match>-i "Port name *${sw.port.2}"</log-match>
+			<log-match>-i "PSE status *${pse.status.3}"</log-match>
+			<log-match>-c -i "power mode *802.3${power.mode.2}"</log-match>
+			<log-match>-i "Power limit\(W\) *${power.limit.customize.2}.0*" -re</log-match>
+			<log-match>-i "Real consumption\(W\) *0.0*" -re</log-match>
+			<log-match>-i "Profile name *${pse.profile.2}"</log-match>
+		</step>
+		
+		<step no="7.4.4">
+			<desc>
+				get power delivering on switch
+			</desc>
+			<setvar name="power.deliver.7.2">
+				${bin.dir}/getbyrexp.py -p "consumption\(W\)\s+(\d+\.\d+)" -f ${log.dir}/step7.4.3_PowerDeliverOnSwitch.log -t str
+			</setvar>
+		</step>			
+		
+		<step no="7.5">
+			<desc>stop pd simulation on sifos</desc>
+			<log-file>step7.5_sifos.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|.*root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!--  ahsfs initialize  -->
+				-v ''
+				-v 'cmd "psa_emulate_pd 1,2 stop"' 
+				-v 'cmd "psa_emulate_pd 2,1 stop"' 
+				-v 'after 3000'
+				-v 'cmd "psa_emulate_pd 1,2 stat#205"' 
+				-v 'cmd "psa_emulate_pd 2,1 stat#206"'
+			</ssh>
+			<log-match>-i "cmdSeq 205" -i "Status:;IDLE" -i "State:;UNPOWERED" -i "Pload:;0.0;W"</log-match>
+			<log-match>-i "cmdSeq 206" -i "Status:;IDLE" -i "State:;UNPOWERED" -i "Pload:;0.0;W"</log-match>
+		</step>	
+		
+<!--		
+		<step no="6.7.1">
+			<desc>
+				Check if power consumption on sifos is reasonable
+			</desc>
+			<script>
+				echo ${payload.4} ${power.consump.6.2} ${payload.delta.1} | awk '{
+				 if ( ($1-$2) &lt; $3 &amp;&amp; ($1-$2) &gt; -$3)  
+				 	{exit (0);} 
+				 else 
+				 	{exit (1);} 
+				 }' 
+			</script>
+		</step>
+		
+		<step no="6.7.2">
+			<desc>
+				Check if power deliver on switch is reasonable
+			</desc>
+			<script>
+				echo ${payload.4} ${power.deliver.6.2} ${payload.delta.1} | awk '{
+				 if ( ($1-$2) &lt; $3 &amp;&amp; ($1-$2) &gt; -$3)  
+				 	{exit (0);} 
+				 else 
+				 	{exit (1);} 
+				 }' 
+			</script>
+		</step>		
+-->		
+		<step no="quit_sifos_session">
+			<desc>stop pd simulation on sifos</desc>
+			<log-file>quit_sifos_session.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|.*root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				<!--  ahsfs initialize  -->
+				-v '' 
+				-v 'ctrl-c'
+			</ssh>
+		</step>	
+
+	</stage>
+	
+</testcase>

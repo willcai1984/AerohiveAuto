@@ -1,0 +1,233 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>TFTP(WRQ mode) enable alg influence on network Firewall rules </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP
+		Enable 1 dhcp server（mgt0.1）
+		Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+		Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+		AP get IPaddr(interface wan) &lt;IP1&gt; from server
+		-Configure Server
+		Enable TFTP function WRQ mode
+
+		Test Procedure:
+		1) Configure network firewall rule
+		"network-firewall name 1001 to network 192.168.1.1 255.255.255.255 service
+		ftp action permit logging off"
+		"network-firewall name 1002 from any to any action deny logging off"
+		2) Laptop1 uses Ftp connect to server and download/upload files
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	
+	<property name="br1.vpc1.mask" value="255.255.255.255" />
+	<property name="create.file" value="test_file.log" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP
+				Enable 1 dhcp server（mgt0.1）
+				Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+				Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${cvg1.cvg.wan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask 255.255.255.0"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server enable"
+				-v "dns server-ip ${pub.dns1.ip}"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				Set interface eth0 to wan mode,eth1/eth2 to access mode and enable mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+			    -v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"						
+			</telnet>
+		</step>
+		
+		<step no="2.1">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		
+		<step no="2.2">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="test.1">
+			<desc>
+				vpc ping Laptop1
+			</desc>
+			<log-file>test1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v " ping ${pub.tftp1.tip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.tftp1.tip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				Configure network firewall rule
+				“network-firewall name 1001 to network 192.168.1.1 255.255.255.255 service tftp action permit logging off”
+				“network-firewall name 1002 from any to any action deny logging off”
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "network-firewall name 1001 to network ${pub.tftp1.tip} ${br1.vpc1.mask} service tftp action permit logging on"
+				-v "network-firewall name 1002 to network ${pub.tftp1.tip} ${br1.vpc1.mask} service icmp action permit logging on"
+				-v "network-firewall name 1003 from any to any action deny logging on"
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} dst-ip ${pub.tftp1.tip}"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show network-firewall
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show network-firewall"
+			</telnet>
+		</step>
+
+		<step no="test.2">
+			<desc>
+				vpc ping Laptop1
+			</desc>
+			<log-file>test2.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v " ping ${pub.tftp1.tip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.tftp1.tip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="delete.file">
+			<desc>
+				delete file
+			</desc>
+			<ssh host="${pub.tftp1.ip}">
+				-v "rm -f /tftpboot/${create.file}"
+			</ssh>
+		</step>
+
+		<step no="4">
+			<desc>
+				Create file
+			</desc>
+			<log-file>step4_Create_file.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dd if=/dev/zero of=${create.file} bs=100K count=1"
+				-v "ll -n"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>get from-access counters</desc>
+			<setvar name="file.size">
+				${bin.dir}/getbyrexp.py -p "\S+\s+\d+\s+\d+\s+\d+\s+(\d+).*${create.file}" -f ${log.dir}/step4_Create_file.log
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				Laptop1 uses tftp connect to server and upload file
+			</desc>
+			<log-file>step4.2_upload_file.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "tftp ${pub.tftp1.tip} -c put ${create.file}"
+			</ssh>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				show network-firewall
+			</desc>
+			<log-file>step4.3_check_log.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ACCEPT PACKET: SRC=${br1.vpc1.tif.ip} DST=${pub.tftp1.tip} PROTO=UDP SPT=\d+ DPT=\d+ \(RULE=1001\)" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.4">
+			<desc>
+				Laptop1 uses tftp connect to server and upload files
+			</desc>
+			<log-file>step4.4_upload_files.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "ll -n /tftpboot/"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\S+\s+\d+\s+\d+\s+\d+\s+${file.size}.*${create.file}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				clear file to sta
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "rm -f ${create.file}"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				clear file to tftp server
+			</desc>
+			<ssh host="${pub.tftp1.ip}">
+				-v "rm -f /tftpboot/${create.file}"
+			</ssh>
+		</step>
+	</stage>
+
+	<failed-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear file to sta
+				</desc>
+				<ssh target="br1.vpc1" timeout="120">
+					-v "rm -f ${create.file}"
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					clear file to tftp server
+				</desc>
+				<ssh host="${pub.tftp1.ip}">
+					-v "rm -f /tftpboot/${create.file}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+	</failed-process>
+</testcase>

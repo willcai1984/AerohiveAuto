@@ -1,0 +1,183 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Broadcast/Multicast traffic is blocked when no auth </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+
+
+		Test Procedure:
+
+		1. Set one security-object with radius-server
+		2. Set one user-profile and define the attribute x and vlan y
+		3. Set eth1 mode as access and bind the attribute x to it
+		4. Bind the security-object to the port.
+		5. Connect laptop to the port.
+		6. Do not auth, result 1
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="br.8021x.multicast" value="01-80-c2-00-00-03" />
+
+	<stage>
+
+		<step no="set_tmp_IP01">
+			<multi-setvar>
+				echo "br1.br.tmp.ip=$(echo ${br1.br.mgt0.1.ip_pool_end} | cut -d. -f1,2,3).$(expr $(echo ${br1.br.mgt0.1.ip_pool_end} | cut -d. -f4) + 4)"
+			</multi-setvar>
+		</step>
+
+		<step no="pre_step">
+			<desc>configure mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vlan1}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				1. Set one security-object with radius-server
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object lan1"
+				-v "security-object lan1 security protocol-suite 802.1x"
+				-v "security-object lan1 security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object lan1 security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Set one user-profile and define the attribute x,
+				3. Set the eth1 mode as bridge-access and bind the attribute to it
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vlan1} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "int eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="3.1a">
+			<desc>
+				5. Connect one laptop to the eth1 port
+			</desc>
+			<log-file>step3_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.1b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.1c">
+			<desc>get raw mac of vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step3_ifconfig_vpc1_.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.1d">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show interface
+			</desc>
+			<log-file>step3.2_show_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth1"
+			</telnet>
+		</step>
+
+		<step no="3.2b">
+			<desc>get br1 eth1 raw mac</desc>
+			<setvar name="br1.eth1.mac">
+				echo $(${bin.dir}/getbyrexp.py -p "MAC addr=([\da-fA-F:]+)" -f ${log.dir}/step3.2_show_interface.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.2c">
+			<desc>get mac1 of br1.eth1</desc>
+			<setvar name="br1.eth1.mac1">
+				echo $(echo ${br1.eth1.mac} | sed -e 's/:../&amp;:/g' -e 's/^../&amp;:/')
+			</setvar>
+		</step>
+
+		<step no="3.2d">
+			<desc>get tmp.mac of br1.eth1</desc>
+			<setvar name="br1.eth1.tmp.mac">
+				echo $(echo ${br1.eth1.mac1} | tr : - )
+			</setvar>
+		</step>
+
+		<step no="3.3" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step3.3_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "ifconfig ${br1.vpc1.tif.name} ${br1.vpc1.tif.ip} netmask ${br.route.netmask}"
+				-v "arp -s ${br1.br.mgt0.1.ip} ${br1.eth1.mac1} dev ${br1.vpc1.tif.name}"
+				-v "arp -a"
+				-v "ping ${br1.br.mgt0.1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				4. Bind the security-object to the eth1.
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 security-object lan1"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				6. Do not auth, send Any broadcast
+			</desc>
+			<log-file>step5_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.br.tmp.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.br.tmp.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				prepare sendpacket.conf
+			</desc>
+			<ssh target="br1.vpc1">
+				-v "echo -e \&quot; [rip] \\n mac_dst=ff-ff-ff-ff-ff-ff \\n eth_protocol_id=0x888e \\n src_ip=${br1.vpc1.tif.ip} \\n dst_ip=${br1.br.tmp.ip} \\n route_item=192.168.11.0/24#0.0.0.0:2 \\n \&quot; &gt; /tmp/sendpacket.conf"
+			</ssh>
+		</step>	
+
+	</stage>
+
+</testcase>

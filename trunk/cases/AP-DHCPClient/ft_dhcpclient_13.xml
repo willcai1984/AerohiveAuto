@@ -1,0 +1,204 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that DHCP Client should clean IP address and all other DHCP types when the lease time elapse, if the DHCP server can not reach.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		- Verify IP, Net mask, DNS, Default gateway, lease time etc. are configured
+		in DHCP server1.
+		- DHCP server 2 is off.
+		- Either Wi-Fi interface or Ethernet interface is fully tested.
+		- Verify the route access testing is successful.
+		- Verify no IP address has been set in MPP1.
+
+		Test Procedure:
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="tb.vlan7.dhcp_start" value="192.168.${tb.vlan7}.200" />
+	<property name="tb.vlan7.dhcp_end" value="192.168.${tb.vlan7}.222" />
+	<property name="tb.vlan7.gw" value="192.168.${tb.vlan7}.254" />
+	<property name="mgt0.1_ip" value="192.168.${tb.vlan7}.100" />
+
+	<stage>
+		<step no="pre.0">
+			<desc>
+				-shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="pre.1">
+			<desc>
+				-shutdown eth1
+			</desc>
+			<if>"${ap2.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<include prefix="add.ap1.permit.vlan" file="subs/l2swcfg_port_newvlan.xml" args="${ap1.eth0.swport}, ${tb.vlan7}" />
+
+		<include prefix="modify.vlan" file="subs/l2swcfg_port_vlan.xml" args="${ap2.eth0.swport}, ${tb.vlan7}, ${tb.vlan7}" />
+
+		<step no="0">
+			<desc>
+				Config mgt0.1 as a dhcp server
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0.1 vlan ${tb.vlan7}"
+				-v "interface mgt0.1 ip ${mgt0.1_ip}/24"
+				-v "interface mgt0.1 dhcp-server ip-pool ${tb.vlan7.dhcp_start} ${tb.vlan7.dhcp_end}"
+				-v "interface mgt0.1 dhcp-server options lease-time 100"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${tb.vlan7.gw}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "_ff id 1 dst-port 67 bidirectional"
+				-v "_debug dhcpd basic"
+				-v "_debug dhcpc basic"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config hive info
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="3" delay="5">
+			<desc>
+				- open dhcp client
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step4_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "Get IP address 192.168.${tb.vlan7}.\d+ from the server ${mgt0.1_ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step4.1_show_interface_mgt0.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "IP addr=192.168.${tb.vlan7}.20\d" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5" delay="100">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step5_show_interface_mgt0.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "IP addr=192.168.${tb.vlan7}.20\d" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step5.1_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "Get IP address 192.168.${tb.vlan7}.\d+ from the server ${mgt0.1_ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				-shutdown interface eth0
+				-shutdown interface wifi1
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+			</console>
+		</step>
+
+		<step no="7" delay="200">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step7_show_interface_mgt0.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-c -i "IP addr=192.168."</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p0 "IP addr=192.168.${tb.vlan7}.20\d" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				- Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step7.1_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-i "Get IP address 0.0.0.0 from the server"</log-match>
+			<log-match>-c -i "DHCP client: *Enabled"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p0 "Get IP address 192.168.${tb.vlan7}.\d+ from the server ${mgt0.1_ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="recover.vlan" file="subs/l2swcfg_port_vlan.xml" args="${ap2.eth0.swport}, ${tb.nvlan}, ${tb.vlans}" />
+
+			<step no="0">
+				<desc>
+					cancel new vlan
+				</desc>
+				<telnet host="${tb.l2sw}" prompt=".*[>|#]">
+					-v "enable"
+					-v "config"
+					-v "vlan database"
+					-v "no vlan ${tb.vlan7}"
+					-v "end"
+					-v "show vlan"
+				</telnet>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,206 @@
+<include>
+	<step no="ping.result">
+		<desc>ping tb server1</desc>
+		<log-file>tb_serv1_ping.log</log-file>
+		<setvar name="ping.ret" scope="local">
+			${bin.dir}/ping.pl -d ${tb.server1}>${log.dir}/${log.file} 2>&amp;1; echo $?
+		</setvar>
+		<failed>next</failed>
+	</step>
+	<step no="ping.result.error">
+		<if>"${ping.ret}" != "0"</if>
+		<script>
+			exit ${ping.ret}
+		</script>
+		<failed>next</failed>
+	</step>
+	<step no="1.1">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check if syslog-ng installed</desc>
+		<ssh host="${tb.server1}">
+			-v "syslog-ng -V"
+		</ssh>
+		<failed>next</failed>
+	</step>
+	<step no="1.2">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check syslog server process</desc>
+		<log-file>syslog_ps.log</log-file>
+		<ssh host="${tb.server1}">
+			-v "ps -ef|grep syslog"
+		</ssh>
+		<log-match>-i "syslog-ng"</log-match>
+		<failed>next</failed>
+	</step>
+	<step no="1.3">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check udp,tcp port</desc>
+		<log-file>udptcp_ports.log</log-file>
+		<ssh host="${tb.server1}">
+			-v "netstat -utlan"
+		</ssh>
+		<log-match>-i "^udp " -i ":514 "</log-match>
+		<failed>next</failed>
+	</step>
+	
+	<step no="2.1">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check tftp server</desc>
+		<log-file>check_tftp_server.log</log-file>
+		<script>
+			cd ${bin.dir};tftp ${tb.server1} -c put ping.pl
+		</script>
+		<failed>next</failed>
+	</step>
+	<step no="2.2">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check file has been sent to tftp server</desc>
+		<ssh host="${tb.server1}">
+			-v "cd /var/lib/tftpboot"
+			-v "ls -1"
+			-v "rm -rf ping.pl"
+		</ssh>
+		<log-match>-i "^ping\.pl$"</log-match>
+		<failed>next</failed>
+	</step>
+	<!--<step no="2.1">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check if tftp server installed</desc>
+		<ssh host="${tb.server1}">
+			-v "rpm -qa|grep tftp"
+		</ssh>
+		<log-match>-i "^tftp-server-"</log-match>
+		<failed>next</failed>
+	</step>
+	<step no="2.2">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check tftp server process</desc>
+		<log-file>tftpserv_ps.log</log-file>
+		<ssh host="${tb.server1}">
+			-v "ps -ef|grep xinetd"
+		</ssh>
+		<log-match>-i " ? " -i "xinetd"</log-match>
+		<failed>next</failed>
+	</step>
+	<step no="2.3">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check tftp server udp port</desc>
+		<log-file>udptcp_ports.log</log-file>
+		<log-match>-i "^udp " -i ":69 "</log-match>
+		<failed>next</failed>
+	</step>-->
+	<step no="3.1">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check if ftp server installed</desc>
+		<ssh host="${tb.server1}">
+			-v "rpm -qa|grep vsftpd"
+		</ssh>
+		<log-match>-i "^vsftpd-"</log-match>
+		<failed>next</failed>
+	</step>
+	<step no="3.2">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check ftp server process</desc>
+		<log-file>ftpserv_ps.log</log-file>
+		<ssh host="${tb.server1}">
+			-v "ps -ef|grep vsftpd"
+		</ssh>
+		<log-match>-i " ? " -i "vsftpd"</log-match>
+		<failed>next</failed>
+	</step>
+	<step no="3.3">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check ftp config file</desc>
+		<script>
+			/usr/bin/curl -u ${tb.ftp.user}:${tb.ftp.passwd} ftp://${tb.ftp}/${tb.ftp.file3_small} -o /tmp/check_ftp.img --limit-rate 100k --connect-timeout 200
+		</script>
+		<no-error-check />
+		<failed>next</failed>
+	</step>
+	
+	<step no="4">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check 3 ftp files</desc>
+		<log-file>img_list.log</log-file>
+		<ssh host="${tb.server1}">
+			-v "ll --color=never *.img"
+		</ssh>
+		<log-match>-i " 1[0-9]\{9\} " -i " ${tb.ftp.file1_large}$"</log-match>
+		<log-match>-i " 1[0-9]\{7\} " -i " ${tb.ftp.file2_medium}$"</log-match>
+		<log-match>-i " 1[0-9]\{6\} " -i " ${tb.ftp.file3_small}$"</log-match>
+		<failed>next</failed>
+	</step>
+	
+	<step no="5">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check dns service</desc>
+		<ssh host="${tb.server1}">
+			-v "chkconfig |grep named"
+		</ssh>
+		<log-match>-c -i "named" -i "3:off"</log-match>
+		<failed>next</failed>
+	</step>
+	<step no="5.1">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>test restart and stop dns service</desc>
+		<ssh host="${tb.server1}">
+			-v 'service named restart'
+			-v 'service named stop'
+		</ssh>
+		<log-match>-n -i 'unrecognized service'</log-match>
+		<failed>next</failed>
+	</step>
+	<step no="6">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check pkt installation</desc>
+		<ssh host="${tb.server1}">
+			-v 'which pkt'
+		</ssh>
+		<log-match>-c -e '/usr/local/sbin/pkt' -e '/usr/local/bin/pkt'</log-match>
+	</step>
+	
+	<step no="7">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check tshark installation</desc>
+		<ssh host="${tb.server1}">
+			-v 'which tshark'
+		</ssh>
+		<log-match>-c -e '/usr/sbin/tshark'</log-match>
+	</step>
+
+	<step no="8">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check hping3/hping2/hping installation</desc>
+		<ssh host="${tb.server1}">
+			-v 'which hping3'
+		</ssh>
+		<log-match>-c -e '/usr/sbin/hping3'</log-match>
+	</step>
+	
+	<step no="9">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check telnet installation</desc>
+		<ssh host="${tb.server1}">
+			-v 'which telnet'
+		</ssh>
+		<log-match>-c -e '/usr/bin/telnet'</log-match>
+	</step>
+	
+	<step no="10">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check net-snmp-utils installation</desc>
+		<ssh host="${tb.server1}">
+			-v 'which snmpwalk'
+		</ssh>
+		<log-match>-c -e '/usr/bin/snmpwalk'</log-match>
+	</step>
+	
+	<step no="11">
+		<if>"${ping.ret}" == "0"</if>
+		<desc>check iperf installation</desc>
+		<ssh host="${tb.server1}">
+			-v 'which iperf'
+		</ssh>
+		<log-match>-c -e '/usr/bin/iperf'</log-match>
+	</step>
+</include>

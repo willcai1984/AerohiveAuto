@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=2) The switch can discover router ports by IGMPv2 general query packet.</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	Topology 2
+		Description	The switch can discover router ports by IGMPv2 general query packet.
+		Platform	Chesapeake
+		Pre-condition	IGMP snooping is enabled on the switch; the router port on the switch is up.
+		Test procedure	1. Configure multicast routerA and B in vlan 100.
+		2. Multicast routers send IGMPv2 general query.
+		3. Check the  router port list information on the switch  ,result 1
+		4. Configure router B in vlan 10.
+		5. Multicast routers send IGMPv2 general query.
+		6. Check the  router port list information on the switch  ,result 1
+		7. Configure the two links of routerA in different vlans (vlan 10 and 100).
+		8. Multicast router A sends IGMPv2 general query.
+		9. Check the  router port list information on the switch  ,result 1
+		10. Configure the port that links to routerB to be trunk and allow 
+		vlan 10 and 100, multicast routerB sends IGMPv2 general query with vlan tag 10 and 100 ,result 2
+
+		Expect result	1. When the port on the switch which links to the multicast router receives IGMPv2 general query message, the switche adds the port to router port list and should be able to display the multicast router version. 
+		2. When the ports on the switch which link to the multicast router receive IGMPv2 general query message with vlan tags, the switche adds the port to router port list and should be able to display the multicast router version and vlan tag.
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+
+	<stage>
+		<step no="1">
+			<desc>
+				configure switch, port1 and port2 are access in vlan${tb.vlan1}	
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "_debug swd igmp"
+				-v "ip igmp snooping vlan ${tb.vlan1}"
+				-v "ip igmp snooping"
+				-v "show interface"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>check igmp snooping is enable in vlan ${tb.vlan1}</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				port1 and port2 send igmp v2 query pkt 
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "stream_import -onePort ${sw1.port1.ixia_port} -fileName ${case.dir}/conf/potr1.str"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 2 -maintanceOp enable"
+				-v ""
+				-v "stream_import -onePort ${sw1.port2.ixia_port} -fileName ${case.dir}/conf/potr2.str"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 2 -maintanceOp enable"	
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="4.1">
+			<desc>show log buf</desc>
+			<log-file>check_igmp1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="4.2">
+			<desc>check the mroute table added the entry</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v2"</log-match>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port2}\s*v2"</log-match>
+		</step>
+		<step no="5">
+			<desc>
+				change port2 to vlan${tb.vlan2}	
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan2}"
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+				-v "show ip igmp snooping vlan ${tb.vlan2}"
+			</telnet>
+		</step>
+		<step no="6">
+			<desc>
+				port1 and port2 send igmp v2 query pkt 
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="7.1">
+			<desc>show log buf</desc>
+			<log-file>check_igmp2.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="7.2">
+			<desc>check the mroute table added the entry in different vlans</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v2"</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port2}\s*v2"</log-match>
+		</step>
+		<step no="8">
+			<desc>change port2 to trunk</desc>
+			<log-file>change_port.log</log-file>
+			<telnet target="sw1">
+				-v "no interface ${sw1.port2} switchport access vlan"
+				-v "interface ${sw1.port2} switchport mode trunk"
+				-v "no interface ${sw1.port2} switchport trunk allow vlan all"
+				-v "interface ${sw1.port2} switchport trunk native vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport trunk allow vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport trunk allow vlan ${tb.vlan2}"
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+				-v "show ip igmp snooping vlan ${tb.vlan2}"
+				-v "interface ${sw1.port2} shutdown"
+				-v "no interface ${sw1.port2} shutdown"
+				-v "show ip igmp snooping mrouters"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sw1.port2}\s*v2" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="9">
+			<desc>port2 sends igmp v2 query pkt</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_modify -portListIn ${sw1.port2.ixia_port} 
+				-streamId 2 
+				-vlan enable
+				-vlan_id ${tb.vlan1} 
+				-vlan_dot1p 0
+				-vlan_cfi 0"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+
+				-v "stream_modify -portListIn ${sw1.port2.ixia_port} 
+				-streamId 2 
+				-vlan enable
+				-vlan_id ${tb.vlan2} 
+				-vlan_dot1p 0
+				-vlan_cfi 0"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="10.1">
+			<desc>show log buf</desc>
+			<log-file>check_igmp3.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="10.2">
+			<desc>check the mroute table added the entry</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port2}\s*v2"</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port2}\s*v2"</log-match>
+		</step>
+
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,400 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>There are two vpn tunnels on BR, use l3-tunnel-action tunnel all</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-config two remote CVGs, there are several LANs behind it
+		-there are some services in CVG's LANs
+		-BR setup VPN connection with the CVGs, both two tunnels are created
+		-set CVG1 as primary
+		-setup all wifi radio and eth interfaces as access mode
+		-bind a user-profile with l3-tunnel action tunnel all
+		-bind the user-profile to ssid
+		-STA connects to ssid
+
+		Test Procedure:
+
+		-check the route table, tunnel routes added correctly
+		-trigger traffic to LAN behind CVG1 from STA
+		-trigger traffic to LAN behind CVG2 from STA
+		-trigger traffic to BR outside from STA
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>2</numofcvg>
+	<tbtype>winlin</tbtype>
+	<cvg-opt-same-backnet>no</cvg-opt-same-backnet>
+	
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+
+		<step no="pre.0.1">
+			<desc>enable wan port nat if FW nonexists</desc>
+			<if>"no" == "${cvg1.cvg.fw_existed}"</if>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "interface eth0 mode wan nat"
+			</telnet>
+		</step>
+
+		<step no="pre.0.2">
+			<desc>enable wan port nat if FW nonexists</desc>
+			<if>"no" == "${cvg2.cvg.fw_existed}"</if>
+			<telnet target="${cvg2.cvg.tunnel.ip}" timeout="5">
+				-v "interface eth0 mode wan nat"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/vpn_setup_two.xml" obj-args="cvg1, cvg2, br1" />
+
+		<step no="2.1">
+			<desc>config mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v ""
+				-v ""
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>config mgt0.2 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.2 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+				-v "routing internal-sub-network ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v ""
+				-v ""
+				-v ""
+			</telnet>
+		</step>
+
+		<!--  <step no="2.3" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>CVG1 advertise supper net for BRs</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.mgt0.supermask}"
+				-v ""
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.2.ip}/${br.mgt0.supermask}"
+				-v ""
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="2.4" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>CVG2 advertise supper net for BRs</desc>
+			<telnet target="${cvg2.cvg.tunnel.ip}" timeout="10">
+				-v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.mgt0.supermask}"
+				-v ""
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.2.ip}/${br.mgt0.supermask}"
+				-v ""
+				-v ""
+			</telnet>
+		</step>-->
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "br1.br.mgt0.2.route=$(echo ${br1.br.mgt0.2.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.vpc1.route=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns1.route=$(echo ${cvg1.dns1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg2.vpc1.route=$(echo ${cvg2.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>On GW1, will add the tunnel routes according to BR's modification </desc>
+			<log-file>3.1.show_route_cvg_.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="15">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${br1.br.mgt0.2.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="3.2" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>On GW2, will add the tunnel routes according to BR's modification </desc>
+			<log-file>3.2.show_route_cvg_.log</log-file>
+			<telnet target="${cvg2.cvg.tunnel.ip}" timeout="15">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "${cvg2.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${br1.br.mgt0.2.route}" -p 8 -i "${cvg2.tunnel.id}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				setup eth interface as access mode				
+			</desc>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				eth1 access br1.vpc1.vlan
+			</desc>
+			<telnet target="${br1.br.wan.ip}">				
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "int eth1 mac-learning enable"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute 2"
+				-v "interface eth4 mode bridge-access user-profile-attribute  2"
+				-v "int eth4 mac-learning enable"				
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient -r  ${br1.vpc1.tif.name}"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+		
+		<step no="4.4">
+			<desc>br1.vpc4 get ip addr from dhcp server of mgt0.2</desc>
+			<log-file>ifconfig_vpc4_.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "dhclient -r  ${br1.vpc4.tif.name}"
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4.5">
+			<desc>set br1.vpc4.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				Bind user-profile with l3-tunnel-action all on both wifi radio and wired eth interfaces
+				Enable debug, Check BR connectivities
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "routing match-map mlan1 user-profile lan1 to any"
+				-v "routing route-map rlan1 via encrypted"
+				-v "routing policy plan1 id 1 match-map mlan1 route-map rlan1"
+				-v "routing match-map mlan2 user-profile lan1 to any"
+				-v "routing route-map rlan2 via encrypted"
+				-v "routing policy plan2 id 2 match-map mlan2 route-map rlan2"
+			</telnet>
+		</step>
+		
+		<step no="5.1">
+			<desc>-check the Tunnel All tunnel-all Routing Table</desc>
+			<log-file>5.1_show_l3_policy_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show routing policy plan1"
+			</telnet>			
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\d *encrypted" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="5.2">
+			<desc>-check the Tunnel All tunnel-all Routing Table</desc>
+			<log-file>5.2_show_l3_policy_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show routing policy plan2"
+			</telnet>			
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\d *encrypted" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.3" type="loop-check" loop-max-times="15" loop-interval="15">
+			<desc>BR ping br1.sta1</desc>
+			<log-file>step5.3_ping.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${br1.vpc1.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.4" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>BR ping br1.vpc4</desc>
+			<log-file>step5.4_ping.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${br1.vpc4.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${br1.vpc4.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.4b" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>BR ping pub.dns1</desc>
+			<log-file>step5.4b_ping.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${pub.dns1.ip}"
+			</telnet>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>		
+
+		
+		
+		<step no="5.5" type="loop-check" loop-max-times="7" loop-interval="10">
+			<desc>check ip route list</desc>
+			<log-file>5.5_show_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.dns1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "tunnel0"</log-match>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "tunnel0"</log-match>
+		</step>
+
+		<step no="5.6">
+			<desc>enable debug on BR</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+		
+		<step no="6" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				-STA1 ping web server on internet
+				default traffic is via tunnel
+			</desc>
+			<log-file>6.log_br_vpc1_to_pub.dns1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				show log buffer
+			</desc>
+			<log-file>setp6.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v ""
+				-v ""
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log buff"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "L\*: \(o\) ${br1.tunnel.id} ${br1.vpc1.tif.ip}[\t\>\- ]+${pub.dns1.ip}.+icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="7" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				-STA1 ping web server on internet
+				default traffic is via tunnel
+			</desc>
+			<log-file>7.log_br_vpc1_to_pub.dns1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>		
+
+		<step no="7.1">
+			<desc>
+				show log buffer
+			</desc>
+			<log-file>setp7.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v ""
+				-v ""
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log buff"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "L\*: \(o\) ${br1.tunnel.id} ${br1.vpc1.tif.ip}[\t\>\- ]+${cvg1.vpc1.tif.ip}.+icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="8" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				-STA1 ping web server on internet
+				default traffic is via tunnel
+			</desc>
+			<log-file>8.log_br_vpc1_to_pub.dns1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.vpc4.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc4.tif.ip}: " -i "ttl="</log-match>
+		</step>		
+
+		<step no="8.1">
+			<desc>
+				show log buffer
+			</desc>
+			<log-file>setp8.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v ""
+				-v ""
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log buff"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "L\*: \(o\) eth4 ${br1.vpc1.tif.ip}[\t\>\- ]+${br1.vpc4.tif.ip}.+icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "L\*: \(o\) ${br1.tunnel.id} ${br1.vpc1.tif.ip}[\t\>\- ]+${br1.vpc4.tif.ip}.+icmp-echo-req" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="9" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				-STA1 ping web server on internet
+				default traffic is via tunnel
+			</desc>
+			<log-file>9.log_br_vpc1_to_pub.dns1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.dns1.ip}: " -i "ttl="</log-match>
+		</step>		
+
+		<step no="9.1">
+			<desc>
+				show log buffer
+			</desc>
+			<log-file>setp9.1_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v ""
+				-v ""
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log buff"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "L\*: \(o\) ${br1.tunnel.id} ${br1.vpc1.tif.ip}[\t\>\- ]+${cvg1.dns1.ip}.+icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+
+</testcase>

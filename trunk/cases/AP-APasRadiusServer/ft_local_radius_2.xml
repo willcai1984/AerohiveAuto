@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Support eap-peap with local database</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a local radius server
+		-db type is local
+		-create a user-group
+		-create a user,add it to the group
+		-bind the group with radius server
+		-leave other parameters default
+		-enable tls and peap on radius server
+		-enable the rardius server
+		-create a ssid with wpa-802.1x,apply this radius server
+
+		Test Procedure:
+		-client connects to the ssid with eap-peapv0/mschapv2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+	<property name="conn1.eap_type" value="PEAP" />
+
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.hive">
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security aaa radius primary ${ap1.mgt0.ip}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="ex.user-group">
+			<desc>Set radius service for DUT1 </desc>
+			<ssh target="ap1">
+				-v "user-group autotest"
+				-v "user ${pub.radius1.username}"
+				-v "user ${pub.radius1.username} pass ${pub.radius1.passwd}"
+				-v "user ${pub.radius1.username} group autotest"
+				-v "aaa rad lo db local"
+				-v "aaa radius-server local user-group autotest"
+				-v "aaa radius-server local enable"
+				-v "aaa radius-server local sta-auth type tls"
+				-v "aaa radius-server local sta-auth type peap"
+				-v "no aaa radius-server local sta-auth type ttls"
+				-v "no aaa radius-server local sta-auth type leap"
+				-v "save config"
+				-v "save config users"
+			</ssh>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-auto-8021x" />
+
+
+		<step no="ex.aaa-chk">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-e "Enabled" -i "Local RADIUS" -p 3 -c</log-match>
+			<log-match>-e "Enabled" -i "local database:" -p 3 -c</log-match>
+		</step>
+
+		<include prefix="4" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="ex.debug">
+			<desc>enable radius debug</desc>
+			<console target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<include prefix="1.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6.1">
+			<log-file>log_on_ap.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+				-v "show ssid ${ssid.name} station"
+				-v "show roaming cache"
+				-v "show auth"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "RADIUS: The RADIUS server accepted user \'${pub.radius1.username}\' through the NAS at ${ap1.mgt0.ip}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa-aes-8021x, WPA/CCMP, wpa-8021x, aes" />
+
+	</stage>
+</testcase>

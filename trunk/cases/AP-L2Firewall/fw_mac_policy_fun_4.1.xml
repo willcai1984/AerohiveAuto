@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mac-session setup.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP1
+		"security-object FWtest"
+		"security-object FWtest default-user-profile-attr 1"
+		"ssid FWtest"
+		"ssid FWtest security-object FWtest"
+		"interface wifi0 ssid FWtest"
+		"interface wifi1 ssid FWtest"
+		"user-profile FW qos-policy def-user-qos vlan-id lt;mgt0 vlangt; attribute 1"
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Server ping Laptop
+		2) Check the mac-session table on AP1
+		"show forwarding-engine mac-sessions"
+		3) Clear mac-session table and config mac-policy deny the traffic from and to
+		Laptop
+		"clear forwarding-engine mac-sessions"
+		"mac-policy FW"
+		"mac-policy FW from lt;Laptop mac addrgt; action deny"
+		"user-profile FW security mac-policy from-access FW"
+		4) Server ping Laptop
+		5) Check the mac-session table on AP1
+		"show forwarding-engine mac-sessions"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				Configure AP1
+				security-object FWtest
+				security-object FWtest default-user-profile-attr 1
+				ssid FWtest
+				ssid FWtest security-object FWtest
+				interface wifi0 ssid FWtest
+				interface wifi1 ssid FWtest
+				user-profile FW qos-policy def-user-qos vlan-id ;mgt0 vlan; attribute 1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface eth0 native-vlan ${tb.vlan1}"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "security-object FWtest security protocol-suite open"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile FW qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				Laptop has been associated with AP1 and assigned an ip address
+				create config file of wpa_supplicant
+			</desc>
+			<ssh target="sta1">
+				-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+				-v "ifconfig ${sta1.tif.name} down"
+				-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+		</step>
+
+		<step no="2.1" delay="5">
+			<desc>
+				start wpa_supplicant
+			</desc>
+			<ssh target="sta1">
+				-v "killall wpa_supplicant"
+				-v "wpa_supplicant -i ${sta1.tif.name} ${sta1.wpa_flag} -c /tmp/wpa_supplicant.cfg -B"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="2.3" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check if the client was associated successfully</desc>
+			<log-file>step2.3_wpa_stat_tmp_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>client gets IP by dhclient</desc>
+			<ssh target="sta1">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.5" delay="10">
+			<desc>ifconfig to show the ip adrr</desc>
+			<log-file>step2.5_ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match> -e "inet addr"</log-match>
+		</step>
+
+		<step no="2.6" delay="10">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.7">
+			<desc>Get laptop1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.8">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="2.9" delay="10">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>ap1_info.log</log-file>
+			<console target="ap1" timeout="80">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="2.10">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ap1_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="2.11">
+			<desc>
+				"_ff id 1 src-ip Laptop's mac addr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>
+				1) Server ping Laptop
+			</desc>
+			<log-file>step3_server_ping_laptop.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "nohup ping ${sta1.tif.ip} -c 30 &gt; /dev/null &amp;"
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-e "from ${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				2) Check the mac-session table on AP1
+				"show forwarding-engine mac-sessions"
+			</desc>
+			<log-file>step4_show_forwarding_engine_mac_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine mac-sessions"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${tb.vlan1.gw.mac}.*?-&gt;.*?${sta1.tif.mac}" -c 1 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${sta1.tif.mac}.*?-&gt;.*?${tb.vlan1.gw.mac}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="4.1" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step4.1_show_logging_buffered.log" />
+
+		<step no="5">
+			<desc>
+				3) Clear mac-session table and config mac-policy deny the traffic from and to
+				Laptop
+				"mac-policy FW"
+				"mac-policy FW from lt;Laptop mac addrgt; action deny"
+				"user-profile FW security mac-policy from-access FW"
+				"clear forwarding-engine mac-sessions"
+				clear log buffered
+			</desc>
+			<console target="ap1">
+				-v "mac-policy FW"
+				-v "mac-policy FW from ${sta1.tif.mac} action deny"
+				-v "user-profile FW security mac-policy from-access FW"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="6">
+			<desc>
+				4) Server ping Laptop
+			</desc>
+			<log-file>step6_server_ping_laptop.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -e "from ${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				5) Check the mac-session table on AP1
+				"show forwarding-engine mac-sessions"
+			</desc>
+			<log-file>step7_show_forwarding_engine_mac_sessions.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine mac-sessions"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${tb.vlan1.gw.mac}.*?-&gt;.*?${sta1.tif.mac}" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${sta1.tif.mac}.*?-&gt;.*?${tb.vlan1.gw.mac}" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="7.1" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step7.1_show_logging_buffered.log" />
+	</stage>
+</testcase>

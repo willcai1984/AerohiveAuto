@@ -1,0 +1,703 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>pkt process for L3 roaming (two laptops roaming to one ap but from different subnet ap)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-all ap are in different subnets
+		-construct this topology
+		-disable proxy-arp on all ap
+
+		Test Procedure:
+		-laptop1 and laptop2 link to ap1 ap2 respectively first, then laptop1
+		laptop2 are all roaming to ap3(change the power or shutdown the
+		interface)
+		- laptop1 ping laptop2, should meet result 1.
+		- laptop1 ping an unknown address, should meet result 2.
+	</description>
+	<numofap>3</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn2.ssid" value="${ssid.name}-ap2" />
+
+
+	<stage>
+		<step no="1">
+			<desc>
+				-config ap1
+				-disable proxy-arp on ap1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap1">
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan2} mobility-policy FWtest attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+		
+		<step no="1_0">
+			<desc>
+				-config ap1
+				-disable proxy-arp on ap1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap1">
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable"
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan2} mobility-policy FWtest attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				close dhcp client
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				open dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step1.3_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.4">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.3_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>show_interface_wifi0_info_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+		
+		<step no="1.5_0">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>show_interface_wifi0_info_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.2"
+			</telnet>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				get wifi0's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap1.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi0_info_ap1.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				-config ap2
+				-disable proxy-arp on ap2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap2">
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "interface mgt0 vlan ${tb.vlan3}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "ssid ${ssid.name}-ap2"
+				-v "interface wifi0 ssid ${ssid.name}-ap2"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name}-ap2 security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan3} mobility-policy FWtest attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+		
+		<step no="3_0">
+			<desc>
+				-config ap2
+				-disable proxy-arp on ap2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap2">
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable"
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "interface mgt0 vlan ${tb.vlan3}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "ssid ${ssid.name}-ap2"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 ssid ${ssid.name}-ap2"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name}-ap2 security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan3} mobility-policy FWtest attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				close dhcp client
+			</desc>
+			<console target="ap2">
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				open dhcp client
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step3.3_show_interface_mgt0_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="3.4">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step3.3_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>show_interface_wifi0_info_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+		
+		<step no="3.5_0">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>show_interface_wifi0_info_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi0.2"
+			</telnet>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				get wifi0's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap2.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi0_info_ap2.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+		
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap2" />
+
+		<step no="5">
+			<desc>
+				-config ap3
+				-disable proxy-arp on ap3
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap3">
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name}-ap2"
+				-v "interface wifi0 ssid ${ssid.name}-ap2"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "ssid ${ssid.name}-ap2 security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy FWtest attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+		
+		<step no="5_0">
+			<desc>
+				-config ap3
+				-disable proxy-arp on ap3
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap3">
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name}-ap2"
+				-v "interface wifi0 ssid ${ssid.name}-ap2"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "ssid ${ssid.name}-ap2 security-object FWtest"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy FWtest attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+		<step no="6" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Show roaming cache
+			</desc>
+			<log-file>step6_show_roaming_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${ap1.wifi0.mac}"</log-match>
+		</step>
+
+		<step no="6_0">
+			<desc>
+				show interface mgt0 info of AP3
+			</desc>
+			<log-file>step6_0_show_interface_mgt0_info.log</log-file>
+			<console target="ap3">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="6_1">
+			<desc>Get ap3's ip</desc>
+			<setvar name="ap3.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step6_0_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		
+		<step no="6.1" delay="20" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show amrp dnxp neighbor
+			</desc>
+			<log-file>step6.1_show_amrp_dnxp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap3.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Show roaming cache
+			</desc>
+			<log-file>step7_show_roaming_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta2.tif.mac} *${ap2.wifi0.mac}"</log-match>
+		</step>
+
+		<step no="7.1" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show amrp dnxp neighbor
+			</desc>
+			<log-file>step7.1_show_amrp_dnxp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap3.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				Shutdown wifi0 interface of ssidA on portal1
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				Shutdown wifi1 interface of ssidA on portal2
+			</desc>
+			<telnet target="ap2">
+				-v "interface wifi0 ssid ${ssid.name}-ap2 shutdown"
+			</telnet>
+		</step>
+
+		<step no="9" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show route on ap1
+			</desc>
+			<log-file>step9_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-i "mgt0" -i "LTO"</log-match>
+		</step>
+
+		<step no="9.1" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show route on ap2
+			</desc>
+			<log-file>step9.1_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-i "mgt0" -i "LTO"</log-match>
+		</step>
+
+		<step no="9.2" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show route on ap3
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step9.2_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap3">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "wifi0.1" -i "LTO"</log-match>
+			<log-match>-c -i "${sta2.tif.mac}" -i "wifi0.2" -i "LTO"</log-match>
+		</step>
+		
+		<step no="9.2" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show route on ap3
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step9.2_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap3">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "wifi0.2" -i "LTO"</log-match>
+			<log-match>-c -i "${sta2.tif.mac}" -i "wifi0.3" -i "LTO"</log-match>
+		</step>
+
+		<step no="10" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show station on ap2
+			</desc>
+			<log-file>step10_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show station"
+			</telnet>
+			<log-match>-n -c -i "${sta2.tif.mac}" -i "${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="10.1" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step10_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+		
+		<include prefix="21" file="subs/sta_dhcp_check.xml" obj-args="sta1" />
+
+		<step no="10.2" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show station on ap3
+			</desc>
+			<log-file>step10.2_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap3">
+				-v "show station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+			<log-match>-c -i "${sta2.tif.mac}" -i "${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				open debug mode and clear log all
+			</desc>
+			<telnet target="ap3">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} etype 0806 bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				open debug mode and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} etype 0806 bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear arp-cache"
+				-v "clear forwarding-engine ip-session"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11.2">
+			<desc>
+				-clear arp on windows sta PC3
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step11.2_clear_sta1_arp.log</log-file>
+			<staf target="sta1">
+				-v "arp -d"
+			</staf>
+		</step>
+
+		<step no="11.3">
+			<desc>
+				-clear arp on linux sta PC3
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step11.3_clear_sta1_arp.log</log-file>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<include prefix="12" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 5" />
+
+		<step no="13">
+			<desc>
+				-show logging buffered on ap3
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step13_show_logging_buffered.log</log-file>
+			<telnet target="ap3">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.2 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(o) eth0 ${ap3.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+		</step>
+		
+		<step no="13_0">
+			<desc>
+				-show logging buffered on ap3
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step13_show_logging_buffered.log</log-file>
+			<telnet target="ap3">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.2 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.2 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.3 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(o) eth0 ${ap3.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+		</step>
+
+		<step no="13.1">
+			<desc>
+				-show logging buffered on ap1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step13.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(i\) eth0.*?-&gt;${sta1.tif.mac}\s*arp ${tb.vlan2.gw}.*-&gt;${sta1.tif.ip}\(${sta1.tif.mac}\)" -ps p "\(o\) eth0" p "\(o\) wifi1.1" p0 "\(i\) mgt0 ${ap1.mgt0.ip}-&gt;${ap3.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" p0 "\(o\) eth0 ${ap1.mgt0.ip}-&gt;${ap3.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" -e "(?i)\(r\) mgt0 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${tb.vlan2.gw}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="13.1_0">
+			<desc>
+				-show logging buffered on ap1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step13.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(i\) eth0.*?-&gt;${sta1.tif.mac}\s*arp ${tb.vlan2.gw}.*-&gt;${sta1.tif.ip}\(${sta1.tif.mac}\)" -ps p "\(o\) eth0" p "\(o\) wifi0.1" p0 "\(i\) mgt0 ${ap1.mgt0.ip}-&gt;${ap3.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" p0 "\(o\) eth0 ${ap1.mgt0.ip}-&gt;${ap3.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" -e "(?i)\(r\) mgt0 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${tb.vlan2.gw}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap3">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="14.1">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="14.2">
+			<desc>
+				-clear arp on windows sta PC3
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step14.2_clear_sta1_arp.log</log-file>
+			<staf target="sta1">
+				-v "arp -d"
+			</staf>
+		</step>
+
+		<step no="14.3">
+			<desc>
+				-clear arp on linux sta PC3
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step14.3_clear_sta1_arp.log</log-file>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<include prefix="15" file="subs/sta_ping.xml" args="sta1, ${tb.unreach.ip1}, 8,negative" />
+
+		<step no="16" delay="5">
+			<desc>
+				-show logging buffered on ap3
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step16_show_logging_buffered.log</log-file>
+			<telnet target="ap3" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.2 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(o) eth0 ${ap3.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+		</step>
+		
+		<step no="16_0" delay="5">
+			<desc>
+				-show logging buffered on ap3
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step16_show_logging_buffered.log</log-file>
+			<telnet target="ap3" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.2 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.2 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.3 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.vlan2.gw}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap3.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(o) eth0 ${ap3.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+		</step>
+
+		<step no="16.1">
+			<desc>
+				-show logging buffered on ap1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step16.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(i\) eth0.*?-&gt;${sta1.tif.mac}\s*arp ${tb.vlan2.gw}.*-&gt;${sta1.tif.ip}\(${sta1.tif.mac}\)" -ps p "\(o\) eth0" p "\(o\) wifi1.1" p0 "\(i\) mgt0 ${ap1.mgt0.ip}-&gt;${ap3.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" p0 "\(o\) eth0 ${ap1.mgt0.ip}-&gt;${ap3.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" -e "(?i)\(r\) mgt0 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${tb.vlan2.gw}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="16.1_0">
+			<desc>
+				-show logging buffered on ap1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step16.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(i\) eth0.*?-&gt;${sta1.tif.mac}\s*arp ${tb.vlan2.gw}.*-&gt;${sta1.tif.ip}\(${sta1.tif.mac}\)" -ps p "\(o\) eth0" p "\(o\) wifi0.1" p0 "\(i\) mgt0 ${ap1.mgt0.ip}-&gt;${ap3.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" p0 "\(o\) eth0 ${ap1.mgt0.ip}-&gt;${ap3.mgt0.ip}\(\d+\) ttl\(\d+\) proto\(47\)" -e "(?i)\(r\) mgt0 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}\(${sta1.tif.mac}\)-&gt;${tb.vlan2.gw}\(0000:0000:0000\)" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>One Portal boot up, check amrp state, route table</brief>
+	<priority>low</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+			One AP, One switch 
+		Test procedure	
+			1.	 When AP boot up, “show amrp interface eth0, show amrp ethlink” is AP.
+			2.	Show route, check route table.(default route ,interface route) 
+			3.	 Plug out cable of Portal, check route table.
+			4.	 plug in cable of portal, check route table.
+			5.	Create max SSID on wifi0, create max SSID on wifi1, check route table again.
+		Expect result	
+			1.	This Portal should be DA.
+			2.	Default route should be eth0, node route number should be right (eap.4 11n 7).
+			3.	No default route, interface route number should be right.
+			4.	Default route will be eth0 again, interface route number should be right
+			5.	Amrp should  add  SSID’s interface route in  route table. 
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>windows</tbtype>
+	<stage>
+		<step no="pre_1">
+			<desc>config mgt0 vlan and native-vlan</desc>
+			<log-file>mgt0_vlan.log</log-file>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+				-v "interface wifi1 mode access"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="pre_2">
+			<desc>config mgt0 vlan and native-vlan</desc>
+			<log-file>show_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "VLAN id=${tb.vlan1};\ \ Native vlan id=${tb.vlan1}"</log-match>
+		</step>		
+		
+		<step no="pre_3">
+            <desc>get mac address of ap1</desc>
+                <setvar name="ap1.mgt0.mac">
+                    ${bin.dir}/getbyrexp.py -p "MAC addr=([\da-fA-F:]+)" -f ${log.dir}/show_mgt0.log -t str
+                </setvar>
+        </step>		
+		
+		<step no="pre_4">
+            <desc>get ip address of ap1</desc>
+                <setvar name="ap1.mgt0.ip">
+                    ${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/show_mgt0.log -t str
+                </setvar>
+        </step>			
+		
+		
+		<step no="1" delay="20">
+			<desc>1.	 When AP boot up, “show amrp interface eth0, show amrp ethlink” is AP.</desc>
+			<log-file>step1_amrp.log</log-file>
+			<console target="ap1">
+				-v "show amrp interface eth0"
+				-v "show amrp ethlink"
+			</console>
+			<log-match>-i "state     : DA"</log-match>
+			<log-match>-p 2 -i "${ap1.mgt0.mac}" -p 3 -i "${ap1.mgt0.ip}"</log-match>
+		</step>
+		
+		<step no="2" delay="5">
+			<desc>2.	Show route, check route table.(default route ,interface route) </desc>
+			<log-file>step2_route.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+				-v "show route"
+			</console>
+			<log-match>-p 1 -i "0000:0000:0000" -p 2 -i "${ap1.mgt0.mac}" -p 3 -i "eth0"</log-match>
+		</step>
+		
+		<step no="3.1">
+			<desc>3.plug out cable of portal(shutdown eth0)</desc>
+			<log-file>step3.1_route.log</log-file>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+		
+		<step no="3.2" delay="5">
+			<desc>3.check route table</desc>
+			<log-file>step3.2_show_route.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+				-v "show route"
+			</console>
+			<log-match>-n -i "0000:0000:0000"</log-match>
+			<log-match>-i "Total route entries: 6"</log-match>
+		</step>		
+		
+		<step no="4.1">
+			<desc>4.plug in cable of portal(up eth0)</desc>
+			<log-file>step3.1_route.log</log-file>
+			<console target="ap1">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+		
+		<step no="4.2" delay="5">
+			<desc>3.check route table</desc>
+			<log-file>step4.2_show_route.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-p 1 -i "0000:0000:0000" -p 2 -i "${ap1.mgt0.mac}" -p 3 -i "eth0"</log-match>
+			<log-match>-i "Total route entries: 7"</log-match>
+		</step>	
+	</stage>
+	
+    <stage loop-values="1..16" var-name="id" loop-failed-break="true">
+        <step no="5.1">
+			<desc>5.create max ssid on wifi0, create max ssid on wifi1</desc>
+			<log-file>step5.1_ssid_${id}.log</log-file>
+			<console target="ap1">
+				-v "ssid ${ssid.name}_${id}"
+				-v "interface wifi0 ssid ${ssid.name}_${id}"
+				-v "interface wifi1 ssid ${ssid.name}_${id}"
+			</console>
+		</step>
+     </stage>	
+
+	<stage>
+		<step no="5.2" delay="5">
+			<desc>5.check route table</desc>
+			<log-file>step5.2_show_route.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+				-v "show route"
+			</console>
+			<log-match>-i "Total route entries: 37"</log-match>
+		</step>	
+		
+		
+	</stage>
+</testcase>

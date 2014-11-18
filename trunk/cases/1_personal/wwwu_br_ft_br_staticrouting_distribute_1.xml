@@ -1,0 +1,316 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Static route set on net be distributed to cvg </brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		BR:
+		Mgt0.x : 10.2.3.1/24
+		Network1: 192.168.40.0/24
+		L3sw(connecting to br of vpn client):
+		Ip: 10.2.3.11/24, gateway: 10.2.3.1/24
+		Network2: 192.168.20.0/24 Network3: 192.168.30.0/24
+		CVG:
+		Network4: 192.168.40.0/24
+
+		Test Procedure:
+		1. Set static route to network2 on br
+		CLI: ip route net 192.168.20.0 255.255.255.0 gateway 10.2.3.11
+		2. Network2 ping CVG to verify, and check log of pkt out and ingress
+		interface
+		3. On br, enable routing internal-sub-network distributing to cvg
+		CLI: routing route-request enable
+		routing internal-sub-network 192.168.20.0/24
+		4. Check static routing be learned on cvg by "show ip route"
+		5. Network2 ping CVG to verify, and check log of pkt out and ingress
+		interface
+		6. Network3 ping CVG to verify==========>omit this step, because br-tb don't have network3
+		7. On br, disable routing distribution to vpn and wait for more than 1
+		miniute to check ip route on vpn
+		CLI: no routing route-request enable
+		8. Network2 ping CVG to verify
+		Expect result:
+		1.	Set successful
+		2.	Ping failed, ping pkt will be out from tunnel interface of br, and no icmp-reply pkt from tunnel interface of br
+		3.	Set successful
+		4.	On cvg, “show ip route” can see static routing be installed on tunnel interface
+		5.	Ping successful, ping pkt will be out from tunnel interface of br, and receiving icmp-reply pkt from tunnel interface of br
+		6.	Ping failed, as no static route set on network3 and be distributed to cvg
+		7.	Set successful, static route will be deleted from ip route table
+		8.	Ping failed
+		
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>
+
+	<property name="route.netmask" value="255.255.255.0" />
+	<property name="forward.file.path" value="/proc/sys/net/ipv4/ip_forward" />
+
+	<stage>
+		<include prefix="0" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+
+		<step no="1.1">
+			<desc>
+				config br1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface eth4 mode bridge-access user-profile-attribute 1"
+				-v "interface eth4 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				-set interface down,then up
+			</desc>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ifconfig ${br1.vpc4.tif.name} down"
+				-v "ifconfig ${br1.vpc4.tif.name} up"
+			</ssh>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>1.3_ifconfig_vpc1.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+			    -v "dhclient ${br1.vpc4.tif.name} -r"
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.4">
+			<desc>set br1.vpc4.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="1.5">
+			<multi-setvar>
+				echo "cvg1.cvg.lan.net=$(echo ${cvg1.cvg.lan.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="1.6">
+			<multi-setvar>
+				echo "br1.vpc4.trip.net=$(echo ${br1.vpc4.trip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="1.7">
+			<multi-setvar>
+				echo "br1.vpc5.trip.test=$(echo ${br1.vpc5.trip} | cut -d. -f1,2,3).128"
+			</multi-setvar>
+		</step>
+
+		<step no="1.8">
+			<desc>
+				add static route for vpc5
+			</desc>
+			<ssh target="br1.vpc5" timeout="120">
+				-v "ifconfig eth1 ${br1.vpc5.trip.test}"
+				-v "route add -net ${cvg1.cvg.lan.net}/24 gw ${br1.vpc4.trip}"
+				-v "route -n"
+			</ssh>
+		</step>
+
+		<step no="1.9">
+			<desc>
+				open route forward
+			</desc>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "echo 1 &gt; ${forward.file.path}"
+			</ssh>
+		</step>
+
+		<step no="1.10">
+			<desc>
+				Open debug mode to check the traffic forwarding
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 dst-ip ${cvg1.cvg.lan.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+		
+		<step no="1.11">
+			<desc>
+				config br1,add static route  for net
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ip route net ${br1.vpc4.trip.net} 255.255.255.128 gateway ${br1.vpc4.tif.ip}"
+			</telnet>
+		</step>
+
+		<step no="2.1" delay="30">
+			<desc>
+				vpc5 ping cvg vpn network,vpc5 can't ping to vpn network
+			</desc>
+			<log-file>step2.1_vpc_ping_pc2.log</log-file>
+			<ssh target="br1.vpc5" timeout="120">
+				-v "ping ${cvg1.cvg.lan.ip} -I ${br1.vpc5.tif.name} -c 10"
+			</ssh>
+			<log-match>-n -c -i "from ${cvg1.cvg.lan.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="2.2" delay="20">
+			<desc>
+				check log of pkt out interface should be tunnel0
+			</desc>
+			<log-file>step2.2_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match>-c -i "(i) eth4 ${br1.vpc5.trip.test}->${cvg1.cvg.lan.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(o) tunnel0 ${br1.vpc5.trip.test}->${cvg1.cvg.lan.ip}" -i "icmp-echo-req"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.1">
+			<desc>
+				config br1
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "routing route-request enable"
+				-v "routing internal-sub-network ${br1.vpc4.trip.net}/25"
+			</telnet>
+		</step>
+
+		<step no="3.2" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				show ip route to check route on br
+			</desc>
+			<log-file>step3.2_show_ip_route_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-c -i "${br1.vpc4.trip.net} *${br1.vpc4.tif.ip}" -i "255.255.255.128" -i "mgt0"</log-match>
+		</step>
+
+		<step no="4" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				cvg1 check route
+			</desc>
+			<log-file>step4_show_ip_route_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "show ip route"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match>-c -i "${br1.vpc4.trip.net} *${br1.br.mgt0.ip}" -i "255.255.255.128" -i "tunnel0"</log-match>
+		</step>
+		
+		<step no="5" delay="30">
+			<desc>
+				vpc5 ping cvg vpn network,vpc5 should ping to vpn network success, becuase route is distrouted to cvg side
+			</desc>
+			<log-file>step5_vpc5_ping_cvglan.log</log-file>
+			<ssh target="br1.vpc5" timeout="120">
+				-v "ping ${cvg1.cvg.lan.ip} -I ${br1.vpc5.tif.name} -c 10"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.cvg.lan.ip}: " -i "ttl="</log-match>
+		</step>
+		
+		<step no="6" delay="20">
+			<desc>
+				ping pkt will be out from tunnel interface of br, and receiving icmp-reply pkt from tunnel interface of br
+			</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match>-c -i "(i) eth4 ${br1.vpc5.trip.test}->${cvg1.cvg.lan.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(o) tunnel0 ${br1.vpc5.trip.test}->${cvg1.cvg.lan.ip}" -i "icmp-echo-req"</log-match>
+			<no-error-check />
+		</step>	
+
+		<step no="7.1">
+			<desc>
+				no distribute the static route to cvg on br
+			</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="600">
+				-v "no routing internal-sub-network ${br1.vpc4.trip.net}/25"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="7.2" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show ip route on br
+			</desc>
+			<log-file>step7.2_show_ip_route_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match> -c -i "${br1.vpc4.trip.net} *${br1.vpc4.tif.ip}" -i "255.255.255.128" -i "mgt0"</log-match>
+		</step>
+
+		<step no="7.3" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				cvg1 check route,should no the static route 
+			</desc>
+			<log-file>step7.3_show_ip_route_${loop_check.idx}.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "show ip route"
+			</telnet>
+			<log-match>-n -c -i "${br1.vpc4.trip.net} *${br1.br.mgt0.ip}" -i "255.255.255.128" -i "tunnel0"</log-match>
+		</step>
+
+		<step no="8" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				
+				vpc5 can't ping cvg side lan ip
+			</desc>
+			<log-file>step8_vpc5_ping_cvglan.log</log-file>
+			<ssh target="br1.vpc5" timeout="120">
+				-v "ping ${cvg1.cvg.lan.ip} -I ${br1.vpc5.tif.name} -c 10"
+			</ssh>
+			<log-match>-n -c -i "from ${cvg1.cvg.lan.ip}: " -i "ttl="</log-match>
+		</step>
+		
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					-delete route
+					-close route forward
+				</desc>
+				<ssh target="br1.vpc5">
+					-v "ifconfig eth1 ${br1.vpc5.trip}"
+					-v "route del -net ${cvg1.vpc1.net}/24 gw ${br1.vpc4.trip}"
+					-v "route -n"
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					-close route forward
+				</desc>
+				<ssh target="br1.vpc4">
+					-v "echo 0 &gt; ${forward.file.path}"
+					-v "route -n"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

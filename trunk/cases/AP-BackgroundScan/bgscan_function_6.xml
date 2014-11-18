@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check when there is voip call, should not skip the scan</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test Procedure:
+		1.enable bgscan on wifi0
+		2.Excute: radio profile &lt;name&gt; scan access voice
+		3.set scan interval to certain value
+		4.open bgscan debug:
+		_kdebug wifi-driver wifi0.1 scan
+		Debug console
+		5.generate voip traffic, check if box still do bgscan.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				configure ap1 wifi0 set bgscan interval to 1 and enable bgscan voice.
+			</desc>
+			<log-file>ap_config_1.log</log-file>
+			<console target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "radio profile ng"
+				-v "radio profile ng phymode 11ng"
+				-v "radio profile ng scan access voice"
+				-v "interface wifi0 radio profile ng"
+				-v "interface wifi0 radio channel 6"
+		    -v "qos classifier-profile aa interface/ssid"                                                                                            
+        -v "ssid ${ssid.name}1 qos-classifier aa"                                                                                                  
+        -v "qos classifier-map ssid ${ssid.name}1 6"
+				-v "save config"
+			</console>
+		</step>
+		
+		<step no="2">
+			<desc>
+				2.show wifi0's channel,save in channel list {ch}.
+				"show interface wifi0 channel"
+				and Check whether all FCC 840 wifi0 channels are in channel list
+			</desc>
+			<log-file>show_in_wifi0_channel.log</log-file>
+			<console target="ap1">
+				-v "show interface wifi0 channel"
+			</console>
+			<log-match loop-values="2412,2417,2422,2427,2432,2437,2442,2447,2452,2457,2462">-e "${loop.v}"</log-match>
+		</step>
+	
+		
+   <property name="conn1.ssid" value="${ssid.name}1" />
+	 <property name="conn1.proto" value="open" />
+	 
+   <include prefix="4" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta1, ap1" />
+	
+	
+		<step no="16">
+			<desc>
+				radio profile ng scan access interval 1
+			</desc>
+			<log-file>ap_configure_interval.log</log-file>
+			<console target="ap1">
+				-v "radio profile ng scan access interval 1"
+			</console>
+		</step>
+		<step no="17">
+			<desc>
+				4.open debug mode.
+				"_kdebug wifi-driver wifi0.1 scan"
+			</desc>
+			<log-file>add_debug_1_info.log</log-file>
+			<console target="ap1">
+				-v "_kdebug wifi-driver wifi0.1 scan"
+			</console>
+		</step>
+		
+		<include prefix="18" file="${case.dir}/conf/sub_run_iperf_downlink_sta.xml" />
+		
+		<step no="19">
+			<desc>
+				clear ap history log
+			</desc>
+			<log-file>clear_log.log</log-file>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+		<step no="20" delay="180">
+		  <if>"${img.prodtype}" != "AP230" &amp;&amp; "${img.prodtype}" != "AP1130"</if>
+			<desc>
+				background scan work
+			</desc>
+			<log-file>show_wifi0_bgscan_2.log</log-file>
+			<console target="ap1">
+				-v "show logging buffer | in self"
+			</console>
+		</step>
+		
+		<step no="20" delay="180">
+	  	<if>"${img.prodtype}" == "AP230" || "${img.prodtype}" == "AP1130"</if>
+			<desc>
+				background scan work
+			</desc>
+			<log-file>show_wifi0_bgscan_2.log</log-file>
+			<console target="ap1">
+			  -v "show logging buffer | in \"wl0: wlc_scan: scan channels\""
+			</console>
+		</step>
+		
+		
+		<step no="20.1">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi0_logbuffer.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffer"
+			</telnet>
+			<no-error-check />
+		</step>
+		
+		<step no="20.2">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi0_logbuffer.log</log-file>
+			<setvar name="jump-check">
+				cat ${log.dir}/${log.file} |grep "Skip bg-scan due to high load" >/dev/null; 
+				if [ $? -eq 0 ]; then echo true; else echo false; fi
+			</setvar>
+			<no-error-check />
+		</step>
+		
+		<step no="21">
+	 	 <if>"${jump-check}" != "true"</if>
+			<desc>match all channel	</desc>
+			<log-file>find_wifi0_channel.log</log-file>
+			<script>
+				perl ${case.dir}/bin/check-scan-channel.pl ${log.dir}/show_wifi0_bgscan_2.log 840wifi0 > ${log.dir}/${log.file}
+			</script>
+		</step>
+		<step no="22">
+			<desc>show run	</desc>
+			<log-file>show_run.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-e "radio profile ng scan access voice"</log-match>
+		</step>
+	</stage>
+	
+</testcase>

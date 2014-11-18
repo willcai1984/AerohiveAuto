@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify  client TX rate and Downlink throughput info</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Ssid xxx bind to wifi1 interface
+		CLI: ssid xxx
+		Interface wifi1 ssid xxx
+		Open debug : _debug dcd cpm
+
+		Test Procedure:
+
+		1: client connect to xxx successfully
+		2: run downlink stream to client
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap1.wifi1.existed}" =="true"</if>
+
+		<step no="1">
+			<desc>
+				Ssid xxx bind to wifi1 interface
+				CLI: ssid xxx
+				Interface wifi1 ssid xxx
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<include prefix="sta.conn.ap" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				Open debug : _debug dcd cpm
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "_debug dcd cpm"
+				-v " exec _client ${sta1.tif.mac}"
+			</telnet>
+		</step>
+		
+		<!-- step 16: generate iperf packet -->
+		<step no="3.1">
+			<desc>start iperf client in sta1</desc>
+			<log-file>sta1_start_iperf_1.log</log-file>
+			<ssh target="sta1">
+				-v "nohup iperf -s -p 65530 &amp;"
+				-v ""
+			</ssh>
+		</step>
+		<step no="4.2">
+			<desc>get sta1's process id of iperf server</desc>
+			<setvar name="sta1.iperf.pid1">
+				${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/sta1_start_iperf_1.log
+			</setvar>
+		</step>
+		<step no="4.3">
+			<desc>start iperf client on mpc</desc>
+			<log-file>tbserver_start_iperf_1.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup iperf -c ${sta1.tif.ip} -b 7M -t 300 -p 65530 -P 5 -i 10 &amp;"
+			</ssh>
+		</step>
+		<step no="4.4">
+			<desc>get tbserver1's process id of iperf client</desc>
+			<setvar name="tbserver1.iperf.pid1">
+				${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/tbserver_start_iperf_1.log
+			</setvar>
+		</step>
+
+		<!--<include prefix="3" file="${case.dir}/conf/sub_run_iperf_downlink_sta.xml" />-->
+		
+		<step no="2">
+			<desc>
+				1: show interface wifi1
+			</desc>
+			<log-file>step2_show_int_wifi1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 | in tx"
+			</telnet>
+		</step>
+		
+		<step no="3">
+			<desc>
+				1: show station 
+			</desc>
+			<log-file>step3_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+		</step>
+		
+		<step no="get.tx">
+			<desc>get tx</desc>
+			<setvar name="TxRate">
+				${bin.dir}/getbyrexp.py -p "${sta1.tif.mac}\s+\d+\.\d+\.\d+\.\d+\s+\d+\s+(\d+)M" -f ${log.dir}/step3_show_station.log -g 0
+			</setvar>
+		</step>
+		
+		<step no="get.tx">
+			<desc>get tx</desc>
+			<setvar name="TxRate">
+				${bin.dir}/getbyrexp.py -p "Tx bytes=\d+\s+\(((\d+)|(\d+\.\d+))\s+MB\)" -f ${log.dir}/step2_show_int_wifi1.log -g 0
+			</setvar>
+		</step>
+
+		<step no="4.1">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>step4_show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "clear log all"
+				-v " show logging buffered | in dcd "
+			</telnet>
+			<log-match>-c  -i "${sta1.tif.mac}" -i "tx rate(${TxRate})"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+	
+	<stage>
+		<step no="5.1">
+			<desc>stop iperf server</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.iperf.pid1}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="5.2">
+			<desc>stop iperf client</desc>
+			<ssh host="${tb.server1}">
+				-v "kill ${tbserver1.iperf.pid1}"
+			</ssh>
+		</step>
+	</stage>
+	
+	<stage>
+        <step no="po_1">
+			<desc>
+				shutdown wlan interface on sta
+			</desc>
+			<log-file>po_1.log</log-file>
+			<ssh target="sta1" prompt=".*#">
+            -v "ifconfig ${sta1.tif.name} down"
+			</ssh>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,632 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>UMTS supported</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		1. Pos and non-pos store subnet 1.1.1.0/24
+		Guest subnet 2.2.2.0/24
+		2. pos and non-pos store via usb0 if usb up
+		pos and non-pos store via tunnel on eth0 if usb down
+		3. guest via eth0 if eth0 up
+		guest drop all if eth0 down
+		4. create one l3 vpn tunnel between eth0 interface on BR and CVG eth0
+		5. set pos /non-pos store and guest match map
+		routing match-map pos from1.1.1.0/24
+		routing match-map guest from 2.2.2.0/24
+		6. set pos /non-pos store traffic via usbnet0 primary
+		7. set pos /non-pos store traffic via tunnel on eth0 secondary
+		8. set guest traffic via eth0
+		9. bind route-map
+		10. create routing policy and bind match-map
+		11. usb up,eth0 up ,tunnel up on eth0,all the traffic is forwarded base on policy
+
+
+		Test Procedure:
+		1. usb down,eth0 up ,tunnel up on eth0
+		2. laptop get ip address from subnet 1.1.1.0/24,send traffic on laptop to vpn network, it is pos traffic, check result1
+		3. laptop get ip address from subnet 1.1.1.0/24,send traffic on laptop to internet, it is non-pos store
+		traffic, check result2
+		usb up
+		4. laptop send pos and non-pos store traffic ,check result3
+		then eth0 down, the tunnel down
+		5. laptop get ip address from subnet 2.2.2.0/24,it is guest ,send traffic on laptop to vpn network, check result4
+		6. laptop get ip address from subnet 2.2.2.0/24,it is guest ,send traffic on laptop to internet, check result4
+		eth0 up
+		7. guest’s laptop send traffic to vpn network, check result4
+		8. guest’s laptop send traffic to internet, check result5
+
+
+		Expect result:
+		Result1:the pos traffic from laptop via tunnel on eth0
+		Result2:the non-pos store traffic from laptop via tunnel on eth0
+		Result3:all the pos and non-pos store traffic via usb
+		Result4:the guest traffic from laptop are dropped
+		Result5: the guest traffic from laptop via eth0
+
+
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<br-opt-modem>1</br-opt-modem>
+	<tbtype>linux</tbtype>
+
+	<property name="apn.name" value="3gnet" />
+	<property name="des.addr" value="0.0.0.0" />
+	<property name="invalid.addr" value="1.1.1.1" />
+	<property name="gw.addr" value="192.168.10.254" />
+	<property name="baidu.addr" value="61.135.169.125" />
+	<property name="pppoe.Remote.ip" value="10.0.10.22" />
+	<stage>
+		<include prefix="1" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+
+
+		<step no="2">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step2_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+
+		<step no="3.0" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				show usbmodem info
+			</desc>
+			<log-file>step3.0_show_usbmodem_info_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show usbmodem info"
+			</telnet>
+			<log-match>-c -i "Manufacturer"</log-match>
+			<log-match>-c -i "Model:"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show usbmodem info
+			</desc>
+			<log-file>step3.1_show_usbmodem_info.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show usbmodem info"
+			</telnet>
+			<log-match>-c -i "Manufacturer"</log-match>
+			<log-match>-c -i "Model:"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				get dns server tshark process
+			</desc>
+			<setvar name="modem.name_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.1_show_usbmodem_info.log -p "Manufacturer:\s+(\w+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				get dns server tshark process
+			</desc>
+			<setvar name="modem.name_2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.1_show_usbmodem_info.log -p "Model:\s+(\S+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				get dns server tshark process
+			</desc>
+			<setvar name="modem.name">
+				echo "${modem.name_1}_${modem.name_2}" | tr "A-Z" "a-z"
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				config BR with WAN interface, nat enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "interface mgt0 ip ${br1.br.mgt0.ip}/${cvg1.cvg.wan.netmask}"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="4.1">
+			<desc>configure mgt0.1 mgt0.2 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.2 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				Set one user-profile and define the attribute x
+				Bind the security-object to the port.
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vpc1.vlan}"
+				-v "interface eth1 mac-learning enable"
+				-v "security-object lan1"
+				-v "security-object lan1 default-user-profile-attr ${br1.vpc1.vlan}"
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute ${br1.vpc1.vlan}"
+				-v "interface eth2 mode bridge-802.1q"
+				-v "interface eth2 mac-learning enable"
+				-v "security-object lan2"
+				-v "security-object lan2 default-user-profile-attr ${br1.vpc2.vlan}"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute ${br1.vpc2.vlan}"
+			</telnet>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				Config parameters for usbmodem (mode, apn)
+				Config track ip parameters for wan failover test
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no track-wan use-for-wan-usbnet0 ip 192.168.10.254"
+				-v "no track-wan use-for-wan-eth0 ip 192.168.10.254"
+				-v "track-wan use-for-wan-eth0 default-gateway"
+				-v "track-wan use-for-wan-usbnet0 default-gateway"
+				-v "usbmodem reset-device"
+				-v "usbmodem mode always-connected"
+				-v "usbmodem modem-id ${modem.name} apn ${apn.name}"
+				-v "usbmodem enable"
+			</telnet>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				get ip address for br1.vpc1
+			</desc>
+			<log-file>step4.4_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		<step no="4.5">
+			<desc>
+				get ip address for br1.vpc2
+			</desc>
+			<log-file>step4.5_ifconfig_vpc2_.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ifconfig ${br1.vpc2.tif.name} up"
+				-v "dhclient ${br1.vpc2.tif.name} -r"
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		<step no="4.6" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				ping cvg.vpc1
+			</desc>
+			<log-file>step4.6_vpc_ping_dns_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="4.7">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4.8">
+			<desc>set br1.vpc2.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc2.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc2.mif.ip} -u ${br1.vpc2.user} -p ${br1.vpc2.passwd} -i ${br1.vpc2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="5">
+
+			<desc>
+				Check the usbmodem status while WAN is eth0 by default
+			</desc>
+			<log-file>step5_check_default_usbmodem.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show usbmodem modem-id ${modem.name}"
+			</telnet>
+			<log-match>-c -i "Mode: always-connected"</log-match>
+			<log-match>-c -i "APN: *3gnet"</log-match>
+		</step>
+
+		<step no="5.1" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>
+				Check the usbmodem status
+			</desc>
+			<log-file>step5.1_check_usbmodem_status_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show usbmodem status"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)PPP Interface Status:" -ps p "(?i)State: up" -e "(?i)Connection closed" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Check the track-wan
+			</desc>
+			<log-file>step5.2_check_track_wan_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show track-wan"
+			</telnet>
+			<log-match>-c -i "Result: up"</log-match>
+			<log-match>-c -i "Interface: eth0; *State: up"</log-match>
+			<log-match>-c -i "Interface: ppp0; *State: up"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\[use-for-wan-eth0\]" -ps p "Interface: eth0 \(eth0\)" -e "WAN Monitor State: up" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\[use-for-wan-usbnet0\]" -ps p "Interface: usbnet0 \(ppp0\)" -e "WAN Monitor State: up" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				open debug
+				set pos /non-pos store and guest match map and guest config
+				pos /non-pos store is brvpc1 guest is brvpc2
+			</desc>
+			<log-file>step6.1_open_debug.log</log-file>
+			<console target="br1.br">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} protocol 1 b"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "routing match-map pos from network ${br1.vpc1.tif.ip}/24 to any"
+				-v "routing match-map guest from network ${br1.vpc2.tif.ip}/24 to any"
+				-v "routing route-map pos via usbnet0"
+				-v "routing route-map pos via encrypted"
+				-v "routing route-map guest via eth0"
+				-v "routing policy pos id 1 match-map pos route-map pos"
+				-v "routing policy guest id 2 match-map guest route-map guest"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="6.2" type="loop-check" loop-max-times="3" loop-interval="15">
+			<desc>
+				send traffic on laptop to vpn network,it is pos traffic,check result
+			</desc>
+			<log-file>step6_vpc_ping_vpc_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 8 "
+			</ssh>
+			<log-match>-c -n -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>log match for </desc>
+			<log-file>step6.3_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "show logging buffered"
+			</console>
+			<log-match>-c -i "ppp0" -i "\(o\)"</log-match>
+		</step>
+
+		<step no="6.4">
+			<desc>clear log match </desc>
+			<log-file>step6.4_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "clear log buffered"
+			</console>
+		</step>
+
+	
+		<step no="7.0">
+			<desc>no enable usb </desc>
+			<log-file>step7_noenable.log</log-file>
+			<console target="br1.br">
+				-v "no usbmodem enable"
+			</console>
+		</step>
+
+		<step no="7.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				ping tftp
+			</desc>
+			<log-file>step7.1_tftp_ping_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.tftp1.tip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.tftp1.tip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>log match for </desc>
+			<log-file>step7.2_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "show logging buffered"
+			</console>
+			<log-match>-c -i "\(o\)" -i "tunnel0" </log-match>
+		</step>
+
+		<step no="7.3">
+			<desc>clear log </desc>
+			<log-file>step7.3_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="7.4" type="loop-check" loop-max-times="3" loop-interval="15">
+			<desc>
+				send traffic on laptop to vpn network,it is pos traffic,check result
+			</desc>
+			<log-file>step7.4_vpc_ping_vpc_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 8 "
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="7.5">
+			<desc>log match for </desc>
+			<log-file>step7.5_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "show logging buffered"
+			</console>
+			<log-match>-c -i "tunnel0" -i "\(o\)"</log-match>
+		</step>
+
+		<step no="8.0">
+			<desc> enable usb </desc>
+			<log-file>step8.0_enable.log</log-file>
+			<console target="br1.br">
+				-v "usbmodem enable"
+			</console>
+		</step>
+
+		<step no="8.1" type="loop-check" loop-max-times="30" loop-interval="10">
+
+			<desc>
+				Check the usbmodem status while WAN is eth0 by default
+			</desc>
+			<log-file>step8.1_check_default_usbmodem.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show usbmodem modem-id ${modem.name}"
+			</telnet>
+			<log-match>-c -i "Mode: always-connected"</log-match>
+			<log-match>-c -i "APN: *3gnet"</log-match>
+		</step>
+
+		<step no="8.2" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>
+				Check the usbmodem status
+			</desc>
+			<log-file>step8.2_check_usbmodem_status_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show usbmodem status"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)PPP Interface Status:" -ps p "(?i)State: up" -e "(?i)Connection closed" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Check the track-wan
+			</desc>
+			<log-file>step8.3_check_track_wan_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show track-wan"
+			</telnet>
+			<log-match>-c -i "Result: up"</log-match>
+			<log-match>-c -i "Interface: eth0; *State: up"</log-match>
+			<log-match>-c -i "Interface: ppp0; *State: up"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\[use-for-wan-eth0\]" -ps p "Interface: eth0 \(eth0\)" -e "WAN Monitor State: up" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\[use-for-wan-usbnet0\]" -ps p "Interface: usbnet0 \(ppp0\)" -e "WAN Monitor State: up" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				ping baidu.addr
+			</desc>
+			<log-file>step8.4_baidu_ping_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${baidu.addr} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${baidu.addr}" -i "ttl="</log-match>
+		</step>
+
+		<step no="8.5">
+			<desc>log match for </desc>
+			<log-file>step8.5_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "show logging buffered"
+			</console>
+			<log-match>-c -i "\(o\)" -i "ppp0" </log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>log match for </desc>
+			<log-file>step9.1_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="9.2" type="loop-check" loop-max-times="3" loop-interval="15">
+			<desc>
+				send traffic on laptop to vpn network,it is pos traffic,check result
+			</desc>
+			<log-file>step9.2_vpc_ping_vpc_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 8 "
+			</ssh>
+			<log-match>-n -c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="9.3">
+			<desc>log match for </desc>
+			<log-file>step9.3_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "show logging buffered"
+			</console>
+			<log-match>-c -i "ppp0" -i "\(o\)"</log-match>
+		</step>
+
+		
+		<step no="10.0">
+			<desc>no enable usb and eth0 </desc>
+			<log-file>step10.0_noenable.log</log-file>
+			<console target="br1.br">
+				-v "no usbmodem enable"
+				-v "interface eth0 sh"
+			</console>
+		</step>
+
+		<step no="10.1">
+			<desc>clear log match </desc>
+			<log-file>step10.1_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "no _ff id 1"
+				-v "_ff id 1 src-ip ${br1.vpc2.tif.ip} protocol 1 b"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="10.2" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				brvpc2 ping for check
+			</desc>
+			<log-file>step8.2_vpc_ping_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="10.3">
+			<desc>log match for </desc>
+			<log-file>step10.3_logmatch.log</log-file>
+			<console target="br1.br" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check/>
+		</step>
+		
+		<step no="10.4">
+			<desc>clear log match </desc>
+			<log-file>step10.4_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="10.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				brvpc2 ping for check
+			</desc>
+			<log-file>step10.5_vpc_ping_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${pub.tftp1.tip} -c 5"
+			</ssh>
+			<log-match> -n -c -i "from ${pub.tftp1.tip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="10.6">
+			<desc>log match for </desc>
+			<log-file>step10.6_logmatch.log</log-file>
+			<console target="br1.br" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check/>
+		</step>
+
+	
+		<step no="11.0">
+			<desc>enable usb and eth0 </desc>
+			<log-file>step11.0_noenable.log</log-file>
+			<console target="br1.br">
+				-v "usbmodem enable"
+				-v "no interface eth0 sh"
+			</console>
+		</step>
+
+		<step no="11.1">
+			<desc>clear log match </desc>
+			<log-file>step11.1_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="11.2" delay="30" type="loop-check" loop-max-times="15" loop-interval="15">
+			<desc>
+				brvpc2 ping for check
+			</desc>
+			<log-file>step11.2_vpc_ping_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${cvg1.vpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="11.3">
+			<desc>log match for </desc>
+			<log-file>step11.3_logmatch.log</log-file>
+			<console target="br1.br" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check/>
+			<log-match>-c -i "\(o\)" -i "eth0" </log-match>
+		</step>
+		<step no="11.4">
+			<desc>clear log match </desc>
+			<log-file>step11.4_logmatch.log</log-file>
+			<console target="br1.br">
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="11.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				brvpc2 ping for check
+			</desc>
+			<log-file>step11.5_vpc_ping_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${pub.tftp1.tip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.tftp1.tip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="11.6">
+			<desc>log match for </desc>
+			<log-file>step11.6_logmatch.log</log-file>
+			<console target="br1.br" timeout="200">
+				-v "show logging buffered"
+			</console>
+			<no-error-check/>
+			<log-match>-c -i "\(o\)" -i "eth0" </log-match>
+		</step>
+	</stage>
+</testcase>

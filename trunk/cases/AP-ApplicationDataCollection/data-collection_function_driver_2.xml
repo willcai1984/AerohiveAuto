@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>The client's operating system information will be collected
+	</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Create a SSID xxx and bind it to interface wifi0
+		Enable data collection
+		Alg http enable
+		Open _debug dcm all
+
+		Test Procedure:
+
+		1. Use a client connect to SSID, verify if client connect to SSID by
+		show ssid
+		xxx station, then open a web page in client
+		2. Verify if OS information of client be collected
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="user_agent" value="Mozilla/4.0 \(compatible; MSIE 8.0; Windows NT 6.1; Trident/4.0; SLCC2; .NET CLR 2.0.50727; .NET CLR 3.5.30729; .NET CLR 3.0.30729; .NET4.0C\)" />
+
+
+	<stage>
+		<step no="1.1">
+			<desc>create a ssid and bind it to wifi0, and enable data collection</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${tb.name}"
+				-v "security-object ${tb.name} security protocol-suite open"
+				-v "ssid ${ssid.name} security-object ${tb.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "data-collection enable"
+				-v "alg http enable"
+				-v "clear log all"
+				-v "_debug dcm all"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>show running-config</desc>
+			<log-file>show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="2.1">
+			<desc>client associate to ssid on AP1</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="2.2" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the connection of client</desc>
+			<log-file>wpa_stat_${staid}_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "status"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>client gets IP by dhclient</desc>
+			<ssh target="sta1" slow="true">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.4">
+			<desc>get client mac</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width 2
+			</setvar>
+		</step>
+
+		<step no="2.5">
+			<desc>check the connection by CLI: show ssid ${ssid.name} station</desc>
+			<log-file>show_log_ssid_${ssid.name}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-e "open" -i "${sta1.tif.mac}" -p 7 -c</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>open a webpage in client</desc>
+			<log-file>show_log_curl.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "curl -o ${log.dir}/curl_tmp -s -k -A \"${user_agent}\" ${pub.http_server.ip}"
+			</ssh>
+		</step>
+
+		<step no="3.2">
+			<desc>check the data collection of OS</desc>
+			<log-file>show_OS_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show data-collection client"
+			</telnet>
+			<log-match>-e "information:Windows" -i "OS" -p 2 -c</log-match>
+		</step>
+
+	</stage>
+</testcase>

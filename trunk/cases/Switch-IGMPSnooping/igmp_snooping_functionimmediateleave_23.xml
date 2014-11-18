@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=4) The switch supports IGMPv3 immediate-leave.</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	Topology 2
+		Description	The switch supports IGMPv3 immediate-leave.
+		Platform	Chesapeake
+		Pre-condition	IGMP snooping is enabled on the switch; the router port on the switch is up. Hosts support IGMPv3. Immediate-leave is enabled on the switch. The router ports and the hosts are in vlan 100.
+		Test procedure	1. HostA and hostB join IGMPv3 groupA, hostA sends leave message from groupA, capture packets on the hosts and the multicast router, and check the multicast entry information on the switch  ,if  the host is not the last member for the group,result 1
+		2. HostB sends leave from groupA message, capture packets on the hosts and the multicast router, and check the multicast entry information on the switch  ,if  the host is the last member for the group,result 1
+
+		Expect result	1. The switch does not send any query message to the host but forward the leave message to the multicast router; multicast entry information on the switch for the port that gets the leave message should be cleared.
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+
+	<stage>
+		<step no="1">
+			<desc>
+				config switch, enable igmp snooping, disable Immediate-leave	
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "ip igmp  snooping router-aging-time 1000"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port4} switchport access vlan ${tb.vlan1}"
+				-v "ip igmp snooping vlan ${tb.vlan1}"
+				-v "ip igmp snooping"
+				-v "ip igmp snooping immediate-leave"
+				 -v "show interface"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>check igmp snooping is enable in vlan${tb.vlan1}, and immediate-leave is disable</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+				-v "_debug swd igmp"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+			<log-match>-e "Immediate leave: enable"</log-match>
+			<log-match>-e "Last member query interval: 1"</log-match>
+			<log-match>-e "Last member query count: 2"</log-match>
+		</step>
+		<step no="3">
+			<desc>
+				port1 sends igmp v3 query pkt
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "stream_import -onePort ${sw1.port1.ixia_port} -fileName ${case.dir}/conf/potr1.str"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 1 -maintanceOp enable"
+				-v ""
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="4">
+			<desc>check the mroute table added the entry</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v3"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				port2, port3 and port4 send igmp v3 report pkt to join the group 225.1.1.1, port4 joins group 225.0.0.1
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_import -onePort ${sw1.port2.ixia_port} -fileName ${case.dir}/conf/potr2.str"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 11 -maintanceOp enable"
+				-v ""
+				-v "stream_import -onePort ${sw1.port3.ixia_port} -fileName ${case.dir}/conf/potr3.str"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId 4 -maintanceOp enable"
+				-v ""<!-- start transmit -->
+				-v "stream_import -onePort ${sw1.port4.ixia_port} -fileName ${case.dir}/conf/potr4.str"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 4 -maintanceOp enable"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 1"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port2.ixia_port} -duration 1"
+				-v ""
+
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 11 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port} -duration 1"
+
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="6.1">
+			<desc>show log buf</desc>
+			<log-file>check_igmp1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="6.2">
+			<desc>check the multicast entry information in vlan${tb.vlan1} is created correctly</desc>
+			<log-file>check_mgroup1.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Group number: 2"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 0" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.1.1.1" 
+				p1 "${sw1.port2}\s*dynamic" 
+				p1 "${sw1.port3}\s*dynamic" 
+				p1 "${sw1.port4}\s*dynamic" 
+				-e "\-\-\-"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 1" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.0.0.1" 
+				p1 "${sw1.port4}\s*dynamic" 
+				-e "\-\-\-"
+				-f ${log.dir}/${log.file}
+			</log-match>
+		</step>
+		<step no="7" delay="10">
+			<desc>port2 sends leave message</desc>
+			<log-file>eth2test3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 8 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="8.1">
+			<desc>show log buf, check the query count</desc>
+			<log-file>check_igmp2.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match>-e "process immediate leave"</log-match>
+			<no-error-check />
+		</step>
+		<step no="8.4">
+			<desc>check the multicast entry of port2 is removed, and port3 is still alive</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "${sw1.port2}\s*dynamic" -n</log-match>
+			<log-match>-e "${sw1.port3}\s*dynamic"</log-match>
+		</step>
+		<step no="9">
+			<desc>port4 sends leave message in group 225.1.1.1</desc>
+			<log-file>eth2test4.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 3 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port4.ixia_port} -rxPortList ${sw1.port4.ixia_port} -duration 1"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="10.1" delay="10">
+			<desc>show log buf</desc>
+			<log-file>check_igmp3.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<log-match>-e "process immediate leave"</log-match>
+			<no-error-check />
+		</step>
+		<step no="10.4">
+			<desc>check the multicast entry of port4 is removed in group 225.1.1.1</desc>
+			<log-file>check_igmp4.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vidx: 0" 
+				-ps p "vlan id: ${tb.vlan1}" 
+				p "group ip: 225.1.1.1" 
+				p1 "${sw1.port3}\s*dynamic" 
+				-e "\-\-\-"
+				-f ${log.dir}/${log.file}
+			</log-match>
+		</step>
+
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

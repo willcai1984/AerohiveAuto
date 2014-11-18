@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Eth0 and eth1 both are bound to red0, ARP table management for dualport topo</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-laptops are in same vlan
+
+		Test Procedure:
+		- clear arp table on both laptop1,laptop2
+		- clear arp table on ap
+		laptop1 ping laptop2, should be successful
+		- check the arp table on ap result 1
+		- plug out eth0 cable, then check the arp table again result 2
+		- clear arp cache on laptop2
+		Laptop2 ping laptop1, should be successful
+		-check the arp table on ap result 3
+		-clear arp cache on laptop1 and ping laptop2 again result 4
+		-plug eth1 cable, check the arp table on ap result 5
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap1.eth1.existed}" == "true"</if>
+
+		<step no="0">
+			<desc>
+				-eth0 and eth1 both are bound to red0
+			</desc>
+			<console target="ap1">
+				-v "no interface eth0 manage telnet"
+				-v "no interface eth0 manage snmp"
+				-v "interface eth0 bind red0"
+				-v "interface eth1 bind red0"
+			</console>
+		</step>
+
+		<step no="0.1">
+			<desc>show mpc's ip info</desc>
+			<log-file>step0.1_show_mpc_ip.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name} &gt; ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="0.2">
+			<desc>get raw mac address of mpc</desc>
+			<setvar name="mpc.tif.mac1">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step0.1_show_mpc_ip.log -t str
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>get mac of mpc</desc>
+			<setvar name="mpc.tif.mac">
+				echo $(echo $(echo $(echo ${mpc.tif.mac1} | cut -d : -f1)$(echo ${mpc.tif.mac1} | cut -d : -f2,3)$(echo ${mpc.tif.mac1} | cut -d : -f4,5)$(echo ${mpc.tif.mac1} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>show tb.http_server's ip info</desc>
+			<log-file>step1_show_server_ip.log</log-file>
+			<ssh host="${tb.http_server}">
+				-v "ifconfig ${tb.http_server.name}"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>get raw mac address of server</desc>
+			<setvar name="server.tif.mac1">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step1_show_server_ip.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.2">
+			<desc>get mac of server</desc>
+			<setvar name="server.tif.mac">
+				echo $(echo $(echo $(echo ${server.tif.mac1} | cut -d : -f1)$(echo ${server.tif.mac1} | cut -d : -f2,3)$(echo ${server.tif.mac1} | cut -d : -f4,5)$(echo ${serser.tif.mac1} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				-clear arp on server
+			</desc>
+			<log-file>step2_clear_arp.log</log-file>
+			<ssh target="${tb.http_server}">
+				-v "ip neigh flush dev ${tb.http_server.name}"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>clear arp table on MPC</desc>
+			<script>
+				ip neigh flush dev ${mpc.tif.name}
+			</script>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				- open debug mode and clear arp table on ap1
+			</desc>
+			<console target="ap1">
+				-v "clear arp-cache"
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				- show arp-cache
+			</desc>
+			<log-file>step2.3_arp_cache.log</log-file>
+			<console target="ap1">
+				-v "show arp-cache"
+			</console>
+			<log-match>-n -c -i "${mpc.tif.mac}" -i "${mpc.tif.ip}"</log-match>
+			<log-match>-n -c -i "${server.tif.mac}" -i "${tb.http_server}"</log-match>
+		</step>
+		
+		<step no="3">
+			<desc>
+				mpc ping unreach ip in order to send broadcast info
+			</desc>
+			<log-file>step3_ping.log</log-file>
+			<script>
+				nohup ping ${tb.unreach.ip1} -c 15 &gt; ${log.dir}/${log.file} &amp; 
+		    </script>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check the arp table on ap: has arp entry for laptop1
+			</desc>
+			<log-file>step3.1_show_arp_cache_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show arp-cache"
+			</console>
+			<log-match>-c -i "${mpc.tif.mac}" -i "${mpc.tif.ip}"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				check log info on AP1
+			</desc>
+			<log-file>step3.2_show_log_buff.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ARP entry inserted: IP=${mpc.tif.ip}\(\d+,red0\) mac=${mpc.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		
+		<include prefix="ap1_eth0_shutdown" file="subs/l2sw_updown_cfg.xml" args="${ap1.eth0.swport},down" />
+
+		<step no="3.3" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check the arp table on ap: has arp entry for laptop1
+			</desc>
+			<log-file>step3.3_show_arp_cache_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show arp-cache"
+			</console>
+			<log-match>-c -i "${mpc.tif.mac}" -i "${mpc.tif.ip}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="5">
+			<desc>
+				-clear arp on server
+			</desc>
+			<log-file>step5_clear_arp.log</log-file>
+			<ssh target="${tb.http_server}">
+				-v "ip neigh flush dev ${tb.http_server.name}"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				server ping unreach ip in order to send broadcast info
+			</desc>
+			<log-file>step5.1_ping.log</log-file>
+			<ssh host="${tb.http_server}">
+				-v "ping ${tb.unreach.ip1} -c 15"
+			</ssh>
+		</step>
+
+		<step no="5.2" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check the arp table on ap: :has arp entry for laptop1 and laptop2
+			</desc>
+			<log-file>step5.2_show_arp_cache_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show arp-cache"
+			</console>
+			<log-match>-c -i "${mpc.tif.mac}" -i "${mpc.tif.ip}"</log-match>
+			<log-match>-c -i "${server.tif.mac}" -i "${tb.http_server}"</log-match>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				check log info on AP1
+			</desc>
+			<log-file>step5.3_show_log_buff.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ARP entry inserted: IP=${tb.http_server}\(\d+,red0\) mac=${server.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>clear arp table on MPC</desc>
+			<script>
+				ip neigh flush dev ${mpc.tif.name}
+			</script>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+		
+		<step no="6.2">
+			<desc>
+				mpc ping unreach ip in order to send broadcast info
+			</desc>
+			<log-file>step6.2_ping.log</log-file>
+			<script>
+				nohup ping ${tb.unreach.ip1} -c 15 &gt; ${log.dir}/${log.file} &amp;
+		  </script>
+		</step>
+
+		<step no="6.3" delay="10">
+			<desc>
+				check log info on AP1
+			</desc>
+			<log-file>step6.3_show_log_buff.log</log-file>
+			<console target="ap1" timeout="240">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "\[fe_arp\]: skip unicast ARP requests processing in proxy"</log-match>
+		</step>
+		
+		<step no="6.4">
+			<desc>
+				shutdown interface red0
+			</desc>
+			<console target="ap1">
+				-v "interface red0 shutdown"
+			</console>
+			<no-error-check />
+		</step>
+		
+		<step no="7" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				all arp entries that have “ETH” flag will be removed
+			</desc>
+			<log-file>step7_show_arp_cache_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show arp-cache"
+			</console>
+			<log-match>-n -c -i "${mpc.tif.mac}" -i "${mpc.tif.ip}"</log-match>
+			<log-match>-n -c -i "${server.tif.mac}" -i "${tb.http_server}"</log-match>
+			<log-match>-n -c -i "ETH"</log-match>
+		</step>
+	</stage>
+	
+	<post-process>
+		<stage>
+
+			<include prefix="ap1_eth0_up" file="subs/l2sw_updown_cfg.xml" args="${ap1.eth0.swport},up" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

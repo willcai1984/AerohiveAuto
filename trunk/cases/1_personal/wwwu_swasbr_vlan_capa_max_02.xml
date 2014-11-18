@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check vlan interface number, maximum number</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	
+	<description>
+Platform Dependence:	SR2024
+Pre-condition	
+Test procedure:
+1.	Configure DUT as Router mode
+2.	Create vlan, using the following CLI:
+Vlan 1000
+Interface vlan 1000
+interface vlan1000 ip 10.10.10.1/24
+interface vlan1000 dhcp-server options default-gateway 10.10.10.1 
+interface vlan1000 dhcp-server ip-pool 10.10.10.10 10.10.10.99
+interface vlan1000 dhcp-server enable
+interface vlan1000 dns-server enable
+3.	Repeat step2 untill give warning message
+4.	Check maximum vlan interface number             Result1 
+5.	Client1,client2 connect to switch, get ip address for vlan 1000, vlan 2000
+6.	Client1 ping client2 ,check l3 frames forwarding between different vlans             Result2
+Expect result:
+Result1:  maximum vlan interface number router support is 64
+Result2:  client1 ping client2 success.  L3 frames forwarding is ok.
+				 
+	</description>
+	
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+	
+	<property name="br.route.netmask" value="255.255.255.0" />	
+	
+	<stage>
+	
+		<step no="pre_1">
+			<desc>config vpc1/vpc4 connected port mode and vlan</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "vlan ${br1.vpc2.vlan}"
+				-v ""
+				-v ""
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+				-v "interface ${br1.br.lan.int4} switchport mode access"
+				-v "interface ${br1.br.lan.int4} switchport access vlan ${br1.vpc2.vlan}"
+				-v ""
+			</telnet>	
+		</step>
+		
+		<step no="pre_2">
+			<desc>create related vlan interface first for vpc1 and vpc4</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v ""
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v ""
+				-v "interface vlan ${br1.vpc2.vlan}"
+				-v "interface vlan${br1.vpc2.vlan} ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server enable"
+				-v ""				
+			</telnet>		
+		</step>
+			
+		<step no="1">
+			<desc>
+				1. check DUT is Router mode: display l3 interface
+			</desc>
+			<log-file>dut_l3_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show l3 interface"
+			</telnet>
+			<log-match>-c -i "wan"</log-match>
+		</step>
+	</stage>	
+	
+
+	
+	<stage loop-values="2..63" var-name="vlan_id" loop-failed-break="true">
+		<step no="2">
+			<desc>
+				create vlan ${vlan_id} and 64 vlan interfaces at switch
+			</desc>
+			<log-file>vlan_${step.no}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${vlan_id}"
+				-v ""
+				-v "interface vlan ${vlan_id}"
+				-v "interface vlan${vlan_id} ip 10.10.${vlan_id}.1/${br.lan.netmask}"
+				-v "interface vlan${vlan_id} dhcp-server ip-pool 10.10.${vlan_id}.100 10.10.${vlan_id}.120"
+				-v "interface vlan${vlan_id} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${vlan_id} dhcp-server options default-gateway 10.10.${vlan_id}.1"
+				-v "interface vlan${vlan_id} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${vlan_id} dhcp-server enable"
+				-v ""
+			</telnet>	
+			<log-match>-n -c -i "Error: Can not create interface vlan${vlan_id} (May be logical interface reach maximum number)."</log-match>
+			<log-match>-n -c -i "ERROR: Invalid parameter(s)"</log-match>
+		</step>
+		
+	</stage>
+	
+
+	<property name="vlan_int_max" value="100" />	
+	
+	<stage>
+		<step no="3">
+			<desc>create a vlan and vlan interface again to check logical interface is reach to maximum number</desc>
+			<log-file>vlan_max.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${vlan_int_max}"
+				-v ""
+				-v "interface vlan ${vlan_int_max}"
+				-v ""
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "Error: Can not create interface vlan${vlan_int_max} (May be logical interface reach maximum number)."</log-match>
+			<log-match>-c -i "ERROR: Invalid parameter(s)"</log-match>
+		</step>
+		
+		<step no="4.1">
+			<desc>show logical interfaces</desc>
+			<log-file>step4.1_l3_int.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show l3 interface"
+			</telnet>
+		</step>
+		
+		<step no="4.2">
+			<desc>get the maximum vlan interface number</desc>
+			<multi-setvar>
+				echo "br.max.vlan.interface=$(cat ${log.dir}/step4.1_l3_int.log | grep ^vlan |wc | cut -b6-8)"
+			</multi-setvar>
+		</step>
+		
+		<step no="5.1a">
+			<desc>retreive vpc1 ip address</desc>
+			<log-file>step5.1a_vpc1_ip.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"			
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		
+		<step no="5.1b">
+			<desc>show ip address of vpc1 ip</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+		
+		<step no="5.2a">
+			<desc>	-set interface down,then up </desc>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ifconfig ${br1.vpc4.tif.name} down"
+				-v "ifconfig ${br1.vpc4.tif.name} up"
+				-v "dhclient ${br1.vpc4.tif.name} -r"
+			</ssh>
+		</step>
+		
+		<step no="5.2b">
+			<desc>show vpc4 ip address</desc>
+			<log-file>step5.2b_vpc4_ip.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v ""
+				-v "ifconfig ${br1.vpc4.tif.name}"			
+				-v ""
+			</ssh>
+			<log-match>-i "inet addr"</log-match>			
+		</step>
+		
+		<step no="5.2c">
+			<desc>show ip address of vpc4 ip</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>	
+		</step>		
+		
+		<step no="6">
+			<desc>Check l3 forwarding success:vpc1 ping vpc4</desc>
+			<log-file>step6_ping.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.vpc4.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc4.tif.ip}: " -i "ttl="</log-match>
+		</step>
+			
+	</stage>
+	
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/br_default_process.xml" />
+	</post-process>
+	
+	
+</testcase>

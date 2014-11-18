@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Device as portal can download Configuration from TFTP server to current at relative time</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		MPP1 is in default setting.
+		Configuration file is good.
+		The traffic between device and TFTP server is ok.
+
+		Test Procedure:
+		1.save config from tftp server to current with offset time
+		save config tftp://10.155.3.3:config current 00:00:30
+		2.check device will reboot after 30 seconds
+		3.check it in directory "/f/etc"
+		4.After reboot, check the config, or show running-config
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="download_config" value="config1.txt" />
+	<property name="save_config" value="config2.txt" />
+	<property name="current_config" value="check_current.txt" />
+	<property name="schedule_time" value="Feb 29 11:12" />
+	<property name="start_time" value="2012-02-29 11:10:00" />
+
+	<stage>
+		<step no="0.1">
+			<desc>
+				reset config bootstrap
+			</desc>
+			<telnet target="ap1">
+				-v "reset config bootstrap"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				MPP1 is in default setting.
+				Configuration file is good.
+			</desc>
+			<script>
+				echo "console page 100" &gt; /tftpboot/${download_config}
+			</script>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				The traffic between device and TFTP server is ok.
+			</desc>
+			<log-file>ping_rt.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${mpc.tif.ip} count 5"
+			</telnet>
+			<log-match>-c -i "from ${mpc.tif.ip}" -i " ttl="</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				show running-config
+				show config current
+				show config bootstrap
+			</desc>
+			<log-file>step1.3_show_info.log</log-file>
+			<telnet target="ap1">
+				-v "show config current"
+				-v "show running-config"
+				-v "show config bootstrap"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				1.save config from tftp server to current with offset time
+				save config tftp://10.155.3.3:config current 00:00:30
+			</desc>
+			<log-file>step2_show_info.log</log-file>
+			<console target="ap1">
+				-v "clock date-time ${start_time}"
+				-v "save config tftp://${mpc.tif.ip}:${download_config} current offset 00:02:00"
+				-v "show config current &gt; tftp://${mpc.tif.ip}:${current_config}"
+				-v "show reboot schedule"
+			</console>
+			<log-match>-e "${schedule_time}"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				cat current document
+			</desc>
+			<log-file>download_config.log</log-file>
+			<script>
+				cat /tftpboot/${current_config} &gt; ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				compare download document and saved document
+			</desc>
+			<script>
+				diff /tftpboot/${current_config} /tftpboot/${download_config}
+			</script>
+		</step>
+
+		<step no="3" delay="300">
+			<desc>
+				show running-config
+			</desc>
+			<log-file>show_running_config.log</log-file>
+			<console target="ap1">
+				-v "show running-config &gt; tftp://${mpc.tif.ip}:${save_config}"
+				-v "show running-config"
+				-v "show config current"
+			</console>
+		</step>
+
+		<step no="4">
+			<desc>
+				cat download document
+			</desc>
+			<log-file>download_config.log</log-file>
+			<script>
+				cat /tftpboot/${download_config} &gt; ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				cat save document
+			</desc>
+			<log-file>save_config.log</log-file>
+			<script>
+				cat /tftpboot/${save_config} &gt; ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				compare download document and saved document
+			</desc>
+			<script>
+				diff /tftpboot/${save_config} /tftpboot/${download_config}
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+		<stage>
+			<step no="0">
+				<desc>
+					remove document
+				</desc>
+				<script>
+					rm -f /tftpboot/${download_config} /tftpboot/${save_config} /tftpboot/${current_config}
+				</script>
+			</step>
+		</stage>
+	</post-process>
+</testcase>

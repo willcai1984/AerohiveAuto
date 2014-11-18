@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, Incoming pkt base on oui , action deny Ethernet interface Test topology Top1 Device Configuration Portal: ssid DeathKnight interface wifi0 ssid DeathKnight qos classifier-profile mac mac interface eth0 qos-classifer mac qos classifier-map mac 0016d4 qos 0 action deny notice 0016d4 is STA1's oui</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+
+		Test Procedure:
+
+		portal:
+		- Set "_kdebug qos classifi"on CLI
+		- Set "_ff id 1 src-mac sta1's mac"
+		- Set "_kdebug fe basic"
+		- STA1generates traffic,then send to STA2.
+		Expected output
+		- Sniffering the traffic from STA1 incoming mac
+		- look over kdebug message
+		1970-01-02 07:54:23 debug [fe]: (i) eth0
+		18.18.21.45-&gt;18.18.21.12(41) ttl(64) UDP 1516-&gt;10000 46
+		bytes
+		1970-01-02 07:54:23 debug [fe]: MAC session (id [5])
+		found
+		1970-01-02 07:54:23 debug [fe]: pkt(eth0) dropped by
+		classifier qos=0
+		1970-01-02 07:54:23 debug [fe]: (!) eth0
+		18.18.21.45-&gt;18.18.21.12(41) ttl(64) UDP 1516-&gt;10000 46
+		bytes
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="create.ssid">
+			<desc>
+				create ssid
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<include prefix="pre1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="pre2">
+			<desc>
+				get sta mac
+			</desc>
+			<script>
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m | tr '[A-F]' '[a-f]' &gt; ${log.dir}/staoui.log
+			</script>
+		</step>
+
+		<step no="pre3">
+			<desc>get sta oui</desc>
+			<setvar name="sta.oui">
+				${bin.dir}/getbyrexp.py -p "(.*?:.*?:.*?):.*?:.*?:.*?" -f ${log.dir}/staoui.log -t str
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				config qos
+			</desc>
+			<telnet target="ap1">
+				-v "qos classifier-profile mac mac"
+				-v "interface eth0 qos-classifier mac"
+				-v "qos classifier-map oui ${sta.oui} qos 2 action deny"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${tb.server1} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_ping.xml" args="${tb.server1}, ${sta1.tif.ip}, 4, negative" />
+
+		<step no="4" delay="30">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) eth0 ${tb.server1}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "pkt\(eth0\) dropped by classifier qos=2" -e "\(i\) eth0 ${tb.server1}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

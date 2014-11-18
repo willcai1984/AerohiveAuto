@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>radius auth packets over L2 vpn tunnel</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-set up a vpn test bed
+		-AP1 config a ssid with a radius server, which will be reachable over L2
+		vpn tunnel
+		-enable accounting on this ssid
+
+		Test Procedure:
+		-STA connects to ssid
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}-client" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<step no="0">
+			<desc>setup ap1 as VPN server</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:certs/server_cert.pem no-prompt"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:certs/server_key.pem no-prompt"
+				-v "vpn xauth-client-list clientList local"
+				-v "vpn xauth-client-list clientList client-name vpnclient1 password aerohive"
+				-v "vpn client-ip-pool ipPool local ${tb.vlan3.dhcp_start} ${tb.vlan3.dhcp_end} netmask 255.255.255.0"
+				-v "vpn server-ipsec-tunnel primaryServer"
+				-v "vpn ipsec-tunnel primaryServer client-list clientList client-ip-pool ipPool dns-server ${pub.dns1.ip}"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel primaryServer"
+				-v "user-profile Tunnel${tb.vlan3} qos-policy def-user-qos vlan-id 1 attribute ${tb.vlan1}"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>setup ssid on vpn server</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name}-server"
+				-v "security-object ${ssid.name}-server default-user-profile-attr ${tb.vlan1}"
+				-v "security-object ${ssid.name}-server security protocol-suite wpa2-aes-8021x"
+				-v "security-object ${ssid.name}-server security aaa radius-server primary ${pub.radius1.ip} via-vpn-tunnel"
+				-v "security-object ${ssid.name}-server security aaa radius-server accounting primary ${pub.radius1.ip} via-vpn-tunnel"
+				-v "ssid ${ssid.name}-server"
+				-v "ssid ${ssid.name}-server security-object ${ssid.name}-server"
+				-v "interface wifi0 ssid ${ssid.name}-server"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="0.2">
+			<desc>setup ap2 as VPN client</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem no-prompt"
+				-v "vpn client-ipsec-tunnel vpn_server_1"
+				-v "vpn ipsec-tunnel vpn_server_1 gateway ${ap1.mgt0.ip} client-name vpnclient1 password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel vpn_server_1 primary"
+			</telnet>
+		</step>
+
+		<step no="0.3">
+			<desc>setup ssid on VPN client</desc>
+			<telnet target="ap2">
+				-v "user-profile Tunnel${tb.vlan3} qos-policy def-user-qos vlan-id 1 attribute ${tb.vlan1}"
+				-v "user-profile Tunnel${tb.vlan3} tunnel-policy vpn_tunnel_policy"
+				-v "security-object ${ssid.name}-client"
+				-v "security-object ${ssid.name}-client default-user-profile-attr ${tb.vlan1}"
+				-v "security-object ${ssid.name}-client security protocol-suite wpa2-aes-8021x"
+				-v "security-object ${ssid.name}-client security aaa radius-server primary ${pub.radius1.ip} via-vpn-tunnel"
+				-v "security-object ${ssid.name}-client security aaa radius-server accounting primary ${pub.radius1.ip} via-vpn-tunnel"
+				-v "ssid ${ssid.name}-client"
+				-v "ssid ${ssid.name}-client security-object ${ssid.name}-client"
+				-v "interface wifi0 ssid ${ssid.name}-client"
+				-v "interface wifi0 radio channel 1"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="1" delay="30" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check vpn ike sa on vpn client side</desc>
+			<log-file>step1_ike_sa_client_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-i "${ap1.mgt0.ip}\[500\]" -p 3 -i "9" -p 4 -i "I"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="1.1" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check vpn ike sa on vpn server side</desc>
+			<log-file>step1.1_ike_sa_server_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-i "${ap2.mgt0.ip}\[500\]" -p 3 -i "9" -p 4 -i "R"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="2">
+			<desc>multi show on VPN server</desc>
+			<log-file>step2_multi_show_server.log</log-file>
+			<telnet target="ap1">
+				-v "show vpn tunnel-id"
+				-v "show vpn ike sp"
+				-v "show vpn ipsec-tunnel"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>multi show on VPN client</desc>
+			<log-file>step2.1_multi_show_client.log</log-file>
+			<telnet target="ap2">
+				-v "show vpn tunnel-id"
+				-v "show vpn ike sp"
+				-v "show vpn ipsec-tunnel"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>show interface tunnel0 on vpn client</desc>
+			<log-file>step2.2_show_tunnel0_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show interface tunnel0"
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>get ip of tunnel0 on ap2</desc>
+			<setvar name="ap2.tunnel0.ip">
+				grep "IP addr" ${log.dir}/step2.2_show_tunnel0_ap2.log| cut -d\; -f1 | cut -d= -f2
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>multi show on VPN client</desc>
+			<log-file>step2.4_show_ip_route.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap2" />
+
+		<step no="4">
+			<desc>check show station on ssid ${ssid.name}-server</desc>
+			<log-file>step4_show_station_sta1.log</log-file>
+			<telnet target="ap2">
+				-v "show ssid ${ssid.name}-client station"
+			</telnet>
+			<log-match>-p 12 -i "Yes" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 2 -i "${sta1.tif.ip}" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 13 -i "${tb.vlan1}" -i "${sta1.tif.mac}" -c</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="4.1">
+			<desc>check route of sta1 on vpn client</desc>
+			<log-file>step4.1_show_roaming_cache.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="4.2">
+			<desc>check route of sta1 on vpn client</desc>
+			<log-file>step4.2_show_auth.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "${pub.radius1.username}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="5">
+			<desc>check route of sta1 on vpn client</desc>
+			<log-file>step5_check_vpn_server_route.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "wifi0.1" -i "LTO"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="5.1">
+			<desc>check route of sta1 on vpn client</desc>
+			<log-file>step5.1_check_vpn_server_route.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+    <brief>Default track when track-wan with target as customized ip while gateway is inaccessible</brief>    
+	<priority>Middle</priority>
+    <automated>yes</automated>
+    <description>        
+		Pre-Condition:
+					  1. Eth0 is the only wan interface 
+					  2. Set debug toggle, “_sh brd wanmon” 
+					  3. There is ssid configured on wifi interface
+					  
+		Test Procedure:
+					  1.Config track-wan for eth0 with target as default gateway, result 1 
+					    track-wan track-eth0 track-wan track-eth0 ip 8.8.8.8 track-wan track-eth0 interface eth0 track-wan track-eth0 enable
+					  2. Config static ip and an inaccessible gateway on eth0, result 2 
+					     interface eth0 ip 10.15.85.1/24 ip route default gateway 10.15.85.2 # 10.15.85.2 is inaccessible 
+					  3. Check default track process in log buffer, result 3 
+					  4. Check default track state, result 4
+		Expect Result: 
+					  Result 1: There is track-wan configured 
+					  Result 2: There is valid IP/ gateway on eth0 
+					  Result 3: There is arping and icmp ping process on eth0 
+					  Result 4: Default track state is “down”
+    </description>
+    <numofbr>1</numofbr>
+    <numofsta>0</numofsta>
+	<br-opt-modem>1</br-opt-modem>
+    <tbtype>linux</tbtype>
+	
+	<property name="track_wan_name_eth0" value="use-for-wan-eth0" />
+	<property name="track_wan_name_usbnet0" value="use-for-wan-usbnet0" />
+	<property name="wan_ip_address" value="10.15.85.1" />
+	<property name="wan_gateway_ip" value="10.15.85.2" />
+	<property name="net_mask" value="24" />
+  
+    <stage>
+		
+		<step no="12.0.1" delay="50">
+            <desc>
+            	  Eth0 is the only wan interface 
+            </desc>
+			<console target="br1.br">
+				-v "no usbmodem enable"
+			</console>
+		</step>
+		
+		<step no="12.1.1">
+            <desc>
+				Config track-wan for eth0 with target as default gateway
+            </desc>
+            <console target="br1.br">
+				-v "no track-wan ${track_wan_name_eth0} "
+				-v "track-wan ${track_wan_name_eth0} "
+				-v "track-wan ${track_wan_name_eth0} interface eth0"
+				-v "track-wan ${track_wan_name_eth0} enable"
+				-v "track-wan ${track_wan_name_eth0} ip ${mpc.tif.ip}"
+			</console>		
+        </step>
+		
+		<step no="12.2.1">
+            <desc>
+				Config static ip of eth0 with invalid gateway
+            </desc>
+			<log-file>step12.2.1_CfgWanStaIp.log</log-file>
+            <console target="br1.br">
+				-v "no interface eth0 dhcp client"
+				-v "interface eth0 ip ${wan_ip_address}/${net_mask}"
+				-v "ip route default gateway ${wan_gateway_ip}"
+			</console>		
+        </step>
+		
+		<step no="12.2.2">
+            <desc>
+				Check IP/ gateway of eth0
+            </desc>
+			<log-file>step12.2.2_CheckWanIp.log</log-file>
+            <console target="br1.br">
+				-v "show l3 interface"
+			</console>		
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-b 'eth0' -e 'wan' -p '(\d{1,3}\.){3}\d{1,3}' -f ${log.dir}/${log.file}				
+			</log-match>
+        </step>
+		
+		<step no="12.3.1">
+            <desc>
+				Set debug toggle, “_sh brd wanmon”
+            </desc>
+            <console target="br1.br">
+				-v "_debug brd wanmon"
+			</console>		
+        </step>
+		
+		<step no="12.3.2" delay="30">
+            <desc>
+				 There is periodical probe to check the IP/ gateway of eth0 
+            </desc>
+			<log-file>step12.3.2_CheckBufferLog.log</log-file>
+            <console target="br1.br" timeout="100">
+				-v "show log buffered | include wanmon"
+			</console>	
+			<log-match bin="${bin.dir}/searchblocks.py">-b "WFOIFM" -ps p "ah_wan_ifmon_arping" p "${wan_gateway_ip}" p "\[_dft-track-redirect\]" -f ${log.dir}/${log.file}</log-match>	
+			<log-match bin="${bin.dir}/searchblocks.py">-b "WFOIFM" -ps p "ah_wan_ifmon_ping" p "${mpc.tif.ip}" p "\[${track_wan_name_eth0}\]" -f ${log.dir}/${log.file}</log-match>			
+        </step>
+		
+		<step no="12.4.1">
+            <desc>
+				 Check default track state
+            </desc>
+			<log-file>step12.4.1_CheckTrackwanStatus.log</log-file>
+            <console target="br1.br">
+				-v "show track-wan"
+			</console>	
+			<log-match bin="${bin.dir}/searchbyrexp.py">
+				-p 'Result:\s+down' -f ${log.dir}/${log.file}				
+			</log-match>			
+        </step>
+		
+	</stage>
+</testcase>

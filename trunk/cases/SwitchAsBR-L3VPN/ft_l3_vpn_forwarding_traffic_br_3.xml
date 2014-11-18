@@ -1,0 +1,285 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Forward all traffic via tunnel by default</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-config a remote CVG, there is several LANs behind it
+		-there are some services in CVG's LANs
+		-BR setup VPN connection with the CVG
+		-setup all wifi radios and eth interfaces as access mode
+		-bind user-profile with l3-tunnel-action all on both wifi radio and
+		wired eth interfaces
+
+		Test Procedure:
+
+		-check the ip policy-route l3-tunnel-all
+		-STA1 ping web server on internet
+		-STA1 ping servers behind remote CVG
+		-STA1 ping local LANs
+	</description>
+	<numofcvg>1</numofcvg>
+	<numofbr>1</numofbr>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+	
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+		<step no="pre.0.1">
+			<desc>enable wan port nat if FW nonexists</desc>
+			<if>"no" == "${cvg1.cvg.fw_existed}"</if>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "interface eth0 mode wan nat"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/vpn_setup_one_sw.xml" obj-args="cvg1, br1" />
+
+		<step no="2.1">
+			<desc>config mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask 255.255.255.0"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>config mgt0.2 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options netmask 255.255.255.0"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc2.vlan} dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "br1.br.mgt0.2.route=$(echo ${br1.br.mgt0.2.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns1.route=$(echo ${cvg1.dns1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns2.route=$(echo ${cvg1.dns2.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.vpc1.route=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="3">
+			<desc>Check route distribution is correct</desc>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>On GW, will add the tunnel routes according to BR's modification </desc>
+			<log-file>3.1.show_route_cvg_.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${br1.br.mgt0.2.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="3.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>3.2_show_l3_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.dns1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${cvg1.dns2.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				set all wired interface as access mode
+				eth1 access br1.vpc1.vlan, eth4 access br1.vpc2.vlan
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute 2"
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+				-v "interface ${br1.br.lan.int4} switchport mode access"
+				-v "interface ${br1.br.lan.int4} switchport access vlan ${br1.vpc2.vlan}"
+				-v "interface ${br1.br.lan.int1} switchport user-profile-attribute 1"
+				-v "interface ${br1.br.lan.int4} switchport user-profile-attribute 2"
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>br1.vpc4 get ip addr from dhcp server of mgt0.2</desc>
+			<log-file>ifconfig_vpc4_.log</log-file>
+			<ssh target="br1.vpc4" timeout="120">
+				-v "ifconfig ${br1.vpc4.tif.name} down"
+				-v "ifconfig ${br1.vpc4.tif.name} up"
+				-v "dhclient ${br1.vpc4.tif.name} -r"
+				-v "dhclient ${br1.vpc4.tif.name}"
+				-v "ifconfig ${br1.vpc4.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4.5">
+			<desc>set br1.vpc4.tif.ip var for vpc4 on BR side</desc>
+			<setvar name="br1.vpc4.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc4.mif.ip} -u ${br1.vpc4.user} -p ${br1.vpc4.passwd} -i ${br1.vpc4.tif.name} -nomask
+			</setvar>
+		</step>		
+
+		<step no="5.1">
+			<desc>bind user-profile with l3-tunnel-action all on both wifi radio and wired eth interfaces </desc>
+			<telnet target="${br1.br.wan.ip}">
+			        -v "routing match-map mb user-profile lan1 to any"
+			        -v "routing match-map mb user-profile lan2 to any"
+			        -v "routing route-map rb via encrypted"
+			        -v "routing policy pb id 4 match-map mb route-map rb"
+			</telnet>
+		</step>
+
+		<step no="5.2">
+			<desc>check the ip policy-route l3-tunnel-all</desc>
+			<log-file>show_ip_policy_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip policy-route l3-tunnel-all"
+			</telnet>
+			<log-match>-p 1 -i "default" -p 2 -i "0.0.0.0" -p 7 -i "tunnel0"</log-match>
+		</step>
+
+		<step no="5.3" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>BR br1.vpc1</desc>
+			<log-file>log_br_to_vpc1.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${br1.vpc1.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.4" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>BR br1.vpc4</desc>
+			<log-file>log_br_to_vpc4.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${br1.vpc4.tif.ip}"
+			</telnet>
+			<log-match>-c -i "from ${br1.vpc4.tif.ip}: " -i "ttl="</log-match>
+		</step>		
+
+		<step no="6.1">
+			<desc>enable debug on BR</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${br1.vpc4.tif.ip} protocol 1 bidirectional"
+				-v "_ff id 2 protocol 47 bidirectional"
+				-v "_ff id 3 protocol 50 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="6.1b" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>BR br1.vpc1 ping vpc4</desc>
+			<log-file>step6.1b_ping.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ping ${br1.vpc4.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc4.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>show log buf</desc>
+			<log-file>step6.2_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>enable debug on BR</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "clear log buffered"
+				-v "no _ff id 1"
+				-v "_ff id 1 src-ip ${pub.dns1.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="7.1b" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>BR br1.vpc1 ping pub</desc>
+			<log-file>step7.1b_ping.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>show log buf</desc>
+			<log-file>step7.2_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="8.1">
+			<desc>enable debug on BR</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "clear log buffered"
+				-v "no _ff id 1"
+				-v "_ff id 1 src-ip ${cvg1.vpc1.tif.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="8.1b" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>BR br1.vpc1 ping server</desc>
+			<log-file>step8.1b_ping.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>show log buf</desc>
+			<log-file>step8.2_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>		
+
+	</stage>
+
+</testcase>

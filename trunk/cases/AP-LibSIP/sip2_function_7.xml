@@ -1,0 +1,121 @@
+<testcase>
+	<brief>Check TCP socket stability</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Check TCP socket stability
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="securityObject" value="autoap" />
+	<property name="psk" value="12qwaszx" />
+	<property name="sipPolicy" value="sip2" />
+	<property name="user" value="11111" />
+	<property name="userGroup" value="sip2" />
+	<property name="staid" value="sta1" />
+	<property name="apid" value="ap1" />
+
+	<stage>
+
+		<step no="SetRadiusServer.1">
+			<desc>Setup radius server</desc>
+			<telnet target="${apid}">
+				-v "security-object ${securityObject}"
+				-v "security-object ${securityObject} security aaa radius-server primary ${ap1.mgt0.ip}"
+				-v "security-object ${securityObject} security protocol-suite wpa-auto-psk ascii-key ${psk}"
+				-v "security-object ${securityObject} security private-psk"
+				-v "security-object ${securityObject} security private-psk default-psk-disabled"
+				-v "security-object ${securityObject} security private-psk radius-auth"
+				-v "user ${user}"
+				-v "user ${user} password ${psk}"
+				-v "user-group ${userGroup}"
+				-v "user ${user} group ${userGroup}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${securityObject}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "library-sip-policy ${sipPolicy} default user-group ${userGroup}"
+				-v "aaa radius-server local library-sip-policy ${sipPolicy}"
+				-v "aaa radius-server local db-type library-sip-server primary server ${pub.libsip1.ip}"
+				-v "aaa radius-server local db-type library-sip-server primary login-user ${pub.libsip1.username} password ${pub.libsip1.passwd}"
+				-v "aaa radius-server local db-type library-sip-server primary institution-id ${pub.libsip1.institutionID}"
+				-v "aaa radius-server local db-type library-sip-server primary login-enable"
+				-v "aaa radius-server local enable"
+				-v "ssid ${ssid.name} user-group ${userGroup}"
+				-v "aaa radius-server local user-group ${userGroup}"
+				-v "user-profile sip2 qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "_debug radiusd verbose"
+				-v "_debug radiusd sip-lib"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="wpa-tkip-psk" />
+		<property name="conn1.psk" value="${psk}" />
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="CheckLibSipLog.1">
+			<desc>Check LibSip log</desc>
+			<log-file>test_library_sip.log</log-file>
+			<telnet target="ap1" timeout="120">
+				-v "show log buffer"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "LIBSIP:extract AA: 11111" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Found Auth-Type = PAP" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Sending Access-Accept of id [0-9]+ to ${ap1.mgt0.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "login attempt with password \"1\*\*\*\"" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "User-Password = 1\*\*\*" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="ClientAssociate.2">
+			<ssh target="${staid}" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-PSK"
+				-v "set_network 0 proto RSN"
+				-v "set_network 0 pairwise TKIP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 psk \"${psk}\""
+				-v "set_network 0 priority 5"
+				-v "enable_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="CheckClientAssociate.2" delay="300" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check if the client was associated successfully</desc>
+			<log-file>wpa_stat_${staid}_${loop_check.idx}_2.log</log-file>
+			<ssh target="${staid}" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "stat"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="ClientGetIP.2">
+			<desc>client gets IP by dhclient</desc>
+			<ssh target="${staid}" slow="true">
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="CheckClientGetIP.2" delay="30">
+			<desc>check client gets IP by dhclient</desc>
+			<log-file>ifconfig_${staid}_2.log</log-file>
+			<ssh target="${staid}">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+			<log-match>-e "inet addr"</log-match>
+		</step>
+
+	</stage>
+</testcase>

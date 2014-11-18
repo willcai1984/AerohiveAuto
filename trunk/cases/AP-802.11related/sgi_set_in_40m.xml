@@ -1,0 +1,165 @@
+<testcase>
+	<brief>Verify that short guard interval takes effective in na 40M channel width.</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Description
+		Verify that short guard interval takes effective in na 40M channel width.
+		Test procedure
+		1. Verify that short guard interval takes effective. Result 1
+		2. Verify that the short guard interval not takes effective by cmd: no radio profile xxxx short-guard-interval. Result 2
+
+		Expect result
+		1. The short guard interval takes effective
+		2. The short guard interval not takes effective
+	</description>
+	<stage>
+		<if>"${ap.wifi1.existed}" == "true"</if>
+		<step no="1">
+			<desc>Set config for AP1 via telnet to </desc>
+			<telnet target="ap1">
+				-f na_short_guard_interval.cfg
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>Set config for AP1 via telnet to </desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi1 ssid ${ssid.name}1"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>Show run config of AP1 </desc>
+			<log-file>show_run_config_1.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 "
+				-v "capture save interface wifi1 ws_has_sgi.pcap"
+				-v "capture interface wifi1 count 200 filter 1"
+			</telnet>
+		</step>
+
+		<step no="5" delay="60">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1">
+				-v "save capture local ws_has_sgi.pcap tftp://${mpc.tif.ip}:/ws_has_sgi.pcap"
+			</telnet>
+		</step>
+
+		<step no="6" delay="100">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>ts_has_sgi.log</log-file>
+			<script>
+				tshark -r /tftpboot/ws_has_sgi.pcap -V > ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="7">
+			<desc>Show interface wifi1.1 of AP1 </desc>
+			<log-file>show_interface_wifi11.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>Get_mac of wifi1.1 on AP1 </desc>
+			<setvar name="ap1.wifi11.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi11.log -i wifi1.1 -o aero -m
+			</setvar>
+		</step>
+
+		<step no="9">
+			<desc>Get sgi bit on wifi1.1 BI in beacon frame</desc>
+			<setvar name="sgi">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_has_sgi.log -k ${ap1.wifi11.mac} -o "HT Short GI for 40MHz"
+			</setvar>
+		</step>
+
+		<step no="10">
+			<desc>Check sgi bit</desc>
+			<script>
+				echo "sgi = ${sgi}"
+				if [ "${sgi}" != "Supported" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="11">
+			<desc>No short guard interval </desc>
+			<telnet target="ap1">
+				-v "no radio profile driver_na short-guard-interval"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="12">
+			<desc>Show run config of AP1 </desc>
+			<log-file>show_run_config_2.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+		<step no="13">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 "
+				-v "capture save interface wifi1 ws_no_sgi.pcap"
+				-v "capture interface wifi1 count 200 filter 1"
+			</telnet>
+		</step>
+
+		<step no="14" dealy="60">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1">
+				-v "save capture local ws_no_sgi.pcap tftp://${mpc.tif.ip}:/ws_no_sgi.pcap"
+			</telnet>
+		</step>
+
+		<step no="15" delay="100">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>ts_no_sgi.log</log-file>
+			<script>
+				tshark -r /tftpboot/ws_no_sgi.pcap -V > ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="16">
+			<desc>Get sgi bit on wifi1.1 BI in beacon frame</desc>
+			<setvar name="nosgi">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_no_sgi.log -k ${ap1.wifi11.mac} -o "HT Short GI for 40MHz"
+			</setvar>
+		</step>
+
+		<step no="17">
+			<desc>Check sgi bit</desc>
+			<script>
+				echo "nosgi = ${nosgi}"
+				if [ "${nosgi}" != "Notsupported" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+	</stage>
+</testcase>

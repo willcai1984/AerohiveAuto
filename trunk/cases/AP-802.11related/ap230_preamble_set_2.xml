@@ -1,0 +1,197 @@
+<testcase>
+	<brief>e</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Description
+		Verify that the Preamble setting become effective.
+		Test procedure
+		1. Verify that Preamble setting become effective in cli. Result 1
+		Expect result
+		1. The Preamble setting become effective
+
+	</description>
+	<stage>
+
+		<step no="4">
+			<desc>Set config for AP1 via console to   </desc>
+			<telnet target="ap1">
+				-f preamble.cfg
+			</telnet>
+		</step>
+		<step no="4.a">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>Set config for AP1 via telnet to ${ap1.mgt0.ip}</desc>
+			<telnet target="ap1" timeout="60">
+				-v "interface wifi1 mode access"
+				-v "interface wifi1 radio profile driver_na"
+			</telnet>
+		</step>
+		<step no="5">
+			<desc>Set config for AP1 via console to  </desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>Show run config of AP1 </desc>
+			<log-file>show_run_config_1.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+		
+		<step no="6.1">
+			<desc>Set config for AP2 via console to  </desc>
+			<telnet target="ap2">
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 11"
+				-v "interface wifi1 mode dual"
+				-v "interface wifi1 radio channel 161"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap2">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 "
+				-v "capture save interface wifi0 ws_short.preamble.pcap"
+				-v "capture interface wifi0 count 200 filter 1"
+			</telnet>
+		</step>
+
+		<step no="8" delay="20">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap2">
+				-v "save capture local ws_short.preamble.pcap tftp://${mpc.tif.ip}:/ws_short.preamble.pcap"
+			</telnet>
+		</step>
+		<step no="9" delay="100">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<script>
+				tshark -r /tftpboot/ws_short.preamble.pcap -V > ${log.dir}/ws_short.preamble.log
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>Show interface wifi0.1 of AP1 </desc>
+			<log-file>show_interface_wifi01.log </log-file>
+			<console target="ap1">
+				-v "show interface wifi0.1"
+			</console>
+		</step>
+
+		<step no="11">
+			<desc>Get_mac of wifi0.1 on AP1 </desc>
+			<setvar name="ap1.wifi01.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi01.log -i wifi0.1 -o aero -m
+			</setvar>
+		</step>
+
+		<step no="12">
+			<desc>Get short preamble bit on wifi0.1 BI in beacon frame</desc>
+			<setvar name="short.preamble">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ws_short.preamble.log -k ${ap1.wifi01.mac} -o "Short Preamble"
+			</setvar>
+		</step>
+		<step no="13">
+			<desc>Check preamble bit</desc>
+			<script>
+				echo "short.preamble = ${short.preamble}"
+				if [ "${short.preamble}" != "Allowed" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="14">
+			<desc>long preamble </desc>
+			<telnet target="ap1">
+				-f preamble_change.cfg
+			</telnet>
+		</step>
+
+		<step no="14.a">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>Set config for AP1 via telnet to ${ap1.mgt0.ip}</desc>
+			<telnet target="ap1" timeout="60">
+				-v "interface wifi1 mode access"
+				-v "interface wifi1 radio profile driver_na"
+			</telnet>
+		</step>
+
+		<step no="15">
+			<desc>Show run config of AP1 </desc>
+			<log-file>show_run_config_2.log </log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="16">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap2">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 "
+				-v "capture save interface wifi0 long.preamble.pcap"
+				-v "capture interface wifi0 count 200 filter 1"
+			</telnet>
+		</step>
+
+		<step no="17" delay="60">
+			<desc>Transmit pkts from AP to master</desc>
+			<console target="ap2">
+				-v "save capture local long.preamble.pcap tftp://${mpc.tif.ip}:/long.preamble.pcap"
+			</console>
+		</step>
+		<step no="18" delay="100">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<script>
+				tshark -r /tftpboot/long.preamble.pcap -V > ${log.dir}/long.preamble.log
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="19">
+			<desc>Get preamble bit on wifi0.1 BI in beacon frame</desc>
+			<setvar name="long.preamble">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/long.preamble.log -k ${ap1.wifi01.mac} -o "Short Preamble"
+			</setvar>
+		</step>
+
+		<step no="20">
+			<desc>Check preamble bit</desc>
+			<script>
+				echo "long.preamble = ${long.preamble}"
+				if [ "${long.preamble}" != "Shortpreamblenotallowed" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+	</stage>
+	<post-process>
+		<stage>
+			<step no="p1">
+				<desc>remove temporary files</desc>
+				<script>
+					rm -f /tftpboot/long.preamble.pcap
+					rm -f /tftpboot/ws_short.preamble.pcap
+				</script>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

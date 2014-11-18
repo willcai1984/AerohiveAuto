@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Set report interval greater than get interval, check if data collection can works normal</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Enable data collection
+		Open _debug dcm all
+		AP connect with HM
+
+		Test Procedure:
+		1. Set get interval to 1 minutes, set report interval to 10 minutes, check config by
+		"show running-config" and "show data-collection"
+		2. When it's time to get data, verify if AP will get data
+		3. When it's time to report data, verify if AP will report data
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				- Enable data collection
+				Open _debug dcm all
+				AP connect with HM
+			</desc>
+			<telnet target="ap1">
+				-v "data-collection enable"
+				-v "data-collection collect interval 1 minutes"
+				-v "data-collection report interval 5 minutes"
+				-v "capwap client enable"
+				-v "capwap client server name ${pub.hm1.ip}"
+				-v "_debug dcm all"
+			</telnet>
+		</step>
+
+		<step no="2" delay="180">
+			<desc>
+				- Check data collection status by "show data-collection"
+			</desc>
+			<log-file>step4_show_data.log</log-file>
+			<telnet target="ap1">
+				-v "show data-collection"
+			</telnet>
+			<log-match>-i "Data Collection Status: Enabled"</log-match>
+			<log-match>-i "Reporting Interval: 5 (minutes)"</log-match>
+			<log-match>-i "Collection interval: 1 (minutes)"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				- Check if data be collected by "show logging buffered"
+			</desc>
+			<log-file>step3_check_logging_buff.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "\[dcm_memory\]: Free buffer for Free operation request for Get data from AUTH/FE"</log-match>
+			<log-match>-i "\[dcm_info\]: Get timer expired, send request to queue"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\[dcm_memory\]: Malloc size \d+ bytes for Create operation request for Get data from AUTH/FE" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-i "\[dcm_detail\]: Copy message payload for type:Get data from AUTH/FE"</log-match>
+			<log-match>-i "\[dcm_basic\]: Put a new request(Get data from AUTH/FE) to queue"</log-match>
+			<log-match>-i "\[dcm_basic\]: Get a new operation request(Get data from AUTH/FE) from queue"</log-match>
+			<log-match>-i "\[dcm_basic\]: Handle operation request:Get data from AUTH/FE"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>Get AP collect data time</desc>
+			<setvar name="collect.times2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3_check_logging_buff.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*\[dcm_basic\]: Handle operation request:Get data from AUTH/FE" -s none -t str -g-2
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>Get AP collect data time</desc>
+			<setvar name="collect.times1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3_check_logging_buff.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*\[dcm_basic\]: Handle operation request:Get data from AUTH/FE" -s none -t str -g-1
+			</setvar>
+		</step>
+
+		<step no="4.3">
+			<desc>Get the AP collect data of times</desc>
+			<setvar name="collect.times2_t">
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${collect.times2}', '%Y-%m-%d %H:%M:%S').timetuple()))"
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>Get the AP collect data of times</desc>
+			<setvar name="collect.times1_t">
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${collect.times1}', '%Y-%m-%d %H:%M:%S').timetuple()))"
+			</setvar>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				check if the AP collect time is 1min.
+			</desc>
+			<script>
+				${bin.dir}/pyeval.py "(${collect.times2_t} - ${collect.times1_t}) == 60.0" --amode
+			</script>
+		</step>
+
+		<step no="5" delay="600">
+			<desc>
+				- Check if data be collected by "show logging buffered"
+			</desc>
+			<log-file>step5_check_logging_buff.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered | in dcm"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "\[dcm_basic\]: Handle operation request:Send data to CAPWAP"</log-match>
+			<log-match>-i "\[dcm_basic\]: Get a new operation request(Send data to CAPWAP) from queue"</log-match>
+			<log-match>-i "\[dcm_basic\]: Put a new request(Send data to CAPWAP) to queue"</log-match>
+			<log-match>-i "\[dcm_detail\]: Copy message payload for type:Send data to CAPWAP"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\[dcm_memory\]: Malloc size \d+ bytes for Create operation request for Send data to CAPWAP" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>Get AP report data time</desc>
+			<setvar name="report.times2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_check_logging_buff.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*\[dcm_basic\]: Handle operation request:Send data to CAPWAP" -s none -t str -g-2
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>Get AP report data time</desc>
+			<setvar name="report.times1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_check_logging_buff.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*\[dcm_basic\]: Handle operation request:Send data to CAPWAP" -s none -t str -g-1
+			</setvar>
+		</step>
+
+		<step no="6.3">
+			<desc>Get the AP report data of times</desc>
+			<setvar name="report.times2_t">
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${report.times2}', '%Y-%m-%d %H:%M:%S').timetuple()))"
+			</setvar>
+		</step>
+
+		<step no="6.4">
+			<desc>Get the AP report data of times</desc>
+			<setvar name="report.times1_t">
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${report.times1}', '%Y-%m-%d %H:%M:%S').timetuple()))"
+			</setvar>
+		</step>
+
+		<step no="6.5">
+			<desc>
+				check if the AP report time is 5min.
+			</desc>
+			<script>
+				${bin.dir}/pyeval.py "(${report.times2_t} - ${report.times1_t}) == 300.0" --amode
+			</script>
+		</step>
+	</stage>
+</testcase>

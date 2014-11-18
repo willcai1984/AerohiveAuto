@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, package of 8021p(1 7) mapping aerohive calss 0 7. Ethernet interface Test topology Top1 Device Configuration </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		portal:
+		- Set "qos classifier-profile aaa 8021p" on CLI
+		- Set "qos classifier-map 8021p (1-7) (0-7)" on CLI
+		- Set "interface eth0 qos-classifier aaa" on CLI
+		- Set "_kdebug qos classifi"on CLI
+		- Set "_ff id 1 src-mac sta1's mac"
+		- Set "_kdebug fe basic"
+		- STA1generates 8021p(1-7) traffic,then send to STA3.
+		Expected output
+		- Sniffering the traffic from STA2 incoming interface
+		- Verify the received traffic class from STA1 is 0-7
+		- look over kdebug message
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="pre1">
+			<desc>
+				create ssid, amrp
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "interface eth0 shutdown"
+				-v "qos marker-profile 8021p 8021p"
+				-v "ssid ${ssid.name} qos-marker 8021p"
+			</console>
+		</step>
+
+		<step no="pre2">
+			<desc>
+			</desc>
+			<if>"${ap2.eth1.existed}" == "true"</if>
+			<console target="ap2">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="pre3">
+			<desc>
+				create amrp
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<include prefix="pre4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap2" />
+
+		<step no="1">
+			<desc>
+				- Set qos on portal
+			</desc>
+			<telnet target="ap1">
+				-v "qos classifier-profile 8021p 8021p"
+				-v "qos classifier-map 8021p 1 7"
+				-v "interface eth0 qos-classifier 8021p"
+				-v "qos marker-profile 8021p 8021p"
+				-v "interface eth0 qos-marker 8021p"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${mpc.tif.ip} protocol 1 bidirectional"
+				-v "_kdebug eth vlan"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				mpc ping sta1
+			</desc>
+			<log-file>ping_sta.log</log-file>
+			<script>
+				ping ${sta1.tif.ip} -c 5 &gt; ${log.dir}/${log.file}; exit 0
+			</script>
+		</step>
+
+		<step no="4">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i " QoS: pkt queued"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi1.1 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(eth0\)" -e "\(i\) eth0 ${mpc.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5.1">
+			<desc>get qos num</desc>
+			<setvar name="qos1">
+				${bin.dir}/getbyrexp.py -p "QoS: ingress pkt fwd\(eth0\) profile=\d+ qos=(\d+)" -f ${log.dir}/show_log_buffered.log -g 0
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>get qos num</desc>
+			<setvar name="qos2">
+				${bin.dir}/getbyrexp.py -p "Classifier\(eth0:802.1p\) priority=\d+ qos=(\d+)" -f ${log.dir}/show_log_buffered.log -g 0
+			</setvar>
+		</step>
+
+		<step no="5.3">
+			<desc>get priority num</desc>
+			<setvar name="priority">
+				${bin.dir}/getbyrexp.py -p "Classifier\(eth0:802.1p\) priority=(\d+) qos=\d+" -f ${log.dir}/show_log_buffered.log -g 0
+			</setvar>
+		</step>
+
+		<step no="6.1">
+			<desc>check qos</desc>
+			<log-file>check_qos_num.log</log-file>
+			<script>
+				if [ ${qos1} -ge 0 ] &amp;&amp; [ ${qos1} -le 7 ];then echo "success";fi &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "success"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>check qos</desc>
+			<log-file>check_qos2_num.log</log-file>
+			<script>
+				if [ ${qos2} -ge 0 ] &amp;&amp; [ ${qos2} -le 7 ];then echo "success";fi &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "success"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>check priority</desc>
+			<log-file>check_priority_num.log</log-file>
+			<script>
+				if [ ${priority} -ge 0 ] &amp;&amp; [ ${priority} -le 7 ];then echo "success";fi &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "success"</log-match>
+		</step>
+	</stage>
+</testcase>

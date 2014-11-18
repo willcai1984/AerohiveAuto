@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Wifi vlan test</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test Procedure:
+		1: Configure ssid and client links to ap with ssid
+		2: Client and ap are in the same subnet, assume 58, result 1
+		3: AP ping client, result 2
+		4: change client's subnet, assume 59, ap ping a nonexistent ip, result 3
+		5: configure client and ap are in the same subnet, then server ping
+		laptop,make sure the packet is untag to ap; change the ap's native vlan,
+		assume 59, then server ping laptop again, result 4
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="same.vlan.ap.ping.1.1">
+			<desc>
+				Configure ssid and client links to ap with ssid
+			</desc>
+			<console target="ap1">
+				-v "security-object aero"
+				-v "security-object aero default-user-profile-attr 1"
+				-v "user-profile vlan attribute 1"
+				-v "user-profile vlan vlan-id ${tb.vlan1}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object aero"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "capwap client enable"
+			</console>
+		</step>
+		
+		<step no="same.vlan.ap.ping.1.2">
+			<desc>
+				Configure sta connect parameters
+			</desc>
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="same.vlan.ap.ping.1.3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+		
+		<step no="same.vlan.ap.ping.2">
+			<desc>
+				show sta
+			</desc>
+			<log-file>same.vlan.ap.ping.2_show_sta.log</log-file>
+			<console target="ap1">
+				-v "show station"
+			</console>
+			<log-match>-e "${tb.vlan1}\ \ Yes"</log-match>
+		</step>
+
+		<step no="same.vlan.ap.ping.3">
+			<desc>
+				show_interface_mgt0
+			</desc>
+			<log-file>same.vlan.ap.ping.3_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "VLAN id=${tb.vlan1};\ \ Native vlan id=${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="same.vlan.ap.ping.3.3">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/same.vlan.ap.ping.3_show_interface_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="same.vlan.ap.ping.4">
+			<desc>
+				setup debugger
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug wifi-driver wifi0.1 extend vlan"
+				-v "_ff id 1 src-ip ${ap1.mgt0.ip} protocol 1 bidirectional"
+			</console>
+		</step>
+
+		<step no="same.vlan.ap.ping.4.1">
+			<desc>
+				AP ping client
+			</desc>
+			<console target="ap1">
+				-v "ping ${sta1.tif.ip}"
+			</console>
+		</step>
+
+		<include prefix="same.vlan.ap.ping.4.2" file="subs/save_ap_log.xml" args="show logging buffered, ap1, same.vlan.ap.ping.4.2_show_logging_buffered.log" />
+
+		<step no="same.vlan.ap.ping.4.3">
+			<log-file>same.vlan.ap.ping.4.2_show_logging_buffered.log</log-file>
+			<log-match>-e "vlan ${tb.vlan1}, interface vlan ${tb.vlan1}, sta vlan ${tb.vlan1}"</log-match>
+		</step>
+	</stage>
+
+	<stage>
+		<step no="different.vlan.ap.ping.1.1">
+			<desc>
+				change client's subnet, assume 59, ap ping a nonexistent ip, result 3
+			</desc>
+			<console target="ap1">
+				-v "user-profile vlan vlan-id ${tb.vlan2}"
+			</console>
+		</step>
+
+		<step no="different.vlan.ap.ping.1.2">
+			<desc>
+				Configure sta connect parameters
+			</desc>
+			<multi-setvar>
+				echo "conn2.ssid=${ssid.name}"
+				echo "conn2.proto=open"
+				echo "conn2.pif=wifi0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="different.vlan.ap.ping.1.3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />			
+
+		<step no="different.vlan.ap.ping.2">
+			<desc>
+				show sta
+			</desc>
+			<log-file>different.vlan.ap.ping.2_show_sta.log</log-file>
+			<console target="ap1">
+				-v "show station"
+			</console>
+			<log-match>-e "${tb.vlan2}\ \ Yes"</log-match>
+		</step>
+
+		<step no="different.vlan.ap.ping.3">
+			<desc>
+				show_interface_mgt0
+			</desc>
+			<log-file>different.vlan.ap.ping.3_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "VLAN id=${tb.vlan1};\ \ Native vlan id=${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="different.vlan.ap.ping.3.3">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/different.vlan.ap.ping.3_show_interface_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="different.vlan.ap.ping.3.4">
+			<desc>
+				show_interface
+			</desc>
+			<log-file>different.vlan.ap.ping.3_show_interface.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="different.vlan.ap.ping.3.5">
+			<desc>Get ap1's mgt0 mac</desc>
+			<setvar name="ap1.mgt0.mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/different.vlan.ap.ping.3_show_interface.log -k Mgt0 -p 2
+			</setvar>
+		</step>
+
+		<step no="different.vlan.ap.ping.4">
+			<desc>
+				clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "no _ff id 1"
+				-v "_ff id 1 etype 0806 incoming-interface mgt0 bidirectional"
+			</console>
+		</step>
+
+		<step no="different.vlan.ap.ping.4.1" delay="20">
+			<desc>
+				AP ping non-exists
+			</desc>
+			<console target="ap1">
+				-v "ping 192.168.${tb.vlan1}.250"
+			</console>
+		</step>
+
+		<include prefix="different.vlan.ap.ping.4.2" file="subs/save_ap_log.xml" args="show logging buffered, ap1, different.vlan.ap.ping.4.2_show_logging_buffered.log" />
+
+		<step no="different.vlan.ap.ping.4.3">
+			<log-file>different.vlan.ap.ping.4.2_show_logging_buffered.log</log-file>
+			<log-match>-e "${ap1.mgt0.ip}(${ap1.mgt0.mac})->192.168.${tb.vlan1}.250"</log-match>
+			<log-match>-e "wifi0.1: drop multicast packet due to vlan mismatch: dst mac ff:ff:ff:ff:ff:ff, packet vlan ${tb.vlan1}"</log-match>
+			<log-match>-e "vlan ${tb.vlan1}, interface vlan ${tb.vlan2}, sta vlan 0"</log-match>
+		</step>
+	</stage>
+
+	<stage>
+		<step no="same.vlan.svr.ping.1.1">
+			<desc>
+				configure client and ap are in the same subnet, then server ping
+				laptop,make sure the packet is untag to ap;
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "user-profile vlan vlan-id ${tb.vlan1}"
+			</console>
+		</step>
+		
+		<step no="same.vlan.svr.ping.1.2">
+			<desc>
+				Configure sta connect parameters
+			</desc>
+			<multi-setvar>
+				echo "conn3.ssid=${ssid.name}"
+				echo "conn3.proto=open"
+				echo "conn3.pif=wifi0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="same.vlan.svr.ping.1.3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn3, sta1, ap1" />			
+		
+		<step no="same.vlan.svr.ping.2">
+			<desc>
+				show sta
+			</desc>
+			<log-file>same.vlan.svr.ping.2_show_sta.log</log-file>
+			<console target="ap1">
+				-v "show station"
+			</console>
+			<log-match>-e "${tb.vlan1}\ \ Yes"</log-match>
+		</step>
+
+		<step no="same.vlan.svr.ping.3">
+			<desc>
+				server ping laptop
+			</desc>
+			<log-file>same.vlan.svr.ping.3_server_ping_laptop.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-e "from ${sta1.tif.ip}"</log-match>
+		</step>
+		
+		<step no="same.vlan.svr.ping.4">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.tif.mac2">
+				${bin.dir}/getbyrexp.py -p "(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" -f ${log.dir}/same.vlan.svr.ping.2_show_sta.log -t str --script "':'.join(m.groups()).lower()"
+			</setvar>
+		</step>	
+		
+		<step no="same.vlan.svr.ping.5.1">
+			<desc>Get GW's mac</desc>
+			<script>
+				echo "aerohive${tb.vlan1.gw.mac}" > ${log.dir}/gw.log
+			</script>
+		</step>
+
+		<step no="same.vlan.svr.ping.5.2">
+			<desc>Get GW's mac</desc>
+			<setvar name="tb.vlan1.gw.mac2">
+				${bin.dir}/getbyrexp.py -p "aerohive(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" -f ${log.dir}/gw.log -t str --script "':'.join(m.groups()).lower()"
+			</setvar>
+		</step>
+		
+		
+	</stage>
+
+
+	
+	<stage>
+		<step no="different.vlan.svr.ping.0">
+			<desc>
+				change the ap's native vlan,
+				assume 59, then server ping laptop again, result 4
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "interface eth0 native-vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan2}"
+			</console>
+		</step>
+
+		<step no="different.vlan.svr.ping.1">
+			<desc>
+				show interface mgt0
+			</desc>
+			<log-file>different.vlan.svr.ping.1_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "VLAN id=${tb.vlan1};\ \ Native vlan id=${tb.vlan2}"</log-match>
+		</step>
+
+		<step no="different.vlan.svr.ping.2">
+			<desc>
+				setup debugger
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "no _ff id 1"
+				-v "_ff id 1 src-ip ${pub.tftp1.tip} protocol 1 bidirection"
+			</console>
+		</step>
+
+		<step no="different.vlan.svr.ping.3" delay="30">
+			<desc>
+				server ping laptop
+			</desc>
+			<log-file>different.vlan.svr.ping.3_server_ping_laptop.log</log-file>
+			<ssh host="${pub.tftp1.ip}">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -e "from ${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="different.vlan.svr.ping.4" timeout="200">
+			<desc>
+				check logging buffered
+			</desc>
+			<log-file>different.vlan.svr.ping.4_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="1000">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-e "wifi0.1: drop unicast packet due to vlan mismatch: dst mac ${sta1.tif.mac2}, sta vid ${tb.vlan1}, packet vlan ${tb.vlan2}"</log-match>
+			<log-match>-e "wifi0.1: ${tb.vlan1.gw.mac2}->${sta1.tif.mac2}, vlan ${tb.vlan2}, interface vlan ${tb.vlan1}, sta vlan ${tb.vlan1}"</log-match>
+			<log-match>-e "${pub.tftp1.tip}->${sta1.tif.ip}"</log-match>
+			<log-match>-c -e "fflow ${tb.vlan1.gw.mac}->${sta1.tif.mac}"</log-match>
+		</step>
+	</stage>
+</testcase>

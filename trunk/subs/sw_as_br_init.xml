@@ -1,0 +1,153 @@
+<include obj-arg-names="__BRID__">
+	<step no="0.1">
+		<desc>eth0 dhcp</desc>
+		<log-file>init_show_run___BRID___result.log</log-file>
+		<console target="__BRID__" slow="yes">
+			-v "show run"
+			-v ""
+		</console>
+	</step>
+	<step no="0.2">
+		<desc>judge if the show run result is factory default status</desc>
+		<log-file>init_show_run___BRID___result.log</log-file>
+		<setvar name="has_wan_config">
+		cat  ${log.dir}/${log.file} | grep "interface *${__BRID__.wan.int1} *mode *wan"
+		if [ $? -ne 0 ]; then
+					echo no
+		else 
+					echo yes
+		fi
+		</setvar>
+	</step>
+	<step no="1.0">
+		<if>"${has_wan_config}" == "no"</if>
+		<desc>config wan</desc>
+		<console target="__BRID__" slow="yes" >
+			-v "interface  ${__BRID__.wan.int1} mode wan"
+			-v "save config"
+			-v "reboot";
+		</console>
+	</step>
+	<step no="1">
+		<desc>eth0 dhcp</desc>
+		<console target="__BRID__" slow="yes" timeout="200">
+			-v ""
+			-v "interface  ${__BRID__.wan.int1} shutdown"
+			-v ""
+			-v "no interface  ${__BRID__.wan.int1} shutdown"
+			-v ""
+			-v "no interface ${__BRID__.wan.int1} dhcp client"
+			-v ""
+			-v "interface  ${__BRID__.wan.int1} dhcp client"
+			-v "no interface mgt0 dhcp-server enable"
+		</console>
+	</step>
+
+	<step no="2" type="loop-check" loop-max-times="10" loop-interval="12">
+		<desc>show interface eth0 on BR</desc>
+		<log-file>show___BRID____eth0_${loop_check.idx}.log</log-file>
+		<console target="__BRID__">
+			-v "show interface  ${__BRID__.wan.int1} dhcp client"
+		</console>
+		<log-match>-n -i "from the server 0.0.0.0"</log-match>
+	</step>
+	<step no="3" delay="1">
+		<desc>show interface eth0 on BR</desc>
+		<log-file>show___BRID____eth0.log</log-file>
+		<console target="__BRID__">
+			-v "show interface  ${__BRID__.wan.int1} dhcp client"
+		</console>
+	</step>
+	<step no="4">
+		<desc>get eth0 ip of br</desc>
+		<setvar name="__BRID__.wan.ip">
+			${bin.dir}/getbyrexp.py -p "Get IP address (\d+\.\d+\.\d+\.\d+) from" -f ${log.dir}/show___BRID____eth0.log -t str
+		</setvar>
+	</step>
+
+	<step no="5">
+		<desc>ping BR</desc>
+		<script>
+			ping ${__BRID__.wan.ip} -c 4
+		</script>
+	</step>
+
+	<step no="add.2">
+		<desc>remove harden firewall</desc>
+		<console target="__BRID__">
+			-v "exec bypass-wan-hardening"
+			-v "interface  manage telnet"
+		</console>
+	</step>
+
+	<step no="6">
+		<if>"${tb.hasfw}" != "no"</if>
+		<desc>clear all logs and init</desc>
+		<telnet target="${__BRID__.wan.ip}">
+			-v "clear log all"
+			-v "no interface mgt0 dhcp client"
+			-v "interface mgt0 ip ${__BRID__.mgt0.ip}/24"
+			-v "interface mgt0 dhcp-server ip-pool ${__BRID__.mgt0.ip_pool_start} ${__BRID__.mgt0.ip_pool_end}"
+			-v "interface mgt0 dhcp-server options netmask 255.255.255.0"
+			-v "interface mgt0 dhcp-server options default-gateway ${__BRID__.mgt0.ip}"
+			-v "interface mgt0 dhcp-server options dns1 ${pub.dns1.ip}"
+			-v "interface mgt0 dhcp-server enable"
+			-v "interface mgt0 dns-server enable"
+			-v "ntp server ${pub.ntp}"
+			-v "console page 0"
+			-v "console timeout 0"
+			-v "clock time-zone 8"
+			-v "no capwap client enable"
+			-v "save config"
+		</telnet>
+	</step>
+	
+	<step no="6.1">
+		<if>"${tb.hasfw}" == "no"</if>
+		<desc>clear all logs and init</desc>
+		<telnet target="${__BRID__.wan.ip}">
+			-v "clear log all"
+			-v "no interface mgt0 dhcp client"
+			-v "interface mgt0 ip 192.168.85.1/24"
+			-v "interface mgt0 dhcp-server ip-pool 192.168.85.10 192.168.85.99"
+			-v "interface mgt0 dhcp-server options netmask 255.255.255.0"
+			-v "interface mgt0 dhcp-server options default-gateway 192.168.85.1"
+			-v "interface mgt0 dhcp-server options dns1 ${pub.dns1.ip}"
+			-v "interface mgt0 dhcp-server enable"
+			-v "interface mgt0 dns-server enable"
+			-v "ntp server ${pub.ntp}"
+			-v "console page 0"
+			-v "console timeout 0"
+			-v "clock time-zone 8"
+			-v "no capwap client enable"
+			-v "save config"
+		</telnet>
+	</step>
+	<step no="show_run">
+		<desc>clear all logs and init</desc>
+		<telnet target="${__BRID__.wan.ip}">
+			-v "show run"
+		</telnet>
+	</step>
+
+	<step no="7">
+		<desc>check traffic through wan on BR</desc>
+		<log-file>__BRID__ping_server.log</log-file>
+		<telnet target="${__BRID__.wan.ip}" timeout="100">
+			-v "ping ${pub.dns1.ip} count 4" ;exit 0
+		</telnet>
+		<log-match>-c -i " from ${pub.dns1.ip}" -i " ttl="</log-match>
+	</step>
+	
+	<step no="8">
+		<desc>generate the kernel port var</desc>
+		<multi-setvar>
+			echo "br1.br.wan.kport1=`grep -w ${br1.br.wan.int1} ${auto.root.dir}/subs/conf/sw_port.txt|awk '{print $2}'`"
+			[ "" == "${br1.br.lan.int1}" ] || echo "br1.br.lan.kport1=`grep -w ${br1.br.lan.int1} ${auto.root.dir}/subs/conf/sw_port.txt|awk '{print $2}'`"
+			[ "" == "${br1.br.lan.int2}" ] || echo "br1.br.lan.kport2=`grep -w ${br1.br.lan.int2} ${auto.root.dir}/subs/conf/sw_port.txt|awk '{print $2}'`"
+			[ "" == "${br1.br.lan.int3}" ] || echo "br1.br.lan.kport3=`grep -w ${br1.br.lan.int3} ${auto.root.dir}/subs/conf/sw_port.txt|awk '{print $2}'`"
+			[ "" == "${br1.br.lan.int4}" ] || echo "br1.br.lan.kport4=`grep -w ${br1.br.lan.int4} ${auto.root.dir}/subs/conf/sw_port.txt|awk '{print $2}'`"
+		</multi-setvar>
+	</step>
+
+</include>

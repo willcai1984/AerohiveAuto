@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify radio link good quality with lightweight traffic</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1.11g client connects to NG AP.
+		2. Run traffic less than 2400 packets between AP and client.
+		3. 11a client connects to NA AP.
+		4. Run traffic less than 2400 packets between AP and client.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1.1">
+			<desc>configure AP</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "report statistic period 1"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="1.2">
+			<if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>configure AP</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi1 radio channel 161"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="1.3">
+			<desc>disable reporting</desc>
+			<log-file>ap_configure_2.log</log-file>
+			<telnet target="ap1">
+				-v "no report statistic enable"
+				-v "report statistic enable"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}1"
+			</multi-setvar>
+		</step>
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta1, ap1" />
+		
+		<step no="3.1">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi0_ssid_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}1 station"
+			</telnet>
+		</step>
+		<step no="3.2">
+			<desc>Get laptop1 ip in AP1  </desc>
+			<setvar name="laptop1.ip.in.ap">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi0_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+		<step no="3.3">
+			<desc>Compare laptop1 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop1.ip.in.ap} != ${sta1.tif.ip}"
+				if [ "${laptop1.ip.in.ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="4.1" delay="60">
+			<desc>get client radio link score in report</desc>
+			<log-file>show_report_client_radio_link_score.log</log-file>
+			<console target="ap1">
+				-v '_show report reporting client | include "Radio link score"'
+			</console>
+		</step>
+		<step no="4.2">
+			<desc>check whether radio link quality is poor</desc>
+			<setvar name="result_wifi0">
+				perl -ne 'if(/Radio link score:\s+(\d+)/){print $1;exit}' \
+				${log.dir}/show_report_client_radio_link_score.log
+			</setvar>
+		</step>
+		<step no="4.3">
+			<desc>compare the result</desc>
+			<script>
+				if [ ${result_wifi0} -gt 49 ] &amp;&amp; [ ${result_wifi0} -lt 101 ];then
+					exit 0
+				else
+					exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="5.1">
+			<desc>disable reporting</desc>
+			<telnet target="ap1">
+				-v "no report statistic enable"
+				-v "save config"
+			</telnet>
+		</step>
+	</stage>
+	
+	<stage>	
+		<if>"${ap1.wifi1.existed}" =="true"</if>
+		<step no="6.1">
+			<desc>enable reporting</desc>
+			<telnet target="ap1">
+				-v "report statistic enable"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="7.1">
+			<multi-setvar>
+				echo "conn2.ssid=${ssid.name}2"
+			</multi-setvar>
+		</step>
+		<include prefix="7.2" file="subs/sta_wifi_connect_${tb.os}_new.xml"
+				 obj-args="conn2, sta1, ap1" />
+	
+		<step no="8.1">
+			<desc>Show ssid station in AP1</desc>
+			<log-file>show_wifi1_ssid_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}2 station"
+				-v ""
+			</telnet>
+		</step>
+		<step no="8.2">
+			<desc>Get laptop1 ip in AP1</desc>
+			<setvar name="laptop2.ip.in.ap">
+				${bin.dir}/getstring.pl -k "${sta1.tif.mac}" -p 2 \
+				-f ${log.dir}/show_wifi1_ssid_station.log
+			</setvar>
+		</step>
+		<step no="8.3">
+			<desc>Compare laptop1 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop2.ip.in.ap} != ${sta1.tif.ip}"
+				if [ "${laptop2.ip.in.ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		
+		<step no="9.1" delay="60">
+			<desc>
+				get client radio link score in report
+			</desc>
+			<log-file>show_report_client_radio_link_score_wifi1.log</log-file>
+			<console target="ap1">
+				-v '_show report reporting client | include "Radio link score"'
+			</console>
+		</step>
+		<step no="9.2">
+			<desc>check whether radio link quality is poor</desc>
+			<setvar name="result_wifi1">
+				perl -ne 'if(/Radio link score:\s+(\d+)/){print $1;exit}' \
+				${log.dir}/show_report_client_radio_link_score_wifi1.log
+			</setvar>
+		</step>
+		<step no="9.3">
+			<desc>compare the result</desc>
+			<script>
+				if [ ${result_wifi1} -gt 49 ] &amp;&amp; [ ${result_wifi1} -lt 101 ];then
+					exit 0
+				else
+					exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<step no="p1">
+				<desc>disable reporting</desc>
+				<telnet target="ap1">
+					-v "no report statistic enable"
+					-v "save config"
+				</telnet>
+			</step>
+		</stage>
+		<include prefix="dp" file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

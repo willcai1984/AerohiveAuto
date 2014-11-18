@@ -1,0 +1,296 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>No need to do auth again when there is not traffic in 5 minutes </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+
+
+		Test Procedure:
+
+		1. Set one security-object with radius-server
+		2. Set one user-profile and define the attribute x
+		3. Connect one l2switch to the port.
+		4. Set eth1 mode as access and bind the attribute x to it
+		5. Bind the security-object to the port.
+		6. Connect one laptop to the l2switch and auth successfully.
+		7. Disconnect the laptop from the l2Swtich for 4 minutes and 30 seconds.
+		8. Reconnect the laptop to the l2switch again, result 1
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<stage>
+
+		<step no="pre_step">
+			<desc>configure mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				1. Set one security-object with radius-server
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object lan1"
+				-v "security-object lan1 security protocol-suite 802.1x"
+				-v "security-object lan1 security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object lan1 default-user-profile-attr 2"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Set one user-profile and define the attribute x
+				3. Connect one l2switch to the port.
+				4. Set eth1 mode as access and bind the attribute x to it
+				5. Bind the security-object to the port.
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 2"
+				-v "interface eth1 mode bridge-access user-profile-attribute 2"
+				-v "int eth1 mac-learning enable"
+				-v "interface eth1 security-object lan1"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				6. Connect one laptop to the l2switch and auth successfully.
+			</desc>
+			<log-file>step3_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="60">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="3.1a">
+			<desc>get raw mac of vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step3_ifconfig_vpc1_.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.1b">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show br eth1 interface
+			</desc>
+			<log-file>step3.2_show_interface.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth1"
+			</telnet>
+		</step>
+
+		<step no="3.2b">
+			<desc>get br1 eth1 raw mac</desc>
+			<setvar name="br1.eth1.mac">
+				echo $(${bin.dir}/getbyrexp.py -p "MAC addr=([\da-fA-F:]+)" -f ${log.dir}/step3.2_show_interface.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="3.2c">
+			<desc>get mac1 of br1.eth1</desc>
+			<setvar name="br1.eth1.mac1">
+				echo $(echo ${br1.eth1.mac} | sed -e 's/:../&amp;:/g' -e 's/^../&amp;:/')
+			</setvar>
+		</step>
+
+		<step no="3.2d">
+			<desc>get tmp.mac of br1.eth1</desc>
+			<setvar name="br1.eth1.tmp.mac">
+				echo $(echo ${br1.eth1.mac1} | tr : - )
+			</setvar>
+		</step>
+		
+		<step no="3.2e">
+			<desc>
+				packet capture on br1.vpc1
+			</desc>
+			<log-file>step3.2e_vpc1_packet_capture.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "nohup tshark -l -n -i ${br1.vpc1.tif.name} &gt; ${job.id}vpc1_capture_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="3.2f">
+			<desc>
+				get vpc1 tshark process
+			</desc>
+			<setvar name="vpc1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.2e_vpc1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3.3a">
+			<desc>
+				prepare config file with wrong username and wrong password
+			</desc>
+			<log-file>step3.3a_auth_log.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "echo -e \&quot; ctrl_interface=DIR=/var/run/wpa_supplicant \\n ap_scan=0 \\n network={ \\n key_mgmt=IEEE8021X \\n eap=MD5 \\n identity=\\x22${br1.vpc1.user}\\x22 \\n password=\\x22${br1.vpc1.passwd}\\x22 \\n eapol_flags=0 \\n } \&quot; &gt; /tmp/wpa_supplicant.conf"
+			</ssh>
+		</step>
+
+		<step no="3.3b">
+			<desc>
+				Laptop auth success
+			</desc>
+			<log-file>step3.3b_auth_log.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "wpa_supplicant -B -i eth1 -c /tmp/wpa_supplicant.conf -D wired"
+			</ssh>
+		</step>
+
+		<step no="3.4" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show 802.1x-mac-table
+			</desc>
+			<log-file>step3.4_show_8021x_mac.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}.*eth1.*CLOSE.*N/A" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.4b">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step3.4b_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface eth1"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}.*done.*${br1.vpc1.user}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="3.4c" delay="10">
+			<desc>
+				auth successfully
+			</desc>
+			<log-file>step3.4c_capture_check.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "kill -9 ${vpc1.tshark.id_1}"
+				-v "cat ${job.id}vpc1_capture_1.log"
+				-v "rm -f ${job.id}vpc1_capture_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.eth1.mac1} -&gt; ${br1.vpc1.tif.mac1} EAP Request, Identity" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.eth1.mac1} -&gt; ${br1.vpc1.tif.mac1} EAP Success" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step3.5_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.5b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.6" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step3.6_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				7. Disconnect the laptop from the l2Swtich for 4 minutes and 30 seconds.
+			</desc>
+			<ssh target="br1.vpc1" timeout="60">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+			</ssh>
+		</step>
+
+		<step no="5" delay="200">
+			<desc>
+				8. Reconnect the laptop to the l2switch again, result 1: traffic is ok
+			</desc>
+			<log-file>step5_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "route add default gw ${br1.br.mgt0.1.ip}"
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				show 802.1x-mac-table
+			</desc>
+			<log-file>step5.1_show_8021x_mac.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}.*eth1.*CLOSE.*N/A" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step5.2_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface eth1"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}.*done.*${br1.vpc1.user}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+	</stage>
+	
+	<failed-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					kill tshark process on br1.vpc1
+				</desc>
+				<ssh target="br1.vpc1">
+					-v "kill -9 ${vpc1.tshark.id_1}"
+					-v "rm -f ${job.id}vpc1_capture_1.log"
+				</ssh>
+				<no-error-check />
+			</step>
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+
+</testcase>
+

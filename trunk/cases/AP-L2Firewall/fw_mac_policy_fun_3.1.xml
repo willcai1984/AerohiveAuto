@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mac-policy "after" attribute, using "from" policy.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptops has been associated with AP1 and assigned an ip address
+
+		Test Procedure:
+		1) Laptop1 ping Laptop2
+		2) Configure multi-policy in a mac-policy and bind it to user-profile:
+		"mac-policy FW"
+		"mac-policy FW id 1 from &lt;Laptop1 mac addr&gt; action permit"
+		"mac-policy FW id 2 from &lt;Laptop1 mac addr&gt; action deny"
+		"user-profile FW security mac-policy from-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Repeat step 1
+		4) Laptop2 ping Laptop1
+		5) Use the after attribute to change the sequence of id 1 and id 2
+		"mac-policy FW id 1 after id 2"
+		6) Show the running config
+		7) Repeat step 1
+		8) Laptop2 ping Laptop1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Configure AP1
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_ff id 2 src-ip ${sta2.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "cons page 0"
+			</telnet>
+		</step>
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+
+		<step no="5">
+			<desc>
+				Configure multi-policy in a mac-policy and bind it to user-profile:
+				"mac-policy FW"
+				"mac-policy FW id 1 from &lt;Laptop1 mac addr&gt; action permit"
+				"mac-policy FW id 2 from &lt;Laptop1 mac addr&gt; action deny"
+				"user-profile FW security mac-policy from-access FW"
+			</desc>
+			<telnet target="ap1">
+				-v "mac-policy ${user_id}"
+				-v "mac-policy ${user_id} id 1 from ${sta1.tif.mac} action permit"
+				-v "mac-policy ${user_id} id 2 from ${sta1.tif.mac} action deny"
+				-v "user-profile ${user_id} security mac-policy from-access ${user_id}"
+				-v "clear log all"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear arp-cache"
+				-v "no forwarding-engine proxy-arp enable"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4, negative" />
+
+		<include prefix="7" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4, negative" />
+
+		<step no="8">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="9">
+			<desc>
+				show running-config
+			</desc>
+			<log-file>step9_show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+			<log-match bin="${bin.dir}/mlinesearch.pl">
+				-l 'mac-policy ${user_id} id 1' \
+				-l 'mac-policy ${user_id} id 2' \
+				-f ${log.dir}/${log.file} \
+			</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				Use the after attribute to change the sequence of id 1 and id 2
+			</desc>
+			<telnet target="ap1">
+				-v "mac-policy ${user_id} id 1 after id 2"
+			</telnet>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				show running-config check the sequence of id 1 and id 2
+			</desc>
+			<log-file>step9.2_show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+				-v "clear log all"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear arp-cache"
+			</telnet>
+			<log-match bin="${bin.dir}/mlinesearch.pl">
+				-l 'mac-policy ${user_id} id 2' \
+				-l 'mac-policy ${user_id} id 1' \
+				-f ${log.dir}/${log.file} \
+			</log-match>
+		</step>
+
+		<include prefix="10" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4, negative" />
+
+		<include prefix="11" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4, negative" />
+
+		<step no="12" delay="30">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step12_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

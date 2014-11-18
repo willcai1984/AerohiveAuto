@@ -1,0 +1,1445 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify “show ssid &lt;string&gt; counter” command works normally when multiple ssid binding with multiple VAP interface.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Created ssid1 and bound with interface wifi0.1
+		Created ssid2 and bound with interface wifi0.2
+		Created ssid3 and bound with interface wifi0.3
+		Created ssid4 and bound with interface wifi0.4
+		Test Procedure:
+		Ececute CLI command on each VAP interface:
+		# show ssid ssid1 counter station
+		# show ssid ssid2 counter station
+		# show sssid sid3 counter station
+		# show ssid ssid4 counter station
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>windows</tbtype>
+	<stage>
+		<step no="1">
+			<desc>
+				STA connects to MP
+				"interface wifi0 mode access"
+				"ssid ${ssid.name}"
+				"security-object ${ssid.name}"
+				"ssid ${ssid.name} security-object ${ssid.name}"
+				"security-object ${ssid.name} security protocol-suite wpa-auto-psk ascii-key aerohive"
+				"interface wifi0 ssid ${ssid.name}"
+				"interface wifi0 radio channel 1"
+			</desc>
+			<log-file>step1_config_client_connects_AP.log</log-file>
+			<console target="ap1">
+				-v "interface wifi0 mode access"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name}1"
+				-v "security-object ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "ssid ${ssid.name}1 security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite wpa-auto-psk ascii-key aerohive"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "interface wifi0 radio channel 1"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Generate wifi_aerohive_test profile for ssid ${ssid.name}
+			</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/winprof.xml -o step1.1_wifi_prof.xml -s "${ssid.name}" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password
+			</desc>
+			<script>
+				staf local fs copy file ${log.dir}/step1.1_wifi_prof.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				verify profile copied
+			</desc>
+			<log-file>step1.3_cat_profile_sta.log</log-file>
+			<ssh target="sta1">
+				-v "cat /cygdrive/c/staf/wifi_aerohive_test.xml | grep ${ssid.name}"
+			</ssh>
+			<log-match>-e "&lt;name&gt;${ssid.name}&lt;/name&gt;"</log-match>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				Delete all current Wireless profile of host ${sta1.mif.ip}
+				Bring down the client Wireless ${sta1.mif.ip}
+				Bring up the client Wireless on host ${sta1.mif.ip}
+				Add new profile for ssid ${ssid.name} to host ${sta1.mif.ip}
+				Check profile for ssid ${ssid.name} on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.4_wlan_conf_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan delete profile name=* interface=\"${sta1.tif.name}\""
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=DISABLED"
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=ENABLED"
+				-v "netsh wlan add profile filename=\"c:\\staf\\wifi_aerohive_test.xml\" interface=\"${sta1.tif.name}\""
+				-v "netsh wlan show profiles ${ssid.name}"
+			</ssh>
+			<log-match>-i "SSID name" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="1.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show wlan network on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.5_wlan_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show network | grep SSID"
+			</ssh>
+			<log-match>-i "SSID" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				connect to ssid ${ssid.name} on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.6_wlan_conn_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan connect ssid=${ssid.name} name=${ssid.name} interface=\"${sta1.tif.name}\""
+			</ssh>
+		</step>
+
+		<step no="1.7" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ssid ${ssid.name} connected on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.7_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-i "State" -i " connected"</log-match>
+		</step>
+
+		<step no="1.8" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ip assigned on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.8_wlan_ip_chk_sta.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+			<log-match>-i "IPv4 Address" -i "192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="1.9">
+			<desc>
+				Dump all interfaces data from remote host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.9_wlan_ip_dump_sta.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+		</step>
+
+		<step no="1.10">
+			<desc>
+				Get station's MAC
+			</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.9_wlan_ip_dump_sta.log -i Wireless -o win -m -width
+			</setvar>
+		</step>
+
+		<step no="1.11">
+			<desc>
+				show mgt0.1 ip of ap1
+			</desc>
+			<log-file>step1.11_show_interface_mgt0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="1.12">
+			<desc>
+				Get ap1's ip
+			</desc>
+			<setvar name="ap_ip_1">
+				${bin.dir}/getbyrexp.py -p "(?i)IP addr=(.*?);" -f ${log.dir}/step1.11_show_interface_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.13">
+			<desc>
+				sta ping ap
+			</desc>
+			<log-file>step2_sta_ping_ap.log</log-file>
+			<ssh target="sta1" timeout="60">
+				-v "ping ${ap_ip_1} -c 10"
+			</ssh>
+			<log-match>-i "from ${ap_ip_1}" -i "ttl="</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Generate wifi_aerohive_test profile for ssid ${ssid.name}
+			</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/winprof.xml -o step2.1_wifi_prof.xml -s "${ssid.name}" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password
+			</desc>
+			<script>
+				staf local fs copy file ${log.dir}/step2.1_wifi_prof.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta2.mif.ip}
+			</script>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				verify profile copied
+			</desc>
+			<log-file>step2.3_cat_profile_sta.log</log-file>
+			<ssh target="sta2">
+				-v "cat /cygdrive/c/staf/wifi_aerohive_test.xml | grep ${ssid.name}"
+			</ssh>
+			<log-match>-e "&lt;name&gt;${ssid.name}&lt;/name&gt;"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				Delete all current Wireless profile of host ${sta2.mif.ip}
+				Bring down the client Wireless ${sta2.mif.ip}
+				Bring up the client Wireless on host ${sta2.mif.ip}
+				Add new profile for ssid ${ssid.name} to host ${sta2.mif.ip}
+				Check profile for ssid ${ssid.name} on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.4_wlan_conf_sta.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan delete profile name=* interface=\"${sta2.tif.name}\""
+				-v "netsh interface set interface name=\"${sta2.tif.name}\" admin=DISABLED"
+				-v "netsh interface set interface name=\"${sta2.tif.name}\" admin=ENABLED"
+				-v "netsh wlan add profile filename=\"c:\\staf\\wifi_aerohive_test.xml\" interface=\"${sta2.tif.name}\""
+				-v "netsh wlan show profiles ${ssid.name}"
+			</ssh>
+			<log-match>-i "SSID name" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="2.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show wlan network on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.5_wlan_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan show network | grep SSID"
+			</ssh>
+			<log-match>-i "SSID" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="2.6">
+			<desc>
+				connect to ssid ${ssid.name} on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.6_wlan_conn_sta.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan connect ssid=${ssid.name} name=${ssid.name} interface=\"${sta2.tif.name}\""
+			</ssh>
+		</step>
+
+		<step no="2.7" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ssid ${ssid.name} connected on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.7_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-i "State" -i " connected"</log-match>
+		</step>
+
+		<step no="2.8" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ip assigned on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.8_wlan_ip_chk_sta.log</log-file>
+			<ssh target="sta2">
+				-v "ipconfig /all"
+			</ssh>
+			<log-match>-i "IPv4 Address" -i "192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="2.9">
+			<desc>
+				Dump all interfaces data from remote host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.9_wlan_ip_dump_sta.log</log-file>
+			<ssh target="sta2">
+				-v "ipconfig /all"
+			</ssh>
+		</step>
+
+		<step no="2.10">
+			<desc>
+				Get station's MAC
+			</desc>
+			<setvar name="sta2.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step2.9_wlan_ip_dump_sta.log -i Wireless -o win -m -width
+			</setvar>
+		</step>
+
+		<step no="2.11">
+			<desc>
+				show mgt0 ip of ap1
+			</desc>
+			<log-file>step2.11_show_interface_mgt0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="2.12">
+			<desc>
+				Get ap1's ip
+			</desc>
+			<setvar name="ap_ip_2">
+				${bin.dir}/getbyrexp.py -p "(?i)IP addr=(.*?);" -f ${log.dir}/step2.11_show_interface_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="2.13">
+			<desc>
+				sta ping ap
+			</desc>
+			<log-file>step2.13_sta_ping_ap.log</log-file>
+			<ssh target="sta2">
+				-v "ping ${ap_ip_2} -c 10"
+			</ssh>
+			<log-match>-i "from ${ap_ip_2}" -i "ttl="</log-match>
+		</step>
+
+		<step no="3" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show ssid ${ssid.name} counter station
+			</desc>
+			<log-file>stpe3_show_ssid_counter.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name} counter station ${sta1.tif.mac}"
+			</console>
+			<log-match>-c -e "station ${sta1.tif.mac}:"</log-match>
+			<log-match>-c -e "rx data bytes"</log-match>
+			<log-match>-c -e "rx data frames"</log-match>
+			<log-match>-c -e "rx unicast data frames"</log-match>
+			<log-match>-c -e "rx multicast data frames"</log-match>
+			<log-match>-c -e "rx broadcast data frames"</log-match>
+			<log-match>-c -e "rx management frames"</log-match>
+			<log-match>-c -e "rx control frames"</log-match>
+			<log-match>-c -e "rx beacon frames"</log-match>
+			<log-match>-c -e "rx probe response frames"</log-match>
+			<log-match>-c -e "rx dropped because of duplicate"</log-match>
+			<log-match>-c -e "rx dropped because frame with wep but privicy off"</log-match>
+			<log-match>-c -e "rx dropped because frame without wep but privacy on"</log-match>
+			<log-match>-c -e "rx demic failed"</log-match>
+			<log-match>-c -e "rx decapsulation failed"</log-match>
+			<log-match>-c -e "rx defragmentation failed"</log-match>
+			<log-match>-c -e "rx disassociation"</log-match>
+			<log-match>-c -e "rx deauthentication"</log-match>
+			<log-match>-c -e "rx decrypt failed on crc"</log-match>
+			<log-match>-c -e "rx on unauthorized port"</log-match>
+			<log-match>-c -e "rx unecrypted with privacy"</log-match>
+			<log-match>-c -e "ms rx airtime"</log-match>
+			<log-match>-c -e "rx \[re\]associations while associated"</log-match>
+			<log-match>-c -e "rx" -i "Kpbs stat:"</log-match>
+			<log-match>-c -e "rx unicast"</log-match>
+			<log-match>-c -e "rx retries"</log-match>
+			<log-match>-c -e "tx data bytes"</log-match>
+			<log-match>-c -e "tx data frames"</log-match>
+			<log-match>-c -e "tx unicast data frames"</log-match>
+			<log-match>-c -e "tx WMM best effort data frames"</log-match>
+			<log-match>-c -e "tx WMM background data frames"</log-match>
+			<log-match>-c -e "tx WMM video data frames"</log-match>
+			<log-match>-c -e "tx WMM voice data frames"</log-match>
+			<log-match>-c -e "tx management frames"</log-match>
+			<log-match>-c -e "rx probe request frames"</log-match>
+			<log-match>-c -e "tx on uapsd queue"</log-match>
+			<log-match>-c -e "tx dropped because no vlan tag"</log-match>
+			<log-match>-c -e "tx dropped because bad vlan tag"</log-match>
+			<log-match>-c -e "tx dropped because repeat tx failures"</log-match>
+			<log-match>-c -e "tx discard on uapsd queue because excessive retry"</log-match>
+			<log-match>-c -e "tx \[re\]associations"</log-match>
+			<log-match>-c -e "tx \[re\]association failures"</log-match>
+			<log-match>-c -e "tx \[re\]authentications"</log-match>
+			<log-match>-c -e "tx \[re\]authentication failures"</log-match>
+			<log-match>-c -e "tx deauthentications"</log-match>
+			<log-match>-c -e "tx disassociations"</log-match>
+			<log-match>-c -e "tx dropped because power save queue full"</log-match>
+			<log-match>-c -e "ms tx airtime"</log-match>
+			<log-match>-c -e "uapsd triggers"</log-match>
+			<log-match>-c -e "tx" -i "Kbps stat:"</log-match>
+			<log-match>-c -e "tx unicasts"</log-match>
+			<log-match>-c -e "tx retries"</log-match>
+			<log-match>-c -e "SLA disabled status good_and_met"</log-match>
+			<log-match>-c -e "Kbps SLA BW"</log-match>
+			<log-match>-c -e "Kbps BW usage"</log-match>
+			<log-match>-c -e "connectivity score"</log-match>
+			<log-match>-c -e "SLA violation traps sent"</log-match>
+			<log-match>-c -e "SLA clear traps sent"</log-match>
+			<log-match>-c -e "tx frames buffered"</log-match>
+			<log-match>-c -e "PS q depth"</log-match>
+			<log-match>-c -e "UAPSD q depth"</log-match>
+			<log-match>-c -e "TX Latency Stats:"</log-match>
+			<log-match>-c -e "AC: BE:"</log-match>
+			<log-match>-c -e "Less than 5ms:"</log-match>
+			<log-match>-c -e "5ms to 10ms:"</log-match>
+			<log-match>-c -e "10ms to 15ms:"</log-match>
+			<log-match>-c -e "15ms to 20ms:"</log-match>
+			<log-match>-c -e "20ms or more:"</log-match>
+			<log-match>-c -e "AC: BK:"</log-match>
+			<log-match>-c -e "AC: Vi:"</log-match>
+			<log-match>-c -e "AC: Vo:"</log-match>
+			<log-match>-c -e "Extra TX/RX Drops:"</log-match>
+			<log-match>-c -e "tx max retried"</log-match>
+			<log-match>-c -e "tx fifo err"</log-match>
+			<log-match>-c -e "tx filtered"</log-match>
+			<log-match>-c -e "tx exceed txop"</log-match>
+			<log-match>-c -e "tx exceed timer"</log-match>
+			<log-match>-c -e "rx ver mismatch"</log-match>
+			<log-match>-c -e "rx old seq"</log-match>
+			<log-match>-c -e "rx subframe dup"</log-match>
+			<log-match>-c -e "rx too short"</log-match>
+			<log-match>-c -e "rx wrong bssid"</log-match>
+			<log-match>-c -e "rx wrong direction"</log-match>
+			<log-match>-c -e "rx not assoc"</log-match>
+			<no-error-check />
+		</step>
+		<step no="3.01" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show ssid ${ssid.name} counter station
+			</desc>
+			<log-file>stpe301_show_ssid_counter.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name} counter station ${sta2.tif.mac}"
+			</console>
+			<log-match>-c -e "station ${sta2.tif.mac}:"</log-match>
+			<log-match>-c -e "rx data bytes"</log-match>
+			<log-match>-c -e "rx data frames"</log-match>
+			<log-match>-c -e "rx unicast data frames"</log-match>
+			<log-match>-c -e "rx multicast data frames"</log-match>
+			<log-match>-c -e "rx broadcast data frames"</log-match>
+			<log-match>-c -e "rx management frames"</log-match>
+			<log-match>-c -e "rx control frames"</log-match>
+			<log-match>-c -e "rx beacon frames"</log-match>
+			<log-match>-c -e "rx probe response frames"</log-match>
+			<log-match>-c -e "rx dropped because of duplicate"</log-match>
+			<log-match>-c -e "rx dropped because frame with wep but privicy off"</log-match>
+			<log-match>-c -e "rx dropped because frame without wep but privacy on"</log-match>
+			<log-match>-c -e "rx demic failed"</log-match>
+			<log-match>-c -e "rx decapsulation failed"</log-match>
+			<log-match>-c -e "rx defragmentation failed"</log-match>
+			<log-match>-c -e "rx disassociation"</log-match>
+			<log-match>-c -e "rx deauthentication"</log-match>
+			<log-match>-c -e "rx decrypt failed on crc"</log-match>
+			<log-match>-c -e "rx on unauthorized port"</log-match>
+			<log-match>-c -e "rx unecrypted with privacy"</log-match>
+			<log-match>-c -e "ms rx airtime"</log-match>
+			<log-match>-c -e "rx \[re\]associations while associated"</log-match>
+			<log-match>-c -e "rx" -i "Kpbs stat:"</log-match>
+			<log-match>-c -e "rx unicast"</log-match>
+			<log-match>-c -e "rx retries"</log-match>
+			<log-match>-c -e "tx data bytes"</log-match>
+			<log-match>-c -e "tx data frames"</log-match>
+			<log-match>-c -e "tx unicast data frames"</log-match>
+			<log-match>-c -e "tx WMM best effort data frames"</log-match>
+			<log-match>-c -e "tx WMM background data frames"</log-match>
+			<log-match>-c -e "tx WMM video data frames"</log-match>
+			<log-match>-c -e "tx WMM voice data frames"</log-match>
+			<log-match>-c -e "tx management frames"</log-match>
+			<log-match>-c -e "rx probe request frames"</log-match>
+			<log-match>-c -e "tx on uapsd queue"</log-match>
+			<log-match>-c -e "tx dropped because no vlan tag"</log-match>
+			<log-match>-c -e "tx dropped because bad vlan tag"</log-match>
+			<log-match>-c -e "tx dropped because repeat tx failures"</log-match>
+			<log-match>-c -e "tx discard on uapsd queue because excessive retry"</log-match>
+			<log-match>-c -e "tx \[re\]associations"</log-match>
+			<log-match>-c -e "tx \[re\]association failures"</log-match>
+			<log-match>-c -e "tx \[re\]authentications"</log-match>
+			<log-match>-c -e "tx \[re\]authentication failures"</log-match>
+			<log-match>-c -e "tx deauthentications"</log-match>
+			<log-match>-c -e "tx disassociations"</log-match>
+			<log-match>-c -e "tx dropped because power save queue full"</log-match>
+			<log-match>-c -e "ms tx airtime"</log-match>
+			<log-match>-c -e "uapsd triggers"</log-match>
+			<log-match>-c -e "tx" -i "Kbps stat:"</log-match>
+			<log-match>-c -e "tx unicasts"</log-match>
+			<log-match>-c -e "tx retries"</log-match>
+			<log-match>-c -e "SLA disabled status good_and_met"</log-match>
+			<log-match>-c -e "Kbps SLA BW"</log-match>
+			<log-match>-c -e "Kbps BW usage"</log-match>
+			<log-match>-c -e "connectivity score"</log-match>
+			<log-match>-c -e "SLA violation traps sent"</log-match>
+			<log-match>-c -e "SLA clear traps sent"</log-match>
+			<log-match>-c -e "tx frames buffered"</log-match>
+			<log-match>-c -e "PS q depth"</log-match>
+			<log-match>-c -e "UAPSD q depth"</log-match>
+			<log-match>-c -e "TX Latency Stats:"</log-match>
+			<log-match>-c -e "AC: BE:"</log-match>
+			<log-match>-c -e "Less than 5ms:"</log-match>
+			<log-match>-c -e "5ms to 10ms:"</log-match>
+			<log-match>-c -e "10ms to 15ms:"</log-match>
+			<log-match>-c -e "15ms to 20ms:"</log-match>
+			<log-match>-c -e "20ms or more:"</log-match>
+			<log-match>-c -e "AC: BK:"</log-match>
+			<log-match>-c -e "AC: Vi:"</log-match>
+			<log-match>-c -e "AC: Vo:"</log-match>
+			<log-match>-c -e "Extra TX/RX Drops:"</log-match>
+			<log-match>-c -e "tx max retried"</log-match>
+			<log-match>-c -e "tx fifo err"</log-match>
+			<log-match>-c -e "tx filtered"</log-match>
+			<log-match>-c -e "tx exceed txop"</log-match>
+			<log-match>-c -e "tx exceed timer"</log-match>
+			<log-match>-c -e "rx ver mismatch"</log-match>
+			<log-match>-c -e "rx old seq"</log-match>
+			<log-match>-c -e "rx subframe dup"</log-match>
+			<log-match>-c -e "rx too short"</log-match>
+			<log-match>-c -e "rx wrong bssid"</log-match>
+			<log-match>-c -e "rx wrong direction"</log-match>
+			<log-match>-c -e "rx not assoc"</log-match>
+			<no-error-check />
+		</step>
+		<step no="3.1">
+			<desc>
+				get station1 content "rx data frames"
+			</desc>
+			<setvar name="sta1_content_1">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta1.tif.mac}" -p "(\d+)\s+rx data frames" -f ${log.dir}/stpe3_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				get station1 content "rx unicast data frames"
+			</desc>
+			<setvar name="sta1_content_2">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta1.tif.mac}" -p "(\d+)\s+rx unicast data frames" -f ${log.dir}/stpe3_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				get station1 content "tx data frames"
+			</desc>
+			<setvar name="sta1_content_3">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta1.tif.mac}" -p "(\d+)\s+tx data frames" -f ${log.dir}/stpe3_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				get station1 content "tx unicast data frames"
+			</desc>
+			<setvar name="sta1_content_4">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta1.tif.mac}" -p "(\d+)\s+tx unicast data frames" -f ${log.dir}/stpe3_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				get station1 content "rx beacon frames"
+			</desc>
+			<setvar name="sta1_content_5">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta1.tif.mac}" -p "(\d+)\s+rx beacon frames" -f ${log.dir}/stpe3_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				get station2 content "rx data frames"
+			</desc>
+			<setvar name="sta2_content_1">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta2.tif.mac}" -e "(?i)rx\s+not\s+assoc" -p "(\d+)\s+rx data frames" -f ${log.dir}/stpe301_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.7">
+			<desc>
+				get station2 content "rx unicast data frames"
+			</desc>
+			<setvar name="sta2_content_2">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta2.tif.mac}" -e "(?i)rx\s+not\s+assoc" -p "(\d+)\s+rx unicast data frames" -f ${log.dir}/stpe301_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.8">
+			<desc>
+				get station2 content "tx data frames"
+			</desc>
+			<setvar name="sta2_content_3">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta2.tif.mac}" -e "(?i)rx\s+not\s+assoc" -p "(\d+)\s+tx data frames" -f ${log.dir}/stpe301_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.9">
+			<desc>
+				get station2 content "tx unicast data frames"
+			</desc>
+			<setvar name="sta2_content_4">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta2.tif.mac}" -e "(?i)rx\s+not\s+assoc" -p "(\d+)\s+tx unicast data frames" -f ${log.dir}/stpe301_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.10">
+			<desc>
+				get station2 content "rx beacon frames"
+			</desc>
+			<setvar name="sta2_content_5">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta2.tif.mac}" -e "(?i)rx\s+not\s+assoc" -p "(\d+)\s+rx beacon frames" -f ${log.dir}/stpe301_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.11">
+			<desc>
+				compare station1 content "rx data frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_1} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="3.12">
+			<desc>
+				compare station1 content "rx unicast data frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_2} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="3.13">
+			<desc>
+				compare station1 content "tx data frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_3} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="3.14">
+			<desc>
+				compare station1 content "tx unicast data frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_4} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="3.15">
+			<desc>
+				compare station1 content "rx beacon frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_5} -ge 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="3.16">
+			<desc>
+				compare station2 content "rx data frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_1} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="3.17">
+			<desc>
+				compare station2 content "rx unicast data frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_2} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="3.18">
+			<desc>
+				compare station2 content "tx data frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_3} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="3.19">
+			<desc>
+				compare station2 content "tx unicast data frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_4} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="3.20">
+			<desc>
+				compare station2 content "rx beacon frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_5} -ge 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="4.1">
+			<desc>
+				Generate wifi_aerohive_test profile for ssid ${ssid.name}1
+			</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/winprof.xml -o step4.1_wifi_prof.xml -s "${ssid.name}1" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password
+			</desc>
+			<script>
+				staf local fs copy file ${log.dir}/step4.1_wifi_prof.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				verify profile copied
+			</desc>
+			<log-file>step4.3_cat_profile_sta.log</log-file>
+			<ssh target="sta1">
+				-v "cat /cygdrive/c/staf/wifi_aerohive_test.xml | grep ${ssid.name}1"
+			</ssh>
+			<log-match>-e "&lt;name&gt;${ssid.name}1&lt;/name&gt;"</log-match>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				Delete all current Wireless profile of host ${sta1.mif.ip}
+				Bring down the client Wireless ${sta1.mif.ip}
+				Bring up the client Wireless on host ${sta1.mif.ip}
+				Add new profile for ssid ${ssid.name}1 to host ${sta1.mif.ip}
+				Check profile for ssid ${ssid.name}1 on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step4.4_wlan_conf_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan delete profile name=* interface=\"${sta1.tif.name}\""
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=DISABLED"
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=ENABLED"
+				-v "netsh wlan add profile filename=\"c:\\staf\\wifi_aerohive_test.xml\" interface=\"${sta1.tif.name}\""
+				-v "netsh wlan show profiles ${ssid.name}1"
+			</ssh>
+			<log-match>-i "SSID name" -i "${ssid.name}1"</log-match>
+		</step>
+
+		<step no="4.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show wlan network on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step4.5_wlan_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show network | grep SSID"
+			</ssh>
+			<log-match>-i "SSID" -i "${ssid.name}1"</log-match>
+		</step>
+
+		<step no="4.6">
+			<desc>
+				connect to ssid ${ssid.name}1 on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step4.6_wlan_conn_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan connect ssid=${ssid.name}1 name=${ssid.name}1 interface=\"${sta1.tif.name}\""
+			</ssh>
+		</step>
+
+		<step no="4.7" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				wait until ssid ${ssid.name}1 connected on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step4.7_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-i "State" -i " connected"</log-match>
+		</step>
+
+		<step no="4.8" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ip assigned on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step4.8_wlan_ip_chk_sta.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+			<log-match>-i "IPv4 Address" -i "192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="4.9">
+			<desc>
+				Dump all interfaces data from remote host ${sta1.mif.ip}
+			</desc>
+			<log-file>step4.9_wlan_ip_dump_sta.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+		</step>
+
+		<step no="4.10">
+			<desc>
+				Get station's MAC
+			</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step4.9_wlan_ip_dump_sta.log -i Wireless -o win -m -width
+			</setvar>
+		</step>
+
+		<step no="4.11">
+			<desc>
+				show mgt0.1 ip of ap1
+			</desc>
+			<log-file>step4.11_show_interface_mgt0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="4.12">
+			<desc>
+				Get ap1's ip
+			</desc>
+			<setvar name="ap_ip_1_later">
+				${bin.dir}/getbyrexp.py -p "(?i)IP addr=(.*?);" -f ${log.dir}/step4.11_show_interface_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="4.13">
+			<desc>
+				sta ping ap
+			</desc>
+			<log-file>step4.13_sta_ping_ap.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${ap_ip_1_later} -c 10"
+			</ssh>
+			<log-match>-i "from ${ap_ip_1_later}" -i "ttl="</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Generate wifi_aerohive_test profile for ssid ${ssid.name}1
+			</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/winprof.xml -o step5.1_wifi_prof.xml -s "${ssid.name}1" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password
+			</desc>
+			<script>
+				staf local fs copy file ${log.dir}/step5.1_wifi_prof.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta2.mif.ip}
+			</script>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				verify profile copied
+			</desc>
+			<log-file>step5.3_cat_profile_sta.log</log-file>
+			<ssh target="sta2">
+				-v "cat /cygdrive/c/staf/wifi_aerohive_test.xml | grep ${ssid.name}1"
+			</ssh>
+			<log-match>-e "&lt;name&gt;${ssid.name}1&lt;/name&gt;"</log-match>
+		</step>
+
+		<step no="5.4">
+			<desc>
+				Delete all current Wireless profile of host ${sta2.mif.ip}
+				Bring down the client Wireless ${sta2.mif.ip}
+				Bring up the client Wireless on host ${sta2.mif.ip}
+				Add new profile for ssid ${ssid.name}1 to host ${sta2.mif.ip}
+				Check profile for ssid ${ssid.name}1 on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step5.4_wlan_conf_sta.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan delete profile name=* interface=\"${sta2.tif.name}\""
+				-v "netsh interface set interface name=\"${sta2.tif.name}\" admin=DISABLED"
+				-v "netsh interface set interface name=\"${sta2.tif.name}\" admin=ENABLED"
+				-v "netsh wlan add profile filename=\"c:\\staf\\wifi_aerohive_test.xml\" interface=\"${sta2.tif.name}\""
+				-v "netsh wlan show profiles ${ssid.name}1"
+			</ssh>
+			<log-match>-i "SSID name" -i "${ssid.name}1"</log-match>
+		</step>
+
+		<step no="5.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show wlan network on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step5.5_wlan_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan show network | grep SSID"
+			</ssh>
+			<log-match>-i "SSID" -i "${ssid.name}1"</log-match>
+		</step>
+
+		<step no="5.6">
+			<desc>
+				connect to ssid ${ssid.name}1 on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step5.6_wlan_conn_sta.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan connect ssid=${ssid.name}1 name=${ssid.name}1 interface=\"${sta2.tif.name}\""
+			</ssh>
+		</step>
+
+		<step no="5.7" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ssid ${ssid.name}1 connected on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step5.7_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-i "State" -i " connected"</log-match>
+		</step>
+
+		<step no="5.8" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ip assigned on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step5.8_wlan_ip_chk_sta.log</log-file>
+			<ssh target="sta2">
+				-v "ipconfig /all"
+			</ssh>
+			<log-match>-i "IPv4 Address" -i "192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="5.9">
+			<desc>
+				Dump all interfaces data from remote host ${sta2.mif.ip}
+			</desc>
+			<log-file>step5.9_wlan_ip_dump_sta.log</log-file>
+			<ssh target="sta2">
+				-v "ipconfig /all"
+			</ssh>
+		</step>
+
+		<step no="5.10">
+			<desc>
+				Get station's MAC
+			</desc>
+			<setvar name="sta2.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step5.9_wlan_ip_dump_sta.log -i Wireless -o win -m -width
+			</setvar>
+		</step>
+
+		<step no="5.11">
+			<desc>
+				show mgt0 ip of ap1
+			</desc>
+			<log-file>step5.11_show_interface_mgt0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="5.12">
+			<desc>
+				Get ap1's ip
+			</desc>
+			<setvar name="ap_ip_2_later">
+				${bin.dir}/getbyrexp.py -p "(?i)IP addr=(.*?);" -f ${log.dir}/step5.11_show_interface_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="5.13">
+			<desc>
+				sta ping ap
+			</desc>
+			<log-file>step5.13_sta_ping_ap.log</log-file>
+			<ssh target="sta2">
+				-v "ping ${ap_ip_2_later} -c 10"
+			</ssh>
+			<log-match>-i "from ${ap_ip_2_later}" -i "ttl="</log-match>
+		</step>
+
+		<step no="6" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show ssid ${ssid.name}1 counter station
+			</desc>
+			<log-file>stpe6_show_ssid_counter.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}1 counter station ${sta1.tif.mac}"
+			</console>
+			<log-match>-c -e "station ${sta1.tif.mac}:"</log-match>
+			<log-match>-c -e "rx data bytes"</log-match>
+			<log-match>-c -e "rx data frames"</log-match>
+			<log-match>-c -e "rx unicast data frames"</log-match>
+			<log-match>-c -e "rx multicast data frames"</log-match>
+			<log-match>-c -e "rx broadcast data frames"</log-match>
+			<log-match>-c -e "rx management frames"</log-match>
+			<log-match>-c -e "rx control frames"</log-match>
+			<log-match>-c -e "rx beacon frames"</log-match>
+			<log-match>-c -e "rx probe response frames"</log-match>
+			<log-match>-c -e "rx dropped because of duplicate"</log-match>
+			<log-match>-c -e "rx dropped because frame with wep but privicy off"</log-match>
+			<log-match>-c -e "rx dropped because frame without wep but privacy on"</log-match>
+			<log-match>-c -e "rx demic failed"</log-match>
+			<log-match>-c -e "rx decapsulation failed"</log-match>
+			<log-match>-c -e "rx defragmentation failed"</log-match>
+			<log-match>-c -e "rx disassociation"</log-match>
+			<log-match>-c -e "rx deauthentication"</log-match>
+			<log-match>-c -e "rx decrypt failed on crc"</log-match>
+			<log-match>-c -e "rx on unauthorized port"</log-match>
+			<log-match>-c -e "rx unecrypted with privacy"</log-match>
+			<log-match>-c -e "ms rx airtime"</log-match>
+			<log-match>-c -e "rx \[re\]associations while associated"</log-match>
+			<log-match>-c -e "rx" -i "Kpbs stat:"</log-match>
+			<log-match>-c -e "rx unicast"</log-match>
+			<log-match>-c -e "rx retries"</log-match>
+			<log-match>-c -e "tx data bytes"</log-match>
+			<log-match>-c -e "tx data frames"</log-match>
+			<log-match>-c -e "tx unicast data frames"</log-match>
+			<log-match>-c -e "tx WMM best effort data frames"</log-match>
+			<log-match>-c -e "tx WMM background data frames"</log-match>
+			<log-match>-c -e "tx WMM video data frames"</log-match>
+			<log-match>-c -e "tx WMM voice data frames"</log-match>
+			<log-match>-c -e "tx management frames"</log-match>
+			<log-match>-c -e "rx probe request frames"</log-match>
+			<log-match>-c -e "tx on uapsd queue"</log-match>
+			<log-match>-c -e "tx dropped because no vlan tag"</log-match>
+			<log-match>-c -e "tx dropped because bad vlan tag"</log-match>
+			<log-match>-c -e "tx dropped because repeat tx failures"</log-match>
+			<log-match>-c -e "tx discard on uapsd queue because excessive retry"</log-match>
+			<log-match>-c -e "tx \[re\]associations"</log-match>
+			<log-match>-c -e "tx \[re\]association failures"</log-match>
+			<log-match>-c -e "tx \[re\]authentications"</log-match>
+			<log-match>-c -e "tx \[re\]authentication failures"</log-match>
+			<log-match>-c -e "tx deauthentications"</log-match>
+			<log-match>-c -e "tx disassociations"</log-match>
+			<log-match>-c -e "tx dropped because power save queue full"</log-match>
+			<log-match>-c -e "ms tx airtime"</log-match>
+			<log-match>-c -e "uapsd triggers"</log-match>
+			<log-match>-c -e "tx" -i "Kbps stat:"</log-match>
+			<log-match>-c -e "tx unicasts"</log-match>
+			<log-match>-c -e "tx retries"</log-match>
+			<log-match>-c -e "SLA disabled status good_and_met"</log-match>
+			<log-match>-c -e "Kbps SLA BW"</log-match>
+			<log-match>-c -e "Kbps BW usage"</log-match>
+			<log-match>-c -e "connectivity score"</log-match>
+			<log-match>-c -e "SLA violation traps sent"</log-match>
+			<log-match>-c -e "SLA clear traps sent"</log-match>
+			<log-match>-c -e "tx frames buffered"</log-match>
+			<log-match>-c -e "PS q depth"</log-match>
+			<log-match>-c -e "UAPSD q depth"</log-match>
+			<log-match>-c -e "TX Latency Stats:"</log-match>
+			<log-match>-c -e "AC: BE:"</log-match>
+			<log-match>-c -e "Less than 5ms:"</log-match>
+			<log-match>-c -e "5ms to 10ms:"</log-match>
+			<log-match>-c -e "10ms to 15ms:"</log-match>
+			<log-match>-c -e "15ms to 20ms:"</log-match>
+			<log-match>-c -e "20ms or more:"</log-match>
+			<log-match>-c -e "AC: BK:"</log-match>
+			<log-match>-c -e "AC: Vi:"</log-match>
+			<log-match>-c -e "AC: Vo:"</log-match>
+			<log-match>-c -e "Extra TX/RX Drops:"</log-match>
+			<log-match>-c -e "tx max retried"</log-match>
+			<log-match>-c -e "tx fifo err"</log-match>
+			<log-match>-c -e "tx filtered"</log-match>
+			<log-match>-c -e "tx exceed txop"</log-match>
+			<log-match>-c -e "tx exceed timer"</log-match>
+			<log-match>-c -e "rx ver mismatch"</log-match>
+			<log-match>-c -e "rx old seq"</log-match>
+			<log-match>-c -e "rx subframe dup"</log-match>
+			<log-match>-c -e "rx too short"</log-match>
+			<log-match>-c -e "rx wrong bssid"</log-match>
+			<log-match>-c -e "rx wrong direction"</log-match>
+			<log-match>-c -e "rx not assoc"</log-match>
+			<no-error-check />
+		</step>
+		<step no="6.01" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show ssid ${ssid.name}1 counter station
+			</desc>
+			<log-file>stpe601_show_ssid_counter.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}1 counter station ${sta2.tif.mac}"
+			</console>
+			<log-match>-c -e "station ${sta2.tif.mac}:"</log-match>
+			<log-match>-c -e "rx data bytes"</log-match>
+			<log-match>-c -e "rx data frames"</log-match>
+			<log-match>-c -e "rx unicast data frames"</log-match>
+			<log-match>-c -e "rx multicast data frames"</log-match>
+			<log-match>-c -e "rx broadcast data frames"</log-match>
+			<log-match>-c -e "rx management frames"</log-match>
+			<log-match>-c -e "rx control frames"</log-match>
+			<log-match>-c -e "rx beacon frames"</log-match>
+			<log-match>-c -e "rx probe response frames"</log-match>
+			<log-match>-c -e "rx dropped because of duplicate"</log-match>
+			<log-match>-c -e "rx dropped because frame with wep but privicy off"</log-match>
+			<log-match>-c -e "rx dropped because frame without wep but privacy on"</log-match>
+			<log-match>-c -e "rx demic failed"</log-match>
+			<log-match>-c -e "rx decapsulation failed"</log-match>
+			<log-match>-c -e "rx defragmentation failed"</log-match>
+			<log-match>-c -e "rx disassociation"</log-match>
+			<log-match>-c -e "rx deauthentication"</log-match>
+			<log-match>-c -e "rx decrypt failed on crc"</log-match>
+			<log-match>-c -e "rx on unauthorized port"</log-match>
+			<log-match>-c -e "rx unecrypted with privacy"</log-match>
+			<log-match>-c -e "ms rx airtime"</log-match>
+			<log-match>-c -e "rx \[re\]associations while associated"</log-match>
+			<log-match>-c -e "rx" -i "Kpbs stat:"</log-match>
+			<log-match>-c -e "rx unicast"</log-match>
+			<log-match>-c -e "rx retries"</log-match>
+			<log-match>-c -e "tx data bytes"</log-match>
+			<log-match>-c -e "tx data frames"</log-match>
+			<log-match>-c -e "tx unicast data frames"</log-match>
+			<log-match>-c -e "tx WMM best effort data frames"</log-match>
+			<log-match>-c -e "tx WMM background data frames"</log-match>
+			<log-match>-c -e "tx WMM video data frames"</log-match>
+			<log-match>-c -e "tx WMM voice data frames"</log-match>
+			<log-match>-c -e "tx management frames"</log-match>
+			<log-match>-c -e "rx probe request frames"</log-match>
+			<log-match>-c -e "tx on uapsd queue"</log-match>
+			<log-match>-c -e "tx dropped because no vlan tag"</log-match>
+			<log-match>-c -e "tx dropped because bad vlan tag"</log-match>
+			<log-match>-c -e "tx dropped because repeat tx failures"</log-match>
+			<log-match>-c -e "tx discard on uapsd queue because excessive retry"</log-match>
+			<log-match>-c -e "tx \[re\]associations"</log-match>
+			<log-match>-c -e "tx \[re\]association failures"</log-match>
+			<log-match>-c -e "tx \[re\]authentications"</log-match>
+			<log-match>-c -e "tx \[re\]authentication failures"</log-match>
+			<log-match>-c -e "tx deauthentications"</log-match>
+			<log-match>-c -e "tx disassociations"</log-match>
+			<log-match>-c -e "tx dropped because power save queue full"</log-match>
+			<log-match>-c -e "ms tx airtime"</log-match>
+			<log-match>-c -e "uapsd triggers"</log-match>
+			<log-match>-c -e "tx" -i "Kbps stat:"</log-match>
+			<log-match>-c -e "tx unicasts"</log-match>
+			<log-match>-c -e "tx retries"</log-match>
+			<log-match>-c -e "SLA disabled status good_and_met"</log-match>
+			<log-match>-c -e "Kbps SLA BW"</log-match>
+			<log-match>-c -e "Kbps BW usage"</log-match>
+			<log-match>-c -e "connectivity score"</log-match>
+			<log-match>-c -e "SLA violation traps sent"</log-match>
+			<log-match>-c -e "SLA clear traps sent"</log-match>
+			<log-match>-c -e "tx frames buffered"</log-match>
+			<log-match>-c -e "PS q depth"</log-match>
+			<log-match>-c -e "UAPSD q depth"</log-match>
+			<log-match>-c -e "TX Latency Stats:"</log-match>
+			<log-match>-c -e "AC: BE:"</log-match>
+			<log-match>-c -e "Less than 5ms:"</log-match>
+			<log-match>-c -e "5ms to 10ms:"</log-match>
+			<log-match>-c -e "10ms to 15ms:"</log-match>
+			<log-match>-c -e "15ms to 20ms:"</log-match>
+			<log-match>-c -e "20ms or more:"</log-match>
+			<log-match>-c -e "AC: BK:"</log-match>
+			<log-match>-c -e "AC: Vi:"</log-match>
+			<log-match>-c -e "AC: Vo:"</log-match>
+			<log-match>-c -e "Extra TX/RX Drops:"</log-match>
+			<log-match>-c -e "tx max retried"</log-match>
+			<log-match>-c -e "tx fifo err"</log-match>
+			<log-match>-c -e "tx filtered"</log-match>
+			<log-match>-c -e "tx exceed txop"</log-match>
+			<log-match>-c -e "tx exceed timer"</log-match>
+			<log-match>-c -e "rx ver mismatch"</log-match>
+			<log-match>-c -e "rx old seq"</log-match>
+			<log-match>-c -e "rx subframe dup"</log-match>
+			<log-match>-c -e "rx too short"</log-match>
+			<log-match>-c -e "rx wrong bssid"</log-match>
+			<log-match>-c -e "rx wrong direction"</log-match>
+			<log-match>-c -e "rx not assoc"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6.1">
+			<desc>
+				get station1 content "rx data frames"
+			</desc>
+			<setvar name="sta1_content_1_later">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta1.tif.mac}" -p "(\d+)\s+rx data frames" -f ${log.dir}/stpe6_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				get station1 content "rx unicast data frames"
+			</desc>
+			<setvar name="sta1_content_2_later">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta1.tif.mac}" -p "(\d+)\s+rx unicast data frames" -f ${log.dir}/stpe6_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				get station1 content "tx data frames"
+			</desc>
+			<setvar name="sta1_content_3_later">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta1.tif.mac}" -p "(\d+)\s+tx data frames" -f ${log.dir}/stpe6_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.4">
+			<desc>
+				get station1 content "tx unicast data frames"
+			</desc>
+			<setvar name="sta1_content_4_later">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta1.tif.mac}" -p "(\d+)\s+tx unicast data frames" -f ${log.dir}/stpe6_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.5">
+			<desc>
+				get station1 content "rx beacon frames"
+			</desc>
+			<setvar name="sta1_content_5_later">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta1.tif.mac}" -p "(\d+)\s+rx beacon frames" -f ${log.dir}/stpe6_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.6">
+			<desc>
+				get station2 content "rx data frames"
+			</desc>
+			<setvar name="sta2_content_1_later">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta2.tif.mac}" -e "(?i)rx\s+not\s+assoc" -p "(\d+)\s+rx data frames" -f ${log.dir}/stpe601_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.7">
+			<desc>
+				get station2 content "rx unicast data frames"
+			</desc>
+			<setvar name="sta2_content_2_later">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta2.tif.mac}" -e "(?i)rx\s+not\s+assoc" -p "(\d+)\s+rx unicast data frames" -f ${log.dir}/stpe601_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.8">
+			<desc>
+				get station2 content "tx data frames"
+			</desc>
+			<setvar name="sta2_content_3_later">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta2.tif.mac}" -e "(?i)rx\s+not\s+assoc" -p "(\d+)\s+tx data frames" -f ${log.dir}/stpe601_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.9">
+			<desc>
+				get station2 content "tx unicast data frames"
+			</desc>
+			<setvar name="sta2_content_4_later">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta2.tif.mac}" -e "(?i)rx\s+not\s+assoc" -p "(\d+)\s+tx unicast data frames" -f ${log.dir}/stpe601_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.10">
+			<desc>
+				get station2 content "rx beacon frames"
+			</desc>
+			<setvar name="sta2_content_5_later">
+				${bin.dir}/getbyrexp.py -b "(?i)station\s+${sta2.tif.mac}" -e "(?i)rx\s+not\s+assoc" -p "(\d+)\s+rx beacon frames" -f ${log.dir}/stpe601_show_ssid_counter.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.11">
+			<desc>
+				compare station1 content "rx data frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_1_later} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.12">
+			<desc>
+				compare station1 content "rx unicast data frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_2_later} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.13">
+			<desc>
+				compare station1 content "tx data frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_3_later} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.14">
+			<desc>
+				compare station1 content "tx unicast data frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_4_later} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.15">
+			<desc>
+				compare station1 content "rx beacon frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_5_later} -ge 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.16">
+			<desc>
+				compare station2 content "rx data frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_1_later} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.17">
+			<desc>
+				compare station2 content "rx unicast data frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_2_later} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.18">
+			<desc>
+				compare station2 content "tx data frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_3_later} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.19">
+			<desc>
+				compare station2 content "tx unicast data frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_4_later} -gt 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.20">
+			<desc>
+				compare station2 content "rx beacon frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_5_later} -ge 0 ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+</testcase>

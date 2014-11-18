@@ -1,0 +1,438 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Distance Filtering</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		pre-condition:
+		CVG1 in VLAN 53, AP350 in VLAN 51, AP330 in VLAN 52
+		CVG2 in VLAN 56, AP141 in VLAN 54, BR200 in VLAN 55
+		Macbook 1 connects to AP350, VLAN 51
+		Winbook 1 connects to AP330, VLAN 52
+		Macbook 2 connects to AP141, VLAN 54
+		AppleTV connects to BR200_WP, VLAN 55
+
+		test procedure:
+		1.	Check metric between BDDs
+		2.	Configure metric filter rule 1: all services from VLAN 51 to VLAN 54 with metric smaller or equal 3 are permitted, Check services on VLAN 54
+		3.	Configure metric filter rule 2: all services from VLAN 51 to VLAN 52 with metric smaller or equal 1 are permitted, Check services on VLAN 52
+		4.	Configure metric filter rule 3: all services from any to any with metric smaller or equal 5 are permitted, Check services on all VLAN
+		5.	Configure metric filter rule 4: appletv service from VLAN 55 to any with metric smaller or equal 3 are permitted, Check services on VLAN 51, 54
+		6.	Configure metric filter rule 5: appletv service from any to VLAN 51 with metric smaller or equal 3 are permitted, Check services on VLAN 51
+		7.	Modify metric filter rule 2: all services from VLAN 52 to VLAN 51 are permitted, Check services on VLAN 51
+		
+		expect result:
+		Services can be advertised to remote BDD which has metric smaller or equal than configured
+	</description>
+	<numofap>3</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+	
+		<step no="1">
+    		<desc>
+       			config ap1 vlan
+    		</desc>
+    		<log-file>ap1_config_vlan.log</log-file>
+    		<console target="ap1">
+       			-v "interface mgt0 vlan ${tb.vlan1}"
+       			-v "interface mgt0 native-vlan ${tb.vlan1}"
+    		</console>
+		</step>
+		
+		<include prefix="1.0" file="subs/ap_renew_ip.xml" obj-args="ap1" />	
+		
+		<step no="1.1">
+    		<desc>
+       			config ap1
+    		</desc>
+    		<log-file>ap1_config.log</log-file>
+    		<ssh target="ap1">
+       			-v "hive ${hive.name}"
+       			-v "interface mgt0 hive ${hive.name}"
+       			-v "hive ${hive.name} password aerohive"
+       			-v "no interface wifi1 radio channel"
+       			-v "interface wifi1 radio channel 48"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan1}"
+    		</ssh>
+		</step>
+		
+		<step no="2">
+    		<desc>
+       			config ap2 vlan
+    		</desc>
+    		<log-file>ap2_config_vlan.log</log-file>
+    		<console target="ap2">
+       			-v "interface mgt0 vlan ${tb.vlan2}"
+    		</console>
+		</step>
+		
+		<include prefix="2.0" file="subs/ap_renew_ip.xml" obj-args="ap2" />
+		
+		<step no="3">
+    		<desc>
+       			config ap2
+    		</desc>
+    		<log-file>ap2_config.log</log-file>
+    		<ssh target="ap2">
+       			-v "hive ${hive.name}"
+       			-v "interface mgt0 hive ${hive.name}"
+       			-v "hive ${hive.name} password aerohive"
+       			-v "no interface wifi1 radio channel"
+       			-v "interface wifi1 radio channel 48"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan2}"
+    		</ssh>
+		</step>
+		
+		<step no="4">
+    		<desc>
+       			config ap3 vlan
+    		</desc>
+    		<log-file>ap3_config_vlan.log</log-file>
+    		<console target="ap3">
+       			-v "interface mgt0 vlan ${tb.vlan3}"
+    		</console>
+		</step>
+		
+		<include prefix="4.0" file="subs/ap_renew_ip.xml" obj-args="ap3" />
+			
+		<step no="4.1">
+    		<desc>
+       			config ap3
+    		</desc>
+    		<log-file>ap3_config.log</log-file>
+    		<ssh target="ap3">
+       			-v "hive ${hive.name}"
+       			-v "interface mgt0 hive ${hive.name}"
+       			-v "hive ${hive.name} password aerohive"
+       			-v "no interface wifi1 radio channel"
+       			-v "interface wifi1 radio channel 48"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan3}"
+    		</ssh>
+		</step>
+		
+		<step no="5" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>check bonjour-gateway status on bdd</desc>
+			<log-file>step5_show_bon_sta.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway status"
+			</console>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+			<log-match>-re -i "${ap1.mgt0.ip}\/24 metric=\d"</log-match>
+			<log-match>-re -i "${ap3.mgt0.ip}\/24 metric=\d"</log-match>
+		</step>
+		
+		<step no="5.1">
+			<desc>get the metric</desc>
+			<setvar name="metric21">
+        		perl ${bin.dir}/getbyrexp.py -p "${ap1.mgt0.ip}\/24 metric=(\d)" -f ${log.dir}/step5_show_bon_sta.log -t str
+    		</setvar>
+		</step>
+		
+		<step no="5.2">
+			<desc>get the metric</desc>
+			<setvar name="metric23">
+        		perl ${bin.dir}/getbyrexp.py -p "${ap3.mgt0.ip}\/24 metric=(\d)" -f ${log.dir}/step5_show_bon_sta.log -t str
+    		</setvar>
+		</step>
+		
+		<step no="6" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>check bonjour-gateway status on bdd</desc>
+			<log-file>step6_show_bon_sta.log</log-file>
+			<console target="ap3">
+				-v "show bonjour-gateway status"
+			</console>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+			<log-match>-re -i "${ap1.mgt0.ip}\/24 metric=\d"</log-match>
+			<log-match>-re -i "${ap2.mgt0.ip}\/24 metric=\d"</log-match>
+		</step>
+		
+		<step no="6.1">
+			<desc>get the metric</desc>
+			<setvar name="metric31">
+        		perl ${bin.dir}/getbyrexp.py -p "${ap1.mgt0.ip}\/24 metric=(\d)" -f ${log.dir}/step6_show_bon_sta.log -t str
+    		</setvar>
+		</step>
+		
+		<step no="6.2">
+			<desc>get the metric</desc>
+			<setvar name="metric32">
+        		perl ${bin.dir}/getbyrexp.py -p "${ap2.mgt0.ip}\/24 metric=(\d)" -f ${log.dir}/step6_show_bon_sta.log -t str
+    		</setvar>
+		</step>
+		
+		<step no="7" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bonjour-gateway status on bdd</desc>
+			<log-file>step7_show_bon_sta.log</log-file>
+			<console target="ap1">
+				-v "show bonjour-gateway status"
+			</console>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+			<log-match>-re -i "${ap3.mgt0.ip}\/24 metric=\d"</log-match>
+			<log-match>-re -i "${ap2.mgt0.ip}\/24 metric=\d"</log-match>
+		</step>
+		
+		<step no="7.1">
+			<desc>get the metric</desc>
+			<setvar name="metric12">
+        		perl ${bin.dir}/getbyrexp.py -p "${ap2.mgt0.ip}\/24 metric=(\d)" -f ${log.dir}/step7_show_bon_sta.log -t str
+    		</setvar>
+		</step>
+		
+		<step no="7.2">
+			<desc>get the metric</desc>
+			<setvar name="metric13">
+        		perl ${bin.dir}/getbyrexp.py -p "${ap3.mgt0.ip}\/24 metric=(\d)" -f ${log.dir}/step7_show_bon_sta.log -t str
+    		</setvar>
+		</step>
+		
+	  	<step no="8">
+			<desc>select the ap with metric=2</desc>
+			<setvar name="metric2_ap">		
+				if [ "${metric21}" -eq "2" ] || [ "${metric23}" -eq "2" ]; then
+					echo "ap2"			
+				elif [ "${metric31}" -eq "2" ] || [ "${metric32}" -eq "2" ]; then
+					echo "ap3"
+				elif [ "${metric12}" -eq "2" ] || [ "${metric13}" -eq "2" ]; then
+					echo "ap1"
+				fi
+			</setvar>
+		</step>
+		
+		<step no="9">
+			<desc>get the selected ap's vlan</desc>
+			<log-file>step9_get_vlan.log</log-file>
+			<console target="${metric2_ap}">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		
+		<step no="9.1">
+			<desc>get the vlan</desc>
+			<setvar name="metric2_vlan">
+        		perl ${bin.dir}/getbyrexp.py -p "VLAN id=(\d+)" -f ${log.dir}/step9_get_vlan.log -t str
+    		</setvar>
+		</step>
+
+		<step no="9.2">
+			<desc>Get ap's ip</desc>
+			<setvar name="metric2_ap.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step9_get_vlan.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>	
+		
+	<!--  <step no="10">
+			<desc>select the ap with metric=1</desc>
+			<setvar name="metric1_ap">		
+				if [ "${metric2_ap}" == "ap2" ] &amp;&amp; [ "${metric31}" -eq "1" ] &amp;&amp; [ "${metric32}" -eq "1" ]; then
+					echo "ap3"			
+				elif [ "${metric2_ap}" == "ap2" ] &amp;&amp; [ "${metric12}" -eq "1" ] &amp;&amp; [ "${metric13}" -eq "1" ]; then
+					echo "ap1"	
+				elif [ "${metric2_ap}" == "ap3" ] &amp;&amp; [ "${metric21}" -eq "1" ] &amp;&amp; [ "${metric23}" -eq "1" ]; then
+					echo "ap2"			
+				elif [ "${metric2_ap}" == "ap3" ] &amp;&amp; [ "${metric12}" -eq "1"]  &amp;&amp; [ "${metric13}" -eq "1" ]; then
+					echo "ap1"	
+				fi
+			</setvar>
+		</step>
+		
+	 	<step no="11">
+			<desc>select the third ap</desc>
+			<setvar name="metric_ap">		
+				if [ "${metric2_ap}" == "ap2" ] &amp;&amp; [ "${metric1_ap}" == "ap1" ]; then
+					echo "ap3"			
+				elif [ "${metric2_ap}" == "ap2" ] &amp;&amp; [ "${metric1_ap}" == "ap3" ]; then
+					echo "ap1"		
+				elif [ "${metric2_ap}" == "ap3" ] &amp;&amp; [ "${metric1_ap}" == "ap1" ]; then
+					echo "ap2"			
+				elif [ "${metric2_ap}" == "ap3" ] &amp;&amp; [ "${metric1_ap}" == "ap2" ]; then
+					echo "ap1"	
+				fi
+			</setvar>
+		</step> -->
+		
+		 <step no="10">
+			<desc>select the ap with bigger metric</desc>
+			<setvar name="metric_ap">		
+				if [ "${metric2_ap}" == "ap2" ] &amp;&amp; [ "${metric21}" -eq "2" ]; then
+					echo "ap1"			
+				elif [ "${metric2_ap}" == "ap2" ] &amp;&amp; [ "${metric23}" -eq "2" ]; then
+					echo "ap3"	
+				elif [ "${metric2_ap}" == "ap3" ] &amp;&amp; [ "${metric31}" -eq "2" ]; then
+					echo "ap1"			
+				elif [ "${metric2_ap}" == "ap3" ] &amp;&amp; [ "${metric32}" -eq "2"]; then
+					echo "ap2"
+				elif [ "${metric2_ap}" == "ap1" ] &amp;&amp; [ "${metric12}" -eq "2" ]; then
+					echo "ap2"			
+				elif [ "${metric2_ap}" == "ap1" ] &amp;&amp; [ "${metric13}" -eq "2"]; then
+					echo "ap3"	
+				fi
+			</setvar>
+		</step>
+		
+	 	<step no="11">
+			<desc>select the third ap</desc>
+			<setvar name="metric1_ap">		
+				if [ "${metric2_ap}" == "ap2" ] &amp;&amp; [ "${metric_ap}" == "ap1" ]; then
+					echo "ap3"			
+				elif [ "${metric2_ap}" == "ap2" ] &amp;&amp; [ "${metric_ap}" == "ap3" ]; then
+					echo "ap1"		
+				elif [ "${metric2_ap}" == "ap3" ] &amp;&amp; [ "${metric_ap}" == "ap1" ]; then
+					echo "ap2"			
+				elif [ "${metric2_ap}" == "ap3" ] &amp;&amp; [ "${metric_ap}" == "ap2" ]; then
+					echo "ap1"	
+				elif [ "${metric2_ap}" == "ap1" ] &amp;&amp; [ "${metric_ap}" == "ap2" ]; then
+					echo "ap3"			
+				elif [ "${metric2_ap}" == "ap1" ] &amp;&amp; [ "${metric_ap}" == "ap3" ]; then
+					echo "ap2"	
+				fi
+			</setvar>
+		</step>
+		
+		<step no="11.1">
+			<desc>get the selected ap's vlan</desc>
+			<log-file>step11.1_get_vlan.log</log-file>
+			<console target="${metric_ap}">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		
+		<step no="11.2">
+			<desc>get the vlan</desc>
+			<setvar name="metric_vlan">
+        		perl ${bin.dir}/getbyrexp.py -p "VLAN id=(\d+)" -f ${log.dir}/step11.1_get_vlan.log -t str
+    		</setvar>
+		</step>
+		
+		
+		<include prefix="12" file="subs/l3swcfg_port_vlan.xml" args="${tb.apple.l3sw.port}, ${metric2_vlan}, ${tb.vlans}" />
+				
+		<step no="13"  type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap</desc>
+			<log-file>step13_local_service.log</log-file>
+			<console target="${metric2_ap}">
+				-v "show bonjour-gateway service local"
+			</console>
+			<log-match>-p 2 -i "${metric2_vlan}" -i "192.168.${metric2_vlan}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${metric2_vlan}" -i "192.168.${metric2_vlan}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${metric2_vlan}" -i "192.168.${metric2_vlan}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${metric2_vlan}" -i "192.168.${metric2_vlan}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${metric2_vlan}" -i "192.168.${metric2_vlan}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="14">
+			<desc>config filter rule on ap</desc>
+			<log-file>config_filter.log</log-file>
+			<console target="${metric2_ap}">
+				-v "_debug bgd all"
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 * metric 2"
+			</console>
+		</step>
+		
+		<step no="15" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the logging buffer</desc>
+			<log-file>ste15_log_buf.log</log-file>
+			<ssh target="${metric2_ap.mgt0.ip}">
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "entry Apple TV._airplay._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._touch-able._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._appletv-v2._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry 70-35-60-63.1 Apple TV._sleep-proxy._udp. matches filter rule 1"</log-match>
+			<log-match>-i "entry 600308CBE085@Apple TV._raop._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "send service Apple TV._airplay._tcp. keepalive on vlan ${metric2_vlan} to remote BDD list done"</log-match>
+			<log-match>-i "send service AC37A4A9C4207EE2._touch-able._tcp. keepalive on vlan ${metric2_vlan} to remote BDD list done"</log-match>
+			<log-match>-i "send service AC37A4A9C4207EE2._appletv-v2._tcp. keepalive on vlan ${metric2_vlan} to remote BDD list done"</log-match>
+			<log-match>-i "send service 600308CBE085@Apple TV._raop._tcp. keepalive on vlan ${metric2_vlan} to remote BDD list done"</log-match>
+			<log-match>-i "send service 70-35-60-63.1 Apple TV._sleep-proxy._udp. keepalive on vlan ${metric2_vlan} to remote BDD list done"</log-match>
+		</step>
+		
+		<step no="16" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the services on remote bdd</desc>
+			<log-file>step16_remote_service.log</log-file>
+			<console target="${metric_ap}">
+				-v "show bonjour-gateway service remote"
+			</console>
+			<log-match>-i "Name=AC37A4A9C4207EE2; Type=_appletv-v2._tcp.; subType=,_00000000-1f4f-3682-058b-d7e44a9548e9; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=Apple TV; Type=_airplay._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=70-35-60-63.1 Apple TV; Type=_sleep-proxy._udp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=AC37A4A9C4207EE2; Type=_touch-able._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=600308CBE085@Apple TV; Type=_raop._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+		</step>
+		
+		<step no="17" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the services on remote bdd</desc>
+			<log-file>step17_remote_service.log</log-file>
+			<console target="${metric1_ap}">
+				-v "show bonjour-gateway service remote"
+			</console>
+			<log-match>-i "Name=AC37A4A9C4207EE2; Type=_appletv-v2._tcp.; subType=,_00000000-1f4f-3682-058b-d7e44a9548e9; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=Apple TV; Type=_airplay._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=70-35-60-63.1 Apple TV; Type=_sleep-proxy._udp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=AC37A4A9C4207EE2; Type=_touch-able._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=600308CBE085@Apple TV; Type=_raop._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+		</step>
+		
+		<step no="18">
+			<desc>modify filter rule</desc>
+			<log-file>step18_modify_filter.log</log-file>
+			<console target="${metric2_ap}">
+				-v "clear log all"
+				-v "bonjour-gateway filter rule 1 * metric 1"
+			</console>
+		</step>
+		
+		<step no="19" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the logging buffer</desc>
+			<log-file>ste19_log_buf.log</log-file>
+			<ssh target="${metric2_ap.mgt0.ip}">
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-i "entry Apple TV._airplay._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._touch-able._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry AC37A4A9C4207EE2._appletv-v2._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "entry 70-35-60-63.1 Apple TV._sleep-proxy._udp. matches filter rule 1"</log-match>
+			<log-match>-i "entry 600308CBE085@Apple TV._raop._tcp. matches filter rule 1"</log-match>
+			<log-match>-i "send service Apple TV._airplay._tcp. keepalive on vlan ${metric2_vlan} to remote BDD list done"</log-match>
+			<log-match>-i "send service AC37A4A9C4207EE2._touch-able._tcp. keepalive on vlan ${metric2_vlan} to remote BDD list done"</log-match>
+			<log-match>-i "send service AC37A4A9C4207EE2._appletv-v2._tcp. keepalive on vlan ${metric2_vlan} to remote BDD list done"</log-match>
+			<log-match>-i "send service 600308CBE085@Apple TV._raop._tcp. keepalive on vlan ${metric2_vlan} to remote BDD list done"</log-match>
+			<log-match>-i "send service 70-35-60-63.1 Apple TV._sleep-proxy._udp. keepalive on vlan ${metric2_vlan} to remote BDD list done"</log-match>
+			<log-match>-re -i "Apple TV._airplay._tcp. does not send to 192.168.${metric_vlan}.\d+ because of the metric or filter deny."</log-match>
+			<log-match>-re -i "AC37A4A9C4207EE2._touch-able._tcp. does not send to 192.168.${metric_vlan}.\d+ because of the metric or filter deny."</log-match>
+			<log-match>-re -i "AC37A4A9C4207EE2._appletv-v2._tcp. does not send to 192.168.${metric_vlan}.\d+ because of the metric or filter deny."</log-match>
+			<log-match>-re -i "70-35-60-63.1 Apple TV._sleep-proxy._udp. does not send to 192.168.${metric_vlan}.\d+ because of the metric or filter deny."</log-match>
+			<log-match>-re -i "600308CBE085@Apple TV._raop._tcp. does not send to 192.168.${metric_vlan}.\d+ because of the metric or filter deny."</log-match>
+		</step>
+		
+		<step no="20" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>check the services on remote bdd</desc>
+			<log-file>step20_remote_service.log</log-file>
+			<console target="${metric1_ap}">
+				-v "show bonjour-gateway service remote"
+			</console>
+			<log-match>-i "Name=AC37A4A9C4207EE2; Type=_appletv-v2._tcp.; subType=,_00000000-1f4f-3682-058b-d7e44a9548e9; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=Apple TV; Type=_airplay._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=70-35-60-63.1 Apple TV; Type=_sleep-proxy._udp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=AC37A4A9C4207EE2; Type=_touch-able._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-i "Name=600308CBE085@Apple TV; Type=_raop._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+		</step>
+		
+		<step no="21" delay="60">
+			<desc>check the services on remote bdd</desc>
+			<log-file>step21_remote_service.log</log-file>
+			<console target="${metric_ap}">
+				-v "show bonjour-gateway service remote"
+			</console>
+			<log-match>-n -i "Name=AC37A4A9C4207EE2; Type=_appletv-v2._tcp.; subType=,_00000000-1f4f-3682-058b-d7e44a9548e9; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-n -i "Name=Apple TV; Type=_airplay._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-n -i "Name=70-35-60-63.1 Apple TV; Type=_sleep-proxy._udp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-n -i "Name=AC37A4A9C4207EE2; Type=_touch-able._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+			<log-match>-n -i "Name=600308CBE085@Apple TV; Type=_raop._tcp.; subType=; VLAN=${metric2_vlan}; BDD=192.168.${metric2_vlan}."</log-match>
+		</step>
+	</stage>
+</testcase>

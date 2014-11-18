@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify AP action that old NTP server not work when re-sync</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Configure four NTP server by CLI for AP
+		Four NTP server are all accessible and NTP service be enabled
+		AP sync with the first NTP server
+		Open _debug ntp all and debug console
+		Set filter in AP, open kdebug fe basic and debug console:
+		_ff id 1 dst-port 123 bidirectional
+		_kdebug fe basic
+		debug console
+
+		Test Procedure:
+		Disable NTP service of the first NTP server
+		Run ntp enable to re-sync with NTP server
+		Check which NTP server be used
+		Check if time synchronization between AP and active NTP server
+
+		Expect result
+		Use ps | grep ntpd to check NTP service be disabled
+		After command be executed, debug of sync with NTP server be printed out
+		The second NTP server be used, display active
+		Time synchronization
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				Check NTP by show ntp
+			</desc>
+			<log-file>step0_show_ntp.log</log-file>
+			<telnet target="ap1">
+				-v "show ntp"
+			</telnet>
+			<log-match>-c -i "State: *Enable"</log-match>
+			<log-match>-c -i "First *${pub.ntp.ip}(active)"</log-match>
+		</step>
+
+		<step no="1">
+			<desc>
+				Clear NTP server configure
+			</desc>
+			<telnet target="ap1">
+				-v "no ntp server ${pub.ntp.ip}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				Set four NTP server by CLI
+			</desc>
+			<telnet target="ap1">
+				-v "ntp server ${pub.ntp3.ip}"
+				-v "ntp server ${pub.ntp4.ip} second"
+				-v "save config"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				Disable mgt0 dhcp client and open ntp debug switch
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+				-v "_ff id 1 dst-port 123 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_debug ntp all"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				Enable mgt0 dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				show running-config
+			</desc>
+			<log-file>step3.2_show_running_config.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+			<log-match>-c -i "ntp server ${pub.ntp3.ip}"</log-match>
+			<log-match>-c -i "ntp server ${pub.ntp4.ip} second"</log-match>
+		</step>
+
+		<step no="3.3" delay="60">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step3.3_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "2 NTP servers has been configured"</log-match>
+			<log-match>-c -i "trying 1 times on ${pub.ntp3.ip}"</log-match>
+			<log-match>-c -i "Connect \[${pub.ntp3.ip}\] successful"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4">
+			<desc>
+				Check NTP by show ntp
+			</desc>
+			<log-file>step4_show_ntp.log</log-file>
+			<telnet target="ap1">
+				-v "show ntp"
+			</telnet>
+			<log-match>-c -i "State: *Enable"</log-match>
+			<log-match>-c -i "First *${pub.ntp3.ip}(active)"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step5_check_time.log</log-file>
+			<ssh host="${pub.ntp3.ip}">
+				-v "clock"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step5.1_check_time.log</log-file>
+			<telnet target="ap1">
+				-v "show clock"
+			</telnet>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				check time sync
+			</desc>
+			<log-file>step5.2_check_time_sync.log</log-file>
+			<script>
+				perl ${case.dir}/bin/Clock_compare.pl ${log.dir}/step5.1_check_time.log ${log.dir}/step5_check_time.log 0 30 > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="clear.log">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				Use ps | grep ntpd to check NTP service be disabled
+			</desc>
+			<log-file>step5.3_check_ntp_service.log</log-file>
+			<ssh host="${pub.ntp3.ip}">
+				-v "ps aux | grep ntpd"
+			</ssh>
+		</step>
+
+		<step no="5.4">
+			<desc>
+				get NTP service process
+			</desc>
+			<setvar name="ntp.service.id">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.3_check_ntp_service.log -p "\-p\s+(\S+)\s+\-g" -t str
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				Disable NTP service of the first NTP server
+			</desc>
+			<log-file>step5_disable_ntp_service.log</log-file>
+			<ssh host="${pub.ntp3.ip}">
+				-v "/etc/init.d/ntpd stop"
+			</ssh>
+			<log-match>-c -i "Shutting down ntpd" -i "OK"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				ntp enable
+			</desc>
+			<telnet target="ap1">
+				-v "ntp enable"
+			</telnet>
+		</step>
+
+		<step no="8" delay="30">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "2 NTP servers has been configured"</log-match>
+			<log-match>-c -i "Connect ${pub.ntp3.ip} failed, try next server"</log-match>
+			<log-match>-c -i "trying 1 times on ${pub.ntp4.ip}"</log-match>
+			<log-match>-c -i "Connect \[${pub.ntp4.ip}\] successful"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8.1">
+			<desc>
+				Use ps | grep ntpd to check NTP service be disabled
+			</desc>
+			<log-file>step8.1_check_ntp_service_disable.log</log-file>
+			<ssh host="${pub.ntp3.ip}">
+				-v "ps aux | grep ntpd"
+			</ssh>
+			<log-match>-n -c -i "${ntp.service.id}"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step9_check_time.log</log-file>
+			<ssh host="${pub.ntp4.ip}">
+				-v "clock"
+			</ssh>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step9.1_check_time.log</log-file>
+			<telnet target="ap1">
+				-v "show clock"
+			</telnet>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				check time sync
+			</desc>
+			<log-file>step9.2_check_time_sync.log</log-file>
+			<script>
+				perl ${case.dir}/bin/Clock_compare.pl ${log.dir}/step9.1_check_time.log ${log.dir}/step9_check_time.log 0 30 > ${log.dir}/${log.file}
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					enable NTP service
+				</desc>
+				<log-file>step0_enable_ntp_service.log</log-file>
+				<ssh host="${pub.ntp3.ip}">
+					-v "/etc/init.d/ntpd start"
+				</ssh>
+				<log-match>-c -i "Starting ntpd" -i "OK"</log-match>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

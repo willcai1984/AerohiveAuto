@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Detect port scan attack on ssid side</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-STA1 is an attacker with a linux OS, install hping on it
+		-STA2 is a normal user
+		-config a ssid, bind it to wifi interface
+		-STA1 and STA2 are all connected to ssid
+
+		Test Procedure:
+		-enable port scan detection on ssid,
+		' ssid xxx security screening port-scan'
+		-check the port scan status,
+		'sh ssid xxx security screening' to make sure
+		-STA1 launchs port scan attack
+		-check the log info on AP
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Config a ssid, bind it to wifi interface
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn2, sta2, ap1" />
+
+		<step no="4">
+			<desc>check show station</desc>
+			<log-file>show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-p 11 -i "Yes" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 2 -i "${sta1.tif.ip}" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 11 -i "Yes" -i "${sta2.tif.mac}" -c</log-match>
+			<log-match>-p 2 -i "${sta2.tif.ip}" -i "${sta2.tif.mac}" -c</log-match>
+		</step>
+		<step no="5">
+			<desc>AP clear log</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_kdebug screen info"
+			</telnet>
+		</step>
+		<step no="5.1">
+			<desc>
+				-enable port scan detection on ssid,
+				' ssid xxx security screening port-scan'
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name} security screening port-scan"
+			</telnet>
+		</step>
+		<step no="6">
+			<desc>
+				-check the port scan status,
+				'sh ssid xxx security screening' to make sure
+			</desc>
+			<log-file>show_ssid_security_screening.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} security screening detail"
+			</telnet>
+			<log-match>-e "Threshold:\ \ \ \ \ \ \ \ \ \ 100\ ms"</log-match>
+			<log-match>-e "Action:\ \ \ \ \ \ \ \ \ \ \ \ \ alarm"</log-match>
+			<log-match>-e "Action\ time:\ \ \ \ \ \ \ \ 10\ s"</log-match>
+		</step>
+		<step no="6.1">
+			<desc>check the log info about port-scan</desc>
+			<log-file>step6.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" delay="10">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-c -e "wifi0.1 port scan protection is enabled"</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="7">
+			<desc>AP clear log and enable logging</desc>
+			<telnet target="ap1">
+				-v "_kdebug screen basic"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+		<step no="7.1">
+			<desc>STA1 launchs port scan attack</desc>
+			<ssh target="sta1">
+				-v "nohup hping3 ${ap1.mgt0.ip} -I ${sta1.tif.name} -8 100-4000 -S"
+			</ssh>
+		</step>
+		<step no="8" delay="25">
+			<desc>killall hping3</desc>
+			<ssh target="sta1">
+				-v "killall hping3"
+			</ssh>
+		</step>
+		<include prefix="9" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step8_show_logging_buffered.log" />
+		<step no="9">
+			<desc>check the log info on AP</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)wifi0.1 port scan attack from ${sta1.tif.mac}\(${sta1.tif.ip}\) is detected" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

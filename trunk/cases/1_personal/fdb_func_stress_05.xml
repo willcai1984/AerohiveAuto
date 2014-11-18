@@ -1,0 +1,124 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=1)Check dynamic mac learning, enable/disable, clear mac table, when IXIA ports simulate more than 8K traffic</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	IXIA port1++++++++(port1)
+		IXIA port2++++++++(port2)
+		IXIA port3++++++++(port3) switch
+		IXIA port4++++++++(port4)
+		Description	Check dynamic mac learning, enable/disable, clear mac table, when IXIA ports simulate more than 8K traffic
+		Platform Dependence	Chesapeake
+		Pre-condition	•	IXIA ports connect to Switch
+		Test procedure	1.	IXIA ports(port1,port2,port3,port4) keep on sending more than 8K frames with different mac 
+				2.	Enable mac learning , check mac-table        Result1
+				3.	Disable mac learning, check mac-table         Result2
+				4.	Enable mac learning, check mac-table         Result3
+				5.	Clear mac table all entries, check mac-table          Result4
+				6.	Repeat the steps 2-5, check cpu/memory          Result5
+		Expect result	Result1:   learn all the src mac sent from IXIA ports
+				Result2:   all the entries of the src mac  are deleted, because mac-learning disabled
+				Result3:   learn all the src mac sent from IXIA ports again
+				Result4:   all mac entries in mac table will be deleted
+				Result5:   cpu/memory is ok
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+		<step no="1">
+			<desc>
+				configure 3 access ports in the same vlan
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan2}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show vlan id ${tb.vlan2}"
+				-v "show mac-address-table all"
+				-v "show interface"
+			</telnet>
+		</step>
+	</stage>
+
+      <stage loop-values="1..10" >
+      		<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+		<step no="2.1">
+			<desc>
+				build stream, port1 sends broadcast frame with src-mac ${sw1.port1.ixia_port.mac}	
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-rate_pps 500
+				-mac_src_count 8000"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 20"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="2.2">
+			<desc>check FDB, mac learned by FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1.ixia_port.mac}\s*${sw1.port1}\s*no"</log-match>
+		</step>
+		<step no="2.3">
+			<desc>disable mac learning </desc>
+			<telnet target="sw1">
+				-v "no mac-address-table learning  vlan all"
+			</telnet>
+		</step>
+		<step no="2.4">
+			<desc>check all the mac entries are cleared  </desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-e "Total mac entry num: 0" </log-match>
+	
+		</step>
+		<step no="2.5">
+			<desc>enable mac address learning  </desc>
+			<telnet target="sw1">
+				-v "mac-address-table learning  vlan  all"
+			</telnet>
+	
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

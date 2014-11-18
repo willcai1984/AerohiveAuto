@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check start-time and expired time will affect the auto PSK gen</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a group with password-generation-method to auto
+
+		Test Procedure:
+		-config a start-time to this group
+		-config a expired-time to this group
+		-bind this group to ssid
+		-bind this ssid to wifi0
+		-check the result 1
+		-change the start-time
+		-check the result 2
+		-change the expired-time
+		-check the result 3
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	
+	<property name="default.psk" value="aerohive" />
+
+	<stage>
+
+		<step no="0.1">
+			<desc>
+				show clock
+			</desc>
+			<log-file>show_clock_info.log</log-file>
+			<telnet target="ap1">
+				-v "show clock"
+			</telnet>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				get group start time
+			</desc>
+			<setvar name="group.starttime">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/show_clock_info.log -p "(\d+-\d+-\d+)\s+(\d+:\d+):\d+" --script "(datetime.strptime(' '.join(m.groups()),'%Y-%m-%d %H:%M')-timedelta(minutes=20)).strftime('%Y-%m-%d/%H:%M')"
+			</setvar>
+		</step>
+		
+		<step no="0.2.1">
+			<desc>
+				get group start time
+			</desc>
+			<setvar name="group.starttime.show">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/show_clock_info.log -p "(\d+-\d+-\d+)\s+(\d+:\d+):\d+" --script "(datetime.strptime(' '.join(m.groups()),'%Y-%m-%d %H:%M')-timedelta(minutes=20)).strftime('%Y-%m-%d %H:%M')"
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				get group end time
+			</desc>
+			<setvar name="group.endtime">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/show_clock_info.log -p "(\d+-\d+-\d+)\s+(\d+:\d+):\d+" --script "(datetime.strptime(' '.join(m.groups()),'%Y-%m-%d %H:%M')+timedelta(minutes=20)).strftime('%Y-%m-%d/%H:%M')"
+			</setvar>
+		</step>
+		
+		<step no="0.3">
+			<desc>
+				get group end time
+			</desc>
+			<setvar name="group.endtime.show">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/show_clock_info.log -p "(\d+-\d+-\d+)\s+(\d+:\d+):\d+" --script "(datetime.strptime(' '.join(m.groups()),'%Y-%m-%d %H:%M')+timedelta(minutes=20)).strftime('%Y-%m-%d %H:%M')"
+			</setvar>
+		</step>
+		
+		<step no="0.4">
+			<desc>
+				get group start time
+			</desc>
+			<setvar name="group.starttime1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/show_clock_info.log -p "(\d+-\d+-\d+)\s+(\d+:\d+):\d+" --script "(datetime.strptime(' '.join(m.groups()),'%Y-%m-%d %H:%M')-timedelta(minutes=30)).strftime('%Y-%m-%d/%H:%M')"
+			</setvar>
+		</step>
+
+		<step no="0.5">
+			<desc>
+				get group end time
+			</desc>
+			<setvar name="group.endtime1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/show_clock_info.log -p "(\d+-\d+-\d+)\s+(\d+:\d+):\d+" --script "(datetime.strptime(' '.join(m.groups()),'%Y-%m-%d %H:%M')+timedelta(minutes=30)).strftime('%Y-%m-%d/%H:%M')"
+			</setvar>
+		</step>		
+
+		<step no="1">
+			<desc>
+				-Configure and bind a PPSK SSID.
+				-Configure a user group, password auto generated
+				-Set the user group to the PPSK SSID.
+			</desc>
+			<telnet target="ap1">
+				-v "_debug auth info"
+				-v "clear log all"
+				-v "user-group userGroup"
+				-v "user-group userGroup password-generation-method auto"
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key ${default.psk}"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "security-object ppsk security private-psk"
+				-v "user-profile ttt vlan-id ${tb.vlan1} attribute 1"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-config a start-time to group
+				-config a expired-time to group
+			</desc>
+			<telnet target="ap1">
+				-v "user-group userGroup start-time ${group.starttime}:00"
+				-v "user-group userGroup expired-time ${group.endtime}:00"
+				-v "user-group userGroup auto-generation index-range 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step1.2_show_user_group.log</log-file>
+			<telnet target="ap1">
+				-v "show user-group"
+			</telnet>
+			<log-match>-c -i "userGroup" -p 6 -i "AP" -i "${group.starttime.show}:00 *${group.endtime.show}:00"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>show log buffer</desc>
+			<log-file>step2.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1">
+				-v "show log b"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				check logging result
+			</desc>
+			<log-file>step2_show_logging_buffered.log</log-file>
+			<log-match>-c -i "generated *for *user *(userGroup0001)"</log-match>
+		</step>
+
+		<step no="3.a">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup0001\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show user
+			</desc>
+			<log-file>step3.1_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup0001" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step3.2_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup0001" -i "Yes"</log-match>
+		</step>
+
+		<step no="3.2a">
+			<desc>Get the pmk value of userGroup0001</desc>
+			<setvar name="pmk.value" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3.2_show_auth_private_psk.log -p "userGroup0001\s*userGroup\s*(.*)\s*Yes" -t str
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-change the start-time
+			</desc>
+			<telnet target="ap1">
+				-v "user-group userGroup start-time ${group.starttime1}:00"
+			</telnet>
+		</step>
+
+		<step no="5" delay="5">
+			<desc>
+				-show logging buffered
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="120">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "password\s*\(.*\)\s*generated\s*for\s*user\s*\(userGroup0001\)" -e "remove users from group" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-n -c -i "password *(${ppsk.auto.value}) *generated *for *user *(userGroup0001) "</log-match>
+		</step>
+
+		<step no="5.a">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value1" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup0001\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				show user
+			</desc>
+			<log-file>step5.1_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup0001" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step5.2_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup0001" -i "Yes"</log-match>
+			<log-match>-n -c -i "userGroup0001" -i "Yes" -i "${pmk.value}"</log-match>
+		</step>
+
+		<step no="5.2a">
+			<desc>Get the pmk value of userGroup0001</desc>
+			<setvar name="pmk.value1" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.2_show_auth_private_psk.log -p "userGroup0001\s*userGroup\s*(.*)\s*Yes" -t str
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-change the expired-time
+			</desc>
+			<telnet target="ap1">
+				-v "user-group userGroup expired-time ${group.endtime1}:00"
+			</telnet>
+		</step>
+
+		<step no="7" delay="8">
+			<desc>
+				-show logging buffered
+			</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="120">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "password\s*\(.*\)\s*generated\s*for\s*user\s*\(userGroup0001\)" -e "remove users from group" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-n -c -i "password *(${ppsk.auto.value}) *generated *for *user *(userGroup0001) "</log-match>
+			<log-match>-n -c -i "password *(${ppsk.auto.value1}) *generated *for *user *(userGroup0001) "</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				show user
+			</desc>
+			<log-file>step7.1_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup0001" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step7.2_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup0001" -i "Yes"</log-match>
+			<log-match>-n -c -i "userGroup0001" -i "Yes" -i "${pmk.value}"</log-match>
+			<log-match>-n -c -i "userGroup0001" -i "Yes" -i "${pmk.value1}"</log-match>
+		</step>
+	</stage>
+</testcase>

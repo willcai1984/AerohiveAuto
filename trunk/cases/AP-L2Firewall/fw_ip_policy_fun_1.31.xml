@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Config single "from" policy from ethx to ethx</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-PC1 has been associated with AP1 and assigned an ip address
+
+		Test Procedure:
+
+		1) PC1 and PC2 ping each other
+		2) Configure a ip policy and bind it to FW:
+		"ip-policy FW"
+		"ip-policy FW from &lt;pc1 ip addr&gt; action [permit/deny]"
+		"user-profile FW security ip-policy from-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Repeat step 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" =="true"</if>
+
+		<include prefix="0" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="1">
+			<desc>
+				-PC1 has been associated with AP1 and assigned an ip address
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "cons page 0"
+			</console>
+		</step>
+
+		<include prefix="1.1" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<step no="2">
+			<desc>
+				bpc ping tb-server
+			</desc>
+			<log-file>step2_bpc_ping_tbserver</log-file>
+			<ssh target="bpc1">
+				-v "ping ${tb.server1} -I ${bpc1.tif.name} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${tb.server1}" -i "ttl="</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				tb-server ping bpc
+			</desc>
+			<log-file>step2.1_tbserver_ping_bpc</log-file>
+			<ssh target="${tb.server1}">
+				-v "ping ${bpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${bpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step2.2_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				2) Configure a ip policy and bind it to FW:
+				"ip-policy FW"
+				"ip-policy FW from &lt;pc1 ip addr&gt; action [permit/deny]"
+				"user-profile FW security ip-policy from-access FW"
+				"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy FW"
+				-v "ip-policy FW id 1 from ${bpc1.tif.ip} action permit"
+				-v "user-profile ttt security ip-policy from-access FW"
+				-v "clear forwarding-engine ip-sessions"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff src-ip ${bpc1.tif.ip} bidirectional"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				bpc ping tb-server
+			</desc>
+			<log-file>step3.1_bpc_ping_tbserver</log-file>
+			<ssh target="bpc1">
+				-v "ping ${tb.server1} -I ${bpc1.tif.name} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${tb.server1}" -i "ttl="</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				tb-server ping bpc
+			</desc>
+			<log-file>step3.2_tbserver_ping_bpc</log-file>
+			<ssh target="${tb.server1}">
+				-v "ping ${bpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${bpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step3.3_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${bpc1.tif.ip}-&gt;${tb.server1}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[FW\] id \[1\] \[permit\] mirror \[no\]" -e "\(i\) eth1 ${bpc1.tif.ip}-&gt;${tb.server1}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) eth0 ${tb.server1}-&gt;${bpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[1\] dir \[egress \(to-air\)\] upid default action \[deny\]" -e "\(i\) eth0 ${tb.server1}-&gt;${bpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4">
+			<desc>
+				Configure a ip-policy which deny Laptop2's ip-address on MP and bind it to FW
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy FW id 1 from ${bpc1.tif.ip} action deny"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				bpc ping tb-server
+			</desc>
+			<log-file>step4.1_bpc_ping_tbserver</log-file>
+			<ssh target="bpc1">
+				-v "ping ${tb.server1} -I ${bpc1.tif.name} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${tb.server1}" -i "ttl="</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				tb-server ping bpc
+			</desc>
+			<log-file>step4.2_tbserver_ping_bpc</log-file>
+			<ssh target="${tb.server1}">
+				-v "ping ${bpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${bpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step4.3_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) eth1 ${bpc1.tif.ip}-&gt;${tb.server1}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[FW\] id \[1\] \[deny\] mirror \[no\]" -e "\(i\) eth1 ${bpc1.tif.ip}-&gt;${tb.server1}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) eth0 ${tb.server1}-&gt;${bpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[1\] dir \[egress \(to-air\)\] upid default action \[deny\]" -e "\(i\) eth0 ${tb.server1}-&gt;${bpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					kill process which run in background.
+				</desc>
+				<ssh target="bpc1">
+					-v "dhclient ${bpc1.tif.name} -r"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

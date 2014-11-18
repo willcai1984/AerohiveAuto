@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check if interval and count and text size can be pushed to AP</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		CLI Check: exec antenna-alignment interface &lt;wifiX&gt; peer &lt;peer-MAC&gt; [interval &lt;1
+		- 30&gt;] [count &lt;1 - 1000&gt;] [text-size &lt;16 - 1024&gt;]
+
+		Test Procedure:
+		1) Pushed CLI interval 1 to 30 into MP and check result
+		2) Pushed CLI interval 0 and 31 into MP and check result
+		3) Pushed CLI count 1 to 1000 into Mp and check result
+		4) Pushed CLI count 0 and 1001 into MP and check result
+		5) Pushed text size 16 to 1024 into MP and check result
+		6) Pushed text size 15 and 1025 into MP and check result
+		1) - Pushed CLI interval 1 to 30 into MP and check result: choose 5 value to test . Need choose 5 value.
+		2) - Pushed CLI count 1 to 1000 into Mp and check result: choose 5 value to test . Need choose uplimit value fo test
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${img.prodtype}" == "AP170" &amp;&amp; "${ap.wifi1.existed}" == "true"</if>
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				Configure portal AP
+			</desc>
+			<log-file>ap_configure_1.log</log-file>
+			<telnet target="ap1">
+				-v "interface wifi0 mode dual"
+				-v "interface wifi1 mode dual"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 149"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>show wifi1's mac of portal</desc>
+			<log-file>AP_wifi1_mac_portal.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>get AP wifi1 mac of portal</desc>
+			<setvar name="ap1.wifi1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/AP_wifi1_mac_portal.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				- Configure MP with same hive
+			</desc>
+			<log-file>ap_configure_2.log</log-file>
+			<telnet target="ap2">
+				-v "interface wifi0 mode dual"
+				-v "interface wifi1 mode dual"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>shutdown interface wifi1 and then up it (it's aimed to clear wifi1's neighbor list)</desc>
+			<telnet target="ap2">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="2.2" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step2.2_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.wifi1.mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				-shutdown interface eth0
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+				-v "interface wifi1 radio channel 149"
+			</console>
+		</step>
+
+		<step no="2.4" delay="35" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step2.4_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>-c -i "${ap1.wifi1.mac}" -i "TWO-WAY"</log-match>
+		</step>
+
+		<step no="3" delay="10" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				- show hive neighbor
+			</desc>
+			<log-file>step3_ap2_hive_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show hive ${hive.name} neighbor"
+			</console>
+			<log-match>-i "${ap1.wifi1.mac}" -i "Auth"</log-match>
+		</step>
+	</stage>
+
+	<stage loop-values="1,3,250,500" var-name="count_tm">
+		<step no="4.${count_tm}">
+			<desc>
+				- Pushed CLI count 1 to 1000 into Mp and check result: choose 5 value to test
+			</desc>
+			<log-file>step4_ante_count_${count_tm}.log</log-file>
+			<console target="ap2" timeout="5000">
+				-v "exec antenna-alignment interface wifi1 peer ${ap1.wifi1.mac} count ${count_tm}" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-n -i "unknown keyword or invalid input"</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "Req_seq\s*Tx_pwr\s*ACK_RSSI\s*RSP_seq\s*RSP_tx_pwr\s*RSP_RSSI\s*Req_RSSI\s*BRSSI" -c ${count_tm} -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<stage>
+		<step no="5" delay="100">
+			<desc>
+				- Pushed CLI count 0 into MP and check result
+			</desc>
+			<log-file>step5_ante_count0.log</log-file>
+			<console target="ap2" timeout="500">
+				-v "exec antenna-alignment interface wifi1 peer ${ap1.wifi1.mac} count 0" ; exit 0
+			</console>
+			<log-match>-i "unknown keyword or invalid input"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5.1">
+			<desc>
+				- Pushed CLI count 1001 into MP and check result
+			</desc>
+			<log-file>step5.1_ante_count1001.log</log-file>
+			<console target="ap2" timeout="500">
+				-v "exec antenna-alignment interface wifi1 peer ${ap1.wifi1.mac} count 1001" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-i "unknown keyword or invalid input"</log-match>
+		</step>
+	</stage>
+
+	<stage loop-values="1,7,15,22,30" var-name="interval_tm">
+		<step no="6.${interval_tm}">
+			<desc>
+				- Pushed CLI interval 1 to 30 into MP and check result: choose 5 value to test
+			</desc>
+			<log-file>step6_ante_${interval_tm}.log</log-file>
+			<console target="ap2" timeout="1000">
+				-v "exec antenna-alignment interface wifi1 peer ${ap1.wifi1.mac} interval ${interval_tm}" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-n -i "unknown keyword or invalid input"</log-match>
+		</step>
+	</stage>
+
+	<stage>
+		<step no="7" delay="100">
+			<desc>
+				- Pushed CLI interval 0 into MP and check result
+			</desc>
+			<log-file>step7_ante_0.log</log-file>
+			<console target="ap2" timeout="500">
+				-v "exec antenna-alignment interface wifi1 peer ${ap1.wifi1.mac} interval 0"
+			</console>
+			<no-error-check />
+			<log-match>-i "unknown keyword or invalid input"</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				- Pushed CLI interval 31 into MP and check result
+			</desc>
+			<log-file>step7.1_ante_31.log</log-file>
+			<console target="ap2" timeout="500">
+				-v "exec antenna-alignment interface wifi1 peer ${ap1.wifi1.mac} interval 31" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-i "unknown keyword or invalid input"</log-match>
+		</step>
+	</stage>
+
+	<stage loop-values="16,512,1024,1536,2048" var-name="text_size">
+		<step no="8.${text_size}">
+			<desc>
+				- Pushed text size 16 to 2048 into MP and check result: choose 5 value to test
+			</desc>
+			<log-file>step8_ante_textsize_${text_size}.log</log-file>
+			<console target="ap2" timeout="1000">
+				-v "exec antenna-alignment interface wifi1 peer ${ap1.wifi1.mac} text-size ${text_size}" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-n -i "unknown keyword or invalid input"</log-match>
+		</step>
+	</stage>
+
+	<stage>
+		<step no="9" delay="100">
+			<desc>
+				- Pushed text size 15 into MP and check result
+			</desc>
+			<log-file>step9_ante_textsize15.log</log-file>
+			<console target="ap2" timeout="500">
+				-v "exec antenna-alignment interface wifi1 peer ${ap1.wifi1.mac} text-size 15" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-i "unknown keyword or invalid input"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				- Pushed text size 2049 into MP and check result
+			</desc>
+			<log-file>step9.1_ante_textsize1025.log</log-file>
+			<console target="ap2" timeout="500">
+				-v "exec antenna-alignment interface wifi1 peer ${ap1.wifi1.mac} text-size 2049" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match>-i "unknown keyword or invalid input"</log-match>
+		</step>
+	</stage>
+</testcase>

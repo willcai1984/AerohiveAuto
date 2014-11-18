@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Reject the eap auth type not supported</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a local radius server
+		-db type is local
+		-create a user-group
+		-create a user,add it to the group
+		-bind the group with radius server
+		-leave other parameters default
+		-enable the rardius server
+		-create a ssid with wpa-802.1x,apply this radius server
+
+		Test Procedure:
+		-client connects to the ssid with a unspported eap type,example,eap-aka
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-aes-8021x" />
+	<property name="conn1.username" value="${sta1.user}" />
+	<property name="conn1.passwd" value="${sta1.passwd}" />
+	<property name="conn1.eap_type" value="eap-aka" />
+	<property name="conn1.auth_negative_test" value="true" />
+
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-aes-8021x" />
+
+		<step no="2">
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security aaa radius primary ${ap1.mgt0.ip}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>Set radius service for DUT1 </desc>
+			<telnet target="ap1">
+				-v "user-group autotest"
+				-v "user ${sta1.user}"
+				-v "user ${sta1.user} password ${sta1.passwd}"
+				-v "user ${sta1.user} group autotest"
+				-v "aaa radius-server local db-type local"
+				-v "aaa radius-server local user-group autotest"
+				-v "aaa radius-server local enable"
+				-v "save config"
+				-v "save config users"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>enable radius debug</desc>
+			<telnet target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-aes-8021x" />
+
+		<step no="7">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>step7_show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3 -c</log-match>
+			<log-match>-i "Enabled" -i "local database:" -p 3 -c</log-match>
+		</step>
+
+		<include prefix="8" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="9">
+			<log-file>step6_show_logging_bu.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "NAK asked for bad type 0"</log-match>
+			<log-match>-c -i "Failed in EAP select"</log-match>
+			<log-match>-c -i "EAP NAK"</log-match>
+			<log-match>-c -i "++\[eap\] returns invalid"</log-match>
+			<log-match>-c -i "Failed to authenticate the user"</log-match>
+			<log-match>-c -i "RADIUS: The RADIUS server rejected user '${sta1.user}' through the NAS at ${ap1.mgt0.ip}."</log-match>
+			<log-match>-c -i "RADIUS: rejected user '${sta1.user}' through the NAS at ${ap1.mgt0.ip}."</log-match>
+			<log-match>-c -i "modsingle\[authenticate\]: returned from eap (rlm_eap) for request"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

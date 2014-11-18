@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Egressing pkt with other vlan is send to eth0</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Based on 6.2.1.1.1
+
+		Test Procedure:
+
+		1. Set one route vlan in eth1
+		2. Pkt from wifi access to eth backhaul, if does not match the cfg vlan, result 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="ssid.pwd" value="aerohive" />
+	<stage>
+		<if>"${tb.bridge_support}" != "true" &amp;&amp; "${ap1.eth1.existed}" == "true"</if>
+		<step no="1.1">
+			<desc>set mgt0 vlan 1</desc>
+			<console target="ap1" timeout="80">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="1.2" delay="10">
+			<desc>show mgt0</desc>
+			<log-file>show_mgt0.log</log-file>
+			<console target="ap1" timeout="80">
+				-v "show interface mgt0"
+			</console>
+			<log-match> -c -e "IP addr=192.168.${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>Get the mgt0 ip of AP1</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.4">
+			<desc>set ssid config in AP1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "security-object auto-test"
+				-v "security-object auto-test security protocol-suite wpa2-tkip-psk ascii-key aerohive"
+				-v "security-object auto-test default-user-profile-attr 1"
+				-v "user-profile tt vlan-id ${tb.vlan2} attribute 1 "
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object auto-test"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<!-- associate station to AP -->
+		<include prefix="1" file="subs/wpa_supplicant_start.xml" args="sta1" />
+		<step no="2.1">
+			<desc>client associate to ssid on AP1</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-PSK"
+				-v "set_network 0 proto RSN"
+				-v "set_network 0 psk \"${ssid.pwd}\""
+				-v "set_network 0 pairwise TKIP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="2.2" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the connection of client</desc>
+			<log-file>wpa_stat_${staid}_${loop_check.idx}.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "status"
+				-v "quit"
+			</ssh>
+			<log-match>-e "wpa_state=COMPLETED"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>client gets IP by dhclient</desc>
+			<ssh target="sta1" slow="true">
+				-v "killall dhclient -q"
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.4" delay="10">
+			<desc>ifconfig to show the client ip</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.5">
+			<desc>get client mac</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width 2
+			</setvar>
+		</step>
+
+		<step no="2.6">
+			<desc>check the station in ap1</desc>
+			<log-file>show_ssid_${ssid.name}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-e "tkip" -i "${sta1.tif.mac}" -p 8 -c</log-match>
+		</step>
+
+		<step no="2.7">
+			<desc>get client ip</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+
+		<step no="3.1">
+			<desc>Set one route vlan in eth1</desc>
+			<log-file>set_route_vlan.log</log-file>
+			<telnet target="ap1">
+				-v "forwarding-engine l2-default-route interface eth1 vlan ${tb.vlan3}"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>open debug</desc>
+			<log-file>open_fe_debug.log</log-file>
+			<telnet target="ap1">
+				-v "_ff id 1 protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "console page 0"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="3.3">
+			<desc>ping mgt0 gw</desc>
+			<log-file>ping_mgt0_gw.log</log-file>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "ping ${ap1.mgt0.gw} -c 2"
+			</ssh>
+		</step>
+
+		<step no="3.4">
+			<desc>show log buffer</desc>
+			<log-file>show_log_buf.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show log buffer"
+			</telnet>
+			<log-match> -c -i "(i) wifi0.1 ${sta1.tif.ip}->${ap1.mgt0.gw}" -i "icmp-echo-req"</log-match>
+			<log-match> -c -i "(o) eth0 ${sta1.tif.ip}->${ap1.mgt0.gw}" -i "icmp-echo-req"</log-match>
+			<log-match> -c -i "(i) eth0 ${ap1.mgt0.gw}->${sta1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match> -c -i "(o) eth1 ${sta1.tif.ip}->${ap1.mgt0.gw}" -n</log-match>
+			<no-error-check />
+		</step>
+
+	</stage>
+
+</testcase>

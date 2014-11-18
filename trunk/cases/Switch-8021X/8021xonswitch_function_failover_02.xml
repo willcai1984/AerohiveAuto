@@ -1,0 +1,175 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Auth fail VLAN, mac auth only</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Description	Auth fail VLAN
+		Platform Dependence	SR2024
+		Pre-condition	MAC Auth configured, CWP not configured, auth fail VLAN configured as VLAN 60
+		Initial auth is 802.1X(not configured), MAC Auth will fail
+		security-object security-object name
+
+		security-object security-object name security aaa radius-server primary ip address of radius server shared-secret share-key
+
+		security-object security-object name security aaa radius-server accounting primary ip address of radius server shared-secret share-key
+
+		security-object security-object name security additional-auth-method mac-based-auth auth-method chap
+
+		security-object security-object name security auth-mode port-based failure-user-profile-attr 60
+
+		interface ethx/y switchport mode access
+
+		interface ethx/y security-object security-object name
+
+		user-profile user profile name vlan-id 60 attribute 60
+		Test procedure	1.	Enable Auth on port, check port access, result 1
+		2.	check port access, result2
+		Expect result	Result 1: MAC Auth failed, PC1 can’t access
+		Result 2: PC1 can access auth fail VLAN 60
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<stage>
+		<step no="1">
+			<desc>
+				configure switch to support mac auth, port-basedt 
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "user-profile vlan${tb.vlan1} vlan-id ${tb.vlan1} attribute ${tb.vlan1}"
+				-v "user-profile vlan${tb.vlan2} vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan2}"
+				-v "security-object autoap"
+				-v "security-object autoap security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security additional-auth-method mac-based-auth"
+				-v "security-object autoap security auth-mode port-based failure-user-profile-attr ${tb.vlan2}"
+				-v "interface ${sw1.port1} security-object autoap"
+				-v "aaa mac-format style two-delimiter"
+				-v "aaa mac-format delimiter dot"
+				-v "show aaa"
+				-v "show auth"
+				-v "show auth interface ${sw1.port1}"
+				-v "_debug auth all"
+			</telnet>
+		</step>
+		<step no="2">
+			<multi-setvar>
+				echo sw1.port1.ixia_port.mac1=$(echo "${sw1.port1.ixia_port.mac}" | sed 's/\./:/g')
+			</multi-setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				build stream, port1 sends untagged broadcast pkts
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-new="${job.user}-${job.sid}-1">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800"
+				-v ""
+
+				-v "start_capture -portList ${sw1.port2.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+
+				-v "stop_capture -portList ${sw1.port2.ixia_port}"
+
+				-v "save_capture -onePort  ${sw1.port2.ixia_port} -fileName ${job.id}_1.enc"
+			</ssh>
+		</step>
+		<step no="3.2">
+			<desc>
+				move the capture files
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_1.enc"
+				-v "rm -f ${job.id}_1.enc"
+			</ssh>
+		</step>
+		<step no="3.3">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_1.enc ${log.dir}
+			</script>
+		</step>
+		<step no="3.4">
+			<desc>check both port2 and port3 recieve pkt from port1, port4 doesn't</desc>
+			<file>${job.id}_1.enc</file>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_1.enc -R'eth.addr==${sw1.port1.ixia_port.mac1}' 2>/dev/null | wc -l`" -eq "0" ]
+				then
+				exit 1
+				fi
+			</script>
+			<failed>next</failed>
+		</step>
+		<step no="3.5">
+			<desc>check auth entries</desc>
+			<telnet target="sw1">
+				-v "show auth"
+			</telnet>
+			<log-match>-re -i "${sw1.port1.ixia_port.mac1}[ \t]+${tb.vlan2}[ \t]+-1[ \t]+open[ \t]+data[ \t]+0043"</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="3.6">
+			<desc>check FDB,make sure the mac entries aren't changed</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-re -i "${tb.vlan2}[ \t]+${sw1.port1.ixia_port.mac1}[ \t]+${sw1.port1}"</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="3.7">
+			<desc>check roaming cache</desc>
+			<telnet target="sw1">
+				-v "show roaming cache"
+			</telnet>
+		</step>
+		<step no="3.8">
+			<desc>check roaming cache one by one</desc>
+			<telnet target="sw1">
+				-v "show roaming cache mac ${sw1.port1.ixia_port.mac1}"
+			</telnet>
+		</step>
+		<step no="4">
+			<desc>show log buf</desc>
+			<log-file>check_macauth1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<failed>next</failed>
+			<no-error-check />
+			<log-match>-e "MAC-based auth: RADIUS server send reject to station ${sw1.port1.ixia_port.mac1}"</log-match>
+			<log-match>-e "failure user-profile attribute ${tb.vlan2} is configured"</log-match>
+			<log-match>-e "set auth failure UPID ${tb.vlan2} on station ${sw1.port1.ixia_port.mac1}"</log-match>
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<step no="post1">
+				<ssh timeout="180" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+					-v ""
+				</ssh>
+			</step>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

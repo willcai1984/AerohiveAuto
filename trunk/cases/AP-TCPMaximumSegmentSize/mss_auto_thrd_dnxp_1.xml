@@ -1,0 +1,334 @@
+<testcase>
+	<brief>AP modify the tcp mss to 1414 when the syn/syn ack pkt is tunneled in tunnel access side.</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Topology to use
+		++++L3SW++++
+		| |
+		Pc1++++L2SW L2SW++++pc2
+		| |
+		Laptop1------AP1 AP2
+		|
+		Laptop2
+		Objective
+		AP modify the tcp mss to 1414 when the syn/syn ack pkt is tunneled in tunnel access side.
+		Pre-condition
+		DNXP exist in two boxes
+		Test procedure
+		1. The TCP MSS is modified to 1414 for SYN in access side. Result 1
+		2. The TCP MSS is modified to 1414 when SYN-ACK in access. Result 1
+		3. The TCP Segment is not beyond 1414 so there should not be fragmentation for tcp traffic
+		Expect result
+		1. It is 1414.
+		2. Fragmentation does not exist.
+	</description>
+	<property name="sta1.ssid" value="${ssid.name}" />
+	<stage>
+		<step no="1.1">
+			<desc>Set up ap1</desc>
+			<console target="ap1" timeout="80">
+				-v "security-object ${ssid.name}"
+				<!--
+				-v "security-object ${ssid.name} security protocol-suite wpa-auto-psk ascii aerohive"
+				-v "security-object ${ssid.name} security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"-->
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${ap.def.passwd}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</console>
+		</step>
+		<step no="1.2">
+			<desc>Set up ap1</desc>
+			<telnet target="ap1" timeout="80">
+				-v "mobility-policy l3roaming dnxp"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy l3roaming attribute 1"
+				-v "forwarding-engine tunnel tcp-mss-threshold enable"
+				-v "forwarding-engine tunnel tcp-mss-threshold threshold-size 1414"
+				-v "save config"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+		<include prefix="1.2.1" file="subs/ap_renew_ip.xml" obj-args="ap1"/>
+		  
+		<step no="2.2">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+		
+		<include prefix="2.3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+				
+		<!--
+		<include prefix="2.1" file="subs/wpa_supplicant_start.xml" args="sta1" />
+		<step no="2.2" delay="30">
+			<desc>
+				config the laptop to apply the ssid profile,then start to associate
+			</desc>
+			<ssh target="sta1" prompt=">|.*#" timeout="30">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-PSK"
+				-v "set_network 0 proto WPA"
+				-v "set_network 0 pairwise TKIP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 psk \"aerohive\""
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+		<include prefix="2.3" file="subs/chk_conn_in_sta.xml" args="sta1" />
+		-->
+		<step no="2.4" delay="10">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+		<step no="2.5">
+			<desc>Get sta1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+		<step no="2.6">
+			<desc>Get sta1's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>Set up ap2</desc>
+			<console target="ap2" timeout="80">
+				-v "security-object ${ssid.name}"
+				<!--
+				-v "security-object ${ssid.name} security protocol-suite wpa-auto-psk ascii aerohive"-->
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${ap.def.passwd}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				
+			</console>
+		</step>
+		
+		<step no="3.2">
+			<desc>Set up ap2</desc>
+			<console target="ap2" timeout="80">
+				-v "mobility-policy l3roaming dnxp"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan1} mobility-policy l3roaming attribute 1"
+				-v "forwarding-engine tunnel tcp-mss-threshold enable"
+				-v "forwarding-engine tunnel tcp-mss-threshold threshold-size 1414"
+				-v "save config"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff src-ip ${sta1.tif.ip} protocol 6 bidirectional"
+			</console>
+		</step>
+		<step no="GetAP2.IP.1">
+			<desc>
+				Enable dhcp client on interface mgt0
+			</desc>
+			<console target="ap2">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+		<step no="GetAP2.IP.2" delay="10">
+			<desc>show mgt0's ip of ap2</desc>
+			<log-file>mp_mgt_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		<step no="GetAP2.IP.3">
+			<desc>Get mgt0's ip of ap2</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/mp_mgt_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		<step no="GetAP1.MAC.1" delay="30">
+			<desc>show interface of ap1</desc>
+			<log-file>show_portal_interface.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+		<step no="GetAP1.MAC.2">
+			<desc>get the eth0 mac address of ap1</desc>
+			<setvar name="ap1.eth0.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_portal_interface.log -k eth0 -p 2
+			</setvar>
+		</step>
+		<step no="GetAP1.MAC.3">
+			<desc>get the wifi1 mac address of ap1</desc>
+			<setvar name="ap1.wifi1.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_portal_interface.log -k wifi1 -p 2
+			</setvar>
+		</step>
+		<step no="GetAP2.MAC.1">
+			<desc>show interface of ap2</desc>
+			<log-file>show_mp_interface.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+		<step no="GetAP2.MAC.2">
+			<desc>get the eth0 mac address of ap2</desc>
+			<setvar name="ap2.eth0.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_mp_interface.log -k eth0 -p 2
+			</setvar>
+		</step>
+		<step no="GetAP2.MAC.3">
+			<desc>get the wifi1 mac address of ap2</desc>
+			<setvar name="ap2.wifi1.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_mp_interface.log -k wifi1 -p 2
+			</setvar>
+		</step>
+		<step no="CheckAmrpNeighbour.1" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show ap1 amrp dnxp neighbor
+			</desc>
+			<log-file>show_ap1_amrp_dnxp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.eth0.w4mac}\s+${ap2.mgt0.ip}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="CheckAmrpNeighbour.2" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show ap2 amrp dnxp neighbor
+			</desc>
+			<log-file>show_ap2_amrp_dnxp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show amrp dnxp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.eth0.w4mac}\s+${ap1.mgt0.ip}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>Shutdown wifi0 ssid of ap1</desc>
+			<console target="ap1" timeout="80">
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+			</console>
+		</step>
+		<step no="4.1" delay="10">
+			<desc>Show route of ap1</desc>
+			<log-file>step4.1_show_route.log</log-file>
+			<telnet target="ap1" timeout="80">
+				-v "show route"
+				-v "show amrp tunnel"
+				-v "show amrp  dnxp  cache"
+			</telnet>
+		</step>
+		<step no="5">
+			<desc>Show route of ap2</desc>
+			<log-file>step5_show_route.log</log-file>
+			<telnet target="ap2" timeout="80">
+				-v "show route"
+				-v "show amrp tunnel"
+				-v "show amrp  dnxp  cache"
+			</telnet>
+		</step>
+		<!--
+		<step no="6" delay="10">
+			<desc>Startup wifi0 ssid of ap1</desc>
+			<console target="ap1" timeout="80">
+				-v "no interface wifi0 ssid ${ssid.name} shutdown"
+			</console>
+		</step>-->
+
+		<step no="7">
+			<desc>
+				Clear log all
+			</desc>
+			<log-file>step7_show_log_buffered.log</log-file>
+			<telnet target="ap2" timeout="30">
+				-v "show log buf"
+				-v "clear log all"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="8" delay="30">
+			<desc>
+				send packet of tcp syn to server
+			</desc>
+			<ssh target="sta1" timeout="30">
+				-v "ifconfig"
+				-v "curl -u root:aerohive ftp://${tb.ftp}/test_log -o test_log"
+			</ssh>
+		</step>
+
+		<step no="9" delay="10">
+			<desc>
+				Check the log info in tunnel terminal on AP2
+			</desc>
+			<log-file>step9_show_log_buffered.log</log-file>
+			<telnet target="ap2" timeout="300">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-i "${sta1.tif.ip}->${tb.ftp}" -i "tunnel tcp mss threshold" -i "1414"</log-match>			
+		</step>
+
+		<step no="10">
+			<desc>
+				Clear log all pn ap2
+			</desc>
+			<telnet target="ap2" timeout="30">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11" delay="10">
+			<desc>
+				send packet of tcp is not beyond 1414
+			</desc>
+			<ssh target="sta1" timeout="30">
+				-v "hping3 ${tb.ftp} -d 1000 -c 5 -S"
+			</ssh>
+		</step>
+
+		<step no="12" delay="100">
+			<desc>
+				Check the log info in tunnel terminal on AP2
+			</desc>
+			<log-file>step12_show_log_buffered.log</log-file>
+			<telnet target="ap2" timeout="300">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-i "${sta1.tif.ip}->${tb.ftp}" -i "ttl" -i "TCP" -i "1040"</log-match>
+		</step>
+		
+		<step no="13" delay="10">
+			<desc>Startup wifi0 ssid of ap1</desc>
+			<console target="ap1" timeout="80">
+				-v "no interface wifi0 ssid ${ssid.name} shutdown"
+			</console>
+		</step>
+
+	</stage>
+</testcase>

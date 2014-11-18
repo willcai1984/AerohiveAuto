@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Group ip-address test (permit)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-Laptop1 and Laptop2's ip-address should be in the same address range,
+		for example their addresses are all in 10.155.30.xx/24 range
+
+		Test Procedure:
+
+		1) Laptop1 and Laptop2 ping each other
+		2) Configure a ip-policy using group ip-address which coveraged Laptop1 and
+		Laptop2 and bind it to user-profile:
+		"ip-policy FW"
+		"ip-policy FW [from/to] &lt;group ip addr&gt; action permit"
+		"user-profile FW security ip-policy from-access FW to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Show the config
+		4) Repeat step 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile FW qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="0.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+		<include prefix="0.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				"_ff id 1 dst-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="1.1" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+
+		<include prefix="1.2" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4" />
+
+		<include prefix="2" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step2_show_logging_buffered.log" />
+
+		<step no="3">
+			<desc>
+				2) Configure a ip-policy using group ip-address which coveraged Laptop1 and
+				Laptop2 and bind it to user-profile:
+				"ip-policy FW"
+				"ip-policy FW [from/to] &lt;group ip addr&gt; action permit"
+				"user-profile FW security ip-policy from-access FW to-access FW"
+				"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy FW"
+				-v "ip-policy FW id 1 from ${sta1.tif.ip} 255.255.255.0 action permit"
+				-v "ip-policy FW id 2 to ${sta1.tif.ip} 255.255.255.0 action permit"
+				-v "user-profile FW security ip-policy from-access FW to-access FW"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				3) Show the config
+			</desc>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+			<log-match>-i "ip-policy FW id 1 from ${sta1.tif.ip} 255.255.255.0 action permit"</log-match>
+			<log-match>-i "ip-policy FW id 2 to ${sta1.tif.ip} 255.255.255.0 action permit"</log-match>
+		</step>
+
+		<include prefix="4.1" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+
+		<include prefix="4.2" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4" />
+
+		<include prefix="5" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step5_show_logging_buffered.log" />
+
+		<step no="6">
+			<desc>
+				check log
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[1\] dir \[egress \(to-air\)\] group \[FW\] id \[1\] \[permit\]" p "ACL: matched upid \[1\] dir \[ingress \(from-air\)\] group \[FW\] id \[1\] \[permit\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "ACL: matched upid \[1\] dir \[egress \(to-air\)\] group \[FW\] id \[1\] \[permit\]" p "ACL: matched upid \[1\] dir \[ingress \(from-air\)\] group \[FW\] id \[1\] \[permit\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

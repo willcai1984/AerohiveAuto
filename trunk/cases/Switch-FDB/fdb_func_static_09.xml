@@ -1,0 +1,115 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=0) Static entry:  age time out, static mac entries shouldn’t be deleted</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	                      PC3
+		+
+		+
+		Router++++ Switch(access) ++++PC1
+		+(access)
+		+
+		PC2
+
+		Description	Static entry:  age time out, static mac entries shouldn’t be deleted
+		Platform Dependence	Chesapeake
+		Pre-condition	?	FDB table size doesn’t exceed
+		?	PC1, PC2,PC3 connect to switch access port1, port2
+		?	PC1,PC2 are in vlan10
+		?	Switch access ports are with learning/forwarding state
+		?	Set age time is 1000 seconds(age time is global)
+		Test procedure	1.	The multicast group already created 
+		2.	There is a multicast group mac entry exist:
+		[0100-5e11-1111, vlan 10, vidx(port1)]
+
+		3.	The unicast mac entry already created manually 
+		[0000-2222-2222,vlan10,port2]
+		[0000-3333-3333,vlan30,port3]
+
+		4.	When the age time is exceed 1000 seconds, check static mac entries  in vlan 10     Result1
+		Expect result	Result1:  the static entries shouldn’t be deleted when age time out. 
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+
+	<stage>
+		<step no="1">
+			<desc>
+				configure three access ports in same vlans, port1, port2 and port3
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan3}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan3}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show mac-address-table all"
+				-v "show interface"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>check default idle-timeout of FDB entries</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table idle-timeout"
+			</telnet>
+		</step>
+		<step no="3">
+			<desc>change idle-timeout to 60s</desc>
+			<telnet target="sw1">
+				-v "mac-address-table idle-timeout 60"
+				-v "show mac-address-table idle-timeout"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				configure static mac addr on switch
+			</desc>
+			<telnet target="sw1">
+				-v "mac-address-table static ${sw1.port1.ixia_port.mac} vlan ${tb.vlan1} interface ${sw1.port1}"
+				-v "mac-address-table static ${sw1.port2.ixia_port.mac} vlan ${tb.vlan2} interface ${sw1.port2}"
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1.ixia_port.mac}\s*${sw1.port1}\s*yes"</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port2.ixia_port.mac}\s*${sw1.port2}\s*yes"</log-match>
+		</step>
+		<step no="5.1">
+			<desc>wait for 60sec</desc>
+			<script>
+				sleep 60
+				exit 0
+			</script>
+		</step>
+		<step no="5.2" type="loop-check" loop-max-times="3" loop-interval="5">
+			<desc>after 60s, check the static mac-addr are still alive</desc>
+			<log-file>check_timeout_${loop_check.idx}.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1.ixia_port.mac}\s*${sw1.port1}\s*yes"</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port2.ixia_port.mac}\s*${sw1.port2}\s*yes"</log-match>
+		</step>
+
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

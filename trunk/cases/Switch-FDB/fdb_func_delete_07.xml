@@ -1,0 +1,197 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=1) Delete mac entry check:  switch reboot/shutdown (this case don't cover multicast mac learn which is controled by igmp snooping since geneva)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+
+	<description>
+	 	Topology to use	:
+		Multicast Source Server++++Router++++ switch(trunk)++++ ++++PC1
+
+		Description:	Delete mac entry check:  switch reboot/shutdown
+		Platform Dependence:	Chesapeake
+		Pre-condition:	
+		•	FDB table size doesn’t exceed
+		•	PC1 connect to switch trunk port1(interface g/1/1), pvid 10, allow10,20,30
+		•	Switch trunk ports are with learning/forwarding state
+		Test procedure:
+		1.	Set mac learning enabled for vlan all
+		CLI: mac-address-table  learning  vlan  all
+		2.	Set igmp snooping enable for all vlan
+		CLI: ip igmp snooping  
+		3.	PC1 send frames of different source mac , and send report packet to Multicast Server with vlan 1-4094       Result1
+		4.	Shutdown switch or reboot switch
+		5.	Unplug all PC connect to the switch
+		6.	When switch bootup, Check FDB table        Result2
+		Expect result	:
+		Result1:   switch can learn all the source mac entries and multicast entries with vlan 10,20,30
+		Result2:  the FDB table is empty
+
+	</description>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011" />
+	<property name="sw1.port2.ixia_port.mac" value="0000.1000.0011" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				config switch, port1 and port2 access port with vlan${tb.vlan1}
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "vlan ${tb.vlan3}"
+				-v ""
+
+				-v "mac-address-table learning vlan all"
+				-v ""
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port1} switchport trunk native vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport trunk allow vlan all"
+				-v ""
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				build stream1, port1 sends broadcast frames for vlan ${tb.vlan1}
+			</desc>
+			<log-file>stream1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-mac_src_count 100
+				-vlan enable
+				-vlan_id ${tb.vlan1}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-eth2_protocol 0x0800
+				-udf_offset 38
+				-patternOffset2 38"
+				-v ""
+				
+				<!--configure the secondly stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port2.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port2.ixia_port.mac}
+				-mac_src_count 100
+				-eth2_protocol 0x0800"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 20"
+				-v ""
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port} -duration 20"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>display and check the learnt mac address on interface ${sw1.port1}</desc>
+			<log-file>step3_mac_learn.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table interface ${sw1.port1}"
+			</telnet>
+			<log-match>-e "Total mac entry num: 100"</log-match>
+		</step>
+		
+		<step no="3.1">
+			<desc>display and check the learnt mac address on interface ${sw1.port1} on hw fdb table </desc>
+			<console target="sw1" timeout="60" slow="1">
+				-v "_show switch  fdb dev ${sw1.port1.chipid} idx ${sw1.port1.hwindex}"
+			</console>
+			<log-match>-i "Print 100 entries"</log-match>
+		</step>
+		
+		<step no="4">
+			<desc>display and check the learnt mac address on interface ${sw1.port2}</desc>
+			<log-file>step3.1_mac_learn.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table interface ${sw1.port2}"
+			</telnet>
+			<log-match>-e "Total mac entry num: 100"</log-match>
+		</step>
+		
+		<step no="4.1">
+			<desc>display and check the learnt mac address on interface ${sw1.port2} on hw fdb table </desc>
+			<console target="sw1" timeout="60" slow="1">
+				-v "_show switch  fdb dev ${sw1.port2.chipid} idx ${sw1.port2.hwindex}"
+			</console>
+			<log-match>-i "Print 100 entries"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>reboot switch  </desc>
+			<console target="sw1" timeout="180" slow="1">
+				-v "save config"
+				-v "reboot"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="6" delay="60">
+			<desc>check all the dynamic  unicast entries on shutdown interface ${sw1.port1} are deleted on fdb table </desc>
+			<console target="sw1" timeout="60" slow="1">
+				-v "show mac-address-table interface ${sw1.port1}"
+			</console>
+			<log-match>-e "Total mac entry num: 0"</log-match>
+		</step>
+		
+		<step no="7">
+			<desc>check all the dynamic  unicast entries on shutdown interface ${sw1.port2} are deleted on fdb table </desc>
+			<console target="sw1" timeout="60" slow="1">
+				-v "show mac-address-table interface ${sw1.port2}"
+			</console>
+			<log-match>-e "Total mac entry num: 0"</log-match>
+		</step>
+		
+		<step no="8">
+			<desc>check all the dynamic  unicast entries on shutdown interface ${sw1.port1} are delete on hw fdb table </desc>
+			<console target="sw1" timeout="60" slow="1">
+				-v "_show switch  fdb dev ${sw1.port1.chipid} idx ${sw1.port1.hwindex}"
+			</console>
+			<log-match>-i "Print 0 entries"</log-match>
+		</step>
+		
+		<step no="9">
+			<desc>check all the dynamic  unicast entries on shutdown interface ${sw1.port2} are delete on hw fdb table </desc>
+			<console target="sw1" timeout="60" slow="1">
+				-v "_show switch  fdb dev ${sw1.port2.chipid} idx ${sw1.port2.hwindex}"
+			</console>
+			<log-match>-i "Print 0 entries"</log-match>
+		</step>
+		
+		
+
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+
+
+</testcase>

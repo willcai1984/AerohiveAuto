@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>https URL redirect 1</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+	  Test procedure:
+		1. Configure wpa2-aes-802.1x auth for wireless client on AP
+    2. create a user-profile including http/https redirect action and URL, ensure the URL is permitted to forward outside.
+    3. client connects to AP and pass auth, result 1.
+    4. client attempts to access internet by using browser,including http /https format. result 2 (http->http https->https ,http->https,https->http)
+    5. delete the redirect action in user-profile, result 3
+
+		Expect result
+		1. client can get correct IP address and DNS works.
+    2. client’s browser will be redirected the configured URL
+    3. client ‘s browser won’t be redirected  to the configured URL
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+	<property name="upid" value="10" />
+	<property name="vlan_id" value="${tb.vlan2}" />
+	<property name="redirec_url" value="10.155.39.202" />
+	<property name="user-profle" value="upid10" />
+
+	<stage>
+		<step no="1">
+			<desc>Set SSID for ap1</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap default-user-profile-attr ${upid}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+    
+    <step no="2">
+			<desc>Set https URL redirect for ap1</desc>
+			<telnet target="ap1">
+				-v "user-profile ${user-profle} qos-policy def-user-qos vlan-id ${vlan_id} attribute ${upid}"
+				-v "user-profile ${user-profle} ip-policy-redirect-url https://${redirec_url}"
+        -v "ip-policy Redirect-test"
+        -v "ip-policy Redirect-test id 1023 from 0.0.0.0 0.0.0.0 to ${redirec_url} service any action permit"
+        -v "ip-policy Redirect-test id 1 from 0.0.0.0 0.0.0.0 to 0.0.0.0 0.0.0.0 service DHCP-Server action permit"
+        -v "ip-policy Redirect-test id 2 from 0.0.0.0 0.0.0.0 to 0.0.0.0 0.0.0.0 service DHCP-Client action permit"
+        -v "ip-policy Redirect-test id 3 from 0.0.0.0 0.0.0.0 to 0.0.0.0 0.0.0.0 service DNS action permit"
+        -v "ip-policy Redirect-test id 4 from 0.0.0.0 0.0.0.0 to 0.0.0.0 0.0.0.0 service HTTP action redirect"
+        -v "ip-policy Redirect-test id 5 from 0.0.0.0 0.0.0.0 to 0.0.0.0 0.0.0.0 service HTTPS action redirect"
+        -v "user-profile ${user-profle} security ip-policy from-access Redirect-test to-access Redirect-test"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+		
+		<step no="4">
+		<desc>STA attempts to access URL by using "http" method</desc>
+		<log-file>sta_url_access.log</log-file>
+		<ssh target="sta1">
+			-v "route add 10.155.50.65/32 gw ${tb.vlan2.gw} dev wlan0"
+			-v "curl -v -L http://10.155.50.65"
+		</ssh>
+		<log-match>-i "${redirec_url}" -c</log-match>
+	</step>
+	
+	<step no="4.1">
+		<desc>STA attempts to access the reidrect URL</desc>
+		<log-file>sta_redirect_url_access.log</log-file>
+		<ssh target="sta1">
+			-v "route add ${redirec_url}/32 gw ${tb.vlan2.gw} dev wlan0"
+			-v "curl -v -L --insecure https://${redirec_url}"
+		</ssh>
+		<log-match>-i "left intact" -c</log-match>
+	</step>
+	
+	<step no="5">
+		<desc>STA attempts to access URL by using "https" method</desc>
+		<log-file>sta_url_access.log</log-file>
+		<ssh target="sta1">
+			-v "route add 10.155.32.143/32 gw ${tb.vlan2.gw} dev wlan0"
+			-v "curl -v -L --insecure https://10.155.32.143/"
+		</ssh>
+		<log-match>-i "${redirec_url}" -c</log-match>
+	</step>
+	
+	<step no="5.1">
+		<desc>STA attempts to access the reidrect URL</desc>
+		<log-file>sta_redirect_url_access.log</log-file>
+		<ssh target="sta1">
+			-v "curl -v -L --insecure https://${redirec_url}"
+		</ssh>
+		<log-match>-i "left intact" -c</log-match>
+	</step>
+	
+		<step no="6">
+			<desc>unbind ip-policy with user-profile</desc>
+			<telnet target="ap1">
+				-v "no user-profile upid10 security ip-policy"
+			</telnet>
+		</step>
+		
+		<step no="6.1">
+		<desc>STA attempts to access URL by using "http" method</desc>
+		<log-file>sta_https_url_access.log</log-file>
+		<ssh target="sta1">
+			-v "curl -v -L http://10.155.50.65"
+		</ssh>
+		<log-match>-i "${redirec_url}" -c -n</log-match>
+	</step>
+	
+	  <step no="6.2">
+		<desc>STA attempts to access URL by using "https" method</desc>
+		<log-file>sta_https_url_access.log</log-file>
+		<ssh target="sta1">
+			-v "curl -v -L --insecure https://10.155.32.143/"
+		</ssh>
+		<log-match>-i "${redirec_url}" -c -n</log-match>
+	 </step>
+	 
+	 <step no="7">
+		<desc>clear config for STA </desc>
+		<ssh target="sta1">
+			-v "route del 10.155.50.65/32 gw ${tb.vlan2.gw} dev wlan0"
+			-v "route del ${redirec_url}/32 gw ${tb.vlan2.gw} dev wlan0"
+			-v "route del 10.155.32.143/32 gw ${tb.vlan2.gw} dev wlan0"
+		</ssh>
+	 </step>
+	 
+	 <step no="7.1">
+		<desc>clear config for STA </desc>
+		<log-file>route.log</log-file>
+		<ssh target="sta1">
+			-v "route -n"
+		</ssh>
+		<log-match>-i "10.155.50.65" -c -n</log-match>
+		<log-match>-i "${redirec_url}" -c -n</log-match>
+		<log-match>-i "10.155.32.143" -c -n</log-match>
+	 </step>
+	 	
+	</stage>
+</testcase>

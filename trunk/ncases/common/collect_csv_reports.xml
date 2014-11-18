@@ -1,0 +1,85 @@
+<testcase>
+	<brief>collect all cvs files of the job into one file</brief>
+	<description>
+		
+	</description>
+
+	<stage>
+		<if>"${tb.name}" == "hzWiredPerfS"</if>
+		<step no="1">
+			<desc>parse job log dir</desc>
+			<setvar name="job.logdir">
+				perl -e 'print substr("${log.dir}", 0 ,22)'
+			</setvar>
+		</step>
+		<step no="2">
+			<desc>list all csv file in job's logdir</desc>
+			<log-file>csv_file_list.log</log-file>
+			<script>
+				find ${job.logdir} -name "*.csv"|xargs ls -rt > ${log.dir}/${log.file}
+			</script>
+		</step>
+		<step no="3">
+			<desc>write csv result into one file</desc>
+			<log-file>all_in_one.csv</log-file>
+			<script>
+				listfile=csv_file_list.log
+				csvfile=all_in_one.csv
+				
+				cd ${log.dir}
+				touch $csvfile
+				&gt;$csvfile
+				
+				while read file
+				do
+				    echo "handle file $file"
+					casename=`echo $file|awk -F / '{print $4}'|awk -F . '{print $1}'`
+					index=1
+					while read line2
+					do
+					    if [ $index -eq 1 ];then
+						    echo "Case Name,$line2" &gt;&gt;$csvfile
+						elif [ $index -eq 2 ];then
+						    echo "$casename,$line2" &gt;&gt;$csvfile
+						else
+						    echo ",$line2" &gt;&gt;$csvfile
+						fi
+						index=`expr $index + 1`
+					done &lt; $file
+					echo "," &gt;&gt;$csvfile
+				done &lt; $listfile
+			</script>
+		</step>
+		<!--Add result into db, Weiling Ding's request-->
+		<step no="4">
+			<desc>find log dirs</desc>
+			<log-file>log_dir_list.log</log-file>
+			<script>
+				find ${job.logdir} -type d -name "*tc*" > ${log.dir}/${log.file}
+			</script>
+		</step>
+		<step no="4.1">
+			<desc>Add result into db</desc>
+			<log-file>stdout.log</log-file>
+			<script timeout="1800">
+				dirfile=log_dir_list.log
+				webportal="10.155.40.220"
+				logurl="https://$webportal/Index.php?mod=Automation&amp;act=HistoryJobs_Report&amp;id=${job.id}"
+				
+				cd ${log.dir}
+				while read dir
+				do
+					echo "handle case dir: $dir"
+					cd $dir
+					csv=`find ./ -name "*.csv" -exec basename {} \;`
+					result=`find ./ -name "*result.xml" |xargs grep "&lt;testcase"|awk -F '"' '{print $8}'|tr -d /ed//`
+					build=`find ./ -name "show_ver_wp*.log"|tail -1 |xargs grep -Pi "^Current\s+version"|sed 's/current *version: *//i'`
+					echo "csv file: $csv"
+					echo "result: $result"
+					echo "build: $build"
+					sh ${bin.dir}/../cases/Wired-Performance/bin/importcsv.sh "$csv" "$result" "$build" "$logurl"
+				done &lt; $dirfile
+			</script>
+		</step>
+	</stage>
+</testcase>

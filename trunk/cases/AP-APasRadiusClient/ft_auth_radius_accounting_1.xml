@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>radius accounting 1</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use STA------AP1
+		Description
+		Basic check the
+		accouting function with eap auth
+		Pre-condition -config a ssid with
+		802.1x
+		-enable accounting on this ssid
+		-active the ssid
+		-the radius auth
+		server and acct server are the same
+		Test procedure
+		-client connects to
+		the ssid successfully
+		-client leaves
+		-client reconnects
+		-client powers off
+		Expect result
+		1. When client connects to ssid success,then after
+		radius
+		authentication,AP will sending accounting packet,check the
+		pacaket
+		content
+		2. Client leaves,accounting should stop
+		3. After Client
+		reconnected,acounting resume, Acct-Session-Time will
+		contain the
+		previous cost
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<step no="1">
+			<desc>Set SSID for ap1</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>step1.1_show_interface_wifi0_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>Get ap1's wifi0‘s mac</desc>
+			<setvar name="ap1.wifi0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_wifi0_info.log -i wifi0 -o aero -m -dash
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>show running config </desc>
+			<log-file>show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>show protocol suite</desc>
+			<log-file>show_proto.log</log-file>
+			<telnet target="ap1">
+				-v "show security- autoap security protocol-suite"
+			</telnet>
+			<log-match>-i "Method=wpa-auto-8021x"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>show ssid</desc>
+			<log-file>show_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+			<log-match>-i "autoap"</log-match>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>check show station</desc>
+			<log-file>show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-p 12 -i "Yes" -i "${sta1.tif.mac}" -c</log-match>
+			<log-match>-p 2 -i "${sta1.tif.ip}" -i "${sta1.tif.mac}" -c</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>get mac of sta1</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<setvar name="sta1.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -dash | tr '[A-F]' '[a-f]'
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>get mac of sta1</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<setvar name="sta1.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -o win -m -dash | tr '[A-F]' '[a-f]'
+			</setvar>
+		</step>
+
+		<include prefix="7" file="subs/sta_ping.xml" args="sta1, ${mpc.tif.ip}, 5" />
+
+		<step no="8">
+			<desc>show log buffer</desc>
+			<log-file>step8_show_log_buffer.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="8.1">
+			<desc>extract a piece of log</desc>
+			<script>
+				tac ${log.dir}/step8_show_log_buffer.log | sed -n '/Sending RADIUS message to accounting server/,/Next RADIUS client retransmit/p' > ${log.dir}/step8.1_piece.log
+			</script>
+		</step>
+
+		<step no="8.2">
+			<desc>check the result on AP</desc>
+			<log-file>step8.1_piece.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "NAS-IP-Address" -ps p1 "${ap1.mgt0.ip}" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "User-Name" -ps p1 "${conn1.username}" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Attribute \d+ \(NAS-Port\)" -ps p1 "Value:\s*0" p0 " 0\d+" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Called-Station-Id" -ps p1 "\'(?i)${ap1.wifi0.mac}:${ssid.name}\'" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Calling-Station-Id" -ps p1 "\'(?i)${sta1.mac}\'" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Framed-IP-Address" -ps p1 "${sta1.tif.ip}" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.3">
+			<desc>clear log all</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="9" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="10" delay="20">
+			<desc>show log buffer</desc>
+			<log-file>step10_show_log_buffer.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="10.1">
+			<desc>extract a piece of log</desc>
+			<script>
+				tac ${log.dir}/step10_show_log_buffer.log | sed -n '/Sending RADIUS message to accounting server/,/Next RADIUS client retransmit/p' > ${log.dir}/step10.1_piece.log
+			</script>
+		</step>
+
+		<step no="10.2">
+			<desc>check the result on AP</desc>
+			<log-file>step10.1_piece.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "NAS-IP-Address" -ps p1 "${ap1.mgt0.ip}" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "User-Name" -ps p1 "${conn1.username}" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Attribute \d+ \(NAS-Port\)" -ps p1 "Value:\s*0" p0 " 0\d+" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Called-Station-Id" -ps p1 "\'(?i)${ap1.wifi0.mac}:${ssid.name}\'" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Calling-Station-Id" -ps p1 "\'(?i)${sta1.mac}\'" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Framed-IP-Address" -ps p1 "${sta1.tif.ip}" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Acct-Status-Type" -ps p1 "Value:\s*2" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="10.3">
+			<desc>get acct session time</desc>
+			<setvar name="acct.session.time">
+				${bin.dir}/getbyrexp.py -b "Attribute\s*\d+\s*\(Acct-Terminate-Cause\)" -p "Value:\s*(\d+)" -e "Attribute\s*\d+\s*\(Acct-Session-Time\)" -g -1 -s none -f ${log.dir}/step10_show_log_buffer.log
+			</setvar>
+		</step>
+
+		<step no="10.4">
+			<desc>clear log all</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="11" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="12" delay="20">
+			<desc>show log buffer</desc>
+			<log-file>step12_show_log_buffer.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="12.1">
+			<desc>extract a piece of log</desc>
+			<script>
+				tac ${log.dir}/step12_show_log_buffer.log | sed -n '/Sending RADIUS message to accounting server/,/Next RADIUS client retransmit/p' > ${log.dir}/step12.1_piece.log
+			</script>
+		</step>
+
+		<step no="12.2">
+			<desc>check the result on AP</desc>
+			<log-file>step12.1_piece.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "NAS-IP-Address" -ps p1 "${ap1.mgt0.ip}" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "User-Name" -ps p1 "${conn1.username}" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Attribute \d+ \(NAS-Port\)" -ps p1 "Value:\s*0" p0 " 0\d+" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Called-Station-Id" -ps p1 "\'(?i)${ap1.wifi0.mac}:${ssid.name}\'" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Calling-Station-Id" -ps p1 "\'(?i)${sta1.mac}\'" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Framed-IP-Address" -ps p1 "${sta1.tif.ip}" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Acct-Session-Time" -ps p0 "Value:\s*${acct.session.time}" -e "Value:" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

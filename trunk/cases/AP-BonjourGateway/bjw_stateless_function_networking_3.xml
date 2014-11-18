@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>VLAN probed is replaced by manually configure a mgt0.x interface with static IP, and then the mgt0.x interface is deleted.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		pre-condition:
+		All devices are connected to trunk port which permits VLAN 54, 55, 56, mgt0 in VLAN 54
+		VLAN Probe range 1-4094
+		CVG is up and running, VLAN 54, 55, 56 have been probed
+
+		test procedure:
+		1.	Configure mgt0.x with VLAN 55 and static IP on CVG
+		2.	Check Service on VLAN 55
+		3.	Delete mgt0.x interface
+		4.	Check interface after DHCP probe interval
+		
+		expect result:
+		Result1, corresponding Bonjour VLAN 55 is replaced.
+		Result2, Service can be learned and advertised via VLAN 55
+		Result3, Interface is deleted successfully
+		Result4, Bonjour vlan 55 is created automatically	
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+	
+		<include prefix="0" file="subs/l3swcfg_port_vlan.xml" args="${tb.apple.l3sw.port}, ${tb.vlan1}, ${tb.vlans}" />
+		
+		<step no="1">
+    		<desc>
+       			config ap1
+    		</desc>
+    		<log-file>ap1_config.log</log-file>
+    		<console target="ap1">
+       			-v "interface mgt0 vlan ${tb.vlan1}"
+       			-v "interface mgt0 native-vlan ${tb.vlan1}"
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}"
+       			-v "interface mgt0 hive ${hive.name}"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan1} ${tb.vlan3}"
+    		</console>
+		</step>
+		
+		<step no="1.1" delay="10">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step1.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>	
+		
+		<step no="2">
+			<desc>config filter rule on ap1</desc>
+			<log-file>config_filter.log</log-file>
+			<ssh target="ap1">
+				-v "vlan-group 1 ${tb.vlan2}"
+				-v "bonjour-gateway filter rule 1 * to 1"
+			</ssh>
+		</step>
+	
+		<step no="3">
+			<desc>config ap2</desc>
+			<log-file>ap2_config.log</log-file>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan2}"   			
+       			-v "interface mgt0 dhcp client"
+       			-v "hive ${hive.name}1"
+       			-v "interface mgt0 hive ${hive.name}1"
+       			-v "bonjour-gateway enable"
+       			-v "bonjour-gateway vlan ${tb.vlan2}"
+			</console>
+		</step>
+				
+		<step no="4" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>check bonjour-gateway status on ap1</desc>
+			<log-file>show_bon_sta1.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway status"
+			</ssh>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+			
+		<step no="5">
+			<desc>check if there is bgd interface</desc>
+			<log-file>show_l3_interface.log</log-file>
+			<ssh target="ap1">
+				-v "show l3 interface"
+			</ssh>
+			<log-match>-i "mgt0" -i "${tb.vlan1}"</log-match>
+			<log-match>-n -p 4 -i "${tb.vlan2}"</log-match>
+			<log-match>-n -p 4 -i "${tb.vlan3}"</log-match>
+		</step>
+		
+		<step no="6" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the bonjour-gateway vlan</desc>
+			<log-file>show_bonjour_vlan.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway vlan"
+			</ssh>
+			<log-match>-p 1 -i "${tb.vlan1}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan2}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan3}"</log-match>
+		</step>
+		
+		<step no="7">
+			<desc>get ${tb.vlan2}'s ip</desc>
+			<setvar name="tb.vlan2.ip">
+				python ${bin.dir}/getbyrexp.py -p "${tb.vlan2}\s*(((?:(?:25[0-5]|2[0-4]\d|((1\d{2})|([1-9]?\d)))\.){3}(?:25[0-5]|2[0-4]\d|((1\d{2})|([1-9]?\d)))))" -f ${log.dir}/show_bonjour_vlan.log -t str
+			</setvar>
+		</step>
+		
+		<step no="8" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>check bonjour-gateway status on ap2</desc>
+			<log-file>show_bon_sta2.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway status"
+			</console>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+			
+		<step no="9">
+			<desc>check if there is bgd interface on ap2</desc>
+			<log-file>show_l3_interface2.log</log-file>
+			<console target="ap2">
+				-v "show l3 interface"
+			</console>
+			<log-match>-i "mgt0" -i "${tb.vlan2}"</log-match>
+			<log-match>-n -p 4 -i "${tb.vlan1}"</log-match>
+			<log-match>-n -p 4 -i "${tb.vlan3}"</log-match>
+		</step>
+		
+		<step no="10">
+			<desc>check the bonjour-gateway vlan on ap2</desc>
+			<log-file>show_bon_vlan2.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway vlan"
+			</console>
+			<log-match>-n -p 1 -i "${tb.vlan1}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan2}"</log-match>
+			<log-match>-n -p 1 -i "${tb.vlan3}"</log-match>
+		</step>
+		
+		<step no="11"  type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap1</desc>
+			<log-file>show_local_service1.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway service local"
+			</ssh>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan1}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+	
+		<step no="12" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap2</desc>
+			<log-file>show_local_service2.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway service local"
+			</console>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="13">
+			<desc>delete filter</desc>
+			<log-file>delete_filter.log</log-file>
+			<ssh target="ap1">
+				-v "no bonjour-gateway filter rule 1"
+			</ssh>
+		</step>
+		
+		<step no="14" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap2</desc>
+			<log-file>show_local_service3.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway service local"
+			</console>
+			<log-match>-n -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-n -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-n -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-n -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-n -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="15">
+			<desc>config mgt0.x interface</desc>
+			<log-file>config_mgt0.x.log</log-file>
+			<ssh target="ap1">
+				-v "interface mgt0.1 vlan ${tb.vlan2}"
+				-v "interface mgt0.1 ip 192.168.${tb.vlan2}.${tb.vlan2}/24"
+			</ssh>
+		</step>
+		
+		<step no="16">
+			<desc>check the bonjour-gateway vlan</desc>
+			<log-file>show_bon_vlan3.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway vlan"
+			</ssh>
+			<log-match>-p 1 -i "${tb.vlan1}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan2}" -p 2 -i "192.168.${tb.vlan2}.${tb.vlan2}"</log-match>
+			<log-match>-n -p 1 -i "${tb.vlan2}" -p 2 -i "${tb.vlan2.ip}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan3}"</log-match>
+		</step>
+		
+		<step no="17">
+			<desc>add filter again</desc>
+			<log-file>add_filter.log</log-file>
+			<ssh target="ap1">
+				-v "bonjour-gateway filter rule 1 * to 1"
+			</ssh>
+		</step>
+		
+		<step no="18">
+			<desc>restart bgd</desc>
+			<log-file>restart_bgd.log</log-file>
+			<console target="ap2">
+				-v "no bonjour-gateway enable"
+				-v "bonjour-gateway enable"
+			</console>
+		</step>
+		
+		<step no="18.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check bgd status</desc>
+			<log-file>show_bon_sta3.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway status"
+			</console>
+			<log-match>-i "Running as bonjour gateway"</log-match>
+		</step>
+		
+		<step no="19" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>show local service on ap2</desc>
+			<log-file>show_local_service4.log</log-file>
+			<console target="ap2">
+				-v "show bonjour-gateway service local"
+			</console>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_airplay._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_raop._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_touch-able._tcp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_sleep-proxy._udp."</log-match>
+			<log-match>-p 2 -i "${tb.vlan2}" -i "192.168.${tb.vlan1}" -i "_appletv-v2._tcp,_"</log-match>
+		</step>
+		
+		<step no="20">
+			<desc>delete mgt0.x interface</desc>
+			<log-file>delete_mgt0.x.log</log-file>
+			<ssh target="ap1">
+				-v "no interface mgt0.1 vlan"
+			</ssh>
+		</step>
+		
+		<step no="21" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>check the bonjour vlan on ap1</desc>
+			<log-file>show_bon_vlan4.log</log-file>
+			<ssh target="ap1">
+				-v "show bonjour-gateway vlan"
+			</ssh>
+			<log-match>-p 1 -i "${tb.vlan1}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan2}" -p 2 -i "${tb.vlan2.ip}"</log-match>
+			<log-match>-p 1 -i "${tb.vlan3}"</log-match>
+		</step>		
+	</stage>
+</testcase>

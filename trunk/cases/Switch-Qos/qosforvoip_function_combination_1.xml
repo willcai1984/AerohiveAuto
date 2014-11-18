@@ -1,0 +1,265 @@
+<testcase>
+	<brief>fiber_or_copper,port count:2</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Test QoS map and marker combination:
+		1. if packet matches dot1p map table, packet is marked by dot1p mark table
+		2. if no map table is matched, packet will be scheduled into queue 0. in egress
+		direction, packet will be marked by dscp mark table.
+	</description>
+
+	<property name="correct_vlan" value="101" />
+	<property name="vlan_id0" value="0" />
+	<property name="qos_name" value="qos" />
+	<property name="myUDFoffset" value="34" />
+	<property name="myUDFoffsetValue" value="88" />
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="rx_port1" value="${sw1.port2.ixia_port}" />
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include prefix="pre" file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				Set qos class profile to port1, qos marker profile to port2,
+				enable qos
+			</desc>
+			<telnet target="sw1">
+				-v 'vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} switchport mode trunk'
+				-v 'interface ${sw1.port1} switchport trunk allow vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port2} shutdown'
+				-v 'interface ${sw1.port2} switchport mode trunk'
+				-v 'interface ${sw1.port2} switchport trunk allow vlan ${correct_vlan}'
+				-v 'qos classifier-profile ${qos_name} 8021p'
+				-v 'qos marker-profile ${qos_name} diffserv'
+				-v 'interface ${sw1.port1} qos-classifier ${qos_name}'
+				-v 'interface ${sw1.port2} qos-marker ${qos_name}'
+				-v 'qos enable'
+				-v 'show running-config'
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				show dscp marker map table to check
+			</desc>
+			<log-file>step1.2_show_marker_dscp_map.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos marker-map diffserv'
+			</telnet>
+			<log-match>-e '^\d\s+0\s+8' -re</log-match>
+			<log-match>-e '^\d\s+1\s+16' -re</log-match>
+			<log-match>-e '^\d\s+2\s+0' -re</log-match>
+			<log-match>-e '^\d\s+3\s+24' -re</log-match>
+			<log-match>-e '^\d\s+4\s+32' -re</log-match>
+			<log-match>-e '^\d\s+5\s+40' -re</log-match>
+			<log-match>-e '^\d\s+6\s+48' -re</log-match>
+			<log-match>-e '^\d\s+7\s+56' -re</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				show dot1p marker map table to check
+			</desc>
+			<log-file>step1.3_show_marker_dot1p_map.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos marker-map 8021p'
+			</telnet>
+			<log-match>-e '^\d\s+0\s+1' -re</log-match>
+			<log-match>-e '^\d\s+1\s+2' -re</log-match>
+			<log-match>-e '^\d\s+2\s+0' -re</log-match>
+			<log-match>-e '^\d\s+3\s+3' -re</log-match>
+			<log-match>-e '^\d\s+4\s+4' -re</log-match>
+			<log-match>-e '^\d\s+5\s+5' -re</log-match>
+			<log-match>-e '^\d\s+6\s+6' -re</log-match>
+			<log-match>-e '^\d\s+7\s+7' -re</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<stage loop-values="0,1,2,3,4,5,6,7" var-name="priority_class">
+		<step no="2.1">
+			<desc>
+				ixia send pkts with priority=${priority_class}
+			</desc>
+			<log-file>step2_${priority_class}_1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect
+				-chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip}
+				-userName ${job.user}${job.sid}
+				-portList ${tx_port1},${rx_port1}
+				-phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+				-v ""
+				-v "stream_delete_all -portList ${tx_port1}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-vlan enable
+				-vlan_id ${correct_vlan}
+				-vlan_dot1p ${priority_class}"
+				-v ""
+				-v "stream_transmit_method_set -portList ${tx_port1} -streamId 1 -transmitMethod stopStream"
+				-v ""
+
+				<!-- start transmit -->
+				-v "stop_transmit -portList ${tx_port1},${rx_port1}"
+				-v ""
+				<!-- start port1 capture -->
+				-v "clear_statistic -portList ${tx_port1},${rx_port1}"
+				-v ""
+				-v "start_capture -portList ${rx_port1}"
+				-v ""
+				-v "start_transmit -portList ${tx_port1} -firstTryFlag false"
+				-v "wait_time -second 1"
+				-v ""
+				-v "stop_transmit -portList ${tx_port1}"
+				-v ""
+				<!-- stop port1 capture -->
+				-v "stop_capture -portList ${rx_port1}"
+				-v ""
+				<!-- save port1 capture -->
+				-v "save_capture -onePort ${rx_port1} -fileName ${job.id}_${priority_class}.txt"
+				-v ""
+				-v "exit"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<!-- [root@hzswtb3-mpc ~]# let "b=3<<1" [root@hzswtb3-mpc ~]# echo `printf %02x $b` 06 note:the operator "<" should be replace by "&lt;" in xml file -->
+
+		<step no="2.2">
+			<desc>define packet parameter for log match</desc>
+			<multi-setvar>
+				let "temp=${priority_class}&lt;&lt;1"
+				echo "packet_priority=`printf %x $temp`"
+				echo "packet_vlanid=`printf %02x ${correct_vlan}`"
+			</multi-setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				match the required string in the file
+			</desc>
+			<log-file>step2_${priority_class}_2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "cat ${job.id}_${priority_class}.txt"
+			</ssh>
+			<log-match>-i '81 00\s+${packet_priority}0 ${packet_vlanid}' -i '00 00 00 00 00 15' -re -c</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				rm the capture files
+			</desc>
+			<log-file>step2_${priorityclass}_3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="root@.*#|rm:.*\?" timeout="200">
+				-v "rm ${job.id}_${priority_class}.txt -f"
+			</ssh>
+		</step>
+	</stage>
+
+	<stage loop-values="0,8,16,24,32,40,48,56" var-name="dscp_priority_class">
+		<step no="3.1">
+			<desc>
+				ixia send pkts with priority=${dscp_priority_class} ;
+			</desc>
+			<log-file>step4_1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${rx_port1}
+				-phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+				-v ""
+
+				-v "stream_delete_all -portList ${tx_port1}"
+				-v ""
+
+				-v "traffic_configure_eth2 -portListIn ${tx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016"
+				-v ""
+
+				-v "stream_ipv4_header_set -portList ${tx_port1}
+				-streamId 1
+				-dscpValue ${dscp_priority_class}"
+				-v ""
+
+				-v "stream_transmit_method_set -portList ${tx_port1}
+				-streamId 1
+				-transmitMethod stopStream"
+				-v ""
+
+				<!-- start transmit -->
+				-v "stop_transmit -portList ${tx_port1},${rx_port1}"
+				-v ""
+				<!-- start port1 capture -->
+				-v "clear_statistic -portList ${tx_port1},${rx_port1}"
+				-v ""
+
+				-v "start_capture -portList ${rx_port1}"
+				-v ""
+
+				-v "start_transmit -portList ${tx_port1} -firstTryFlag false"
+				-v "wait_time -second 1"
+				-v ""
+
+				-v "stop_transmit -portList ${tx_port1}"
+				-v ""
+
+				<!-- stop port1 capture -->
+				-v "stop_capture -portList ${rx_port1}"
+				-v ""
+				<!-- save port1 capture -->
+				-v "save_capture -onePort ${rx_port1} -fileName ${job.id}_${dscp_priority_class}.txt"
+				-v ""
+				-v "exit"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="3.2">
+			<desc>
+				match the dscp value of packet
+			</desc>
+			<log-file>step4_2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="240">
+				-v "cat ${job.id}_${dscp_priority_class}.txt"
+			</ssh>
+			<log-match>-i '45 20' -i '00 00 00 00 00 15' -re -c</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				rm the capture files
+			</desc>
+			<log-file>step4_3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="root@.*#|rm:.*\?" timeout="240">
+				-v "rm ${job.id}_${dscp_priority_class}.txt -f"
+			</ssh>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include prefix="post" file="include/sw_default_post_process.xml" />
+	</post-process>
+
+</testcase>

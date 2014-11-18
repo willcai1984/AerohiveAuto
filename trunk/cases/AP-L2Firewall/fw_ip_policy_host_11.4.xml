@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Hostname resolve with ap's ip test</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Configure the dns server right which can resolve the hostname in ip-policy, and 4 items maximum
+
+		Test Procedure:
+		1) Configure a L3 policy with hostname which can be resolved many ips:
+		"ip-policy FW"
+		"ip-policy FW from/to &lt; www.163.com&gt; action permit/deny"
+		"user-profile FW security ip-policy from/to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Show ip-policy, result 1
+		3) Show ip-policy by internal cli "Show inter-ip-policy FW to display", result 2
+		4) Reboot ap, show fe debug info, result 3
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FW" />
+	<property name="domain" value="www.${job.sid}test.com" />
+
+	<stage>
+		<include prefix="1" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${domain}, 1.1.1.1" />
+
+		<include prefix="1.1" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${domain}, ${mpc.tif.ip}" />
+
+		<include prefix="1.2" file="subs/config_dns.xml" args="${pub.dns1.ip}, add, ${domain}, ${tb.http_server}" />
+
+		<step no="1.3">
+			<desc>check domain</desc>
+			<ssh host="${pub.dns1.ip}">
+				-v "host ${domain}"
+			</ssh>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				config dns server-ip
+			</desc>
+			<telnet target="ap1">
+				-v "dns server-ip ${pub.dns1.ip}"
+				-v "dns domain-name ${pub.dns_server.domain1}"
+			</telnet>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				ap ping domain
+			</desc>
+			<log-file>step1.5_ping.log</log-file>
+			<telnet target="ap1">
+				-v "ping ${domain}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				1) Configure a L3 policy with hostname which can be resolved many ips:
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${domain} action permit"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id}"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="open.debug">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "_ff id 1 dst-port 53 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				2) Show ip-policy, result 1
+			</desc>
+			<log-file>Show_ip_policy.log</log-file>
+			<telnet target="ap1">
+				-v "show ip-policy ${user_id}"
+			</telnet>
+			<log-match>-c -i "${domain} *0.0.0.0/0.0.0.0 *any *permit"</log-match>
+		</step>
+
+		<step no="4" delay="10">
+			<desc>
+				3) Show ip-policy by internal cli "Show inter-ip-policy FW to display", result 2
+			</desc>
+			<log-file>step4_Show_ip_policy2.log</log-file>
+			<telnet target="ap1">
+				-v "show ip-policy ${user_id} _"
+			</telnet>
+			<log-match>-c -i "1.1.1.1/255.255.255.255" -i "any *permit"</log-match>
+			<log-match>-c -i "${mpc.tif.ip}/255.255.255.255" -i "any *permit"</log-match>
+			<log-match>-c -i "${tb.http_server}/255.255.255.255" -i "any *permit"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				-Reboot ap
+			</desc>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="5.1" delay="5">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 dst-port 53 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</console>
+		</step>
+
+		<step no="5.1" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				-show interface mgt0
+			</desc>
+			<log-file>step5.1_show_interface_mgt0_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-c -i "IP addr=192.168."</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				-show interface mgt0
+			</desc>
+			<log-file>step5.2_show_interface_mgt.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="5.3">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step5.2_show_interface_mgt.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="6" delay="15">
+			<desc>
+				check log
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step6_show_log_buffered.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|$" slow="true" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) *eth0 *${pub.dns1.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 53-&gt;"</log-match>
+			<log-match>-c -i "(u) *mgt0 *${pub.dns1.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 53-&gt;"</log-match>
+			<log-match>-c -i "(o) *eth0 *${ap1.mgt0.ip}-&gt;${pub.dns1.ip}" -i "UDP" -i "-&gt;53"</log-match>
+			<log-match>-c -i "(i) *mgt0 *${ap1.mgt0.ip}-&gt;${pub.dns1.ip}" -i "UDP" -i "-&gt;53"</log-match>
+		</step>
+	
+	<step no="6_0" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check log
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step6_show_log_buffered.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|$" slow="true" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) *eth0 *${pub.dns1.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 53-&gt;"</log-match>
+			<log-match>-c -i "(u) *mgt0 *${pub.dns1.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 53-&gt;"</log-match>
+			<log-match>-c -i "(o) *eth0 *${ap1.mgt0.ip}-&gt;${pub.dns1.ip}" -i "UDP" -i "-&gt;53"</log-match>
+			<log-match>-c -i "(i) *mgt0 *${ap1.mgt0.ip}-&gt;${pub.dns1.ip}" -i "UDP" -i "-&gt;53"</log-match>
+		</step>
+	</stage>
+	
+	
+
+	<post-process>
+		<stage>
+			<include prefix="del1" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${domain}, 1.1.1.1" />
+
+			<include prefix="del2" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${domain}, ${mpc.tif.ip}" />
+
+			<include prefix="del3" file="subs/config_dns.xml" args="${pub.dns1.ip}, delete, ${domain}, ${tb.http_server}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

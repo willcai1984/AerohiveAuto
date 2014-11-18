@@ -1,0 +1,343 @@
+<include arg-names="distance, angle, channel, encrypt">
+	<step no="pre">
+		<desc>set desc prefix</desc>
+		<setvar name="desc_prefix">
+			echo "${distance}_${angle}_${channel}_${encrypt}"
+		</setvar>
+	</step>
+	<!--set distance -->
+	<step no="set_distance">
+		<if> "${distance}" != ""</if>
+		<desc>@${desc_prefix}@ set distance between ap and client</desc>
+		<setvar name="sta2.mif.ip">
+			perl -e '"${dist_ips}"=~/${distance}:(.*?)(,|$)/;print $1'
+		</setvar>
+	</step>
+	<step no="reboot_client">
+		<desc>reboot client</desc>
+		<script>
+			${bin.dir}/sshcli.pl -d ${sta2.mif.ip} -u "root" -p "aerohive" -v "reboot" -l ${log.dir}
+		</script>
+	</step>
+	<step no="start_endpoint" delay="45">
+		<desc>start up endpoint on Mac OS client</desc>
+		<ssh target="sta2">
+			-v "sudo /Applications/Endpoint.app/Contents/MacOS/Endpoint.sh"
+		</ssh>
+	</step>
+
+	<!--change angle of AP -->
+	<step no="set_angle">
+		<if> "${angle}" != "" </if>
+		<desc>@${desc_prefix}@ change ap's angle</desc>
+		<script>
+			${case.dir}/bin/turn.pl --conserver ${mpc.mif.ip} --coname yuntai --angle ${angle}
+		</script>
+	</step>
+	<!--setup AP config -->
+	<step no="3.pre">
+		<desc>@${desc_prefix}@ pre cli for AP</desc>
+		<console target="ap1">
+			-v "console page 0"
+			-v "console timeout 0"
+			-v "interface eth0 manage all"
+			-v "interface wifi1 hive hive0 shutdown"
+			-v "save config"
+		</console>
+	</step>
+	<step no="3.a">
+		<if> "${wifi}" == "wifi1" </if>
+		<desc>@${desc_prefix}@ config ap's wifi1 radio</desc>
+		<console target="ap1">
+			-v "interface wifi1 mode access"
+			-v "radio profile na phymode 11na"
+			-v "radio profile na channel-width 40-above"
+			-v "radio profile na short-guard-interval"
+			-v "no radio profile na scan access"
+			-v "interface wifi1 radio profile na"
+			-v "interface wifi1 radio power 20"
+			-v "interface wifi1 radio channel ${channel}"
+			-v "save config"
+		</console>
+	</step>
+	<step no="3.b">
+		<if> "${wifi}" == "wifi0" </if>
+		<desc>@${desc_prefix}@ config ap's wifi1 radio</desc>
+		<console target="ap1">
+			-v "radio profile ng phymode 11ng"
+			-v "radio profile ng short-guard-interval"
+			-v "no radio profile ng scan access"
+			-v "interface wifi0 radio profile ng"
+			-v "interface wifi0 radio power 20"
+			-v "interface wifi0 radio channel ${channel}"
+			-v "save config"
+		</console>
+	</step>
+	<!--reset open's encrypt in case second open will use last loop's ${encrypt} -->
+	<step no="4.a">
+		<if> "${encrypt}" == "open" </if>
+		<setvar name="encrypt_args">
+			echo ""
+		</setvar>
+	</step>
+	<step no="4.b">
+		<if> "${encrypt}" == "wpa-aes-psk" </if>
+		<setvar name="encrypt_args">
+			echo "ascii-key 12345678"
+		</setvar>
+	</step>
+	<step no="4.c">
+		<if> "${encrypt}" == "wep-open" </if>
+		<setvar name="encrypt_args">
+			echo "0 ascii-key 12345 default"
+		</setvar>
+	</step>
+	<step no="5">
+		<desc>@${desc_prefix}@ setup ssid on ap</desc>
+		<console target="ap1">
+			-v "cle log bu"
+			-v "security-object autoap"
+			-v "security-object autoap security protocol-suite ${encrypt} ${encrypt_args}"
+			-v "ssid ${ssid}_${distance}"
+			-v "ssid ${ssid}_${distance} security-object autoap"
+			-v "interface ${wifi} ssid ${ssid}_${distance}"
+			-v "save config"
+		</console>
+	</step>
+	<!--setup AP config over -->
+	<!--Mac station connect ap -->
+	<step no="6.pre">
+		<desc>@${desc_prefix}@ set password for Mac's wifi network</desc>
+		<setvar name="mac.wifi.password">
+			if [ "${encrypt}" == "wpa-aes-psk" ]; then
+			echo "12345678"
+			elif [ "${encrypt}" == "wep-open" ]; then
+			echo "12345"
+			else
+			echo ""
+			fi
+		</setvar>
+	</step>
+	<step no="6.1" delay="30">
+		<desc>@${desc_prefix}@ connect ap</desc>
+		<ssh target="sta2">
+			-v "networksetup -setairportnetwork en1 ${ssid}_${distance} ${mac.wifi.password}"
+		</ssh>
+	</step>
+	<!-- if want set IP for Mac in script, set as follow: networksetup -listallnetworkservices networksetup -setmanual networkservice ip subnet router -->
+	<step no="6.2">
+		<desc>@${desc_prefix}@ check wireless connection between AP and client</desc>
+		<ssh target="sta2">
+			-v "ping -c 4 192.168.1.1"
+		</ssh>
+		<log-match>-e ' 0\.0% packet loss' -e ' 25\.0% packet loss' -e ' 50\.0% packet loss'</log-match>
+	</step>
+	<step no="6.3">
+		<desc>@${desc_prefix}@ check connection between client and chariot server</desc>
+		<ssh target="sta2">
+			-v "ping -c 4 192.168.1.100"
+		</ssh>
+		<log-match>-e ' 0\.0% packet loss' -e ' 25\.0% packet loss' -e ' 50\.0% packet loss'</log-match>
+	</step>
+	<step no="6.4">
+		<desc>@${desc_prefix}@ check connection between chariot server and client</desc>
+		<ssh target="sta1">
+			-v "ping 192.168.1.200 -c 4"
+		</ssh>
+		<log-match>-e ' 0\.0% packet loss' -e ' 25\.0% packet loss' -e ' 50\.0% packet loss'</log-match>
+	</step>
+	<step no="6.5">
+		<desc>@${desc_prefix}@ setvar for client connect ap</desc>
+		<setvar name="connectap">
+			echo "networksetup -setairportnetwork en1 ${ssid}_${distance} ${mac.wifi.password}"
+		</setvar>
+	</step>
+	<!--Mac station connect ap over -->
+
+	<!--run tst file on chariot server and save data into DB -->
+	<step no="7.pre">
+		<desc>get time prefix for each file of this turn</desc>
+		<setvar name="timeprefix">
+			date +%Y-%m-%d-%H-%M
+		</setvar>
+	</step>
+	<step no="7">
+		<if> "${downlink}" != "" </if>
+		<desc>@${desc_prefix}@ run downlink.tst for ${runtstimes} time(s) and insert DB</desc>
+		<log-file>downlink_${wifi}_${channel}_${encrypt}_${timeprefix}.log</log-file>
+		<file>${timeprefix}-ap_1.log</file>
+		<file>${timeprefix}-ap_2.log</file>
+		<file>${timeprefix}-ap_3.log</file>
+		<file>${timeprefix}-ap_4.log</file>
+		<file>${timeprefix}-ap_5.log</file>
+		<file>${timeprefix}-ap_6.log</file>
+		<file>${timeprefix}-ap_7.log</file>
+		<file>${timeprefix}-ap_8.log</file>
+		<file>${timeprefix}-ap_9.log</file>
+		<file>${timeprefix}-ap_10.log</file>
+		<script timeout="3600">
+			${case.dir}/bin/run_performance.pl \
+			--server "${sta1.mif.ip}" \
+			--rlogdir "${chariot_log_dir}" \
+			--logdir "${log.dir}" \
+			--aptype "${img.prodtype}" \
+			--apip "${ap1.mgt0.ip}" \
+			--station "${sta2.mif.ip}" \
+			--ostype "${client.ostype}" \
+			--nictype "${client.cardtype}" \
+			--script "${case.dir}/conf/Downlink_TCP_HighPerformanceThroughput.tst" \
+			--angle "${angle}" \
+			--distance "${distance}" \
+			--encrypt "${encrypt}" \
+			--terminal "{terminal_server.ip}" \
+			--runtstimes "${runtstimes}" \
+			--timeprefix "${timeprefix}" \
+			--jobid "${job.id}" \
+			--imgname "${img.name}" \
+			--connectap "${connectap}" \
+			--debug > ${log.dir}/${log.file}
+		</script>
+		<!-- <failed>next</failed> -->
+	</step>
+	<step no="7.1">
+		<desc>@${desc_prefix}@ show logging buffered</desc>
+		<console target="ap1" timeout="900">
+			-v "show logging buffered"
+		</console>
+		<failed>next</failed>
+	</step>
+	<step no="8.pre">
+		<desc>get time prefix for each file of this turn</desc>
+		<setvar name="timeprefix">
+			date +%Y-%m-%d-%H-%M
+		</setvar>
+	</step>
+	<step no="8">
+		<if> "${uplink}" != "" </if>
+		<desc>@${desc_prefix}@ run uplink.tst for ${runtstimes} time(s) and insert DB</desc>
+		<log-file>uplink_${wifi}_${channel}_${encrypt}_${timeprefix}.log</log-file>
+		<file>${timeprefix}-ap_1.log</file>
+		<file>${timeprefix}-ap_2.log</file>
+		<file>${timeprefix}-ap_3.log</file>
+		<file>${timeprefix}-ap_4.log</file>
+		<file>${timeprefix}-ap_5.log</file>
+		<file>${timeprefix}-ap_6.log</file>
+		<file>${timeprefix}-ap_7.log</file>
+		<file>${timeprefix}-ap_8.log</file>
+		<file>${timeprefix}-ap_9.log</file>
+		<file>${timeprefix}-ap_10.log</file>
+		<script timeout="3600">
+			${case.dir}/bin/run_performance.pl \
+			--server "${sta1.mif.ip}" \
+			--rlogdir "${chariot_log_dir}" \
+			--logdir "${log.dir}" \
+			--aptype "${img.prodtype}" \
+			--apip "${ap1.mgt0.ip}" \
+			--station "${sta2.mif.ip}" \
+			--ostype "${client.ostype}" \
+			--nictype "${client.cardtype}" \
+			--script "${case.dir}/conf/Uplink_TCP_HighPerformanceThroughput.tst" \
+			--angle "${angle}" \
+			--distance "${distance}" \
+			--encrypt "${encrypt}" \
+			--terminal "{terminal_server.ip}" \
+			--runtstimes "${runtstimes}" \
+			--timeprefix "${timeprefix}" \
+			--jobid "${job.id}" \
+			--imgname "${img.name}" \
+			--connectap "${connectap}" \
+			--debug > ${log.dir}/${log.file}
+		</script>
+		<!-- <failed>next</failed> -->
+	</step>
+	<step no="8.1">
+		<desc>@${desc_prefix}@ show logging buffered</desc>
+		<console target="ap1" timeout="900">
+			-v "show logging buffered"
+		</console>
+		<failed>next</failed>
+	</step>
+	<step no="9.pre">
+		<desc>get time prefix for each file of this turn</desc>
+		<setvar name="timeprefix">
+			date +%Y-%m-%d-%H-%M
+		</setvar>
+	</step>
+	<step no="9">
+		<if> "${duallink}" != "" </if>
+		<desc>@${desc_prefix}@ run duallink.tst for ${runtstimes} time(s) and insert DB</desc>
+		<log-file>duallink_${wifi}_${channel}_${encrypt}_${timeprefix}.log</log-file>
+		<file>${timeprefix}-ap_1.log</file>
+		<file>${timeprefix}-ap_2.log</file>
+		<file>${timeprefix}-ap_3.log</file>
+		<file>${timeprefix}-ap_4.log</file>
+		<file>${timeprefix}-ap_5.log</file>
+		<file>${timeprefix}-ap_6.log</file>
+		<file>${timeprefix}-ap_7.log</file>
+		<file>${timeprefix}-ap_8.log</file>
+		<file>${timeprefix}-ap_9.log</file>
+		<file>${timeprefix}-ap_10.log</file>
+		<script timeout="3600">
+			${case.dir}/bin/run_performance.pl \
+			--server "${sta1.mif.ip}" \
+			--rlogdir "${chariot_log_dir}" \
+			--logdir "${log.dir}" \
+			--aptype "${img.prodtype}" \
+			--apip "${ap1.mgt0.ip}" \
+			--station "${sta2.mif.ip}" \
+			--ostype "${client.ostype}" \
+			--nictype "${client.cardtype}" \
+			--script "${case.dir}/conf/Duallink_TCP_HighPerformanceThroughput.tst" \
+			--angle "${angle}" \
+			--distance "${distance}" \
+			--encrypt "${encrypt}" \
+			--terminal "{terminal_server.ip}" \
+			--runtstimes "${runtstimes}" \
+			--timeprefix "${timeprefix}" \
+			--jobid "${job.id}" \
+			--imgname "${img.name}" \
+			--connectap "${connectap}" \
+			--debug > ${log.dir}/${log.file}
+		</script>
+		<!-- <failed>next</failed> -->
+	</step>
+  <step no="9.1">
+		<desc>@${desc_prefix}@ show logging buffered</desc>
+		<console target="ap1" timeout="900">
+			-v "show logging buffered"
+		</console>
+		<failed>next</failed>
+	</step>
+  
+	<step no="10.1">
+		<desc>@${desc_prefix}@ reset config ap</desc>
+		<console target="ap1">
+			-v "reset config"
+		</console>
+	</step>
+
+	<step no="11.1" type="loop-check" loop-max-times="3" loop-interval="10">
+		<desc>@${desc_prefix}@ check staf ping status</desc>
+		<script>
+			staf ${sta1.mif.ip} ping ping
+		</script>
+	</step>
+	<step no="11.2" type="loop-check" loop-max-times="3" loop-interval="10">
+		<desc>@${desc_prefix}@ reboot chariot server</desc>
+		<log-file>chariot_server_reboot.log</log-file>
+		<script>
+			${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "shutdown /r /t 0" -l ${log.dir} -o ${log.dir}/${log.file}; exit 0
+		</script>
+		<no-error-check />
+		<log-match>-n -e "The machine is locked and cannot be shut down without the force option."</log-match>
+		<log-match>-n -e "Additional error info: STAFConnectionProviderConnect: Error performing test read on connected endpoint:"</log-match>
+		<log-match>-n -e "Additional error info: STAFConnectionProviderConnect: Error resolving host name: Unknown host name:"</log-match>
+		<no-error-check />
+	</step>
+	<step no="reset_angle">
+		<desc>@${desc_prefix}@ reset ap's angle to zero</desc>
+		<script>
+			${case.dir}/bin/turn.pl --conserver ${mpc.mif.ip} --coname yuntai --angle 0
+		</script>
+	</step>
+</include>

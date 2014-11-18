@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify MP2 can work after setting all three DNS.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Default setting.
+
+		Test Procedure:
+		box10#ip domain-name aerohive.com.cn
+		box10#ip dns 10.155.3.249
+		box10#ip dns 10.155.3.3
+		box10#ip dns 10.155.3.253
+		box10#show dns conf
+		dns name : aerohive.com.cn
+		dns ipaddress0 : 10.155.3.249
+		dns ipaddress1 : 10.155.3.3
+		dns ipaddress2 : 10.155.3.253
+		box10#ping hostname box5
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config hive on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 mode backhaul"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config hive on ap2
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 mode backhaul"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				show ap2's interface wifi1 info
+			</desc>
+			<log-file>show_ap2_interface_info.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				get ap2's wifi1's mac address
+			</desc>
+			<setvar name="ap2_wifi1_mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_interface_info.log -i wifi1 -o aero -m -width 2
+			</setvar>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step4_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2_wifi1_mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				-shutdown ap1's eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="6">
+			<desc>
+				disable DHCP client
+				config interface mgt0's ip
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${ap1.mgt0.ipset} 255.255.255.0"
+				-v "ip route default gateway ${tb.vlan1.gw}"
+			</console>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step7_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2_wifi1_mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				show dns on ap1
+			</desc>
+			<log-file>step7.1_show_dns.log</log-file>
+			<console target="ap1">
+				-v "show dns"
+			</console>
+			<log-match>-n -e "Domain name suffix" -i "${pub.dns1.domain1}"</log-match>
+			<log-match>-e "Primary" -i "${pub.dns_default.ip}"</log-match>		
+		</step>
+
+		<step no="8">
+			<desc>
+				check ap can not ping hostname successfully
+			</desc>
+			<log-file>step8_ping.log</log-file>
+			<console target="ap1">
+				-v "ping ${pub.dnstest.name1}"; exit 0
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ping\s+${pub.dnstest.name1}\.${pub.dns1.domain1}\s+\(${pub.dnstest.ip1}\)\s+" -f ${log.dir}/${log.file} -c 0</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				config three DNS server to AP
+			</desc>
+			<log-file>show_dns.log</log-file>
+			<console target="ap1">
+				-v "dns domain-name ${pub.dns1.domain1}"
+				-v "dns server-ip ${pub.dns1.ip}"
+				-v "dns server-ip ${pub.invalid_dns1.ip} second"
+				-v "dns server-ip ${pub.invalid_dns2.ip} third"
+				-v "show dns"
+			</console>
+			<log-match>-e "Domain name suffix" -i "${pub.dns1.domain1}"</log-match>
+			<log-match>-e "Primary" -i "${pub.dns1.ip}"</log-match>
+			<log-match>-e "Secondary" -i "${pub.invalid_dns1.ip}"</log-match>
+			<log-match>-e "Tertiary" -i "${pub.invalid_dns2.ip}"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				open debug:
+				"clear log all"
+				"_ff id 1 dst-port 53 bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "_ff id 1 dst-port 53 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</console>
+		</step>
+
+		<step no="10">
+			<desc>
+				ap can ping hostname successfully and check the result
+			</desc>
+			<log-file>step10_ping.log</log-file>
+			<console target="ap1">
+				-v "ping ${pub.dnstest.name1} count 5" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ping\s+${pub.dnstest.name1}\.${pub.dns1.domain1}\s+\(${pub.dnstest.ip1}\)\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				show log buffer and check log
+			</desc>
+			<log-file>show_log_buffer.log</log-file>
+			<console target="ap1">
+				-v "show logging buffered" ; exit 0
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(i\)\s+mgt0\s+${ap1.mgt0.ipset}->${pub.dns1.ip}\(\d+\)\s+ttl\(64\)\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(o\)\s+wifi1.1\s+${ap1.mgt0.ipset}->${pub.dns1.ip}\(\d+\)\s+ttl\(64\)\s+UDP\s+\d+->53" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(u\)\s+mgt0\s+${pub.dns1.ip}->${ap1.mgt0.ipset}\(\d+\)\s+\S+\s+UDP\s+53->\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py"> -p"\(i\)\s+wifi1.1\s+${pub.dns1.ip}->${ap1.mgt0.ipset}\(\d+\)\s*ttl\(\d+\)\s*UDP\s*53" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

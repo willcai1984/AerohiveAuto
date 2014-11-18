@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mac-session correlative unbinding test.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Config mac-policy on AP1 and binding it to an user-profile
+		"mac-policy MAC-0"
+		"mac-policy MAC-0 [from/to] &lt;Laptop mac_addr&gt; action permit"
+		"user-profile FW"
+		"user-profile FW security mac-policy from-access MAC-0 to-access MAC-0"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Laptop ping Server
+		3) Check the mac-session table on AP1
+		4) Unbinding the mac-policy
+		"no user-profile FW security mac-policy from-access MAC-0 to-access MAC-0"
+		5) Check the mac-session table on AP1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				Configure AP1
+			</desc>
+			<telnet target="ap1">
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile FW qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "802.1x-mac-table expire-time 60"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>ifconfig to show the server add</desc>
+			<log-file>step1.1_ifconfig.log</log-file>
+			<ssh host="${tb.http_server}">
+				-v "ifconfig ${tb.http_server.name}"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>Get server's mac</desc>
+			<setvar name="tb.http.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_ifconfig.log -i ${tb.http_server.name} -m -width
+			</setvar>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe session"
+				-v "clear log buffered"
+				-v "clear forwarding-engine mac-sessions"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				3) Config mac-policy on AP1 and binding it to an user-profile
+			</desc>
+			<telnet target="ap1">
+				-v "mac-policy MAC-0"
+				-v "mac-policy MAC-0 id 1 from ${sta1.tif.mac} action permit"
+				-v "mac-policy MAC-0 id 2 to ${sta1.tif.mac} action permit"
+				-v "user-profile FW security mac-policy from-access MAC-0 to-access MAC-0"
+			</telnet>
+		</step>
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${tb.http_server}, 5" />
+
+		<step no="5">
+			<desc>
+				Laptop ping server in background
+			</desc>
+			<log-file>step5_sta1_start_ping.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ping ${tb.http_server} &amp;"
+			</ssh>
+		</step>
+
+		<step no="6">
+			<desc>
+				2) Check the mac-session table on AP1
+				"show forwarding-engine mac-sessions"
+			</desc>
+			<log-file>step6_show_forwarding_engine_mac_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine mac-sessions"
+			</telnet>
+			<log-match>-c -i "${tb.http.mac}-&gt;${sta1.tif.mac}"</log-match>
+			<log-match>-c -i "${sta1.tif.mac}-&gt;${tb.http.mac}"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>Get the mac-session number of sta1 to server</desc>
+			<setvar name="id.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_show_forwarding_engine_mac_sessions.log -p "Id:(\d+)" -e "(?i)${tb.http.mac}-&gt;${sta1.tif.mac}" -t str -g-1 -s none
+			</setvar>
+		</step>
+
+		<step no="7">
+			<desc>
+				kill process
+			</desc>
+			<ssh target="sta1">
+				-v "killall -q ping"
+			</ssh>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="8" delay="65" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>
+				-Check the mac-session table on MP
+			</desc>
+			<log-file>step8_show_mac_sessions_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine mac-sessions"
+			</telnet>
+			<log-match>-n -c -i "${tb.http.mac}-&gt;${sta1.tif.mac}"</log-match>
+			<log-match>-n -c -i "${sta1.tif.mac}-&gt;${tb.http.mac}"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				-show logging buffered
+			</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "\[fe\]: invalidate MAC sess (${id.number}) for" -i "seconds, reason (ageout)"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear local file
+				</desc>
+				<ssh target="sta1">
+					-v "killall -q ping"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

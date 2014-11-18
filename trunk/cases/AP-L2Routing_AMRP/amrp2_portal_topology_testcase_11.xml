@@ -1,0 +1,576 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check BMT change[one sta, two AP, one PC(the third AP instead)]</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition	
+			-configure two Portals in the same subnet and same hive, full mesh.
+			- Create  a SSID on wifi0  and two clients associate two AP, pass authentication
+		Test procedure	
+			1.	Client1 associate to Portal1 send a broadcast packet. Check how Portal1 handle 
+			2.	Client1 send a broadcast packet, check how Portal2 handle 
+			3.	Portal1 will receive broadcast from Portal2’wifi1.1 src-mac is client1  so how handle on Portal1
+			4.	PC send a broadcast pkts heck how Portal1 handle 
+			5.	PC send a broadcast packet, check how Portal2 handle 
+		Expect result	
+			1.	Portal1 will forwarding this broadcast pkts out all interface (eth0 wifi1.1 wifi0.1 )
+			2.	Portal2 will recv this pkts from eth0 and wifi1.1, Portal2 will drop pkts from wifi1.1 ,only recv from eth0 and forwarding out all port except eth0
+			3.	Portal1 will drop this broadcast from portal2’s wifi1.1 src-mac is client1
+			4.	Portal1 will forwarding this broadcast pkts out all interface (eth0 wifi1.1 wifi0.1 ) Portal1 will drop this pkts from wifi1.1
+			5.	Portal2 will recv this pkts from eth0 and wifi1.1, Portal2 will drop this pkts from wifi1.1 ,only recv from eth0 and forwarding out all port except eth0
+	</description>
+	<numofap>3</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0.1">
+			<desc>
+				shutdown AP1 eth1 port
+			</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				shutdown AP2 eth1 port
+			</desc>
+			<if>"${ap2.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.3_1">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 44"
+				-v "save config"
+			</console>
+		</step>
+		
+		<step no="0.3_2">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="0.4_1">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 44"
+				-v "ssid ${ssid.name}.1"
+				-v "interface wifi0 ssid ${ssid.name}.1"
+				-v "save config"
+			</console>
+		</step>
+		
+		<step no="0.4_2">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+				-v "ssid ${ssid.name}.1"
+				-v "interface wifi0 ssid ${ssid.name}.1"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="0.5_1">
+			<desc>
+				-show interface for AP1
+			</desc>
+			<log-file>step0.5_show_interface_ap1.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="0.5_2">
+			<desc>
+				-Get AP1's mgt0 mac
+			</desc>
+			<setvar name="ap1_m0_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step0.5_show_interface_ap1.log -k "Mgt0" -p 2
+			</setvar>
+		</step>
+
+		<step no="0.5_3">
+			<desc>
+				-Get AP1's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="ap1_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step0.5_show_interface_ap1.log -k "Wifi1" -p 2
+			</setvar>
+		</step>
+		
+		<step no="0.5_4">
+			<desc>
+				-Get AP1's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="ap1_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step0.5_show_interface_ap1.log -k "Wifi0" -p 2
+			</setvar>
+		</step>
+
+		<step no="0.6_1">
+			<desc>
+				-show interface for AP2
+			</desc>
+			<log-file>step0.6_show_interface_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="0.6_2">
+			<desc>
+				-Get AP2's mgt0 mac
+			</desc>
+			<setvar name="ap2_m0_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step0.6_show_interface_ap2.log -k "Mgt0" -p 2
+			</setvar>
+		</step>
+
+		<step no="0.6_3">
+			<desc>
+				-Get AP2's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="ap2_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step0.6_show_interface_ap2.log -k "Wifi1" -p 2
+			</setvar>
+		</step>
+		
+		<step no="0.6_4">
+			<desc>
+				-Get AP2's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="ap2_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step0.6_show_interface_ap2.log -k "Wifi0" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.0">
+			<desc>
+				-Config SSID in AP1
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</console>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="1.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+
+		<step no="1.2" delay="60">
+			<desc>
+				-Show ssid station in AP1
+			</desc>
+			<log-file>step1.2_show_ssid_station.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</console>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				-Get laptop1 ip in AP1
+			</desc>
+			<setvar name="laptop1_ip_in_ap">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step1.2_show_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				-Compare laptop1 show ip to AP1 show station ip
+			</desc>
+			<script>
+				if [ "${laptop1_ip_in_ap}" != "${sta1.tif.ip}" ]; then exit 1;fi
+			</script>
+		</step>
+
+		<step no="1.5_1">
+			<desc>
+				-show interface of mgt0 on AP1
+			</desc>
+			<log-file>step1.5_show_ap1_int_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.5_2">
+			<desc>
+				-get IP of mgt0 on AP1
+			</desc>
+			<setvar name="ap1_m0_ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step1.5_show_ap1_int_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.6_1">
+			<desc>
+				-show interface of mgt0 on AP2
+			</desc>
+			<log-file>step1.6_show_ap2_int_mgt0.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.6_2">
+			<desc>
+				-get IP of mgt0 on AP2
+			</desc>
+			<setvar name="ap2_m0_ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step1.6_show_ap2_int_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.7">
+			<desc>
+				-Check AP2 is AP1's neighbor
+			</desc>
+			<log-file>step1.7_show_amrp_neighbor_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2_w1_mac} ${ap2_m0_ip}\s+TWO-WAY" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="1.8">
+			<desc>
+				-Check AP1 is AP2's neighbor
+			</desc>
+			<log-file>step1.8_show_amrp_neighbor_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_w1_mac} ${ap1_m0_ip}\s+TWO-WAY" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="1.9">
+			<desc>
+				-Enable debug in AP1
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff src-mac ${sta1.tif.mac} dst-ip 255.255.255.255"
+			</console>
+		</step>
+
+		<step no="1.10">
+			<desc>
+				-Enable debug in AP2
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff src-mac ${sta1.tif.mac} dst-ip 255.255.255.255"
+			</console>
+			
+		</step>
+		<include prefix="1.11" file="subs/sta_dhcp_check.xml" obj-args="sta1" />
+		
+		<step no="1.12" delay="15">
+			<desc>
+				-sta1 sends broadcast packet if the sta1 is a linux system
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step1.12_server_ping.log</log-file>
+			<ssh target="sta1" timeout="30">
+				-v "hping3 255.255.255.255 -c 2 -2 -s 68 -p 67"
+			</ssh>
+		</step>
+
+		<step no="1.13_1">
+			<desc>
+				-Check log information (AP1 FW the packet through wifi1.1/wifi0.1/eth0) and drop the packet receive from wifi1.1
+				-include step3 check
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step1.13_show_log_ap1.log</log-file>
+			<console target="ap1" timeout="200">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi1.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(i) wifi1.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+<!--for step3: check how ap1 handle when receive the broadcast pkt from ap2 -->			
+			<log-match>-c -e "wifi1.1 drop illegal broadcast from ${ap2_w1_mac}"</log-match>
+		</step>
+		
+		<step no="1.13_2">
+			<desc>
+				-Check log information (AP1 FW the packet through wifi1.1/wifi0.1/eth0) and drop the packet receive from wifi1.1
+				-include step3 check
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step1.13_show_log_ap1.log</log-file>
+			<console target="ap1">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.2 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.2 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+<!--for step3: check how ap1 handle when receive the broadcast pkt from ap2 -->
+			<log-match>-c -e "wifi0.1 drop illegal broadcast from ${ap2_w1_mac}"</log-match>
+		</step>
+
+		<step no="2.1_1">
+			<desc>
+				-Check log information (AP2 FW the packet through wifi1.1/wifi0.1) and drop the packet receive from wifi1.1
+				-include step3 check
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step2.1_show_log_ap2.log</log-file>
+			<console target="ap2">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi1.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+<!--for step3: check how ap2 handle when receive the broadcast pkt from ap1 -->
+			<log-match>-c -e "wifi1.1 drop illegal broadcast from ${ap1_w1_mac}"</log-match>
+			<log-match>-c -e "(i) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi1.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -n -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+		</step>
+		
+		<step no="2.1_2">
+			<desc>
+				-Check log information (AP2 FW the packet through wifi1.1/wifi0.1) and drop the packet receive from wifi1.1
+				-include step3 check 
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step2.1_show_log_ap2.log</log-file>
+			<console target="ap2">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+<!--for step3: check how ap2 handle when receive the broadcast pkt from ap1 -->
+			<log-match>-c -e "wifi0.1 drop illegal broadcast from ${ap1_w1_mac}"</log-match>
+			<log-match>-c -e "(i) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.2 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -n -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-use AP3 intead of PC to send broadcast pkts
+				-shutdown AP3 eth1 port
+			</desc>
+			<if>"${ap3.eth1.existed}" =="true"</if>
+			<telnet target="ap3">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				-show interface for AP3
+			</desc>
+			<log-file>step4.2_show_interface_ap3.log</log-file>
+			<console target="ap3">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				-Get AP3's mgt0 mac
+			</desc>
+			<setvar name="ap3_m0_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step4.2_show_interface_ap3.log -k "Mgt0" -p 2
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				-show interface of mgt0 on AP3
+			</desc>
+			<log-file>step4.4_show_ap3_int_mgt0.log</log-file>
+			<console target="ap3">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				-get IP of mgt0 on AP3
+			</desc>
+			<setvar name="ap3_m0_ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step4.4_show_ap3_int_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="4.6">
+			<desc>
+				-Enable debug in AP1
+			</desc>
+			<console target="ap1">
+				-v "no _ff id 1"
+				-v "clear log all"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff src-mac ${ap3_m0_mac} dst-ip 255.255.255.255"
+			</console>
+		</step>
+
+		<step no="4.7">
+			<desc>
+				-Enable debug in AP2
+			</desc>
+			<console target="ap2">
+				-v "no _ff id 1"
+				-v "clear log all"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff src-mac ${ap3_m0_mac} dst-ip 255.255.255.255"
+			</console>
+		</step>
+
+		<step no="4.8">
+			<desc>
+				-Use AP3 do capwap ping 255.255.255.255
+			</desc>
+			<console target="ap3">
+				-v "capwap ping 255.255.255.255 count 1 timeout 2"
+			</console>
+		</step>
+
+		<step no="4.9_1" delay="30">
+			<desc>
+				-Check log information (AP1 FW the packet through wifi1.1/wifi0.1) and drop the packet receive from wifi1.1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step4.9_show_log_ap1.log</log-file>
+			<console target="ap1">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi1.1 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "wifi1.1 drop illegal broadcast from ${ap2_w1_mac}"</log-match>
+			<log-match>-c -e "(i) eth0 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi1.1 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -n -e "(o) eth0 ${ap3_m0_ip}->255.255.255.255"</log-match>
+		</step>
+		
+		<step no="4.9_2">
+			<desc>
+				-Check log information (AP1 FW the packet through wifi1.1/wifi0.1) and drop the packet receive from wifi1.1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step4.9_show_log_ap1.log</log-file>
+			<console target="ap1">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.1 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "wifi0.1 drop illegal broadcast from ${ap2_w1_mac}"</log-match>
+			<log-match>-c -e "(i) eth0 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.2 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -n -e "(o) eth0 ${ap3_m0_ip}->255.255.255.255"</log-match>
+		</step>
+
+		<step no="5.1_1">
+			<desc>
+				-Check log information (AP2 FW the packet through wifi1.1/wifi0.1) and drop the packet receive from wifi1.1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step5.1_show_log_ap2.log</log-file>
+			<console target="ap2">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi1.1 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "wifi1.1 drop illegal broadcast from ${ap1_w1_mac}"</log-match>
+			<log-match>-c -e "(i) eth0 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi1.1 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -n -e "(o) eth0 ${ap3_m0_ip}->255.255.255.255"</log-match>
+		</step>
+		
+		<step no="5.1_2">
+			<desc>
+				-Check log information (AP2 FW the packet through wifi1.1/wifi0.1) and drop the packet receive from wifi1.1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step5.1_show_log_ap2.log</log-file>
+			<console target="ap2">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.1 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "wifi0.1 drop illegal broadcast from ${ap1_w1_mac}"</log-match>
+			<log-match>-c -e "(i) eth0 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.2 ${ap3_m0_ip}->255.255.255.255"</log-match>
+			<log-match>-c -n -e "(o) eth0 ${ap3_m0_ip}->255.255.255.255"</log-match>
+		</step>
+
+	</stage>
+
+</testcase>

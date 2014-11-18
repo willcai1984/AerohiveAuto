@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that when not trap is sent to HM when there is no queue for client</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		1. Bandwidth Sentinel is enabled on a user profile user_profile_1
+		2. Configure one SSID and its default user profile is set to user_profile_1
+		3. Configure one radio profile and bind it to wifi0
+		4. Enable DAS
+		Test Procedure:
+		* Using veriwave dynamix to connect one g(54M) and one b (11M)client
+		* Sending downstream UDP traffic to both clients: packet size 1518 bytes and pps
+		is set to 100.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+	<stage>
+		<step no="1">
+			<desc>
+				configure AP
+			</desc>
+			<log-file>ap_configure_1.log</log-file>
+			<telnet target="ap1">
+				-v "security-object aaa"
+				-v "security-object aaa default-user-profile-attr 2"
+				-v "qos airtime enable"
+				-v "qos policy bbb"
+				-v "user-profile cpliang qos-policy bbb vlan-id 1 attribute 2"
+				-v "user-profile cpliang performance-sentinel enable"
+				-v "user-profile cpliang performance-sentinel action boost"
+				-v "user-profile cpliang performance-sentinel guaranteed-bandwidth 100"
+				-v "performance-sentinel notification-interval 60"
+				-v "ssid ${ssid.name}1"
+				-v "ssid ${ssid.name}1 security-object aaa"
+				-v "hive ${hive.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "report statistic period 1"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="1.1">
+		  <if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>
+				configure AP
+			</desc>
+			<log-file>ap_configure_1.log</log-file>
+			<telnet target="ap1">
+		  	-v "ssid ${ssid.name}2"
+				-v "ssid ${ssid.name}2 security-object aaa"
+				-v "interface wifi1 radio channel 36"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "save config"
+			</telnet>
+		</step>
+	
+		<step no="2">
+			<desc>
+				disable reporting
+			</desc>
+			<log-file>ap_configure_2.log</log-file>
+			<telnet target="ap1">
+				-v "no report statistic enable"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="3">
+			<desc>Generate wifi_aerohive_test profile for ssid ${ssid.name}1 for laptop1</desc>
+			<script>
+				${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/open.xml -l ${log.dir} -o wifi_aerohive_test.xml -s "${ssid.name}1"
+			</script>
+		</step>
+
+		<step no="4">
+			<desc>Copy a wifi windows profile file to laptop1 </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+		<step no="5">
+			<desc>Bring down the client Wireless of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="6">
+			<desc>Delete current Wireless profile of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan delete profile ${ssid.name}1 "
+			</script>
+		</step>
+
+		<step no="7">
+			<desc>Add new profile for ssid to laptop1
+			</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="8" delay="120">
+			<desc>Bring up the client Wireless on laptop1 </desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan connect name=${ssid.name}1 interface=\"${sta1.tif.name}\"" -v " netsh wlan show profiles ${ssid.name}1" -v "netsh wlan show interfaces"
+			</script>
+			<no-error-check />
+		</step>
+		<step no="9" delay="60">
+			<desc>Loop 10 times ipconfig to get ip in laptop1 </desc>
+			<script>
+				bash ${bin.dir}/aerohive/get_laptop_ip.sh ${sta1.mif.ip} ${log.dir} ipconfig1.log
+			</script>
+		</step>
+		<step no="10">
+			<desc>Show ipconfig in laptop1 </desc>
+			<log-file>ipconfig_${sta1.mif.ip}.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+		<step no="11">
+			<desc>Get the mac of laptop1</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -m -width 2
+			</setvar>
+		</step>
+		<step no="12">
+			<desc>Get the ip of laptop1</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+		<step no="13" delay="20">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi0_ssid_station.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|Total station count.*#" timeout="80">
+				-v "show ssid ${ssid.name}1 station"
+				-v ""
+			</telnet>
+
+		</step>
+		<step no="14">
+			<desc>Get laptop1 ip in AP1  </desc>
+			<setvar name="laptop1.ip.in.ap">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi0_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+		<step no="15">
+			<desc>Compare laptop1 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop1.ip.in.ap} != ${sta1.tif.ip}"
+				if [ "${laptop1.ip.in.ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="16">
+			<desc>
+				show ssid counter station status
+			</desc>
+			<log-file>show_ssid_counter_station_wifi0.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}1 counter station"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="17">
+			<desc>MPC ping sta1	</desc>
+			<log-file>ping.log</log-file>
+			<script>
+				nohup ping ${sta1.tif.ip} > ${log.dir}/${log.file} 2>1 &amp; 
+			</script>
+			<log-match>-e "from ${sta1.tif.ip}"</log-match>
+		</step>
+		<step no="18">
+			<desc>
+				get sla status
+			</desc>
+			<log-file>show_ssid_counter_station_wifi0_sla.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name}1 counter station | include SLA"
+			</console>
+			<log-match>-e "SLA disabled status good_and_met"</log-match>
+		</step>
+		<step no="19">
+			<desc>Get trap</desc>
+			<setvar name="sta1.trap.wifi0">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/show_ssid_counter_station_wifi0.log -p "(\d+)\s+SLA violation traps sent"
+			</setvar>
+		</step>
+		<step no="20">
+			<desc>check trap  </desc>
+			<script>
+				if [ ${sta1.trap.wifi0} -ne 0 ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+</testcase>

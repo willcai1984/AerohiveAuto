@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>ARP delete on eth interface</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-laptops connect with ap, pass authentication
+		-laptops are in same vlan
+
+		Test Procedure:
+		- clear arp table on both laptop1
+		- clear arp table on ap
+		- laptop1 sends ARP request to a unknown host result 1
+		- shutdown or plug ethx port, result 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap1.eth1.existed}" == "true"</if>
+
+		<include prefix="pre1.0" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="pre1.2">
+			<desc>
+				config ap1 eth1 as bridge-access, enable mac-learning
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<include prefix="pre1.3" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<include prefix="pre2" file="subs/sta_ping.xml" args="bpc1, ${ap1.mgt0.ip}, 5" />
+
+		<step no="1">
+			<desc>
+				-clear arp on windows sta PC3
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step1_clear_bpc1_arp.log</log-file>
+			<staf target="bpc1">
+				-v "arp -d"
+			</staf>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-clear arp on linux sta PC3
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step1.1_clear_bpc11_arp.log</log-file>
+			<ssh target="bpc1">
+				-v "ip neigh flush dev ${bpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				- clear arp table on ap
+			</desc>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				- clear arp table on ap
+			</desc>
+			<log-file>step2_arp_clear.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-n -c -i "${bpc1.tif.mac}" -i "${bpc1.tif.ip}"</log-match>
+		</step>
+
+		<include prefix="3" file="subs/sta_ping.xml" args="bpc1, ${tb.unreach.ip1}, 8,negative" />
+
+		<step no="3.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				show arp cache on AP, bpc1 mac are add into arp table
+			</desc>
+			<log-file>step3.1_show_arp_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${bpc1.tif.mac}" -i "${bpc1.tif.ip}"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				check log info on AP1
+			</desc>
+			<log-file>step3.2_show_log_buff.log</log-file>
+			<telnet target="ap1">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)ARP entry inserted: IP=${bpc1.tif.ip}\(0,eth1\) mac=${bpc1.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4">
+			<desc>
+				- shutdown or plug ethx port, result 2
+			</desc>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="4.1" type="loop-check" loop-max-times="30" loop-interval="30">
+			<desc>
+				show arp cache on AP: arp entry of laptop1 is deleted
+			</desc>
+			<log-file>step4.1_show_arp_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-n -c -i "${bpc1.tif.mac}" -i "${bpc1.tif.ip}"</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				check log info on AP1
+			</desc>
+			<log-file>step4.2_show_log_buff.log</log-file>
+			<telnet target="ap1">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)del entry : IP=${bpc1.tif.ip} mac=${bpc1.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

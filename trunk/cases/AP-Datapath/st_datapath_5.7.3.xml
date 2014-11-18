@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify the datapath of Unknown Unicast from ap/mesh/eth0/eth1</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+		-construct this topology
+		-all pcs and laptops are in same vlan
+
+		Test procedure:
+		-change eth0 to bridge-access mode via “interface eth0 mode bridge-access mode”
+		enable mac-learning on eth0 via “interface eth0 mac-learning enable”
+		-check the route table result 1
+		-clear arp table on portal and all pc/laptop
+		-add a static arp entry on all pc and laptops
+		(example: arp -s 192.168.1.100 00-aa-00-62-c6-09, here assume all pc and laptops are in 192.168.1.0/24 subnet)
+		-laptop1 send a unicast pkt like ICMP request to host(192.168.1.100)
+		check the FE debug on portal to see the datapath result 2
+		-laptop2 send a unicast pkt like ICMP request to host(192.168.1.100)
+		check the FE debug on portal to see the datapath result 2
+		-pc2 send a unicast pkt like
+		ICMP request to host(192.168.1.100)
+		check the FE debug on portal to see the datapath result 2
+		-pc1 send a unicast pkt like ICMP request to host(192.168.1.100)
+		check the FE debug on portal to see the datapath result 3
+
+		Expect result:
+		Result 1: the
+		default route is point to eth1; has route entry for pc2,the oif is eth0
+		Result 2: this pkt will be forwarded to eth1 because hit the default Route
+		Result 3: this pkt will be dropped by portal
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}-B" />
+	<property name="conn2.ssid" value="${ssid.name}-A" />
+
+	<stage>
+		<if>"${ap.eth1.existed}" == "true" &amp;&amp; "${ap.wifi1.existed}" == "true"</if>
+		<property name="tmp.mac" value="00:11:22:33:44:55" />
+
+		<step no="pre0">
+			<desc>
+				-shutdown interface eth1
+			</desc>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<include prefix="0" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="1">
+			<desc>config ap1</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>config ap2</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>show wifi1.1's mac of portal</desc>
+			<log-file>wifi_mac_portal.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>get the wifi1 mac of ap1</desc>
+			<setvar name="ap1.wifi1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/wifi_mac_portal.log -i wifi1.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>show interface the eth0 mac of ap1</desc>
+			<log-file>ap1_show_interface_eth0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface eth0"
+			</telnet>
+		</step>
+
+		<step no="2.4">
+			<desc>get the eth0 mac of ap1</desc>
+			<setvar name="ap1.eth0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ap1_show_interface_eth0.log -i eth0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>config ap1</desc>
+			<telnet target="ap1">
+				-v "user-profile datapath vlan 1 attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "interface eth1 mode bridge-access user-profile-attribute 2"
+				-v "interface eth1 mac-learning enable"
+				-v "ssid ${ssid.name}-B"
+				-v "ssid ${ssid.name}-B security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}-B"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>config ap2</desc>
+			<telnet target="ap2">
+				-v "user-profile datapath vlan 1 attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "ssid ${ssid.name}-A"
+				-v "ssid ${ssid.name}-A security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}-A"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>shutdown interface wifi1 and then up it (it's aimed to clear wifi1's neighbor list)</desc>
+			<telnet target="ap2">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step4_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.wifi1.mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-shutdown interface eth0
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>show mesh network</desc>
+			<log-file>amrp_nei_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>-c -i "${ap1.wifi1.mac}" -i "TWO-WAY"</log-match>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap2" />
+
+		<step no="8">
+			<desc>show Master pc's info</desc>
+			<script>
+				ifconfig ${mpc.tif.name} > ${log.dir}/master_info.log
+			</script>
+		</step>
+
+		<step no="8.1">
+			<desc>get Master pc's mac</desc>
+			<setvar name="mpc.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/master_info.log -i ${mpc.tif.name} -m -width 4
+			</setvar>
+		</step>
+
+		<include prefix="9" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<step no="10" delay="5">
+			<desc>show router on portal</desc>
+			<log-file>step10_portal_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "0000:0000:0000" -i "eth0"</log-match>
+			<log-match>-c -i "${bpc1.tif.mac} *${ap1.eth0.mac} *eth1 *0 *2"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>Open debug cli on portal</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear arp-cache"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="10.2">
+			<desc>Ping from sta1 which links to portal to ${tb.unreach.ip1}</desc>
+			<log-file>step10.2_clear_and_ping.log</log-file>
+			<ssh target="sta1" timeout="180">
+				-v "arp -s ${tb.unreach.ip1} ${tmp.mac}"
+				-v "ping ${tb.unreach.ip1} -c 10"
+				-v "arp -d ${tb.unreach.ip1}";
+			</ssh>
+		</step>
+
+		<step no="11">
+			<desc>show log buffer on portal</desc>
+			<log-file>step11_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) *wifi0.1 *${sta1.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-c -i "\[fe\]: *QoS: *first pkt L2 session (wifi0.1-&gt;eth0) upid=2"</log-match>
+			<log-match>-c -i "\[fe\]: *QoS: *pkt forwarded (eth0)"</log-match>
+			<log-match>-c -i "(o) *eth0 ${sta1.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) *eth1 ${sta1.tif.ip}-&gt;${tb.unreach.ip1}" </log-match>
+			<log-match>-n -c -i "wifi1.1 *${sta1.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>Open debug cli on portal</desc>
+			<telnet target="ap1">
+				-v "no _ff id 1"
+				-v "_ff id 1 src-mac ${sta2.tif.mac} bidirectional"
+				-v "clear arp-cache"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="12.1">
+			<desc>Open debug cli on mp</desc>
+			<console target="ap2">
+				-v "_ff id 1 src-mac ${sta2.tif.mac} bidirectional"
+				-v "clear arp-cache"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="13">
+			<desc>Ping from sta2 which links to mp to ${tb.unreach.ip1}</desc>
+			<log-file>step13_clear_and_ping.log</log-file>
+			<ssh target="sta2" timeout="180">
+				-v "arp -s ${tb.unreach.ip1} ${tmp.mac}"
+				-v "ping ${tb.unreach.ip1} -c 10"
+				-v "arp -d ${tb.unreach.ip1}";
+			</ssh>
+		</step>
+
+		<step no="14" delay="10">
+			<desc>show log buffer on portal</desc>
+			<log-file>step14_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi1.1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-c -i "(o) eth0 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) eth1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) wifi1.1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+		</step>
+
+		<step no="15">
+			<desc>show log buffer on mp</desc>
+			<log-file>step15_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) eth1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) eth0 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>Open debug cli on portal</desc>
+			<telnet target="ap1">
+				-v "no _ff id 1"
+				-v "_ff id 1 src-mac ${bpc1.tif.mac} bidirectional"
+				-v "clear arp-cache"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="17">
+			<desc>Ping from bpc1 which links to mp to ${tb.unreach.ip1}</desc>
+			<log-file>step17_clear_and_ping.log</log-file>
+			<ssh target="bpc1" timeout="200">
+				-v "arp -s ${tb.unreach.ip1} ${tmp.mac}"
+				-v "ping ${tb.unreach.ip1} -c 10"
+				-v "arp -d ${tb.unreach.ip1}"
+			</ssh>
+		</step>
+
+		<step no="18">
+			<desc>show log buffer on portal</desc>
+			<log-file>step18_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) *eth1 *${bpc1.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-i "\[fe\]: *QoS: *first pkt L2 session (eth1-&gt;eth0) upid=2"</log-match>
+			<log-match>-c -i "(o) *eth0 *${bpc1.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-c -i "\[fe\]: *QoS: *pkt forwarded (eth0)"</log-match>
+			<log-match>-n -c -i "(o) eth1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) wifi1.1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+		</step>
+
+		<step no="19">
+			<desc>Open debug cli on portal</desc>
+			<telnet target="ap1">
+				-v "no _ff id 1"
+				-v "_ff src-mac ${mpc.tif.mac} bidirectional"
+				-v "clear arp-cache"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="19.1">
+			<desc>Ping from Master pc to ${tb.unreach.ip1}</desc>
+			<log-file>step19.1_clear_and_ping.log</log-file>
+			<script>
+				arp -s ${tb.unreach.ip1} ${tmp.mac};
+				ping ${tb.unreach.ip1} -c 10;
+				arp -d ${tb.unreach.ip1};
+				exit 0;
+			</script>
+		</step>
+
+		<step no="20" delay="10">
+			<desc>show log buffer on portal</desc>
+			<log-file>step20_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) *eth0 *${mpc.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-c -i "\[fe\]: *don't forward pkt, same in/out dev eth0"</log-match>
+			<log-match>-c -i "\[fe\]: *no outgoing interface on reverse flow, drop pkt"</log-match>
+			<log-match>-n -c -i "(o) *eth0 *${mpc.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) eth1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) wifi1.1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+			<log-match>-n -c -i "(o) wifi0.1 ${sta2.tif.ip}-&gt;${tb.unreach.ip1}"</log-match>
+		</step>
+	</stage>
+</testcase>

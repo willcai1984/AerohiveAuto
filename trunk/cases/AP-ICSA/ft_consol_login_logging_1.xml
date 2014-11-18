@@ -1,0 +1,241 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check whether there is log info when console login the AP</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test procedure
+		1. Pc accesses ap through console login successfully, result 1 and 2.
+		2. Pc accesses ap through console login failed, result 1 and 2.
+
+		Test Procedure:
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="packets_send_result" value="packets_send_result" />
+	<property name="log_file_dir" value="/tmp" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				delete tmp files
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Config logging host ip address and severity level to syslog server
+			</desc>
+			<telnet target="ap1">
+				-v "logging server ${tb.syslog_server}"
+			</telnet>
+		</step>
+		
+		<step no="1.1.1">
+			<desc>
+				Config logging host ip address and severity level to syslog server
+			</desc>
+			<console target="ap1">
+				-v "save config"
+				-v "exit"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "nohup tshark -i eth1 udp port 514 &gt; ${log_file_dir}/${packets_send_result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="local6.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				1. Pc accesses ap through console login successfully, result 1 and 2.
+			</desc>
+			<log-file>step2.0_show_log_flash.log</log-file>
+			<console target="ap1" timeout="300">
+				-v "show log flash"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "admin" -i "successfully logged in"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>
+				1. Pc accesses ap through console login successfully, result 1 and 2.
+			</desc>
+			<log-file>login_success.log</log-file>
+			<console target="ap1" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "admin" -i "successfully logged in"</log-match>
+		</step>
+		
+		<step no="2.0">
+			<desc>
+				Config logging host ip address and severity level to syslog server
+			</desc>
+			<console target="ap1">
+				-v "save config"
+				-v "exit"
+			</console>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${local6.tshark.pid}"
+			</ssh>
+		</step>
+		
+		<step no="2.2">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step2.2_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+				-v "rm -f ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-c -i "admin" -i "successfully logged in"</log-match>
+			<log-match>-c -i "authentication OK, type local, username admin"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="2.3">
+			<desc>
+				Use ethereal to check packets should send to syslog server via UDP 514 port
+			</desc>
+			<log-file>step3_tshark_pid.log</log-file>
+			<ssh host="${tb.syslog_server}" timeout="180">
+				-v "nohup tshark -i eth1 udp port 514 &gt; ${log_file_dir}/${packets_send_result} &amp;"
+			</ssh>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				get pid of "tshark" process.
+			</desc>
+			<setvar name="local6.tshark.pid2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step3_tshark_pid.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+		
+		<step no="3.0">
+			<desc>
+				Config logging host ip address and severity level to syslog server
+			</desc>
+			<console target="ap1">
+				-v "save config"
+				-v "exit"
+			</console>
+		</step>
+		
+		<step no="3.1a">
+			<desc>
+				login ap with incorrect user/password
+			</desc>
+			<log-file>login_failed.log</log-file>	
+			<script>
+			  clicfg.pl -d ${tb.conserver.ip} -i 782 -e ${ap1.cons_name} -m ".*[>|\]]" -u ${pub.radius1.username2} -p ${pub.radius1.passwd} -l ${log.dir} -z ${log.file};exit 0
+			</script>
+			<log-match>-c -i "Maximum login tries exceeded. Go away!"</log-match>		
+		</step>
+
+		<!--<step no="3">
+			<desc>
+				2. Pc accesses ap through console login failed, result 1 and 2.
+			</desc>
+			<log-file>login_failed.log</log-file>
+			<console target="ap1" user="${pub.radius1.username2}" password="${pub.radius1.passwd}">
+				-v ""; exit 0
+			</console>
+			<log-match>-c -i "Maximum login tries exceeded. Go away!"</log-match>
+		</step>-->
+
+		<step no="3.1b">
+			<desc>
+				kill the process which run in background.
+			</desc>
+			<ssh host="${tb.syslog_server}">
+				-v "kill ${local6.tshark.pid2}"
+			</ssh>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				check if log server receive packets
+			</desc>
+			<log-file>step3.2_check_file.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "cat ${log_file_dir}/${packets_send_result}"
+			</ssh>
+			<log-match>-c -i "authentication FAILED, type local, username ${pub.radius1.username2}"</log-match>
+			<log-match>-c -i "${pub.radius1.username2}" -i "failed to log in"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.3">
+			<desc>
+				show log flash
+			</desc>
+			<log-file>check_failed_log_flash.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v " show log flash"
+			</telnet>
+			<log-match>-c -i "Admin" -i "${pub.radius1.username2}" -i "failed to log in"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.4">
+			<desc>
+				check log
+			</desc>
+			<log-file>check_failed_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "Admin" -i "${pub.radius1.username2}" -i "failed to log in"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					kill process which run in background.
+				</desc>
+				<ssh host="${tb.syslog_server}">
+					-v "killall tshark -q"
+					-v "rm -f ${log_file_dir}/${packets_send_result}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

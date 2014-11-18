@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that the schedules can take effect which are bound to the SSID whose protocol is CWP.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Create a SSID and set protocol to CWP
+		Bind SSID to interface wifi0
+		Create a schedule s1 and make current time within the duration
+		Bind schedule s1 to SSID
+		Use a laptop to connect to SSID and register
+
+		Test Procedure:
+
+		1. Check SSID status, check station connection by show ssid xxx
+		station, check traffic between laptop and AP by ping
+		2. Modify schedule s1 and make current time without the schedule,
+		check SSID status, check station connection
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="schedule_id_1" value="time-1" />
+	<property name="job_selenium_dir" value="d:\\webui" />
+	<property name="job_selenium_jar" value="selenium-server-standalone-2.20.0.jar" />
+	<property name="job_selenium_workload" value="webui" />
+
+	<stage>
+		<include prefix="start_selenium_server" file="subs/start_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<step no="0">
+			<desc>
+				Create a SSID and set protocol to CWP
+				Bind SSID to interface wifi0
+				Create a schedule s1 and make current time within the duration
+				Bind schedule s1 to SSID
+				Use a laptop to connect to SSID and register
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "ssid ${ssid.name} security additional-auth-method captive-web-portal auth-user-profile-attr 1 timer-display"
+				-v "ssid ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security protocol-suite open"
+				-v "ssid ${ssid.name} web-server"
+				-v "ssid ${ssid.name} security additional-auth-method captive-web-portal timer-display alert 10"
+				-v "ssid ${ssid.name} security additional-auth-method captive-web-portal internal-servers"
+				-v "ssid ${ssid.name} dhcp-server"
+				-v "ssid ${ssid.name} dns-server"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				check system time
+				"show clock"
+			</desc>
+			<log-file>step1_show_clock.log</log-file>
+			<telnet target="ap1">
+				-v "show clock"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				get time to create a recurrent schedule
+			</desc>
+			<setvar name="data_time_1">
+				perl ${case.dir}/bin/get_time_hours_month_day.pl ${log.dir}/step1_show_clock.log -10
+			</setvar>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				get time to create a recurrent schedule
+			</desc>
+			<setvar name="data_time_2">
+				perl ${case.dir}/bin/get_time_hours_month_day.pl ${log.dir}/step1_show_clock.log -5
+			</setvar>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				get time to create a recurrent schedule
+			</desc>
+			<setvar name="data_time_3">
+				perl ${case.dir}/bin/get_time_hours_month_day.pl ${log.dir}/step1_show_clock.log 30
+			</setvar>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				Create a recurrent schedules
+			</desc>
+			<log-file>step1.4_create_schedule.log</log-file>
+			<telnet target="ap1">
+				-v "schedule ${schedule_id_1} recurrent time-range ${data_time_1} to ${data_time_3}"
+			</telnet>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				Bind this schedules to SSID
+			</desc>
+			<log-file>step1.5_bing_schedule_to_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name} schedule ${schedule_id_1}"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>ft_schedule_ssid_16.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_register_positive.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} visit.pre_url=www.aerohive.com -t ie -f ${log.dir}/${log.file} -l info --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log
+			</setvar>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				Check SSID status by show ssid-schedule
+			</desc>
+			<log-file>step4_show_ssid_schedule_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ssid.name}\s+Yes\s+Active\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				Check mgt0 ip address
+			</desc>
+			<log-file>step4.1_check_mgt0_ip_address.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				Get ap1's ip
+			</desc>
+			<setvar name="mgt0_ip_1">
+				${bin.dir}/getbyrexp.py -p "(?i)IP addr=(.*?);" -f ${log.dir}/step4.1_check_mgt0_ip_address.log -t str
+			</setvar>
+		</step>
+
+		<include prefix="5" file="subs/sta_ping.xml" args="sta1, ${mgt0_ip_1}, 4" />
+
+		<step no="6">
+			<desc>
+				Modify schedule s1 and make current time without the duration,
+				check SSID status, check station connection
+			</desc>
+			<log-file>step6_modify_schedule.log</log-file>
+			<telnet target="ap1">
+				-v "schedule ${schedule_id_1} recurrent time-range ${data_time_1} to ${data_time_2}"
+			</telnet>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				Check SSID status by show ssid-schedule
+			</desc>
+			<log-file>step6.1_show_ssid_schedule_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid-schedule"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ssid.name}\s+Yes\s+Inactive\s+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.2" delay="20" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				station disconnect to SSID
+			</desc>
+			<log-file>step6.2_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-i "State" -i " disconnected"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_workload}" />
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

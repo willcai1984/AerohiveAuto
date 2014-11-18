@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Trigger action failover and recover</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP1 IP_addr is IP1, AP2 IP_addr is IP2 (IP1 and IP2 is in
+		the same subnet)
+		-Configure AP1
+		"hive tracktest"
+		"interface mgt0 hive tracktest"
+		"no interface wifi1 radio channel"
+		-Configure AP2
+		"hive tracktest"
+		"interface mgt0 hive tracktest"
+		"track group1 default-gateway"
+		"track group1 action start-mesh-failover"
+		"no interface wifi1 radio channel"
+
+		Test Procedure:
+		1) Shutdown eth0 interface on AP2
+		"interface eth0 shutdown"
+		"show track"
+		"show acsp"
+		AP2 ping gateway
+		2) Recover
+		"no interface eth0 shutdown"
+		"show track"
+		Expectant result
+		1. Track all IFS is Inactive, Track ETH IFS is unreachable
+		CW330#show track
+		Total Number: 1
+		Track All IFs=Perform IP tracking through all interfaces (both
+		Ethernet and
+		wireless);
+		Track ETH IFs=Perform IP tracking only through Ethernet
+		interfaces;
+		ETH=Ethernet; IFs=interfaces;
+		NO. Group Name Track All IFs Track ETH IFs
+		---------------------------------------------------------------------
+		1 group1 Inactive Unreachable
+		CW330#show acsp
+		Interface Channel select
+		state Channel Power ctrl state Tx
+		power(dbm)
+		--------- --------------------- -------- --------------------- -------------
+		Wifi0 Enable 0 Disable 20
+		Wifi1 Scanning 0 Enable 20
+		AP2 ping gateway
+		AP2 ping gateway successfully
+		2. Track all IFS is Inactive, Track ETH IFS is reachable
+		CW330#show track
+		Total Number: 1
+		Track All IFs=Perform IP tracking through all interfaces (both
+		Ethernet and
+		wireless);
+		Track ETH IFs=Perform IP tracking only through Ethernet
+		interfaces;
+		ETH=Ethernet; IFs=interfaces;
+		NO. Group Name Track All IFs Track ETH IFs
+		---------------------------------------------------------------------
+		1 group1 Inactive reachable
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				-when ap is ap340,shutdown eth1
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<ssh target="ap2">
+				-v "interface eth1 shutdown"
+			</ssh>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Configure AP1
+				"hive tracktest"
+				"interface mgt0 hive tracktest"
+				"interface wifi1 radio channel 153"
+				"interface wifi1 hive ${hive.name} shutdown"
+				"no interface wifi1 hive ${hive.name} shutdown"
+			</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 153"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Configure AP2
+				"hive tracktest"
+				"interface mgt0 hive tracktest"
+				"track group1 default-gateway"
+				"track group1 action start-mesh-failover"
+				"interface wifi1 hive ${hive.name} shutdown"
+				"no interface wifi1 hive ${hive.name} shutdown"
+			</desc>
+			<ssh target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "track group1 default-gateway"
+				-v "track group1 action start-mesh-failover"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				1) Shutdown eth0 interface on AP2
+				"interface eth0 shutdown"
+				"show track"
+				"show acsp"
+				AP2 ping gateway
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				1) Shutdown eth0 interface on AP2
+				"interface eth0 shutdown"
+				"show track"
+				"show acsp"
+				AP2 ping gateway
+			</desc>
+			<log-file>show_track_shutdown_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show track"
+			</console>
+			<log-match>-e "Inactive" -i "group1" -p 3</log-match>
+			<log-match>-e "Unreachable" -i "group1" -p 4</log-match>
+		</step>
+
+		<step no="3.2" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				"show acsp"
+			</desc>
+			<log-file>show_acsp_first_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show acsp"
+			</console>
+			<log-match>-e "Wifi1 *Scanning" -e "Wifi1 *Enable" </log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show ap1's interface
+			</desc>
+			<log-file>show_ap1_interface_info.log</log-file>
+			<console target="ap1">
+				-v "show interface wifi1"
+			</console>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				gain ap1's mgt0's mac address
+			</desc>
+			<setvar name="ap1_wifi1_mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_interface_info.log -i wifi1 -o aero -m -width 2
+			</setvar>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				show ap2's interface
+			</desc>
+			<log-file>show_ap2_interface_info.log</log-file>
+			<console target="ap2">
+				-v "show interface wifi1"
+			</console>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				gain ap2's mgt0's mac address
+			</desc>
+			<setvar name="ap2_wifi1_mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_interface_info.log -i wifi1 -o aero -m -width 2
+			</setvar>
+		</step>
+
+		<step no="ap2_acsp_neighbor_check_1">
+			<desc>
+				show ap2's acsp neighbor
+			</desc>
+			<log-file>ap2_acsp_neighbor_check_1.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show acsp neighbor"
+			</console>
+		</step>
+
+		<step no="ap2_acsp_neighbor_check_2">
+			<desc>
+				get the number of wifi1's acsp neighbor from wifi1's acsp neighbor list
+			</desc>
+			<setvar name="wifi1_acspneighbor_number_2">
+				perl ${case.dir}/bin/get_acsp_neighbor_count.pl ${log.dir}/ap2_acsp_neighbor_check_1.log
+			</setvar>
+		</step>
+
+		<step no="ap2_acsp_neighbor_check_3">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor when ap2's wifi1's acsp neighbor list more than 128
+			</desc>
+			<if>${wifi1_acspneighbor_number_2} &gt;= 128</if>
+			<log-file>ap2_acsp_neighbor_check_3.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show acsp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_wifi1_mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="ap2_acsp_neighbor_check_4" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor when ap2's wifi1's acsp neighbor list less than 128
+			</desc>
+			<if>${wifi1_acspneighbor_number_2} &lt; 128</if>
+			<log-file>ap2_acsp_neighbor_check_4_${loop_check.idx}.log</log-file>
+			<console target="ap2" timeout="180">
+				-v "show acsp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_wifi1_mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.5" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				"show amrp neighbor"
+			</desc>
+			<log-file>show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_wifi1_mac}\s+${ap1.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+
+		<step no="5" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				"show route"
+			</desc>
+			<log-file>step3.4_show_route_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-e "0000:0000:0000" -i "wifi1.1" -p 1</log-match>
+		</step>
+
+		<step no="5.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				ap2 ping gateway
+			</desc>
+			<log-file>get_ap2_ping_gateway_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "ping ${tb.vlan1.gw}"
+			</console>
+			<log-match>-e " 0% packet loss"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				2) Recover
+				"no interface eth0 shutdown"
+				"show track"
+			</desc>
+			<console target="ap2">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				"show track"
+			</desc>
+			<log-file>show_track_recover_${loop_check.idx}.log</log-file>
+			<ssh target="ap2">
+				-v "show track"
+			</ssh>
+			<log-match>-e "Inactive" -i "group1" -p 3</log-match>
+			<log-match>-e "Reachable" -i "group1" -p 4</log-match>
+		</step>
+
+		<step no="6.2" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				"show route"
+			</desc>
+			<log-file>step4.2_show_route_${loop_check.idx}.log</log-file>
+			<ssh target="ap2">
+				-v "show route"
+			</ssh>
+			<log-match>-e "0000:0000:0000" -i "eth0" -p 1</log-match>
+		</step>
+	</stage>
+</testcase>

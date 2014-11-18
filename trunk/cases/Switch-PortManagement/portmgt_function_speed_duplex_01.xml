@@ -1,0 +1,1115 @@
+<testcase>
+	<brief>(IxPort: C=1) Verify Speed and Duplex configured on BASE-T ports if AutoNegotiation is enabled only on IxExplore;</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+	<description>
+		IXIA AutoNegotiation:Yes, speed:auto/1000/100/10, duplex:auto/full/half; Switch speed:auto/1000/100/10, duplex:auto/1000/100/10
+	</description>
+	<comment>
+		sw1.port1=eth1/21;
+		sw1.port1.phytype=copper;
+		sw1.port5=eth1/25;
+		sw1.port1.ixia_port=1/2/1;
+		sw1.port1.ixia_port.phytype=copper;
+		sw1.terminal.port=2016;
+		tb.conserver.ip=localhost
+		ap1.cons_name=tb1-SR2024-2
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclserver1.ip=10.155.30.164;
+		pub.tclclient1.ip=10.155.40.10;
+		sw1.tclclient.ip=10.155.32.228;
+		sw1.mgmtport=eth1/1;
+		sw1.mgmtvlan=121;
+		tb.conserver.ip=10.155.32.228;
+		tb.conserver.user=root;
+		tb.conserver.passwd=aerohive;
+		sw1.cons_name=tb1-SR2024-2;
+		sw1.user=admin;
+		sw1.passwd=aerohive;
+		sw1.prompt="AH-[a-z0-9A-Z_]*#";
+	</comment>
+	<property name="sw1.user" value="admin" />
+	<property name="sw1.passwd" value="aerohive" />
+	<property name="correct_vlan" value="101" />
+	<property name="incorrect_vlan" value="102" />
+	<property name="tcl_script_server.ip" value="10.155.39.227" />
+	<property name="tcl_script_server.user" value="root" />
+	<property name="tcl_script_server.passwd" value="aerohive" />
+	<property name="tcl_script_server.path" value="/home/python/tcl/v1" />
+
+	<stage>
+		<step no="1.0.1">
+			<desc>
+				Show interface mgt0 to get ip address
+			</desc>
+			<log-file>step1.0.1_mgt0_ip_info.log</log-file>
+			<console target="sw1">
+				-v 'show interface mgt0'
+			</console>
+		</step>
+
+		<step no="1.0.2">
+			<desc>
+				Get mgt0's ip address
+			</desc>
+			<setvar name="sw1.ip">
+				python ${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/step1.0.1_mgt0_ip_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.1.1">
+			<desc> mode:copper, sw auto/auto, ixia enable/auto/auto; </desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} speed auto'
+				-v 'interface ${sw1.port1} duplex auto'
+				-v 'show running-config'
+			</ssh>
+		</step>
+		<!-- 
+		<step no="1.1.2">
+			<desc> mode:copper, sw auto/auto, ixia enable/auto/auto;after autonegotion, ixia 1000/full </desc>
+			<log-file>step1.1.2_copper.log</log-file>
+			<ssh target="${tcl_script_server.ip}" user="${tcl_script_server.user}" password="${tcl_script_server.passwd}" timeout="120">
+				-v "python ${tcl_script_server.path}/ixia_config_status.py
+				-port_list '${sw1.port1.ixia_port}'
+				-username '${job.user}${job.sid}'
+				-autonegotiation '1'
+				-speed 'auto'
+				-duplex 'auto'
+				-phy_mode '${sw1.port1.ixia_port.phytype}'
+				-reset
+				-tcl_server '${pub.tclserver1.ip}'"
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:1000; Duplex:full; Link:up"</log-match>
+		</step>
+		 -->
+		<step no="1.1.2">
+			<desc> mode:copper, sw auto/auto, ixia enable/auto/auto;after autonegotion, ixia 1000/full </desc>
+			<log-file>step1.1.2_copper.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode ${sw1.port1.ixia_port.phytype} -autonegotiate true"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:1000; Duplex:full; Link:up"</log-match>
+		</step>
+
+		<step no="1.1.3">
+			<desc> mode:copper, sw auto/auto, ixia enable/auto/auto;after
+				autonegotion, ixia 1000/full
+			</desc>
+			<log-file>step1.1.3_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "1G" -i "full"</log-match>
+		</step>
+		<!-- 
+		<step no="1.2.1">
+			<desc> mode:copper, sw auto/auto, ixia enable/1000/full;after autonegotion, ixia 1000/full </desc>
+			<log-file>step1.2.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${tcl_script_server.ip}" user="${tcl_script_server.user}" password="${tcl_script_server.passwd}" timeout="120">
+				-v "python ${tcl_script_server.path}/ixia_config_status.py
+				-port_list '${sw1.port1.ixia_port}'
+				-username '${job.user}${job.sid}'
+				-autonegotiation '1'
+				-speed 'ether1000'
+				-duplex 'full'
+				-phy_mode '${sw1.port1.ixia_port.phytype}'
+				-reset
+				-tcl_server '${pub.tclserver1.ip}'"
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:1000; Duplex:full; Link:up"</log-match>
+		</step>
+		 -->
+		<step no="1.2.1">
+			<desc> mode:copper, sw auto/auto, ixia enable/1000/full;after autonegotion, ixia 1000/full </desc>
+			<log-file>step1.2.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 1000 -10fullIn false -10halfIn false -100fullIn false -100halfIn false -1000fullIn true"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:1000; Duplex:full; Link:up"</log-match>
+		</step>
+
+		<step no="1.2.2">
+			<desc> mode:copper, sw auto/auto, ixia enable/1000/full;after
+				autonegotion, sw 1000/full
+			</desc>
+			<log-file>step1.2.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "1G" -i "full"</log-match>
+		</step>
+
+		<step no="1.3.1">
+			<desc> mode:copper, sw auto/auto, ixia enable/100/full;after autonegotion, ixia 100/full </desc>
+			<log-file>step1.3.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 100 -10fullIn false -10halfIn false -100fullIn true -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:100; Duplex:full; Link:up"</log-match>
+		</step>
+
+		<step no="1.3.2">
+			<desc> mode:copper, sw auto/auto, ixia enable/100/full; after autonegotion,
+				sw 100/full
+			</desc>
+			<log-file>step1.3.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "100M" -i "full"</log-match>
+		</step>
+
+		<step no="1.4.1">
+			<desc> mode:copper, sw auto/auto, ixia enable/100/half; after autonegotion,ixia 100/half </desc>
+			<log-file>step1.4.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 100 -10fullIn false -10halfIn false -100fullIn false -100halfIn true -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:100; Duplex:half; Link:up"</log-match>
+		</step>
+
+		<step no="1.4.2">
+			<desc> mode:copper, sw auto/auto, ixia enable/100/half; sw 100/half </desc>
+			<log-file>step1.4.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "100M" -i "half"
+			</log-match>
+		</step>
+
+		<step no="1.5.1">
+			<desc> mode:copper, sw auto/auto, ixia enable/10/full; after autonegotion,ixia 10/full </desc>
+			<log-file>step1.5.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 10 -10fullIn true -10halfIn false -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:10; Duplex:full; Link:up"</log-match>
+		</step>
+
+		<step no="1.5.2">
+			<desc> mode:copper, sw auto/auto, ixia enable/10/full; sw 10/full </desc>
+			<log-file>step1.5.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "10M" -i "full"</log-match>
+		</step>
+
+		<step no="1.6.1">
+			<desc> mode:copper, sw auto/auto, ixia enable/10/half;after autonegotion, ixia 10/half </desc>
+			<log-file>step1.6.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 10 -10fullIn false -10halfIn true -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:10; Duplex:half; Link:up"</log-match>
+		</step>
+
+		<step no="1.6.2">
+			<desc> mode:copper, sw auto/auto, ixia enable/10/half; sw 10/half </desc>
+			<log-file>step1.6.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "10M" -i "half"</log-match>
+		</step>
+
+		<step no="2.1.1">
+			<desc> mode:copper, sw 1000/full, ixia enable/auto/auto; </desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} speed 1000'
+				-v 'interface ${sw1.port1} duplex full'
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="2.1.2">
+			<desc> mode:copper, sw 1000/full, ixia enable/auto/auto;after autonegotion, ixia 1000/full(1000M has no non-auto mode, so the result is the same as auto mode) </desc>
+			<log-file>step2.1.2_copper.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed auto -10fullIn false -10halfIn false -100fullIn false -100halfIn false -1000fullIn true"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:1000; Duplex:full; Link:up"</log-match>
+		</step>
+
+		<step no="2.1.3">
+			<desc> mode:copper, sw 1000/full, ixia enable/auto/auto;after autonegotion, sw 1000/full(1000M has no non-auto mode, so the result is the same as auto mode) </desc>
+			<log-file>step2.1.3_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "1G" -i "full"</log-match>
+		</step>
+
+		<step no="2.2.1">
+			<desc> mode:copper, sw 1000/full, ixia enable/1000/full;after autonegotion, ixia 1000/full(1000M has no non-auto mode, so the result is the same as auto mode) </desc>
+			<log-file>step2.2.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 1000 -10fullIn false -10halfIn false -100fullIn false -100halfIn false -1000fullIn true"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:1000; Duplex:full; Link:up"</log-match>
+		</step>
+
+		<step no="2.2.2">
+			<desc> mode:copper, sw 1000/full, ixia enable/1000/full;after autonegotion, sw 1000/full(1000M has no non-auto mode, so the result is the same as auto mode) </desc>
+			<log-file>step2.2.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "1G" -i "full"</log-match>
+		</step>
+
+		<step no="2.3.1">
+			<desc> mode:copper, sw 1000/full, ixia enable/100/full; after autonegotion, ixia down N/A/N/A </desc>
+			<log-file>step2.3.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 100 -10fullIn false -10halfIn false -100fullIn true -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="2.3.2">
+			<desc> mode:copper, sw 1000/full, ixia enable/100/full; after autonegotion, sw down 1000/full </desc>
+			<log-file>step2.3.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "1G" -i "full"</log-match>
+		</step>
+
+		<step no="2.4.1">
+			<desc> mode:copper, sw 1000/full, ixia enable/100/half; after autonegotion, ixia down N/A/N/A </desc>
+			<log-file>step2.4.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 100 -10fullIn false -10halfIn false -100fullIn false -100halfIn true -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="2.4.2">
+			<desc> mode:copper, sw 1000/full, ixia enable/100/half; after autonegotion, sw down 1000/full </desc>
+			<log-file>step2.4.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "1G" -i "full"</log-match>
+		</step>
+
+		<step no="2.5.1">
+			<desc> mode:copper, sw 1000/full, ixia enable/10/full; after autonegotion, ixia down N/A/N/A </desc>
+			<log-file>step2.5.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 10 -10fullIn true -10halfIn false -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="2.5.2">
+			<desc> mode:copper, sw 1000/full, ixia enable/10/full; after autonegotion, sw down 1000/full </desc>
+			<log-file>step2.5.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "1G" -i "full"</log-match>
+		</step>
+
+		<step no="2.6.1">
+			<desc> mode:copper, sw 1000/full, ixia enable/10/half; after autonegotion, ixia down N/A/N/A </desc>
+			<log-file>step2.6.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 10 -10fullIn false -10halfIn true -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="2.6.2">
+			<desc> mode:copper, sw 1000/full, ixia enable/10/half;after autonegotion, sw down 1000/full </desc>
+			<log-file>step2.6.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "1G" -i "full"</log-match>
+		</step>
+		<step no="3.1.1">
+			<desc> mode:copper, sw 100/full, ixia enable/auto/auto; </desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} speed 100'
+				-v 'interface ${sw1.port1} duplex full'
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="3.1.2">
+			<desc> mode:copper, sw 100/full, ixia enable/auto/auto;after autonegotion,
+				ixia up 100/half(ixia not get the auto-nego frames from sw, should set duplex to half)
+			</desc>
+			<log-file>step3.1.2_copper.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:100; Duplex:half; Link:up"</log-match>
+		</step>
+
+		<step no="3.1.3">
+			<desc> mode:copper, sw 100/full, ixia enable/auto/auto;after autonegotion, sw up 100/full </desc>
+			<log-file>step3.1.3_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "100M" -i "full"</log-match>
+		</step>
+
+		<step no="3.2.1">
+			<desc> mode:copper, sw
+				100/full, ixia enable/1000/full;after autonegotion, ixia down N/A/N/A(speed is not the same)
+			</desc>
+			<log-file>step3.2.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 1000 -10fullIn false -10halfIn false -100fullIn false -100halfIn false -1000fullIn true"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="3.2.2">
+			<desc> mode:copper, sw 100/full, ixia enable/1000/full;after autonegotion, sw down 100/full(speed is not the same) </desc>
+			<log-file>step3.2.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "100M" -i "full"</log-match>
+		</step>
+
+		<step no="3.3.1">
+			<desc> mode:copper, sw 100/full, ixia enable/100/full; after autonegotion, ixia down N/A/N/A(ixia not get the auto-nego frames from sw, should set duplex to half, but the configure only support full, shutdown the link) </desc>
+			<log-file>step3.3.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 100 -10fullIn false -10halfIn false -100fullIn true -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="3.3.2">
+			<desc> mode:copper, sw 100/full, ixia enable/100/full; after autonegotion, sw down 100/full </desc>
+			<log-file>step3.3.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "100M" -i "full"</log-match>
+		</step>
+
+		<step no="3.4.1">
+			<desc> mode:copper, sw 100/full, ixia enable/100/half; after autonegotion, ixia up 100/half(ixia not get the auto-nego frames from sw, should set duplex to half) </desc>
+			<log-file>step3.4.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 100 -10fullIn false -10halfIn false -100fullIn false -100halfIn true -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:100; Duplex:half; Link:up"</log-match>
+		</step>
+
+		<step no="3.4.2">
+			<desc> mode:copper, sw 100/full, ixia enable/100/half; after autonegotion, sw up 100/full </desc>
+			<log-file>step3.4.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "100M" -i "full"</log-match>
+		</step>
+
+		<step no="3.5.1">
+			<desc> mode:copper, sw 100/full, ixia enable/10/full; after autonegotion, ixia down N/A/N/A(speed is not the same) </desc>
+			<log-file>step3.5.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 10 -10fullIn true -10halfIn false -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="3.5.2">
+			<desc> mode:copper, sw 100/full, ixia enable/10/full; after autonegotion, sw down 100/full </desc>
+			<log-file>step3.5.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "100M" -i "full"</log-match>
+		</step>
+
+		<step no="3.6.1">
+			<desc> mode:copper, sw 100/full, ixia enable/10/half; after autonegotion, ixia down N/A/N/A(speed is not the same) </desc>
+			<log-file>step3.6.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 10 -10fullIn false -10halfIn true -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="3.6.2">
+			<desc> mode:copper, sw 100/full, ixia enable/10/half;after autonegotion, sw down 100/full </desc>
+			<log-file>step3.6.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "100M" -i "full"</log-match>
+		</step>
+
+		<step no="4.1.1">
+			<desc> mode:copper, sw 100/half, ixia enable/auto/auto; </desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} speed 100'
+				-v 'interface ${sw1.port1} duplex half'
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="4.1.2">
+			<desc> mode:copper, sw 100/half, ixia enable/auto/auto;after autonegotion, ixia up 100/half(ixia not get the auto-nego frames from sw, should set duplex to half) </desc>
+			<log-file>step4.1.2_copper.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:100; Duplex:half; Link:up"</log-match>
+		</step>
+
+		<step no="4.1.3">
+			<desc> mode:copper, sw 100/half, ixia enable/auto/auto;after autonegotion, sw up 100/half </desc>
+			<log-file>step4.1.3_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "100M" -i "half"</log-match>
+		</step>
+
+		<step no="4.2.1">
+			<desc> mode:copper, sw 100/half, ixia enable/1000/full;after autonegotion, ixia down N/A/N/A(speed is not the same) </desc>
+			<log-file>step4.2.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 1000 -10fullIn false -10halfIn false -100fullIn false -100halfIn false -1000fullIn true"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="4.2.2">
+			<desc> mode:copper, sw 100/half, ixia enable/1000/full;after autonegotion, sw down 100/half(speed is not the same) </desc>
+			<log-file>step4.2.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "100M" -i "half"</log-match>
+		</step>
+
+		<step no="4.3.1">
+			<desc> mode:copper, sw 100/half, ixia enable/100/full; after autonegotion, ixia down N/A/N/A(ixia not get the auto-nego frames from sw, should set duplex to half, but the configure only support full, shutdown the link) </desc>
+			<log-file>step4.3.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 100 -10fullIn false -10halfIn false -100fullIn true -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="4.3.2">
+			<desc> mode:copper, sw 100/half, ixia enable/100/full; after autonegotion, sw down 100/half </desc>
+			<log-file>step4.3.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "100M" -i "half"</log-match>
+		</step>
+
+		<step no="4.4.1">
+			<desc> mode:copper, sw 100/half, ixia enable/100/half; after autonegotion, ixia up 100/half(ixia not get the auto-nego frames from sw, should set duplex to half) </desc>
+			<log-file>step4.4.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 100 -10fullIn false -10halfIn false -100fullIn false -100halfIn true -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:100; Duplex:half; Link:up"</log-match>
+		</step>
+
+		<step no="4.4.2">
+			<desc> mode:copper, sw 100/half, ixia enable/100/half; after autonegotion, sw up 100/half </desc>
+			<log-file>step4.4.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "100M" -i "half"</log-match>
+		</step>
+
+		<step no="4.5.1">
+			<desc> mode:copper, sw 100/half, ixia enable/10/full; after autonegotion, ixia down N/A/N/A(speed is not the same) </desc>
+			<log-file>step4.5.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 10 -10fullIn true -10halfIn false -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="4.5.2">
+			<desc> mode:copper, sw 100/half, ixia enable/10/full; after autonegotion, sw down 100/half </desc>
+			<log-file>step4.5.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "100M" -i "half"</log-match>
+		</step>
+
+		<step no="4.6.1">
+			<desc> mode:copper, sw 100/half, ixia enable/10/half; after autonegotion, ixia down N/A/N/A(speed is not the same) </desc>
+			<log-file>step4.6.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 10 -10fullIn false -10halfIn true -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="4.6.2">
+			<desc> mode:copper, sw 100/half, ixia enable/10/half;after autonegotion, sw down 100/half </desc>
+			<log-file>step4.6.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "100M" -i "half"</log-match>
+		</step>
+
+
+		<step no="5.1.1">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/auto/auto;
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} speed 10'
+				-v 'interface ${sw1.port1} duplex full'
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="5.1.2">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/auto/auto;after autonegotion, ixia up 10/half(ixia not get the auto-nego frames from sw, should set duplex to half)
+			</desc>
+			<log-file>step5.1.2_copper.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:10; Duplex:half; Link:up"</log-match>
+		</step>
+
+		<step no="5.1.3">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/auto/auto;after autonegotion, sw up 10/full
+			</desc>
+			<log-file>step5.1.3_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "10M" -i "full"</log-match>
+		</step>
+
+		<step no="5.2.1">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/1000/full;after autonegotion, ixia down N/A/N/A(speed is not the same)
+			</desc>
+			<log-file>step5.2.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 1000 -10fullIn false -10halfIn false -100fullIn false -100halfIn false -1000fullIn true"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="5.2.2">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/1000/full;after autonegotion, sw down 10/full(speed is not the same)
+			</desc>
+			<log-file>step5.2.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "10M" -i "full"</log-match>
+		</step>
+
+		<step no="5.3.1">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/100/full; after autonegotion, ixia down N/A/N/A(speed is not the same)
+			</desc>
+			<log-file>step5.3.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 100 -10fullIn false -10halfIn false -100fullIn true -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="5.3.2">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/100/full; after autonegotion, sw down 10/full
+			</desc>
+			<log-file>step5.3.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "10M" -i "full"</log-match>
+		</step>
+
+		<step no="5.4.1">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/100/half; after autonegotion, ixia down 100/half(speed is not the same)
+			</desc>
+			<log-file>step5.4.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 100 -10fullIn false -10halfIn false -100fullIn false -100halfIn true -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="5.4.2">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/100/half; after autonegotion, sw down 10/full
+			</desc>
+			<log-file>step5.4.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "10M" -i "full"</log-match>
+		</step>
+
+		<step no="5.5.1">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/10/full; after autonegotion, ixia down N/A/N/A(ixia not get the auto-nego frames from sw, should set duplex to half, but the configure only support full, shutdown the link)
+			</desc>
+			<log-file>step5.5.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 10 -10fullIn true -10halfIn false -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="5.5.2">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/10/full; after autonegotion, sw down 10/full
+			</desc>
+			<log-file>step5.5.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "10M" -i "full"</log-match>
+		</step>
+
+		<step no="5.6.1">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/10/half; after autonegotion, ixia up 10/half (ixia not get the auto-nego frames from sw, should set duplex to half)
+			</desc>
+			<log-file>step5.6.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 10 -10fullIn false -10halfIn true -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:10; Duplex:half; Link:up"</log-match>
+		</step>
+
+		<step no="5.6.2">
+			<desc>
+				mode:copper, sw 10/full, ixia enable/10/half;after autonegotion, sw up 10/full
+			</desc>
+			<log-file>step5.6.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "10M" -i "full"</log-match>
+		</step>
+
+		<step no="6.1.1">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/auto/auto;
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} speed 10'
+				-v 'interface ${sw1.port1} duplex half'
+				-v 'show running-config'
+			</ssh>
+		</step>
+
+		<step no="6.1.2">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/auto/auto;after autonegotion, ixia up 10/half(ixia not get the auto-nego frames from sw, should set duplex to half)
+			</desc>
+			<log-file>step6.1.2_copper.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:10; Duplex:half; Link:up"</log-match>
+		</step>
+
+		<step no="6.1.3">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/auto/auto;after autonegotion, sw up 10/half
+			</desc>
+			<log-file>step6.1.3_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "10M" -i "half"</log-match>
+		</step>
+
+		<step no="6.2.1">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/1000/full;after autonegotion, ixia down N/A/N/A(speed is not the same)
+			</desc>
+			<log-file>step6.2.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 1000 -10fullIn false -10halfIn false -100fullIn false -100halfIn false -1000fullIn true"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="6.2.2">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/1000/full;after autonegotion, sw down 10/full(speed is not the same)
+			</desc>
+			<log-file>step6.2.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "10M" -i "half"</log-match>
+		</step>
+
+		<step no="6.3.1">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/100/full; after autonegotion, ixia down N/A/N/A(speed is not the same)
+			</desc>
+			<log-file>step6.3.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 100 -10fullIn false -10halfIn false -100fullIn true -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="6.3.2">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/100/full; after autonegotion, sw down 10/full
+			</desc>
+			<log-file>step6.3.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "10M" -i "half"</log-match>
+		</step>
+
+		<step no="6.4.1">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/100/half; after autonegotion, ixia down 100/half(speed is not the same)
+			</desc>
+			<log-file>step6.4.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 100 -10fullIn false -10halfIn false -100fullIn false -100halfIn true -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="6.4.2">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/100/half; after autonegotion, sw down 10/full
+			</desc>
+			<log-file>step6.4.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "10M" -i "half"</log-match>
+		</step>
+
+		<step no="6.5.1">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/10/full; after autonegotion, ixia down N/A/N/A(ixia not get the auto-nego frames from sw, should set duplex to half, but the configure only support full, shutdown the link)
+			</desc>
+			<log-file>step6.5.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode full -speed 10 -10fullIn true -10halfIn false -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:N/A; Duplex:N/A; Link:down"</log-match>
+		</step>
+
+		<step no="6.5.2">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/10/full; after autonegotion, sw down 10/full
+			</desc>
+			<log-file>step6.5.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "D" -i "10M" -i "half"</log-match>
+		</step>
+
+		<step no="6.6.1">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/10/half; after autonegotion, ixia up 10/half (ixia not get the auto-nego frames from sw, should set duplex to half)
+			</desc>
+			<log-file>step6.6.1_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.ixia_port.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -phyMode copper -autonegotiate true -duplexMode half -speed 10 -10fullIn false -10halfIn true -100fullIn false -100halfIn false -1000fullIn false"
+				-v "after 3000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-e "Port:${sw1.port1.ixia_port}; Speed:10; Duplex:half; Link:up"</log-match>
+		</step>
+
+		<step no="6.6.2">
+			<desc>
+				mode:copper, sw 10/half, ixia enable/10/half;after autonegotion, sw up 10/half
+			</desc>
+			<log-file>step6.6.2_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface'
+			</ssh>
+			<log-match>-i "${sw1.port1}" -i "U" -i "10M" -i "half"</log-match>
+		</step>
+	</stage>
+</testcase>

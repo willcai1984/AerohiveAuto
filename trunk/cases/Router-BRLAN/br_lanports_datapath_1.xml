@@ -1,0 +1,319 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check known unicast packet forwarding path</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		PC1 connect to switch
+		Laptop1 connect to lan port eth1
+		Laptop2 connect to lan port eth2
+		Station1 connect to wifi
+		Station2 connect to wifi
+		Pc1, laptop1,laptop2, s1 with different subnet
+		Laptop1,laptop2, s2 with same subnet
+		BR lan port works with port based / trunk mode
+
+		Test Procedure:
+
+		1. Laptop1, laptop2 in same vlan
+		2. Laptop1, laptop2 can retrieve ip address. Result1
+		3. Station1 connect to BR via wifi, pass authentication. Result2
+		Local forwarding by hw
+		4. Laptop1 send unicast packet to laptop2, like ping. Result3
+		5. Laptop2 send unicast packet to laptop1, like ping. Result4
+		L3 route forwarding
+		lan/wifi with different subnet
+		6. Laptop1/laptop2 send unicast packet to S1, like ping. Result5
+		7. S1 send unicast packet to laptop1/laptop2, like ping. Result6
+		Lan/wifi with same subnet
+		8. Laptop1/laptop2 send unicast packet to s2, like ping. Result7
+		9. S2 send unicast packet to laptop1/laptop2, like ping. Result8
+		L3 route forwarding
+		10. Laptop1/laptop2 send unicast packet to pc1, like
+		ping. Result9
+		11. Pc1 send unicast packet to laptop1/laptop2, like ping. Result10
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+		<include prefix="pre.1_1" file="subs/br_close_fw.xml" obj-args="br1" />
+
+		<step no="pre.1_2">
+			<desc>eth0 dhcp</desc>
+			<console target="br1.br" slow="yes">
+				-v "no interface eth0 dhcp client"
+				-v ""
+				-v "interface eth0 dhcp client"
+				-v "no interface eth0 mode wan nat"
+				-v ""
+			</console>
+		</step>
+
+		<step no="pre.1_3" delay="5" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check traffic through wan on BR</desc>
+			<console target="br1.br">
+				-v "ping ${pub.dns1.ip}"
+			</console>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="pre.1_4">
+			<desc>show interface eth0 on BR</desc>
+			<log-file>show_br1.br_eth0_2.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+		</step>
+
+		<step no="pre.1_5">
+			<desc>get eth0 ip of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_br1.br_eth0_2.log -t str
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				PC1 connect to switch
+				Laptop1 connect to lan port eth1
+				Laptop2 connect to lan port eth3
+				Station1 connect to wifi
+				Station2 connect to wifi
+				Pc1, laptop1,laptop2, s1 with different subnet
+				Laptop1,laptop2, s2 with same subnet
+				BR lan port works with port based / trunk mode
+			</desc>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Config mgt0.1, mgt0.2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.2 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1.2" delay="10">
+			<desc>
+				Configure user-profile-attribute for lan ports eth1, eth2, SSID2 with vlan br1.vpc1.vlan
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "user-profile sta2 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 2"
+				-v "user-profile lan3 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 3"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth3 mode bridge-access user-profile-attribute 1"				
+			</telnet>
+		</step>		
+
+		<step no="1.3">
+			<desc>
+				Laptop1 connect to lan port eth1 get ip addr from dhcp server of mgt0.1
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.4">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="1.5a">
+			<desc>
+				AP1 connect to lan port eth3
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0 native-vlan ${br1.vpc1.vlan}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="1.5b" delay="20">
+			<desc>
+				show AP1 mgt0
+			</desc>
+			<log-file>step1.5b_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.5c">
+			<desc>get IP address of ap1</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step1.5b_show_int_mgt0.log -t str
+			</setvar>
+		</step>		
+
+		<step no="get_prefix">
+			<multi-setvar>
+				echo "br1.mgt0.prefix=$(echo ${br1.br.mgt0.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.mgt0.1.prefix=$(echo ${br1.br.mgt0.1.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.mgt0.2.prefix=$(echo ${br1.br.mgt0.2.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.vpc1.prefix=$(echo ${br1.vpc1.tif.ip} | cut -d. -f1,2,3)"
+				echo "br1.ap1.prefix=$(echo ${br1.ap1.mgt0.ip} | cut -d. -f1,2,3)"				
+			</multi-setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				1. Laptop1, laptop2 in same vlan
+			</desc>
+			<script>
+				if [ "${br1.vpc1.prefix}" == "${br1.ap1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="3">
+			<desc>
+				2. Laptop1, laptop2 can retrieve ip address from mgt0.1 dhcp server
+			</desc>
+			<script>
+				if [ "${br1.vpc1.prefix}" == "${br1.mgt0.1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				add route for mpc to br inside networks
+			</desc>
+			<script>
+				route add -net ${br1.mgt0.prefix}.0 netmask ${br.route.netmask} gw ${br1.br.wan.ip}
+				route add -net ${br1.mgt0.1.prefix}.0 netmask ${br.route.netmask} gw ${br1.br.wan.ip}
+				route add -net ${br1.mgt0.2.prefix}.0 netmask ${br.route.netmask} gw ${br1.br.wan.ip}
+			</script>
+		</step>		
+
+		<step no="4" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				4. Laptop1 send unicast packet to laptop2, like ping.
+				ping successfully, route-lookup, send to laptop2 directly
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.ap1.mgt0.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.ap1.mgt0.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				5. Laptop2 send unicast packet to laptop1, like ping.
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>	
+		
+		<step no="6" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				10.Laptop1/laptop2 send unicast packet to pc1, like ping.
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${mpc.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${mpc.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				10.Laptop1/laptop2 send unicast packet to pc1, like ping.
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${mpc.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${mpc.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				11. Pc1 send unicast packet to laptop1/laptop2, like ping.
+			</desc>
+			<log-file>step8_ping.log</log-file>		
+			<script>
+				ping ${br1.vpc1.tif.ip} -c 4 &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${br1.vpc1.tif.ip}:.+ttl=" -f ${log.dir}/step8_ping.log</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				11. Pc1 send unicast packet to laptop1/laptop2, like ping.
+			</desc>
+			<log-file>step9_ping.log</log-file>
+			<script>
+				ping ${br1.ap1.mgt0.ip} -c 4 &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${br1.ap1.mgt0.ip}:.+ttl=" -f ${log.dir}/step9_ping.log</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				del route for mpc to br inside networks
+			</desc>
+			<script>
+				route del -net ${br1.mgt0.prefix}.0 netmask ${br.route.netmask}
+				route del -net ${br1.mgt0.1.prefix}.0 netmask ${br.route.netmask}
+				route del -net ${br1.mgt0.2.prefix}.0 netmask ${br.route.netmask}
+			</script>
+		</step>
+
+		<include prefix="11" file="subs/br_open_fw.xml" obj-args="br1" />		
+
+	</stage>
+
+	<failed-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					del route for mpc to br inside networks
+				</desc>
+				<script>
+					route del -net ${br1.mgt0.prefix}.0 netmask ${br.route.netmask}
+					route del -net ${br1.mgt0.1.prefix}.0 netmask ${br.route.netmask}
+					route del -net ${br1.mgt0.2.prefix}.0 netmask ${br.route.netmask}
+				</script>
+				<no-error-check />
+			</step>
+
+			<include prefix="0.2" file="subs/br_open_fw.xml" obj-args="br1" />			
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+
+</testcase>

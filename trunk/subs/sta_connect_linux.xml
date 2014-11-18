@@ -1,0 +1,389 @@
+<include rarg-names="__STA__">
+
+	<step no="pre.a">
+		<desc>set default eap_type</desc>
+		<if>"${__STA__.eap_type}" == ""</if>
+		<setvar name="__STA__.eap_type">
+			echo "PEAP"
+		</setvar>
+	</step>
+	<step no="pre.b">
+		<desc>set default inner_auth</desc>
+		<if>"${__STA__.inner_auth}" == ""</if>
+		<setvar name="__STA__.inner_auth">
+			echo "MSCHAPV2"
+		</setvar>
+	</step>
+	<step no="pre.c">
+		<desc>get mac of __STA__</desc>
+		<setvar name="__STA__.tif.mac">
+			${bin.dir}/getrmtip.pl -d ${__STA__.mif.ip} -u ${__STA__.user} -p ${__STA__.passwd} -i ${__STA__.tif.name} -m -width 2 | tr '[A-F]' '[a-f]'
+		</setvar>
+	</step>
+	<step no="pre.d">
+		<desc>transport 3 certificate files to __STA__</desc>
+		<if>"${__STA__.eap_type}" == "TLS"</if>
+		<ssh target="__STA__">
+			-v "cd /tmp"
+			-v "tftp ${pub.tftp1.ip} -c get certs/cacert.pem"
+			-v "tftp ${pub.tftp1.ip} -c get certs/${__STA__.username}_cert.pem"
+			-v "tftp ${pub.tftp1.ip} -c get certs/${__STA__.username}_key.pem"
+		</ssh>
+	</step>
+	<step no="pre.e">
+		<desc>set default ap to connect</desc>
+		<if>"${__STA__.debug}" != ""
+			&amp;&amp; "${__STA__.ap.name}" == ""</if>
+		<setvar name="__STA__.ap.name">
+			echo "ap1"
+		</setvar>
+	</step>
+	<step no="pre.f">
+		<desc>set default interface to connect</desc>
+		<if>"${__STA__.debug}" != ""
+			&amp;&amp; "${__STA__.ap.pif}" == ""</if>
+		<setvar name="__STA__.ap.pif">
+			echo "wifi0"
+		</setvar>
+	</step>
+	<step no="pre.g">
+		<desc>show interface on ${__STA__.ap.name}</desc>
+		<if>"${__STA__.debug}" != ""</if>
+		<log-file>show_ssid_${__STA__.ssid}.log</log-file>
+		<telnet target="${__STA__.ap.name}">
+			-v "show ssid ${__STA__.ssid}"
+		</telnet>
+	</step>
+	<step no="pre.h">
+		<desc>get the logical interface of ssid ${__STA__.ssid}</desc>
+		<if>"${__STA__.debug}" != ""</if>
+		<setvar name="__STA__.ap.lif">
+			${bin.dir}/getbyrexp.py -p "(?i)(${__STA__.ap.pif}\.\d)" -t str -f ${log.dir}/show_ssid_${__STA__.ssid}.log
+		</setvar>
+	</step>
+	<step no="1">
+		<desc>create a wpa_supplicant configuration file on __STA__</desc>
+		<ssh target="__STA__">
+			-v "echo \"ctrl_interface=/var/run/wpa_supplicant\" > /tmp/wpa_supplicant.cfg"
+			-v "ifconfig ${__STA__.tif.name} down"
+		</ssh>
+	</step>
+	<step no="2">
+		<desc>kill the wpa_supplicant daemon on __STA__</desc>
+		<ssh target="__STA__">
+			-v "ifconfig ${__STA__.tif.name} up"
+			-v "killall -9 wpa_supplicant -q"
+			-v "killall dhclient -q"
+		</ssh>
+	</step>
+	<step no="set_tif_channel">
+		<desc>kill the wpa_supplicant daemon on __STA__</desc>
+		<if>"${__STA__.channle}" == "wifi1"</if>
+		<ssh target="__STA__">
+			-v "iwconfig ${__STA__.tif.name} channel ${__STA__.tif.channel}"
+		</ssh>
+	</step>
+	<step no="3" delay="5">
+		<desc>start the wpa_supplicant on __STA__</desc>
+		<ssh target="__STA__">
+			-v "wpa_supplicant -i ${__STA__.tif.name} ${__STA__.wpa_flag} -c /tmp/wpa_supplicant.cfg -B"
+		</ssh>
+	</step>
+
+	<step no="4.a">
+		<desc>enable auth debug on demand</desc>
+		<if>"${__STA__.debug}" == "2"
+			|| "${__STA__.debug}" >= "5"
+		</if>
+		<telnet target="${__STA__.ap.name}">
+			-v "_df id 1 data src-mac ${__STA__.tif.mac} bidirectional interface ${__STA__.ap.pif}"
+			-v "_kde wifi-driver ${__STA__.ap.lif} auth"
+			-v "_kde wifi-driver ${__STA__.ap.lif} assoc"
+			-v "_debug auth basic"
+			-v "_debug auth info"
+			-v "_debug auth excessive"
+			-v "_debug auth error"
+		</telnet>
+	</step>
+	<step no="4.b">
+		<desc>configure ssid property on __STA__</desc>
+		<if>"${__STA__.proto}" == ""
+			|| "${__STA__.proto}" == "open"
+		</if>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 ssid \"${__STA__.ssid}\""
+			-v "set_network 0 key_mgmt NONE"
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+	<step no="wpa2-aes-psk">
+		<desc>configure ssid property on __STA__</desc>
+		<if>"${__STA__.proto}" == "wpa2-aes-psk"</if>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 ssid \"${__STA__.ssid}\""
+			-v "set_network 0 key_mgmt WPA-PSK"
+			-v "set_network 0 proto RSN"
+			-v "set_network 0 psk \"${__STA__.psk}\""
+			-v "set_network 0 pairwise CCMP"
+			-v "set_network 0 group CCMP"
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+	<step no="4.wpa2-tkip-psk">
+		<desc>configure ssid property on __STA__</desc>
+		<if>"${__STA__.proto}" == "wpa2-tkip-psk"</if>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 ssid \"${__STA__.ssid}\""
+			-v "set_network 0 key_mgmt WPA-PSK"
+			-v "set_network 0 proto RSN"
+			-v "set_network 0 psk \"${__STA__.psk}\""
+			-v "set_network 0 pairwise TKIP"
+			-v "set_network 0 group TKIP"
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+
+	<step no="4.wpa_tkip_psk">
+		<desc>configure ssid property on __STA__</desc>
+		<if>"${__STA__.proto}" == "wpa-tkip-psk"</if>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 ssid \"${__STA__.ssid}\""
+			-v "set_network 0 key_mgmt WPA-PSK"
+			-v "set_network 0 proto WPA"
+			-v "set_network 0 psk \"${__STA__.psk}\""
+			-v "set_network 0 pairwise TKIP"
+			-v "set_network 0 group TKIP"
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+	<step no="4.wpa_aes_psk">
+		<desc>configure ssid property on __STA__</desc>
+		<if>"${__STA__.proto}" == "wpa-aes-psk"</if>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 ssid \"${__STA__.ssid}\""
+			-v "set_network 0 key_mgmt WPA-PSK"
+			-v "set_network 0 proto WPA"
+			-v "set_network 0 pairwise CCMP"
+			-v "set_network 0 group CCMP"
+			-v "set_network 0 psk \"${__STA__.psk}\""
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+	<step no="4.e">
+		<desc>configure ssid property on __STA__</desc>
+		<if>"${__STA__.proto}" == "wep-shared"</if>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 ssid \"${__STA__.ssid}\""
+			-v "set_network 0 key_mgmt NONE"
+			-v "set_network 0 auth_alg SHARED"
+			-v "set_network 0 wep_key${__STA__.keyid} \"${__STA__.psk}\""
+			-v " set_network 0 wep_tx_keyidx ${__STA__.keyid}"
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+	<step no="4.f">
+		<desc>configure ssid property on __STA__</desc>
+		<if>( "${__STA__.proto}" == "wpa-tkip-8021x"
+			|| "${__STA__.proto}" == "wpa-aes-8021x" )
+			&amp;&amp; "${__STA__.eap_type}" != "TLS"
+		</if>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 ssid \"${__STA__.ssid}\""
+			-v "set_network 0 key_mgmt WPA-EAP"
+			-v "set_network 0 proto WPA"
+			-v "set_network 0 eap ${__STA__.eap_type}"
+			-v "set_network 0 phase2 \"auth=${__STA__.inner_auth}\""
+			-v "set_network 0 identity \"${__STA__.username}\""
+			-v "set_network 0 password \"${__STA__.passwd}\""
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+	<step no="4.g">
+		<desc>configure ssid property on __STA__</desc>
+		<if>( "${__STA__.proto}" == "wpa2-tkip-8021x"
+			|| "${__STA__.proto}" == "wpa2-aes-8021x" )
+			&amp;&amp; "${__STA__.eap_type}" != "TLS"
+		</if>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 proactive_key_caching \"1\""
+			-v "set_network 0 ssid \"${__STA__.ssid}\""
+			-v "set_network 0 key_mgmt WPA-EAP"
+			-v "set_network 0 proto RSN"
+			-v "set_network 0 eap ${__STA__.eap_type}"
+			-v "set_network 0 phase2 \"auth=${__STA__.inner_auth}\""
+			-v "set_network 0 identity \"${__STA__.username}\""
+			-v "set_network 0 password \"${__STA__.passwd}\""
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+	<step no="4.h">
+		<desc>configure ssid property on __STA__</desc>
+		<if>( "${__STA__.proto}" == "wpa-tkip-8021x"
+			|| "${__STA__.proto}" == "wpa-aes-8021x" )
+			&amp;&amp; "${__STA__.eap_type}" == "TLS"
+		</if>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 ssid \"${__STA__.ssid}\""
+			-v "set_network 0 key_mgmt WPA-EAP"
+			-v "set_network 0 proto WPA"
+			-v "set_network 0 eap ${__STA__.eap_type}"
+			-v "set_network 0 identity \"${__STA__.username}\""
+			-v "set_network 0 ca_cert \"/tmp/cacert.pem\""
+			-v "set_network 0 client_cert \"/tmp/${__STA__.username}_cert.pem\""
+			-v "set_network 0 private_key \"/tmp/${__STA__.username}_key.pem\""
+			-v "set_network 0 private_key_passwd \"${__STA__.passwd}\""
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+	<step no="4.i">
+		<desc>configure ssid property on __STA__</desc>
+		<if>( "${__STA__.proto}" == "wpa2-tkip-8021x"
+			|| "${__STA__.proto}" == "wpa2-aes-8021x" )
+			&amp;&amp; "${__STA__.eap_type}" == "TLS"
+		</if>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "reconfig"
+			-v "add_network"
+			-v "set_network 0 proactive_key_caching \"1\""
+			-v "set_network 0 ssid \"${__STA__.ssid}\""
+			-v "set_network 0 key_mgmt WPA-EAP"
+			-v "set_network 0 proto RSN"
+			-v "set_network 0 eap ${__STA__.eap_type}"
+			-v "set_network 0 phase2 \"auth=${__STA__.inner_auth}\""
+			-v "set_network 0 identity \"${__STA__.username}\""
+			-v "set_network 0 ca_cert \"/tmp/cacert.pem\""
+			-v "set_network 0 client_cert \"/tmp/${__STA__.username}_cert.pem\""
+			-v "set_network 0 private_key \"/tmp/${__STA__.username}_key.pem\""
+			-v "set_network 0 private_key_passwd \"${__STA__.passwd}\""
+			-v "set_network 0 priority 5"
+			-v "select_network 0"
+			-v "reas"
+			-v "quit"
+		</ssh>
+	</step>
+
+	<step no="5.a" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+		<desc>check if __STA__ is associated successful</desc>
+		<if> "${__STA__.status_negative}" != "1"</if>
+		<log-file>wpa_stat___STA___${loop_check.idx}.log</log-file>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "stat"
+			-v "quit"
+		</ssh>
+		<log-match file="wpa_stat___STA___${loop_check.idx}.log">-e "wpa_state=COMPLETED"</log-match>
+	</step>
+	<step no="5.b" delay="25">
+		<desc>check if __STA__ is associated unsuccessful</desc>
+		<if> "${__STA__.status_negative}" == "1"</if>
+		<log-file>wpa_stat___STA___.log</log-file>
+		<ssh target="__STA__" prompt=">|.*#">
+			-v "wpa_cli"
+			-v "stat"
+			-v "quit"
+		</ssh>
+		<log-match file="wpa_stat___STA___.log">-e "wpa_state=COMPLETED" -n</log-match>
+	</step>
+	<step no="6.1">
+		<desc>enable debug on demand to trace DHCP issue</desc>
+		<if>"${__STA__.debug}" == "1"
+			|| "${__STA__.debug}" >= "5"
+		</if>
+		<telnet target="${__STA__.ap.name}">
+			-v "_kdebug wifi-driver ${__STA__.ap.pif} xmit"
+			-v "_kdebug wifi-driver ${__STA__.ap.lif} extend vlan"
+			-v "_kdebug wifi basic"
+			-v "_ff id 1 src-port 68 bidirectional"
+			-v "_kdebug fe basic"
+		</telnet>
+	</step>
+	<step no="6.2">
+		<desc>__STA__ gets IP by DHCP</desc>
+		<if> "${__STA__.status_negative}" != "1"</if>
+		<ssh target="__STA__" slow="true">
+			-v "dhclient ${__STA__.tif.name}"
+		</ssh>
+	</step>
+	<step no="6.3">
+		<desc>check debug on demand to trace DHCP issue</desc>
+		<if>"${__STA__.debug}" == "1"
+			|| "${__STA__.debug}" >= "5"
+		</if>
+		<log-file>trace___STA1__dhcp.log</log-file>
+		<telnet target="${__STA__.ap.name}">
+			-v "show logging buffered"
+		</telnet>
+		<no-error-check />
+	</step>
+	<step no="6.4">
+		<desc>check if __STA__ gets ip success</desc>
+		<if> "${__STA__.status_negative}" != "1"</if>
+		<log-file>ifconfig___STA__.log</log-file>
+		<ssh target="__STA__">
+			-v "ifconfig ${__STA__.tif.name}"
+		</ssh>
+		<log-match file="ifconfig___STA__.log">-e "inet addr" -e "inet "</log-match>
+	</step>
+	<step no="7">
+		<desc>get wireless IP from __STA__</desc>
+		<if> "${__STA__.status_negative}" != "1"</if>
+		<setvar name="__STA__.tif.ip">
+			${bin.dir}/getrmtip.pl -d ${__STA__.mif.ip} -u ${__STA__.user} -p ${__STA__.passwd} -i ${__STA__.tif.name} -nomask
+		</setvar>
+	</step>
+</include>

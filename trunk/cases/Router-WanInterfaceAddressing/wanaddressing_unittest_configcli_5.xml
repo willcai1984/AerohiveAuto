@@ -1,0 +1,104 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unit Test 0105: Creating new user-profile and putting clients on new VLAN should work</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		After WANAddressing_UnitTest_ConfigCLI_4
+
+		Test Procedure:
+		create a new user-profile with VLAN 2, create a security-object test-vlan with attribute
+		2, create a new ssid test-vlan, set ssid test-vlan to reference the security-object
+		CLI commands:
+		user-profile test-vlan vlan-id 2 attribute 2
+		security-object test-vlan
+		security-object test-vlan default-user-profile-attr 2
+		ssid test_vlan
+		ssid test_vlan security-object test-vlan
+		interface wifi0 ssid test-vlan
+		save config
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>linux</tbtype>
+
+	
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP
+				Enable 1 dhcp server（mgt0.1）
+				Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+				Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dns-server enable"
+				-v "dns server-ip ${pub.dns1.ip}"
+			</telnet>
+		</step>		
+
+		<step no="1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<telnet target="${br1.br.wan.ip}">				
+				-v "user-profile fw11 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"			
+			</telnet>
+		</step>
+		
+		<step no="2.1a">
+			<desc>
+				br1.vpc1 show ip address got from mgt0 dhcp client
+			</desc>
+			<log-file>step2_ifconfig_br1_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		
+		<step no="2.1b">
+			<desc>set br1.vpc1.tif.ip var for vpc2 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="check.eth1">
+			<desc>
+				show interface
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show running-config"
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<multi-setvar>
+				echo "br1.vpc1.prefix=$(echo ${br1.br.mgt0.1.ip_pool_start} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				Check PC get correct IP in the ip pool
+			</desc>
+			<log-file>step4_ifconfig_sta_wlan0.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr:${br1.vpc1.prefix}"</log-match>
+		</step>
+	</stage>
+</testcase>

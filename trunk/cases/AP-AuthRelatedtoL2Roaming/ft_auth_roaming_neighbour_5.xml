@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>roaming neighbor query-interval</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-two APs,they are roaming neighbour
+
+		Test Procedure:
+		-check the neighbour query interval
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap1.wifi1.existed}" == "true"</if>
+
+		<step no="0.1">
+			<desc>shutdown interface eth1</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config hive and bind it to interface
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}_${job.sid}"
+				-v "hive ${hive.name}_${job.sid} password aerohive"
+				-v "interface mgt0 hive ${hive.name}_${job.sid}"
+				-v "_debug nbr all"
+				-v "_debug nbrcom-lib all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config hive and bind it to interface
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}_${job.sid}"
+				-v "hive ${hive.name}_${job.sid} password aerohive"
+				-v "interface mgt0 hive ${hive.name}_${job.sid}"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				show ap2's interface wifi1 info
+			</desc>
+			<log-file>show_ap2_interface_info.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				get ap2's wifi1's mac address
+			</desc>
+			<setvar name="ap2.wifi1.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_interface_info.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>shutdown interface wifi1 and then up it (it's aimed to clear wifi1's neighbor list)</desc>
+			<telnet target="ap1">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step3.1_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+Backhaul\s+${hive.name}_${job.sid}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				-shutdown ap1's eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step5_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check roaming neighbor on ap1</desc>
+			<log-file>check_roaming_neighor_ap1_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show roaming neighbor"
+			</console>
+			<log-match>-i "${ap2.mgt0.ip}" -i "${ap2.mgt0.mac}" -p 4 -i "D"</log-match>
+			<log-match>-c -i "Neighbor query interval: *10secs"</log-match>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check roaming neighbor on ap2</desc>
+			<log-file>check_roaming_neighor_ap2_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-i "${ap1.mgt0.ip}" -i "${ap1.mgt0.mac}" -p 4 -i "D"</log-match>
+			<log-match>-c -i "Neighbor query interval: *10secs"</log-match>
+		</step>
+		<step no="7" delay="20">
+			<desc>show log buffer</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="500">
+				-v "show logging buffered | include ${ap2.mgt0.ip}"
+			</console>
+			<no-error-check />
+		</step>
+
+		<!--<include prefix="7" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step7_show_logging_buffered.log" />-->
+
+		<step no="8">
+			<desc>Get the second times of receive query in default mode</desc>
+			<setvar name="second.receive.query.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*L3 update message received:\s*mac=${ap2.mgt0.mac}\s*ip=${ap2.mgt0.ip}" -t str -g0 -s none
+			</setvar>
+		</step>
+
+		<step no="8.1">
+			<desc>Get the first times of receive query in default mode</desc>
+			<setvar name="first.receive.query.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*L3 update message received:\s*mac=${ap2.mgt0.mac}\s*ip=${ap2.mgt0.ip}" -t str -g1 -s none
+			</setvar>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				check if the interval is 10s.
+			</desc>
+			<log-file>step8.2_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${second.receive.query.time}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.receive.query.time}', '%Y-%m-%d %H:%M:%S').timetuple())) == 10.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>Get the second times of send query in default mode</desc>
+			<setvar name="second.send.query.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*HiveCom: ${ap2.mgt0.ip} send \d+ bytes to ah_nbr" -t str -g0 -s none
+			</setvar>
+		</step>
+
+		<step no="9.1">
+			<desc>Get the first times of send query in default mode</desc>
+			<setvar name="first.send.query.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*HiveCom: ${ap2.mgt0.ip} send \d+ bytes to ah_nbr" -t str -g1 -s none
+			</setvar>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				check if the interval is 10s.
+			</desc>
+			<log-file>step9.2_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${second.send.query.time}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.send.query.time}', '%Y-%m-%d %H:%M:%S').timetuple())) == 10.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				-change the query-interval to 20
+			</desc>
+			<console target="ap1">
+				-v "roaming neighbor query-interval 20 query-times 5"
+			</console>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				-change the query-interval to 20
+			</desc>
+			<telnet target="ap2">
+				-v "roaming neighbor query-interval 20 query-times 5"
+			</telnet>
+		</step>
+
+		<step no="10.2" delay="10">
+			<desc>
+				-clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="11">
+			<desc>check roaming neighbor on ap1</desc>
+			<log-file>step11_check_roaming_neighor_ap1.log</log-file>
+			<console target="ap1">
+				-v "show roaming neighbor"
+			</console>
+			<log-match>-c -i "Neighbor query interval: *20secs"</log-match>
+		</step>
+
+		<step no="11.1">
+			<desc>check roaming neighbor on ap2</desc>
+			<log-file>step11.1_check_roaming_neighor_ap2.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming neighbor"
+			</telnet>
+			<log-match>-c -i "Neighbor query interval: *20secs"</log-match>
+		</step>
+		<step no="12" delay="20">
+			<desc>show log buffer</desc>
+			<log-file>step12_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="500">
+				-v "show logging buffered | include ${ap2.mgt0.ip}"
+			</console>
+			<no-error-check />
+		</step>
+
+		<!--<include prefix="12" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step12_show_logging_buffered.log" />-->
+
+		<step no="13">
+			<desc>Get the second times of receive query in new query-interval</desc>
+			<setvar name="new.second.receive.query.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step12_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*L3 update message received:\s*mac=${ap2.mgt0.mac}\s*ip=${ap2.mgt0.ip}" -t str -g0 -s none
+			</setvar>
+		</step>
+
+		<step no="13.1">
+			<desc>Get the first times of receive query in new query-interval</desc>
+			<setvar name="new.first.receive.query.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step12_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*L3 update message received:\s*mac=${ap2.mgt0.mac}\s*ip=${ap2.mgt0.ip}" -t str -g1 -s none
+			</setvar>
+		</step>
+
+		<step no="13.2">
+			<desc>
+				check if the interval is 20s.
+			</desc>
+			<log-file>step13.2_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${new.second.receive.query.time}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${new.first.receive.query.time}', '%Y-%m-%d %H:%M:%S').timetuple())) == 20.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>Get the second times of send query in new query-interval</desc>
+			<setvar name="new.second.send.query.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step12_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*HiveCom: ${ap2.mgt0.ip} send \d+ bytes to ah_nbr" -t str -g0 -s none
+			</setvar>
+		</step>
+
+		<step no="14.1">
+			<desc>Get the first times of send query in default mode</desc>
+			<setvar name="new.first.send.query.time">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step12_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*HiveCom: ${ap2.mgt0.ip} send \d+ bytes to ah_nbr" -t str -g1 -s none
+			</setvar>
+		</step>
+
+		<step no="14.2">
+			<desc>
+				check if the interval is 20s.
+			</desc>
+			<log-file>step14.2_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${new.second.send.query.time}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${new.first.send.query.time}', '%Y-%m-%d %H:%M:%S').timetuple())) == 20.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,213 @@
+<testcase>
+	<brief>Verify that 11a Basic and Optional rates set correctly</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Description
+		Verify that 11a Basic and Optional rates set correctly
+		Test procedure
+		AP mgt packets send by basic 11a rate
+		Expect result
+		AP mgt packets send by basic 11a rate
+	</description>
+
+	<stage>
+		<if>"${ap1.wifi1.existed}" == "true"</if>
+		<step no="1.1">
+			<desc>Set config for AP1 via telnet to </desc>
+			<telnet target="ap1">
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi1 ssid ${ssid.name}1"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "ssid ${ssid.name}2 11a-rate-set 9-basic 12-basic 36 54"
+				-v "interface wifi1 radio channel 157"
+				-v "console timeout 0"
+				-v "console page 0"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="1.2">
+			<desc>Show run config of AP1 </desc>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>Show interface wifi1.1 of AP1 </desc>
+			<log-file>show_interface_wifi11.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+			</telnet>
+		</step>
+		<step no="2.2">
+			<desc>Get_mac of wifi1.1 on AP1 </desc>
+			<setvar name="ap1.wifi11.mac">
+				perl ${bin.dir}/getrmtip.pl -i wifi1.1 -o aero -m \
+				-f ${log.dir}/show_interface_wifi11.log
+			</setvar>
+		</step>
+		<step no="2.3">
+			<desc>Show interface wifi1.2 of AP1 </desc>
+			<log-file>show_interface_wifi12.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.2"
+			</telnet>
+		</step>
+		<step no="2.4">
+			<desc>Get_mac of wifi1.2 on AP1 </desc>
+			<setvar name="ap1.wifi12.mac">
+				perl ${bin.dir}/getrmtip.pl -i wifi1.2 -o aero -m \
+				-f ${log.dir}/show_interface_wifi12.log
+			</setvar>
+		</step>
+
+		<step no="2.5">
+			<desc>Set config for AP2 via console to  </desc>
+			<telnet target="ap2">
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 11"
+				-v "interface wifi1 mode dual"
+				-v "interface wifi1 radio channel 157"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap2">
+			  -v "interface wifi1 radio channel 157"
+				-v "capture save interface wifi1 tftp://${mpc.tif.ip}:1_${job.sid}_w1_filter1.pcap"
+				-v "capture interface wifi1 count 2000"
+			</telnet>
+		</step>
+
+		<step no="3.2" delay="100">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap2">
+				-v "save capture local 1_${job.sid}_w1_filter1.pcap tftp://${mpc.tif.ip}:/1_${job.sid}_w1_filter1.pcap"
+			</telnet>
+		</step>
+
+		<step no="3.3">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>ts_basic_optional_a.log</log-file>
+			<script>
+				tshark -r /tftpboot/1_${job.sid}_w1_filter1.pcap -V > ${log.dir}/${log.file}
+
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="4.1">
+			<desc>Get SSID1 Supported rates</desc>
+			<log-file>ssid1.supported.rates.log</log-file>
+			<script>
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_basic_optional_a.log \
+				-k ${ap1.wifi11.mac} -k "Type/Subtype: Beacon frame" -o "Supported Rates" > ${log.dir}/${log.file}
+			</script>
+			<log-match>
+				<!---i "6.0(B)" -i "9.0" -i "12.0(B)" -i "18.0" -i "24.0(B)" -i "36.0" -i "48.0" -i "54.0" -->
+				-i "6(B)" -i "9" -i "12(B)" -i "18" -i "24(B)" -i "36" -i "48" -i "54"
+			</log-match>
+		</step>
+		<step no="4.2">
+			<desc>Get SSID2 Supported rates</desc>
+			<log-file>ssid2.supported.rates.log</log-file>
+			<script>
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_basic_optional_a.log \
+				-k ${ap1.wifi12.mac} -k "Type/Subtype: Beacon frame" -o "Supported Rates" > ${log.dir}/${log.file}
+			</script>
+			<!--<log-match>-i "9.0(B)" -i "12.0(B)" -i "54.0" -i "36.0"</log-match> -->
+			<log-match>-i "9(B)" -i "12(B)" -i "54" -i "36"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>Change SSID1 and SSID2 rates </desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1 11a-rate-set 9-basic 24-basic 36 48"
+				-v "ssid ${ssid.name}2 11a-rate-set 6-basic 18 24"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="5.2">
+			<desc>Show run config of AP1 </desc>
+			<log-file>show_run_config_2.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap2">
+				-v "capture save interface wifi1 tftp://${mpc.tif.ip}:2_${job.sid}_w1_filter1.pcap"
+				-v "capture interface wifi1 count 2000"
+			</telnet>
+		</step>
+
+		<step no="6.1a" delay="100">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap2">
+				-v "save capture local 2_${job.sid}_w1_filter1.pcap tftp://${mpc.tif.ip}:/2_${job.sid}_w1_filter1.pcap"
+			</telnet>
+		</step>
+
+		<step no="6.2" delay="15">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>ts_basic_optional_a.later.log</log-file>
+			<script>
+				tshark -r /tftpboot/2_${job.sid}_w1_filter1.pcap -V > ${log.dir}/${log.file}
+
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>Get SSID1 Supported rates</desc>
+			<log-file>ssid1.supported.rates.later.log</log-file>
+			<script>
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_basic_optional_a.later.log \
+				-k ${ap1.wifi11.mac} -k "Type/Subtype: Beacon frame" -o "Supported Rates" > ${log.dir}/${log.file}
+			</script>
+			<!--<log-match>-i "9.0(B)" -i "24.0(B)" -i "36.0" -i "48.0"</log-match> -->
+			<log-match>-i "9(B)" -i "24(B)" -i "36" -i "48"</log-match>
+		</step>
+		<step no="7.2">
+			<desc>Get SSID2 Supported rates</desc>
+			<log-file>ssid2.supported.rates.later.log</log-file>
+			<script>
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_basic_optional_a.later.log \
+				-k ${ap1.wifi12.mac} -k "Type/Subtype: Beacon frame" -o "Supported Rates" > ${log.dir}/${log.file}
+			</script>
+			<!--<log-match>-i "6.0(B)" -i "18.0" -i "24.0"</log-match> -->
+			<log-match>-i "6(B)" -i "18" -i "24"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="p1">
+				<desc>remove temporary files</desc>
+				<script>
+					rm -f /tftpboot/1_${job.sid}_w1_filter1.pcap
+					rm -f /tftpboot/2_${job.sid}_w1_filter1.pcap
+				</script>
+			</step>
+			<step no="p2">
+				<desc>clear ap config</desc>
+				<console target="ap1">
+					-v "no capture interface w1"
+					-v "no capture save interface w1"
+				</console>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

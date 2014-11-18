@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Session setup for dhcp-server traffic</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Config the ip-policy that permit dhcp-server traffic between Laptop and Server
+		"ip-policy FW-0"
+		"ip-policy FW-0 service [dhcp-server] [from/to] &lt;Laptop ip addr&gt; action permit"
+		2) Config AP1 as a dhcp-server
+		"interface mgt0 dhcp-server enable"
+		"interface mgt0 dhcp-server ip-pool &lt;first_ip_addr&gt; &lt;last_ip_addr&gt;"
+		3) Laptop can get ip_address in the ip_pool range from AP1
+		4) Laptop ping AP1
+		5) Show the ip-session
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				Config ap1
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "user-profile FW qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				Config ip policy
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy FW"
+				-v "ip-policy FW service dhcp-client action permit"
+				-v "ip-policy FW service dhcp-server action permit"
+				-v "user-profile FW security ip-policy from-access FW to-access FW"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>realse</desc>
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				Check the ip-session table on AP1
+			</desc>
+			<log-file>step4.1_show_forwarding_engine_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}.*?-&gt;.*?${pub.dhcp.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${pub.dhcp.ip}.*?-&gt;.*?${sta1.tif.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy FW id 2 from ${sta1.tif.ip} action permit"
+				-v "ip-policy FW id 3 to ${sta1.tif.ip} action permit"
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "user-profile FW security ip-policy from-access FW to-access FW"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/sta_ping.xml" args="sta1, ${ap1.mgt0.ip}, 5" />
+
+		<step no="7">
+			<desc>
+				Laptop ping AP1
+			</desc>
+			<log-file>step7_laptop_ping_ap.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ping ${ap1.mgt0.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				get Laptop ping id
+			</desc>
+			<setvar name="laptop.ping.id">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_laptop_ping_ap.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="8" delay="20">
+			<desc>
+				Check the ip-session table on AP1
+			</desc>
+			<log-file>step8_show_forwarding_engine_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}.*?-&gt;.*?${ap1.mgt0.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.mgt0.ip}.*?-&gt;.*?${sta1.tif.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>
+					kill laptop ping process
+				</desc>
+				<ssh target="sta1">
+					-v "kill ${laptop.ping.id}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

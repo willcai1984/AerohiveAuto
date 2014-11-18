@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Enable mac learning, check mac learning for a vlan, a vlan can learn different src macs</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Description	Enable mac learning, check mac learning for a vlan, a vlan can learn different src macs
+		Platform Dependence	Chesapeake
+		Pre-condition	?	FDB table size doesn’t exceed
+		?	IXIA port1, IXIA port2 connect to switch access port1, port2
+		?	Switch port1 with pvid 10, port2 with pvid 20
+		?	Switch access ports are with learning/forwarding state
+		?	IXIA port1 send frames with src mac is mac1
+		?	IXIA port2 send frames with src mac is mac2
+		Test procedure	1.	Set mac learning enabled for vlan 10,20
+		CLI: mac-address-table  learning  vlan  10
+		mac-address-table  learning  vlan  20
+		2.	IXIA port1 send frames with different src mac to switch       Result1
+		Src mac : 0000-1111-1111
+		Src mac : 0000-1111-1112
+		Src mac : 0000-1111-1113
+		3.	IXIA port2  send frames with different src mac to switch       Result2
+		Src mac : 0000-2222-2222
+		Src mac : 0000-2222-2223
+		Src mac : 0000-2222-2224
+		4.	Check hw/sw mac address table         Result3
+		Expect result	Result1:   switch can learn all the src mac in vlan 10, and add a mac entry like following:
+		[0000-1111-1111, Vlan10, Port1]
+		[0000-1111-1112, Vlan10, Port1]
+		[0000-1111-1113, Vlan10, Port1]
+		Result2:   switch can learn all the src mac in vlan 20, and add a mac entry like following:
+		[0000-2222-2222, Vlan20, Port2]
+		[0000-2222-2223, Vlan20, Port2]
+		[0000-2222-2224, Vlan20, Port2]
+
+		Result3:   HW/sw mac address add these unicast  mac entries too
+	</description>
+
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<comment>
+		sw1.port1=eth1/5;
+		sw1.port2=eth1/6;
+		sw1.port3=eth1/13;
+		sw1.port4=eth1/14;
+		sw1.port3.ixia_port
+		sw1.port1.ixia_port=1/2/7;
+		sw1.port2.ixia_port=1/2/8;
+		sw1.port1.ixia_port=1/2/9;
+		sw1.port2.ixia_port=1/2/10;
+		sw1.terminal.ip=10.155.32.105;
+		sw1.terminal.port=2054;
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclclient1.ip=10.155.40.10;
+
+		mpc.mif.ip=10.155.32.128;
+		mpc.tif.ip=10.68.136.253;
+		mpc.user=root;
+		mpc.passwd=aerohive;
+		mpc.prompt=".*#";
+		mpc.tif.name=eth1;
+		tb.nvlan=100;
+		tb.vlans=100,200,300;
+		tb.vlan1=100;
+		tb.vlan2=200;
+		tb.vlan3=300;
+	</comment>
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process_test.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0011.0001"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0022.0001"/>
+
+	<stage>
+
+
+		<step no="1">
+			<desc>
+				configure two access ports in different vlans
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan2}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show vlan id ${tb.vlan2}"
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				port1 sends pkts with mac ${sw1.port1.ixia_port.mac}, while port2 sends pkts with mac ${sw1.port2.ixia_port.mac}
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-mac_src_count 3
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- configure the sencond stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port2.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port2.ixia_port.mac}
+				-mac_src_count 3	
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="2.2">
+			<desc>convert the format of mac addr</desc>
+			<multi-setvar>
+				echo "mac1=$(echo ${sw1.port1.ixia_port.mac} | sed 's/\.//g' | sed 's/\(....\)/\1:/g;s/:$//')"
+				echo "mac2=$(printf %012d $(expr $(echo ${sw1.port1.ixia_port.mac} | sed 's/\.//g') + 1) | sed 's/\(....\)/\1:/g;s/:$//')"
+				echo "mac3=$(printf %012d $(expr $(echo ${sw1.port1.ixia_port.mac} | sed 's/\.//g') + 2) | sed 's/\(....\)/\1:/g;s/:$//')"
+				echo "mac4=$(echo ${sw1.port2.ixia_port.mac} | sed 's/\.//g' | sed 's/\(....\)/\1:/g;s/:$//')"
+				echo "mac5=$(printf %012d $(expr $(echo ${sw1.port2.ixia_port.mac} | sed 's/\.//g') + 1) | sed 's/\(....\)/\1:/g;s/:$//')"
+				echo "mac6=$(printf %012d $(expr $(echo ${sw1.port2.ixia_port.mac} | sed 's/\.//g') + 2) | sed 's/\(....\)/\1:/g;s/:$//')"
+			</multi-setvar>
+		</step>
+		<step no="2.3">
+			<desc>check FDB, mac learning works fine</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${mac1}\s*${sw1.port1}"</log-match>
+			<log-match>-e "${tb.vlan1}\s*${mac2}\s*${sw1.port1}"</log-match>
+			<log-match>-e "${tb.vlan1}\s*${mac3}\s*${sw1.port1}"</log-match>
+			<log-match>-e "${tb.vlan2}\s*${mac4}\s*${sw1.port2}"</log-match>
+			<log-match>-e "${tb.vlan2}\s*${mac5}\s*${sw1.port2}"</log-match>
+			<log-match>-e "${tb.vlan2}\s*${mac6}\s*${sw1.port2}"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

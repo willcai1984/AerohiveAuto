@@ -1,0 +1,576 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=4) When the switch is in IGMPv2 nerwork, Packets with a destination IP address in the 224.0.0.X range which are not IGMP must be forwarded on all ports.</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	Topology 2
+		Description	When the switch is in IGMPv2 nerwork, Packets with a destination IP address in the 224.0.0.X range which are not IGMP must be forwarded on all ports.
+
+		Platform	Chesapeake
+		Pre-condition	IGMP snooping is enabled on the switch; All the ports are in vlan 10.
+		Test procedure	1. There is no multicast entry information on the switch, multicast sourceA sends multicast stream which is not IGMP with a destination IP address 224.0.0.10, capture packets on the hosts and the multicast router A, result 1.
+		2. RouterA and routerB send IGMPv2 query ,hostA sends IGMPv2 join report for 224.1.1.1,result 1
+		3. RouterA and routerB send IGMPv2 query ,hostA and hostB send IGMPv2 join report for 224.1.1.1,result 1
+		4. Configure routerA and hostA are in vlan 10; routerB, hostB and hostC are in vlan 100. multicast sourceB sends multicast stream which is not IGMP with a destination IP address 224.0.0.20 ,result 2
+		5. All the hosts  send IGMPv2 leave message ,result 2
+
+		Expect result	1. Packets with destination IP address 224.0.0.10 can be caught on all the hosts and routerB.
+		2. Packets with destination IP address 224.0.0.10 can be caught on hostA, packets with destination IP address 224.0.0.20 can be caught on hostB and hostC.
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				config switch, port1 and port2 in vlan${tb.vlan1} and port3, port4 in vlan${tb.vlan2}	
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port4} switchport mode trunk"
+				-v "no interface ${sw1.port4} switchport trunk allow vlan all"
+				-v "interface ${sw1.port4} switchport trunk allow vlan ${tb.vlan1}"
+				-v "interface ${sw1.port4} switchport trunk allow vlan ${tb.vlan2}"
+				-v "interface ${sw1.port4} switchport trunk native vlan ${tb.vlan2}"
+				-v "ip igmp snooping"
+				 -v "show interface"
+			</telnet>
+		</step>
+		<step no="1.2">
+			<desc>check igmp is enable in vlan ${tb.vlan1}</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+		</step>
+		<step no="1.3">
+			<desc>check igmp is enable in vlan ${tb.vlan2}</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping vlan ${tb.vlan2}"
+				-v "_debug swd igmp"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+		</step>
+		<step no="2.1">
+			<desc>
+				port2 sends igmp v2 query pkt
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "stream_import -onePort ${sw1.port2.ixia_port} -fileName ${case.dir}/conf/potr2.str"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 2 -maintanceOp enable"
+				-v ""
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="2.2">
+			<desc>show log buf</desc>
+			<log-file>check_igmp1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="3">
+			<desc>check the mroute table added the entry</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v2" -n</log-match>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port2}\s*v2"</log-match>
+		</step>
+		<step no="4.1">
+			<desc>
+				port1 sends multicast date pkt, dst-ip is 224.0.0.10, capture pkt on port2,3 and port4 
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_import -onePort ${sw1.port1.ixia_port} -fileName ${case.dir}/conf/potr1.str"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 11 -maintanceOp enable"
+				-v ""
+				-v "start_capture -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "stop_capture -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "save_capture -onePort  ${sw1.port2.ixia_port} -fileName ${job.id}_1.enc"
+				-v "save_capture -onePort  ${sw1.port3.ixia_port} -fileName ${job.id}_2.enc"
+				-v "save_capture -onePort  ${sw1.port4.ixia_port} -fileName ${job.id}_3.enc"
+				-v ""
+				-v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_1.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_2.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_3.enc"
+				-v "rm -f ${job.id}_1.enc"
+				-v "rm -f ${job.id}_2.enc"
+				-v "rm -f ${job.id}_3.enc"
+			</ssh>
+		</step>
+		<step no="4.2">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_1.enc ${log.dir}
+				mv /tftpboot/${job.id}_2.enc ${log.dir}
+				mv /tftpboot/${job.id}_3.enc ${log.dir}
+			</script>
+		</step>
+		<step no="4.3">
+			<desc>show log buf</desc>
+			<log-file>check_igmp2.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="5.1">
+			<desc>no mgroup on sr2000</desc>
+			<log-file>check_igmp3.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Group number: 0"</log-match>
+		</step>
+		<step no="5.2">
+			<desc>check both port2,3 and port4 recieve pkt from port1</desc>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_1.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -eq "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_2.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -eq "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_3.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -eq "0" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="6.1">
+			<desc>
+				port3 joins mgroup 225.1.1.1, port1 sends multicast date pkt to 224.0.0.10, capture pkt on port2, port3 and port4
+			</desc>
+			<log-file>eth2test3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 2 -maintanceOp enable"
+				-v ""
+				-v "stream_import -onePort ${sw1.port3.ixia_port} -fileName ${case.dir}/conf/potr3.str"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId 12 -maintanceOp enable"
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 1"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 11 -maintanceOp enable"
+
+				-v "start_capture -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "stop_capture -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "save_capture -onePort  ${sw1.port2.ixia_port} -fileName ${job.id}_4.enc"
+				-v "save_capture -onePort  ${sw1.port3.ixia_port} -fileName ${job.id}_5.enc"
+				-v "save_capture -onePort  ${sw1.port4.ixia_port} -fileName ${job.id}_6.enc"
+				-v ""
+				-v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_4.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_5.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_6.enc"
+				-v "rm -f ${job.id}_4.enc"
+				-v "rm -f ${job.id}_5.enc"
+				-v "rm -f ${job.id}_6.enc"
+			</ssh>
+		</step>
+		<step no="6.2">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_4.enc ${log.dir}
+				mv /tftpboot/${job.id}_5.enc ${log.dir}
+				mv /tftpboot/${job.id}_6.enc ${log.dir}
+			</script>
+		</step>
+		<step no="6.3">
+			<desc>show log buf</desc>
+			<log-file>check_igmp4.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>check port3 is joined mgroup 225.1.1.1</desc>
+			<log-file>check_igmp5.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "vlan id: ${tb.vlan1}"  
+				-ps p "group ip: 225.1.1.1" 
+				-e "${sw1.port3}\s*dynamic" 
+				-f ${log.dir}/${log.file}
+			</log-match>
+		</step>
+		<step no="7.2">
+			<desc>check both port2 and port3 recieve pkt from port1, port4 doesn't</desc>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_4.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -eq "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_5.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -eq "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_6.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -eq "0" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				port3 and port4 joins mgroup 225.1.1.1, port1 sends multicast date pkt to 224.0.0.10, capture pkt on port2, port3 and port4
+			</desc>
+			<log-file>eth2test4.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 2 -maintanceOp enable"
+				-v ""
+				-v "stream_import -onePort ${sw1.port4.ixia_port} -fileName ${case.dir}/conf/potr4.str"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 1 -maintanceOp enable"
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 11 -maintanceOp enable"
+
+				-v "start_capture -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "stop_capture -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "save_capture -onePort  ${sw1.port2.ixia_port} -fileName ${job.id}_7.enc"
+				-v "save_capture -onePort  ${sw1.port3.ixia_port} -fileName ${job.id}_8.enc"
+				-v "save_capture -onePort  ${sw1.port4.ixia_port} -fileName ${job.id}_9.enc"
+				-v ""
+				-v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_7.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_8.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_9.enc"
+				-v "rm -f ${job.id}_7.enc"
+				-v "rm -f ${job.id}_8.enc"
+				-v "rm -f ${job.id}_9.enc"
+			</ssh>
+		</step>
+		<step no="8.2">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_7.enc ${log.dir}
+				mv /tftpboot/${job.id}_8.enc ${log.dir}
+				mv /tftpboot/${job.id}_9.enc ${log.dir}
+			</script>
+		</step>
+		<step no="8.3">
+			<desc>show log buf</desc>
+			<log-file>check_igmp6.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="9.1">
+			<desc>check port3 and port4 is joined mgroup 225.1.1.1</desc>
+			<log-file>check_igmp7.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+		</step>
+		<step no="9.2">
+			<desc>check all port2,3,4 recieve pkt from port1</desc>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_7.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -eq "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_8.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -eq "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_9.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -eq "0" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="10.1">
+			<desc>
+				config switch, change port 2 and port4 to vlan ${tb.vlan2} 	
+			</desc>
+			<telnet target="sw1">
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan2}"
+				-v "no interface ${sw1.port4} switchport mode"
+				-v "interface ${sw1.port4} switchport access vlan ${tb.vlan2}"
+				-v "ip igmp snooping"
+			</telnet>
+		</step>	
+		<step no="10.2">
+			<desc>check igmp is enable in vlan ${tb.vlan1}</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+		</step>
+		<step no="10.3">
+			<desc>check igmp is enable in vlan ${tb.vlan2}</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping vlan ${tb.vlan2}"
+				-v "_debug swd igmp"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+		</step>
+		<step no="11.1">
+			<desc>
+				port1 and port2 sends IGMPv2 query msg, port3 and port4 join group 225.1.1.1, then port2 sends data source with 224.0.0.20
+			</desc>
+			<log-file>eth2test5.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 2 -maintanceOp enable"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 16 -maintanceOp enable"
+
+				-v "start_capture -portList ${sw1.port1.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v "stop_capture -portList ${sw1.port1.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "save_capture -onePort  ${sw1.port1.ixia_port} -fileName ${job.id}_10.enc"
+				-v "save_capture -onePort  ${sw1.port3.ixia_port} -fileName ${job.id}_11.enc"
+				-v "save_capture -onePort  ${sw1.port4.ixia_port} -fileName ${job.id}_12.enc"
+				-v ""
+				-v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_10.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_11.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_12.enc"
+				-v "rm -f ${job.id}_10.enc"
+				-v "rm -f ${job.id}_11.enc"
+				-v "rm -f ${job.id}_12.enc"
+			</ssh>
+		</step>
+		<step no="11.2">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_10.enc ${log.dir}
+				mv /tftpboot/${job.id}_11.enc ${log.dir}
+				mv /tftpboot/${job.id}_12.enc ${log.dir}
+			</script>
+		</step>
+		<step no="11.3">
+			<desc>show log buf</desc>
+			<log-file>check_igmp8.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="12.1">
+			<desc>check port3 and port4 is joined mgroup 225.1.1.1</desc>
+			<log-file>check_igmp9.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+				-v "show ip igmp snooping groups vlan ${tb.vlan2}"
+			</telnet>
+			<log-match>-e "0100:5e01:011a" -n</log-match>
+		</step>
+		<step no="12.2">
+			<desc>check only port4 recieves pkt from port2</desc>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_10.enc 2>/dev/null | grep "192.168.1.2 \-> 224.0.0.20" -c`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_11.enc 2>/dev/null | grep "192.168.1.2 \-> 224.0.0.20" -c`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_12.enc 2>/dev/null | grep "192.168.1.2 \-> 224.0.0.20" -c`" -eq "0" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="13.1">
+			<desc>
+				port1 and port2 sends IGMPv2 query msg, port3 and port4 join group 225.1.1.1, then leave, port1 sends data source with 224.0.0.10, port2 sends data source with 224.0.0.20
+			</desc>
+			<log-file>eth2test6.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 2 -maintanceOp enable"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId 10 -maintanceOp enable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId 3 -maintanceOp enable"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port},${sw1.port4.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 11 -maintanceOp enable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId 16 -maintanceOp enable"
+
+				-v "start_capture -portList ${sw1.port1.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v "stop_capture -portList ${sw1.port1.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "save_capture -onePort  ${sw1.port1.ixia_port} -fileName ${job.id}_13.enc"
+				-v "save_capture -onePort  ${sw1.port3.ixia_port} -fileName ${job.id}_14.enc"
+				-v "save_capture -onePort  ${sw1.port4.ixia_port} -fileName ${job.id}_15.enc"
+				-v ""
+				-v "start_capture -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port}"
+				-v "stop_capture -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v "save_capture -onePort  ${sw1.port2.ixia_port} -fileName ${job.id}_16.enc"
+				-v "save_capture -onePort  ${sw1.port3.ixia_port} -fileName ${job.id}_17.enc"
+				-v "save_capture -onePort  ${sw1.port4.ixia_port} -fileName ${job.id}_18.enc"
+				-v "ctrl-c"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_13.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_14.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_15.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_16.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_17.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_18.enc"
+				-v "rm -f ${job.id}_13.enc"
+				-v "rm -f ${job.id}_14.enc"
+				-v "rm -f ${job.id}_15.enc"
+				-v "rm -f ${job.id}_16.enc"
+				-v "rm -f ${job.id}_17.enc"
+				-v "rm -f ${job.id}_18.enc"
+			</ssh>
+		</step>
+		<step no="13.2">
+			<desc>move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_13.enc ${log.dir}
+				mv /tftpboot/${job.id}_14.enc ${log.dir}
+				mv /tftpboot/${job.id}_15.enc ${log.dir}
+				mv /tftpboot/${job.id}_16.enc ${log.dir}
+				mv /tftpboot/${job.id}_17.enc ${log.dir}
+				mv /tftpboot/${job.id}_18.enc ${log.dir}
+			</script>
+		</step>
+		<step no="13.3">
+			<desc>show log buf</desc>
+			<log-file>check_igmp10.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="14.1">
+			<desc>check port3 and port4 is joined mgroup 225.1.1.1</desc>
+			<log-file>check_igmp11.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping groups vlan ${tb.vlan1}"
+			</telnet>
+			<log-match>-e "Group number: 0"</log-match>
+		</step>
+		<step no="14.2">
+			<desc>check port4 recieves pkt from port2, and port3 recieves pkt from port1</desc>
+			<script>
+				if [ "`tshark -r ${log.dir}/${job.id}_13.enc 2>/dev/null | grep "192.168.1.2 \-> 224.0.0.20" -c`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_14.enc 2>/dev/null | grep "192.168.1.2 \-> 224.0.0.20" -c`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_15.enc 2>/dev/null | grep "192.168.1.2 \-> 224.0.0.20" -c`" -eq "0" ]
+				then
+				exit 1
+				fi
+
+				if [ "`tshark -r ${log.dir}/${job.id}_16.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -ne "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_17.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -eq "0" ]
+				then
+				exit 1
+				elif [ "`tshark -r ${log.dir}/${job.id}_18.enc 2>/dev/null | grep "192.168.1.1 \-> 224.0.0.10" -c`" -ne "0" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

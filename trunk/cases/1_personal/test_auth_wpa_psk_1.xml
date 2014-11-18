@@ -1,0 +1,128 @@
+<testcase>
+	<brief>Config a ssid with wpa-tkip-psk</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+
+		Topology to use
+		Description
+		Config a ssid with wpa-tkip-psk
+		Pre-condition
+		-config a ssid with wpa-tkip-psk
+		-config a user-profile,with a vlan id
+		-bind the user-profile to the ssid
+		Test procedure
+		-client connect to ssid with the correct psk
+		-check the auth method on client is correct,client passes auth successfully
+		-check the ip got from DHCP is correct
+		-ping the gateway,success
+		-ping for 10 min,traffic is not broken
+		-client reconnects success
+		Expect result
+		1.Client connection successful
+		2.Check the 4 way hankshake debug info,pmk is correct
+		3.Check the 2 way handshake,the group key install is success
+		4.Check the roaming cache adding is correct, ‘sh roa ca mac xxxx’
+		5.Check station state, ‘sh ssid xxx st’, ‘sh auth’
+		6.Check the client gets the correct ip from DHCP server
+		7.Make sure the traffic run well,ping gateway for 10 minutes
+
+	</description>
+
+	<property name="conn.proto" value="wpa-tkip-psk" />
+	<property name="conn.psk_keytype" value="ascii" />
+	<property name="conn.psk" value="aerohive" />
+	
+	<stage>
+		<step no="config_ap">
+			<desc>config AP1</desc>
+			<telnet target="ap1">
+				-v "clear log buff"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite ${conn.proto} ${conn.psk_keytype}-key ${conn.psk}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface ${ssid_bind_interface} mode access"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="show_ssid" delay="20">
+			<desc>show ssid on AP1</desc>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+			<log-match>-e "autoap"</log-match>
+		</step>
+		<step no="check_proto">
+			<desc>check protocol-suite</desc>
+			<telnet target="ap1">
+				-v "show security- autoap security protocol-suite"
+			</telnet>
+			<log-match>-e "Method=${conn.proto}"</log-match>
+		</step>
+
+		<step no="connect_ap">
+			<log-file>connect_wifi.log</log-file>
+			<ssh target="sta1" timeout="3600">
+				-v "/usr/local/auto/bin/connect_wifi
+				'{
+				\"target\"      : \"sta1\",
+				\"ifname\"      : \"${sta1.tif.name}\",
+				\"bind\"        : \"${ssid_bind_interface}\",
+				\"ssid\"        : \"${ssid.name}\",
+				\"proto\"       : \"${conn.proto}\",
+				\"psk_keytype\" : \"${conn.psk_keytype}\",
+				\"psk\"         : \"${conn.psk}\"
+				}'"
+			</ssh>
+			<log-match>-e "&gt;&gt;&gt;&gt; Pass &lt;&lt;&lt;&lt;"</log-match>
+		</step>
+		
+		<step no="get_sta_ip_mac">
+			<desc>parse station IP and MAC from connect wifi log file</desc>
+			<multi-setvar>
+				grep "^&lt;&lt;&lt;&lt;" ${log.dir}/connect_wifi.log | \
+				sed -e 's/^&lt;&lt;&lt;&lt;//g'
+			</multi-setvar>
+		</step>
+		
+		<step no="check_ping_to_sta">
+			<desc>ping from AP to station</desc>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip} count 10"
+			</telnet>
+			<log-match>-c -i " from " -i " ttl="</log-match>
+		</step>
+
+		<step no="check_auth_info">
+			<desc>check auth info</desc>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-i "${sta1.tif.mac}" -p 7 -i "done" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 9 -i "WPA/TKIP" -c</log-match>
+		</step>
+		<step no="check_conn_info">
+			<desc>check station connection info</desc>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-i "${sta1.tif.mac}" -p 11 -i "Yes" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 7 -i "wpa-psk" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 8 -i "tkip" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 2 -i "${sta1.tif.ip}" -c</log-match>
+		</step>
+		<step no="check_roaming_check_info">
+			<desc>check check roaming cache info</desc>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-i "${sta1.tif.mac}" -p 12 -i "YNNN" -c</log-match>
+		</step>
+	</stage>
+</testcase>

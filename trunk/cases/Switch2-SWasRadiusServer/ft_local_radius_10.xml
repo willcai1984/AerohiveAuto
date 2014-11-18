@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Return reauth time from radius</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a local radius server
+		-db type is local
+		-create a user-group,config a reauth time
+		-create a user,add it to the group
+		-bind the group with radius server
+		-leave other parameters default
+		-enable the rardius server
+		-create a ssid with wpa-802.1x,eap-ttls
+		-apply this radius server
+		-create a user-profile,apply it to the ssid
+		-the user-profile assign another vlan id
+
+		Test Procedure:
+		-client connects to the ssid
+	</description>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<property name="sta1.user" value="autotest" />
+	<property name="sta1.passwd" value="1234567890" />
+
+	<stage>
+		<step no="1">
+			<desc>set security-object parameters</desc>
+			<telnet target="sw1">
+				-v "clear log buffered"
+				-v "security-object autoap"
+				-v "security-object autoap security aaa radius primary ${sw1.admin.ip}"
+				-v "security-object autoap security protocol-suite 802.1x"
+				-v "security-object autoap default-user-profile-attr ${tb.vlan1}"
+				-v "user-profile vlan${tb.vlan1} vlan-id ${tb.vlan1} attribute ${tb.vlan1}"
+				-v "save radius-server-key radius-server tftp://${pub.tftp1.tip}:sw_certs/cacert.pem"
+				-v "save radius-server-key radius-server tftp://${pub.tftp1.tip}:sw_certs/server_cert.pem"
+				-v "save radius-server-key radius-server tftp://${pub.tftp1.tip}:sw_certs/server_key.pem"
+				-v "aaa radius-server local sta-auth ca-cert cacert.pem server-cert server_cert.pem private-key server_key.pem"
+				-v "user-group autotest"
+				-v "user-group autotest reauth-interval 600"
+				-v "user-group autotest vlan-id ${tb.vlan2}"
+				-v "user ${sta1.user}"
+				-v "user ${sta1.user} password ${sta1.passwd}"
+				-v "user ${sta1.user} group autotest"
+				-v "aaa radius-server local db-type local"
+				-v "aaa radius-server local user-group autotest"
+				-v "aaa radius-server local enable"
+			</telnet>
+		</step>
+		<step no="2">
+			<desc>show status of radius server on AP1</desc>
+			<telnet target="sw1">
+				-v "show aaa radius-server"
+				-v "_debug radiusd excessive"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3 -c</log-match>
+			<log-match>-i "Enabled" -i "local database:" -p 3 -c</log-match>
+		</step>
+		<step no="3">
+			<multi-setvar>
+				echo sw1.port1.ixia_port.if1.mac_1=$(echo "${sw1.port1.ixia_port.if1.mac}" | sed 's/\./:/g')
+				echo tb.sub_netmask=$(ipcalc -4 -m ${tb.vlan1.ip}/${tb.subnet_prefix}|cut -d= -f2)
+				echo tb.vlan2.ip_end=$(echo `echo ${tb.vlan2.ip_start} |cut -d\. -f1,2,3`\.$(expr `echo ${tb.vlan2.ip_start} | cut -d\. -f4` + 5))
+			</multi-setvar>
+		</step>
+		<step no="4">
+			<desc>
+				enable 802.1x auth and dhcp server on switch
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan2}"
+				-v "interface vlan ${tb.vlan2}"
+				-v "interface vlan${tb.vlan2} ip ${tb.vlan2.ip}/${tb.subnet_prefix}"
+				-v "user-profile vlan${tb.vlan2} vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+				-v "interface ${sw1.port1} security-object autoap"
+				-v "interface vlan${tb.vlan2} dhcp-server ip-pool ${tb.vlan2.ip_start} ${tb.vlan2.ip_end}"
+				-v "interface vlan${tb.vlan2} dhcp-server options default-gateway ${tb.vlan2.ip}"
+				-v "interface vlan${tb.vlan2} dhcp-server options netmask ${tb.sub_netmask}"
+				-v "interface vlan${tb.vlan2} dhcp-server enable"
+			</telnet>
+		</step>
+		<step no="5.1">
+			<desc>
+				config eap protocol and start
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-new="${job.user}-${job.sid}-1">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixn_connect -def enable -chassisIP ${pub.chassis1.ip} -ixn_tcl_server ${sw1.ixn_tcl_server} -userName ${job.user} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.phytype}"
+				-v ""
+
+				-v "ixn_emulation_8021x_config -portList ${sw1.port1.ixia_port} \
+				-mac_address ${sw1.port1.ixia_port.if1.mac} \
+				-mac_addr_increment 0.0.0.0.0.1 \
+				-mac_addr_count 1 \
+				-protocol TTLS \
+				-username ${sta1.user} \
+				-password ${sta1.passwd} \
+				-ca_path ${ixn.cert_dir} \
+				-key_path ${ixn.cert_dir}"
+				-v "ixn_allprotocols_control -action start"
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="5.2" type="loop-check" loop-max-times="5" loop-interval="3">
+			<desc>
+				check ${sw1.port1.ixia_port.if1.mac} passes eap auth 
+			</desc>
+			<log-file>eap_check${loop_check.idx}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1" >
+				-v "ixn_emulation_8021x_stats -protocol ttls"
+				-v ""
+			</ssh>
+			<log-match>-re -e "{TTLS Success} 1"</log-match>
+		</step>
+		<step no="6.1">
+			<desc>
+				create protocol interface, get dhcp and ping
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_create -portList ${sw1.port1.ixia_port} -mac_src ${sw1.port1.ixia_port.if1.mac}"
+				-v "ixn_interface_dhcp_config -portList ${sw1.port1.ixia_port} -enable true"
+			</ssh>
+			<no-error-check />
+			<failed>next</failed>
+		</step>
+		<step no="6.2" type="loop-check" loop-max-times="5" loop-interval="3">
+			<desc>
+				check ${sw1.port1.ixia_port.if1.mac} gets ip addr
+			</desc>
+			<log-file>dhcp_check${loop_check.idx}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1" >
+				-v "ixn_interface_dhcp_info -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-re -i "${sw1.port1.ixia_port}\.${sw1.port1.ixia_port.if1.mac}.ip=([0-9]{1,3}+\.)[0-9]{1,3}"</log-match>
+			<no-error-check />
+			<failed>next</failed>
+		</step>
+		<step no="6.3">
+			<desc>
+				check ping to gateway
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_ping_control -intf_handleList [keylget allIntfH port.${sw1.port1.ixia_port}.interface_handle.${sw1.port1.ixia_port.if1.mac}] -destination_ip ${tb.vlan2.ip} -count 4"
+				-v ""
+			</ssh>
+			<log-match>-re -i "Response received from ${tb.vlan2.ip}\. Sequence Number [0-9]+"</log-match>
+			<no-error-check />
+			<failed>next</failed>
+		</step>
+		<step no="7">
+			<desc>show log buf</desc>
+			<log-file>check_auth1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<failed>next</failed>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "RADIUS: The RADIUS server accepted user \'${sta1.user}\' through the NAS at ${sw1.forward.ip}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+		<step no="8">
+			<desc>check auth entries</desc>
+			<telnet target="sw1">
+				-v "show auth interface ${sw1.port1}"
+				-v "show interface ${sw1.port1} switchport"
+			</telnet>
+			<log-match>-re -i "${sw1.port1.ixia_port.if1.mac_1}[ \t]+${tb.vlan1}[ \t]+600[ \t]+done[ \t]+data[ \t]+${sta1.user}[ \t]+000b"</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="9">
+			<desc>check FDB,make sure the mac entries aren't changed</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+				-v "show interface ${sw1.port1} switchport"
+			</telnet>
+			<log-match>-re -i "${tb.vlan2}[ \t]+${sw1.port1.ixia_port.if1.mac_1}[ \t]+${sw1.port1}"</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="10">
+			<desc>check roaming cache</desc>
+			<telnet target="sw1">
+				-v "show roaming cache"
+			</telnet>
+		</step>
+		<step no="11">
+			<desc>check roaming cache one by one</desc>
+			<telnet target="sw1">
+				-v "show roaming cache mac ${sw1.port1.ixia_port.if1.mac_1}"
+			</telnet>
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<step no="post1">
+				<ssh timeout="180" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+					-v ""
+					-v "ixn_allprotocols_control -action stop"
+				</ssh>
+			</step>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>		
+</testcase>

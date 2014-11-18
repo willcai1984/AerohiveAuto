@@ -1,0 +1,209 @@
+<testcase>
+	<brief>(IxPort: CoF=0) upgrade via http</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<description>
+	 CLI "Save image via http"
+	</description>
+	<comment>
+	</comment>
+	<property name="sw1.user" value="admin" />
+	<property name="sw1.passwd" value="aerohive" />
+	<property name="bootload_passwd" value="administrator" />
+	<property name="tftpserver" value="10.155.30.230" />
+	<property name="correct_vlan" value="101" />
+	<property name="incorrect_vlan" value="102" />
+	<property name="tcl_script_server.user" value="root" />
+	<property name="tcl_script_server.passwd" value="aerohive" />
+	<property name="tcl_script_server.path" value="/home/python/tcl/v1" />
+
+	<stage>
+
+		<if>"${img.name}" != ""</if>
+
+		<!-- 1. step 1, get image version -->
+		<step no="4.1.0">
+			<desc>On MPC,get the version of the image and save to imageversion.txt </desc>
+			<log-file>image_ver.txt</log-file>
+			<script>
+				ident /tftpboot/${img.name} > ${log.dir}/${log.file}
+			</script>
+		</step>
+		<step no="4.1.1">
+			<desc>get version of sw</desc>
+			<log-file>show_ver_detail_sw1.log</log-file>
+			<console target="sw1" slow="3">
+				-v "show version detail"
+			</console>
+		</step>
+		<step no="4.1.2">
+			<desc>check version is new</desc>
+			<setvar name="sw1.verIsNew">
+				${bin.dir}/aerohive/checkif_apBackupver_isnew.sh -v ${log.dir}/show_ver_detail_sw1.log -i ${log.dir}/image_ver.txt
+			</setvar>
+		</step>
+		<step no="4.1.3">
+			<desc>echo sw1.verIsNew </desc>
+			<script>
+				echo sw1.verIsNew="${sw1.verIsNew}"
+			</script>
+		</step>
+	</stage>
+
+	<stage>
+
+		<if>"${img.name}" != ""</if>
+
+		<!-- do not do upgrade proc when sw1.verIsNew is yes -->
+		<if>"${sw1.verIsNew}" == "yes"</if>
+		<step no="5.1.1a">
+			<desc>do not do upgrade proc when sw1.verIsNew is yes,just do reboot backup </desc>
+			<script>
+				echo "do not do upgrade proc when sw1.verIsNew on DUT side backup part is yes,just do reboot backup"
+			</script>
+		</step>
+		<step no="5.1.2a">
+			<console target="sw1" timeout="180" slow="1">
+				-v ""
+				-v "reboot backup"
+			</console>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<stage>
+
+		<if>"${img.name}" != ""</if>
+
+		<!-- do proc when sw1.verIsNew is no -->
+		<if>"${sw1.verIsNew}" != "yes"</if>
+		<step no="5.1.1">
+			<desc>get dut version if sw1.verIsNew is no </desc>
+			<log-file>show_ver_detail.log</log-file>
+			<console target="sw1" slow="3">
+				-v "show version detail"
+			</console>
+		</step>
+		<step no="5.1.2">
+			<desc>configure mgt0 port on sr2000</desc>
+			<console target="sw1" slow="3">
+				-v "vlan ${sw1.mgt0.vlan}"
+				-v "interface ${sw1.mgt0.port} switchport access vlan ${sw1.mgt0.vlan}"
+				-v "interface mgt0 vlan ${sw1.mgt0.vlan}"
+				-v "interface manage Telnet"
+				-v "console timeout 0"
+				-v "console page 0"
+			</console>
+		</step>
+		<step no="5.1.3">
+			<desc>show mgt0 on sr2000</desc>
+			<log-file>show_mgt0.log</log-file>
+			<console target="sw1" slow="3">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		<!--sw1 set to ap1 need framework to support sw1 later 2013/4/19 -->
+		<step no="5.1.4">
+			<desc>get ip of mgt0 to ap1.mgt0.ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_mgt0.log -t str
+			</setvar>
+		</step>
+		<step no="5.1.5">
+			<desc>get ip of mgt0 to sw1.mgt0.ip</desc>
+			<setvar name="sw1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<!--sw1 set to ap1 need framework to support sw1 later 2013/4/19 -->
+		<step no="5.1.6" delay="5">
+			<desc>check ping from mpc to mgt0</desc>
+			<log-file>check_ping_from_mpc_to_mgt0.log</log-file>
+			<script>
+				ping ${ap1.mgt0.ip} -c 4 > ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${ap1.mgt0.ip}: " -i "ttl=" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.1.7" delay="3">
+			<desc>check ping from mpc to mgt0</desc>
+			<log-file>check_ping_from_mpc_to_mgt0.log</log-file>
+			<script>
+				ping ${sw1.mgt0.ip} -c 4 > ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "from ${sw1.mgt0.ip}: " -i "ttl=" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<!--sw1 rsapublickey.pem need shellpwd to do this successfully -->
+		<step no="5.1.8.remove_sw_rsakey_show_run">
+			<console target="sw1" slow="3">
+				-v "show run"
+			</console>
+		</step>
+		<step no="5.1.9.remove_sw_rsakey">
+			<log-file>remove_sw_rsakey.log</log-file>
+			<console target="sw1" prompt="AH.*#|password:|$" slow="3">
+				-v ""
+				-v "show system command \"rm -f /etc/rsapublickey.pem\""
+				-v ""
+				-v "exit"
+			</console>
+			<log-match>-n -c -i "Error"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5.2.10">
+			<desc>Upgrade AP1 with new image through console</desc>
+			<log-file>image_${sw1.cons_name}.log</log-file>
+			<console target="sw1" timeout="480">
+				-v "save image tftp://${mpc.tif.ip}:${img.name} now"
+			</console>
+			<log-match>-n -i "The kernel image currently in flash is the same as the image you are attempting to load"</log-match>
+			<log-match>-n -i "The application image currently in flash is the same as the image you are attempting to load"</log-match>
+			<!-- <no-error-check /> -->
+		</step>
+		<step no="5.2.11">
+			<desc>Get AP1 version through console</desc>
+			<log-file>image_version_${sw1.cons_name}.log</log-file>
+			<console target="sw1" slow="3">
+				-v "show version"
+				-v "show license"
+			</console>
+		</step>
+		<step no="5.2.12">
+			<desc>Search for ERROR message on AP1</desc>
+			<log-match file="image_${sw1.cons_name}.log">-n -e "ERROR"</log-match>
+		</step>
+	</stage>
+
+	<stage>
+
+		<if>"${img.name}" == ""</if>
+
+		<step no="6.1">
+			<desc>img.name is null echo information</desc>
+			<log-file>echo_information.log</log-file>
+			<script>
+				echo "img.name is null; need to upgrade device under test before running this case" > ${log.dir}/echo_information.log
+			</script>
+		</step>
+	</stage>
+	<failed-process>
+		<stage>
+		    <step no="7.0">
+                 <desc>
+                 recovery env
+                 </desc>
+			     <log-file>reboot.log</log-file>
+                 <console target="sw1" slow="1">
+                -v "reboot"
+                </console>
+                <no-error-check />
+		    </step>
+		</stage>
+	</failed-process>
+</testcase>

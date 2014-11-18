@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the lease time limit</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1:Configure internal CWP on ap, client links to ap but not passes cwp
+		2:Check the default lease time, result 1
+		3:Change the lease time to 60, check the lease time, result 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="sta1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>Configure one of type CWP (internal) on ap</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal auth-user-profile-attr 60 timer-display"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal timer-display alert 10"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal internal-servers"
+				-v "user-profile fw vlan 1 attribute 1"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>check Lease time</desc>
+			<log-file>step1.1_check_lease_time.log</log-file>
+			<ssh target="ap1" timeout="120">
+				-v "show security-object ${ssid.name} dhcp-server"
+			</ssh>
+			<log-match>-c -i "Lease time: *10"</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>setup debugger</desc>
+			<ssh target="ap1">
+				-v "_debug dhcpd basic"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<include prefix="2" file="${case.dir}/subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="2.1" delay="120">
+			<desc>show logging buffered</desc>
+			<log-file>step2.1_show_logging_buffered.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+				-v "clear log all"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="2.2">
+			<desc>Get the first number of times</desc>
+			<setvar name="first.number.times1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*?\[dhcp_basic\]: received DHCP REQUEST from client ${sta1.tif.mac} thro wifi0.1" -t str -g-1 -s none
+			</setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>Get the second number of times</desc>
+			<setvar name="second.number.times1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*?\[dhcp_basic\]: received DHCP REQUEST from client ${sta1.tif.mac} thro wifi0.1" -t str -g-2 -s none
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>Get the third number of times</desc>
+			<setvar name="third.number.times1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*?\[dhcp_basic\]: received DHCP REQUEST from client ${sta1.tif.mac} thro wifi0.1" -t str -g-3 -s none
+			</setvar>
+		</step>
+
+		<step no="2.5">
+			<desc>Get the fourth number of times</desc>
+			<setvar name="fourth.number.times1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*?\[dhcp_basic\]: received DHCP REQUEST from client ${sta1.tif.mac} thro wifi0.1" -t str -g-4 -s none
+			</setvar>
+		</step>
+
+		<step no="2.6">
+			<desc>check if the update time is 5.</desc>
+			<log-file>step2.6_check_update_time.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "((mktime(datetime.strptime('${second.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt; 3.0) and ((mktime(datetime.strptime('${second.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt; 7.0)" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="2.7">
+			<desc>check if the update time is 5.</desc>
+			<log-file>step2.7_check_update_time.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "((mktime(datetime.strptime('${third.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${second.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt; 3.0) and ((mktime(datetime.strptime('${third.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${second.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt; 7.0)" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="2.8">
+			<desc>check if the update time is 5.</desc>
+			<log-file>step2.8_check_update_time.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "((mktime(datetime.strptime('${fourth.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${third.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt; 3.0) and ((mktime(datetime.strptime('${fourth.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${third.number.times1}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt; 7.0)" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="3" delay="10">
+			<desc>Client not links</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v "ter"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="4">
+			<desc>Change the lease time to 60</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name} dhcp-server lease-time 60"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>check Lease time</desc>
+			<log-file>step4.1_check_lease_time.log</log-file>
+			<ssh target="ap1" timeout="120">
+				-v "show security-object ${ssid.name} dhcp-server"
+				-v "clear log all"
+			</ssh>
+			<log-match>-c -i "Lease time: *60"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>clear log all</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<include prefix="6" file="${case.dir}/subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7" delay="180">
+			<desc>show logging buffered</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+				-v "clear log all"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>Get the first number of times</desc>
+			<setvar name="first.number.times2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*?\[dhcp_basic\]: received DHCP REQUEST from client ${sta1.tif.mac} thro wifi0.1" -t str -g-1 -s none
+			</setvar>
+		</step>
+
+		<step no="7.2">
+			<desc>Get the second number of times</desc>
+			<setvar name="second.number.times2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*?\[dhcp_basic\]: received DHCP REQUEST from client ${sta1.tif.mac} thro wifi0.1" -t str -g-2 -s none
+			</setvar>
+		</step>
+
+		<step no="7.3">
+			<desc>Get the third number of times</desc>
+			<setvar name="third.number.times2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*?\[dhcp_basic\]: received DHCP REQUEST from client ${sta1.tif.mac} thro wifi0.1" -t str -g-3 -s none
+			</setvar>
+		</step>
+
+		<step no="7.4">
+			<desc>Get the fourth number of times</desc>
+			<setvar name="fourth.number.times2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*?\[dhcp_basic\]: received DHCP REQUEST from client ${sta1.tif.mac} thro wifi0.1" -t str -g-4 -s none
+			</setvar>
+		</step>
+
+		<step no="7.5">
+			<desc>check if the update time is 30.</desc>
+			<log-file>step7.5_check_update_time.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "((mktime(datetime.strptime('${second.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt; 23.0) and ((mktime(datetime.strptime('${second.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt; 37.0)" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="7.6">
+			<desc>check if the update time is 30.</desc>
+			<log-file>step7.6_check_update_time.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "((mktime(datetime.strptime('${third.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${second.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt; 23.0) and ((mktime(datetime.strptime('${third.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${second.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt; 37.0)" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="7.7">
+			<desc>check if the update time is 30.</desc>
+			<log-file>step7.7_check_update_time.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "((mktime(datetime.strptime('${fourth.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${third.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple())) &gt; 23.0) and ((mktime(datetime.strptime('${fourth.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${third.number.times2}', '%Y-%m-%d %H:%M:%S').timetuple())) &lt; 37.0)" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,239 @@
+<testcase>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Description
+		Verify that the WMM in 11ng /11na mode
+		Test procedure
+		1. Verify that the WMM take effect. Result 1
+		2. Verify that no WMM info by cmd: no ssid xxxx wmm, result 2.
+		Expect result
+		1. The Mgt frame include wmm element.
+		2. The mgt frame no wmm element.
+	</description>
+	<stage>
+
+		<step no="4">
+			<desc>Set config for AP1 via console to </desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "no ssid ${ssid.name}1 wmm"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi0 ssid ${ssid.name}2"
+				-v "interface wifi0 radio channel 6"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>Show run config of AP1 </desc>
+			<log-file>show_run_config_1.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+
+		<step no="6">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 "
+				-v "capture save interface wifi0 ws_wmm.pcap"
+				-v "capture interface wifi0 count 200 filter 1"
+			</telnet>
+		</step>
+
+		<step no="7" delay="60">
+			<desc>Transmit pkts from AP to master</desc>
+			<log-file>ws_wmm.pcap</log-file>
+			<telnet target="ap1">
+				-v "save capture local ws_wmm.pcap tftp://${mpc.tif.ip}:/${log.file}"
+			</telnet>
+		</step>
+
+		<step no="8" delay="100">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>ws_wmm.log</log-file>
+			<script>
+				tshark -r /tftpboot/ws_wmm.pcap -V > ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+		</step>
+
+
+		<step no="9">
+			<desc>Show interface wifi0.1 of AP1 </desc>
+			<log-file>show_interface_wifi01.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+			</telnet>
+		</step>
+
+		<step no="10">
+			<desc>Get_mac of wifi0.1 on AP1 </desc>
+			<setvar name="DUT1_WIFI01_MAC">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi01.log -i wifi0.1 -o aero -m
+			</setvar>
+		</step>
+
+		<step no="11">
+			<desc>Check search result </desc>
+			<script>
+				export NO_WMM=$(perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ws_wmm.log -k ${DUT1_WIFI01_MAC} -o "WME")
+				echo "NO_WMM = $NO_WMM"
+				if [ -n "$WMM" -o "$NO_WMM" != "No_match_packet_found" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="12">
+			<desc>Show interface wifi0.2 of AP1 </desc>
+			<log-file>show_interface_wifi02.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.2"
+			</telnet>
+		</step>
+		<step no="13">
+			<desc>Get_mac of wifi0.2 on AP1 </desc>
+			<setvar name="DUT1_WIFI02_MAC">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi02.log -i wifi0.2 -o aero -m
+			</setvar>
+		</step>
+
+
+		<step no="14">
+			<desc>Check search result </desc>
+			<script>
+				export WMM=$(perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ws_wmm.log -k ${DUT1_WIFI02_MAC} -o "WME")
+				echo "WMM = $WMM"
+				if [ -z "$WMM" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="15">
+			<desc>Check search result </desc>
+			<script>
+				export BE=$(perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ws_wmm.log -k ${DUT1_WIFI02_MAC} -k "WME" -o "Best Effort")
+				echo "BE = $BE"
+				if [ -z "$BE" -o "$BE" = "No_match_packet_found" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="16">
+			<desc>Check search result </desc>
+			<script>
+				export BK=$(perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ws_wmm.log -k ${DUT1_WIFI02_MAC} -k "WME" -o "Background")
+				echo "BK = $BK"
+				if [ -z "$BK" -o "$BK" = "No_match_packet_found" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="17">
+			<desc>Check search result </desc>
+			<script>
+				VI=$(perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ws_wmm.log -k ${DUT1_WIFI02_MAC} -k "WME" -o "Video")
+				echo "VI = $VI"
+				if [ -z "$VI" -o "$VI" = "No_match_packet_found" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="18">
+			<desc>Check search result </desc>
+			<script>
+				export VO=$(perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ws_wmm.log -k ${DUT1_WIFI02_MAC} -k "WME" -o "Voice")
+				echo "VO = $VO"
+				if [ -z "$VO" -o "$VO" = "No_match_packet_found" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="19">
+			<desc>Set config for AP1 via console to $G_PROD_IP_ETH0_0_0 </desc>
+			<telnet target="ap1">
+				-v " ssid ${ssid.name}1 wmm"
+				-v "save config"
+			</telnet>
+		</step>
+		<step no="20">
+			<desc>Show run config of AP1 </desc>
+			<log-file>show_run_config_2.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="21">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 "
+				-v "capture save interface wifi0 ws_wmm_later.pcap"
+				-v "capture interface wifi0 count 200 filter 1"
+			</telnet>
+		</step>
+
+		<step no="22" delay="60">
+			<desc>Transmit pkts from AP to master</desc>
+			<log-file>ws_wmm_later.pcap</log-file>
+			<telnet target="ap1">
+				-v "save capture local ws_wmm_later.pcap tftp://${mpc.tif.ip}:/${log.file}"
+			</telnet>
+		</step>
+
+		<step no="23" delay="100">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<log-file>ts_wmm_later.log</log-file>
+			<script>
+			 tshark -r /tftpboot/ws_wmm_later.pcap -V > ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="25">
+			<desc>Check search result </desc>
+			<script>
+				export WMM_LATER=$(perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_wmm_later.log -k ${DUT1_WIFI01_MAC} -o "WME")
+				echo "WMM_LATER = $WMM_LATER"
+				if [ -z "$WMM_LATER" -o "$WMM_LATER" = "No_match_packet_found" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+
+
+	</stage>
+	<post-process>
+		<stage>
+			<step no="p1">
+				<desc>remove temporary files</desc>
+				<script>
+					rm -f /tftpboot/ws_wmm.pcap
+					rm -f /tftpboot/ws_wmm_later.pcap
+				</script>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+	
+</testcase>

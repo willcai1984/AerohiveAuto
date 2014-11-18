@@ -1,0 +1,179 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>AP action when receive no response from NTP server(service stop or configure a accessible IP address as NTP server or config a hostname could not be parsed)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Configure a NTP server in DHCP server
+		NTP server is unaccessible or NTP service not be enabled
+		Open _debug ntp all and debug console
+		Set filter in AP, open kdebug fe basic and debug console:
+		_ff id 1 dst-port 123 bidirectional
+		_kdebug fe basic
+		debug console
+
+		Test Procedure:
+		Run interface mgt0 dhcp client to obtain IP address and other options
+		Check if NTP server be used and if time synchronization between AP and NTP server
+
+		Expect result
+		After execute command, need check:
+		debug of sync with NTP server be printed out
+		show interface mgt0 dhcp client can see NTP server be obtained
+		NTP server not active, time not be synchronized, AP will trying to sync with NTP server(try 1 time every 5s)
+	</description>
+	<numofbr>1</numofbr>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+
+	 <property name="pub.invalid_ntp1.ip" value="1.1.1.1" />
+
+	<stage>
+			<include prefix="1" file="subs/br_close_fw.xml" obj-args="br1" />
+		<step no="1.1">
+			<desc>eth0 dhcp</desc>
+			<console target="br1.br" slow="yes">
+				-v "no interface eth0 dhcp client"
+				-v ""
+				-v "interface eth0 dhcp client"
+				-v ""
+			</console>
+		</step>
+
+		<step no="1.2" delay="5" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check traffic through wan on BR</desc>
+			<console target="br1.br">
+				-v "interface eth0 dhcp client"
+				-v "ping ${pub.dns1.ip}"
+			</console>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="1.3" delay="5">
+			<desc>show interface eth0 on BR</desc>
+			<log-file>show_br1.br__eth0.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+		</step>
+
+		<step no="1.4">
+			<desc>get eth0 ip of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_br1.br__eth0.log -t str
+			</setvar>
+		</step>
+	
+		<step no="2">
+			<desc>
+				no pre-configure
+			</desc>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "no ntp server ${pub.ntp.ip}"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-Configure invalid NTP server
+			</desc>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "ntp server ${pub.invalid_ntp1.ip}"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				open ntp debug switch
+			</desc>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "_ff id 1 dst-port 123 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_debug ntp all"
+				-v "clear log buffered"
+			</ssh>
+		</step>
+
+		<step no="4">
+			<desc>
+				Enable ntp to trigger NTP action
+			</desc>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "ntp enable"
+			</ssh>
+		</step>
+
+		<step no="5" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+
+			<log-match>-e "trying 1 times on ${pub.invalid_ntp1.ip}"</log-match>
+			<log-match>-e "trying 2 times on ${pub.invalid_ntp1.ip}"</log-match>
+			<log-match>-e "trying 3 times on ${pub.invalid_ntp1.ip}"</log-match>
+			<log-match>-e "Connect ${pub.invalid_ntp1.ip} failed, try next server."</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show dhcp client status to check the ntp info get from dhcp server is ntp1
+			</desc>
+			<log-file>step6_dhcp_client_status.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show interface eth0 dhcp client"
+			</ssh>
+			<log-match>-i "NTP server" -i "${pub.ntp1.ip}"</log-match>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Check NTP server
+			</desc>
+			<log-file>step7.1_show_ntp_${loop_check.idx}.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show ntp"
+			</ssh>
+			<log-match>-c -i "State: *Enable"</log-match>
+			<log-match>-c -i "First *${pub.invalid_ntp1.ip}"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step8.1_check_time.log</log-file>
+			<ssh host="${pub.ntp2.ip}">
+				-v "date"
+			</ssh>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step8.2_check_time.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show clock"
+			</ssh>
+		</step>
+		
+		<include prefix="9" file="subs/br_open_fw.xml" obj-args="br1" />
+
+	</stage>
+	
+	<failed-process>
+		<stage>
+		
+			<include prefix="0.1" file="subs/br_open_fw.xml" obj-args="br1" />
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+</testcase>

@@ -1,0 +1,87 @@
+<testcase>
+	<brief>Config a ssid with wpa-auto-psk</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<description>
+		Topology to use
+		Description
+		Config a ssid with wpa-auto-psk
+		Pre-condition
+		-config a ssid with wpa2-aes-psk
+		-config a user-profile,with a vlan id
+		-bind the user-profile to the ssid
+		Test procedure
+		-client1 connects to ssid with wpa-tkip-psk
+		-client2 connects to ssid with wpa-aes-psk
+		-client3 connects to ssid with wpa2-tkip-psk
+		-client4 connects to ssid with wpa2-aes-psk
+		-check the auth method on client is correct,client passes auth successfully
+		-check the ip got from DHCP is correct
+		-ping the gateway,success
+		-ping for 10 min,traffic is not broken
+		-client reconnects success
+		Expect result
+		1.Client connection successful
+		2.Check the 4 way hankshake debug info,pmk is correct
+		3.Check the 2 way handshake,the group key install is success
+		4.Check the roaming cache adding is correct, ‘sh roa ca mac xxxx’
+		5.Check station state, ‘sh ssid xxx st’, ‘sh auth’
+		6.Check the client gets the correct ip from DHCP server
+		7.Make sure the traffic run well,ping gateway for 10 minutes
+
+	</description>
+
+	<property name="so1.name" value="autoap1" />
+	<property name="so1.proto" value="wpa-auto-psk" />
+	<property name="so1.ps.keytype" value="ascii" />
+	<property name="so1.ps.keyvalue" value="aerohive" />
+
+	<stage>
+		<include prefix="1" file="subs/set_so_for_ssid.xml" obj-args="ap1, so1" args="${ssid.name}" />
+
+		<include prefix="2" file="subs/bind_ssid_for_radio.xml" args="ap1, ${ssid.name}, wifi0" />
+
+		<step no="sta1.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=wpa-tkip-psk"
+				echo "conn1.psk.keytype=${so1.ps.keytype}"
+				echo "conn1.psk=${so1.ps.keyvalue}"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="sta1.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="sta1.3" file="subs/chk_sta_conn_status_in_ap.xml" obj-args="ap1, sta1" args="wpa-tkip-psk, WPA/TKIP, wpa-psk, tkip" />
+
+		<include prefix="sta2.1" file="subs/wpa_supplicant_start_v2.xml" obj-args="sta2" />
+
+		<step no="sta2.2">
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-PSK"
+				-v "set_network 0 proto RSN"
+				-v "set_network 0 pairwise CCMP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 psk \"aerohive\""
+				-v "set_network 0 priority 5"
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="sta2.3" file="subs/chk_conn_status_in_sta.xml" obj-args="sta2" />
+
+		<include prefix="sta2.4" file="subs/chk_sta_conn_status_in_ap.xml" obj-args="ap1, sta2" args="wpa2-aes-psk, WPA2/CCMP, wpa2-psk, aes" />
+	</stage>
+
+</testcase>

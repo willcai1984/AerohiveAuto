@@ -1,0 +1,304 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Country region set to fcc,under 11na mode, enable dfs,when radar signals were detected,ACSP procedure should be triggered,and the channel should be switched to the lowest-cost remaining channel automatically .</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Select a dfs channel.
+
+		Test Procedure:
+		1.Set Country region to fcc and reboot,then creat a radio profile named 'na',set its
+		phymode to 11na,bind it to wifi1 and enable dfs.
+		"boot-param region fcc"
+		"reboot"
+		"radio profile na"
+		"radio profile na phymode 11na"
+		"radio profile na dfs"
+		"interface wifi1 radio profile na"
+		2. when radar signals were detected,ACSP procedure should be triggered,and the
+		channel should be switched automatically.
+		"_debug dcd chnl"
+		"debug console"
+		"interface wifi1 _bang"
+		3.the selected channel should be the lowest-cost remaining channel.check its cost
+		by show acsp channel-info.
+		"show acsp channel-info"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				check the default region code.
+				"show boot-param"
+			</desc>
+			<log-file>step1_show_boot_param.log</log-file>
+			<telnet target="ap1">
+				-v "show boot-param"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				get the region code
+			</desc>
+			<setvar name="region">
+				${bin.dir}/getbyrexp.py -p "Region\s+Code:\s+(\w+)" -f ${log.dir}/step1_show_boot_param.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				compare the region code.
+				"boot-param region fcc"
+				"reboot"
+			</desc>
+			<if>"${region}" != "FCC"</if>
+			<console target="ap1">
+				-v "boot-param region fcc"
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				set Country region to fcc and reboot,then creat a radio profile named 'na',set its
+				phymode to 11na,bind it to wifi1 and enable dfs.
+				"radio profile na"
+				"radio profile na phymode 11na"
+				"radio profile na dfs"
+				"interface wifi1 radio profile na"
+			</desc>
+			<log-file>step1.3_config_radio_profile.log</log-file>
+			<telnet target="ap1">
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "radio profile na dfs"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 mode access"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				"_debug dcd chnl"
+				"logging buffered level debug"
+				"clear log"
+			</desc>
+			<telnet target="ap1">
+				-v "_debug dcd chnl"
+				-v "logging buffered level debug"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				show interface wifi1 channel, save in channel list {ch1}
+			</desc>
+			<log-file>step3_save_wifi1_channel_list1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 channel"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				save dfs channel in channel list {ch2}, check if ch2
+				channel list include the following channel DFS channel:
+				(52/56/60/64/100/104/108/112/116/132/136/140) except channel 120/124/128.
+			</desc>
+			<log-file>step3.1_check_dfs_channel_list2.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 channel | include dfs"
+			</telnet>
+			<log-match>-e "Channel\ \ 52" -i "DFS"</log-match>
+			<log-match>-e "Channel\ \ 56" -i "DFS"</log-match>
+			<log-match>-e "Channel\ \ 60" -i "DFS"</log-match>
+			<log-match>-e "Channel\ \ 64" -i "DFS"</log-match>
+			<log-match>-e "Channel 100" -i "DFS"</log-match>
+			<log-match>-e "Channel 104" -i "DFS"</log-match>
+			<log-match>-e "Channel 108" -i "DFS"</log-match>
+			<log-match>-e "Channel 112" -i "DFS"</log-match>
+			<log-match>-e "Channel 116" -i "DFS"</log-match>
+			<log-match>-e "Channel 132" -i "DFS"</log-match>
+			<log-match>-e "Channel 136" -i "DFS"</log-match>
+			<log-match>-e "Channel 140" -i "DFS"</log-match>
+			<log-match>-n -e "Channel 120"</log-match>
+			<log-match>-n -e "Channel 124"</log-match>
+			<log-match>-n -e "Channel 128"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				creat a ssid, bind ssid to wifi1
+			</desc>
+			<log-file>step4_wifi1_bind_ssid.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				shutdown wifi1
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi1 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>
+				` no shutdown wifi1.
+			</desc>
+			<telnet target="ap1">
+				-v "no interface wifi1 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				check if all wifi1 channel be scanned. (All wifi1 channel list:
+				36/40/44/48/52/56/60/64/100/104/108/112/116/132/136/140/149/153/157/161/165).
+				the channel that scanned get by:
+				show logging buffered | include "collecting raw data for"
+			</desc>
+			<log-file>step7_check_wifi1_channel_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-e "collecting raw data for channel(36)"</log-match>
+			<log-match>-e "collecting raw data for channel(40)"</log-match>
+			<log-match>-e "collecting raw data for channel(44)"</log-match>
+			<log-match>-e "collecting raw data for channel(48)"</log-match>
+			<log-match>-e "collecting raw data for channel(52)"</log-match>
+			<log-match>-e "collecting raw data for channel(56)"</log-match>
+			<log-match>-e "collecting raw data for channel(60)"</log-match>
+			<log-match>-e "collecting raw data for channel(64)"</log-match>
+			<log-match>-e "collecting raw data for channel(100)"</log-match>
+			<log-match>-e "collecting raw data for channel(104)"</log-match>
+			<log-match>-e "collecting raw data for channel(108)"</log-match>
+			<log-match>-e "collecting raw data for channel(112)"</log-match>
+			<log-match>-e "collecting raw data for channel(116)"</log-match>
+			<log-match>-e "collecting raw data for channel(132)"</log-match>
+			<log-match>-e "collecting raw data for channel(136)"</log-match>
+			<log-match>-e "collecting raw data for channel(140)"</log-match>
+			<log-match>-e "collecting raw data for channel(149)"</log-match>
+			<log-match>-e "collecting raw data for channel(153)"</log-match>
+			<log-match>-e "collecting raw data for channel(157)"</log-match>
+			<log-match>-e "collecting raw data for channel(161)"</log-match>
+			<log-match>-e "collecting raw data for channel(165)"</log-match>
+		</step>
+
+		<step no="8" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				check if wifi1 select a dfs channel.dfs channel belong to channel list {ch2},
+				saved in step 3.the select channel get by:
+				show logging buffered | include "find channel"
+			</desc>
+			<log-file>step8_check_dfs_channel.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-e "find channel"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				get the wifi1 channel of "find channel"
+			</desc>
+			<setvar name="find_chan">
+				${bin.dir}/getbyrexp.py -p "find channel:\s+(\d+)," -f ${log.dir}/step8_check_dfs_channel.log -t str
+			</setvar>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				check find channel
+			</desc>
+			<log-file>step3.1_check_dfs_channel_list2.log</log-file>
+			<log-match>-c -e "Channel" -i "${find_chan}"</log-match>
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				if wifi1 select a dfs channel,it should listen_dfs for 1 minute before
+				enter listen state. And check if AP stay 1 minutes during listen_dfs stage.
+				"show logging buffered | include "listen_dfs""
+			</desc>
+			<log-file>step9_listen_state.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-e "LISTEN_DFS state"</log-match>
+			<log-match>-e "LISTEN state"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				get the listen state time
+			</desc>
+			<setvar name="time_1">
+				${bin.dir}/getbyrexp.py -p "^(.*)\sdebug.*LISTEN state" -f ${log.dir}/step9_listen_state.log -g0 -t str
+			</setvar>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				get the LISTEN_DFS state time
+			</desc>
+			<setvar name="time_2">
+				${bin.dir}/getbyrexp.py -p "^(.*)\sdebug.*LISTEN_DFS state" -f ${log.dir}/step9_listen_state.log -t str
+			</setvar>
+		</step>
+
+		<step no="9.3">
+			<desc>
+				Determine the time difference in the range of 60-90
+			</desc>
+			<log-file>step9.3_Determine_time_differ.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${time_1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${time_2}', '%Y-%m-%d %H:%M:%S').timetuple()))>=60.0 and (mktime(datetime.strptime('${time_1}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${time_2}', '%Y-%m-%d %H:%M:%S').timetuple()))&lt;=90.0" --amode
+			</script>
+		</step>
+
+		<step no="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				check if wifi1 go through listen and run state
+			</desc>
+			<log-file>step10_listen_state_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "LISTEN\s+state" -c 4 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "RUN\s+state" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="11" type="loop-check" loop-max-times="30" loop-interval="5">
+			<desc>
+				clear log all
+				interface wifi1 _bang
+				show acsp channel-info，get switch channel
+				check dfs channel cost
+				check wifi1 channel is non-dfs channel
+			</desc>
+			<log-file>step11_check_wifi1_non_dfs_channel_${loop_check.idx}.log</log-file>
+			<script>
+				clicfg.pl -i 23 -o 60 -d ${ap1.mgt0.ip} -u admin -p aerohive -m ${ap.def.prompt} -n -z ${log.file} -l ${log.dir} -v "clear log all";
+				clicfg.pl -i 23 -o 60 -d ${ap1.mgt0.ip} -u admin -p aerohive -m ${ap.def.prompt} -n -z ${log.file} -l ${log.dir} -v "interface wifi1 _bang";
+				sleep 10
+				clicfg.pl -i 23 -o 600 -d ${ap1.mgt0.ip} -u admin -p aerohive -m ${ap.def.prompt} -n -z step11_check_switch_chan.log -l ${log.dir} -v "show logging buffered";
+				sleep 10
+				clicfg.pl -i 23 -o 60 -d ${ap1.mgt0.ip} -u admin -p aerohive -m ${ap.def.prompt} -n -z step11_check_cost.log -l ${log.dir} -v "show interface wifi1 channel";
+				clicfg.pl -i 23 -o 60 -d ${ap1.mgt0.ip} -u admin -p aerohive -m ${ap.def.prompt} -n -z step11_check_cost.log -l ${log.dir} -v "show acsp channel-info";
+				perl ${case.dir}/bin/Determine_fcc_wifi1_non_dfs_channel.pl ${log.dir}/step11_check_switch_chan.log ${log.dir}/step11_check_cost.log wifi1 > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "wifi1 selected non-dfs channel"</log-match>
+		</step>
+	</stage>
+</testcase>

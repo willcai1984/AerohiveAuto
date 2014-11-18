@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>account-interim-interval returned from radius server</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a ssid with mac auth
+		-enable accounting on this ssid
+		-active the ssid
+		-add the attribute of Acct-Interim-Interval to the account on radius
+		server
+		-check the Acct-Interim-Interval by default
+
+		Test Procedure:
+		-client connects to this ssid, passes auth success
+		-radius server returned an Acct-Interim-Interval which is different from
+		the default, result 1,2,3
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="acct1.InterimInterval" value="30" />
+
+	<stage>
+		<include prefix="start_selenium_server" file="subs/start_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<include prefix="add_account" file="subs/ldap_add.xml" args="${job.sid}-aerohive, aerohive" obj-args="acct1" />
+
+		<step no="1">
+			<desc>
+				-config e-CWP on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "security-object in_cwp"
+				-v "security-object in_cwp default-user-profile-attr 1"
+				-v "security-object in_cwp security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal auth-user-profile-attr 1 timer-display"
+				-v "security-object in_cwp default-user-profile-attr 1"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal external-server primary login-page http://${pub.ecwp1.ip}/weblogin.php/7"
+				-v "security-object in_cwp walled-garden ip-address ${pub.ecwp1.ip}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal failure-redirect login-page"
+				-v "security-object in_cwp web-server"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal timer-display alert 10"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-config a ssid
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object in_cwp"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>show aaa</desc>
+			<log-file>step2_show_aaa.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa"
+			</telnet>
+			<log-match>-i "Account interim interval: *20 seconds"</log-match>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>station_log_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${job.sid}-aerohive login.password=aerohive -t ff -f ${log.dir}/${log.file} -l info --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				- 'sh ssid xxx sta',
+			</desc>
+			<log-file>step5_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "1 *yes *1 " </log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				-'sh roa ca'
+			</desc>
+			<log-file>step6_show_roaming.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YYNN"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-'sh auth'
+			</desc>
+			<log-file>step6.1_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"; sleep 20
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *wifi0.1 *04 *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<include prefix="7" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step7_show_logging_buffered.log" />
+		
+		<step no="7.1">
+			<desc>show logging buffered on ap1</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<log-match>-c -i "Accounting-Request"</log-match>
+			<log-match>-c -i "Got interim interval 30 from roaming cache"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>Get the first times of sending accounting request</desc>
+			<setvar name="first.send.acct.request">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*RADIUS message:\s*code=\d+\s*\(Accounting-Request\)\s*identifier=\d+\s*length=\d+" -t str -g0 -s none
+			</setvar>
+		</step>
+
+		<step no="7.3">
+			<desc>Get the second times of sending accounting request</desc>
+			<setvar name="second.send.acct.request">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_show_logging_buffered.log -p "(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*RADIUS message:\s*code=\d+\s*\(Accounting-Request\)\s*identifier=\d+\s*length=\d+" -t str -g1 -s none
+			</setvar>
+		</step>
+
+		<step no="7.4">
+			<desc>
+				check if the interval is 30.
+			</desc>
+			<log-file>step7.3_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${first.send.acct.request}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${second.send.acct.request}', '%Y-%m-%d %H:%M:%S').timetuple())) == 30.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				do log out operate
+			</desc>
+			<log-file>station_log_out.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${job.sid}-aerohive login.password=aerohive -t ff -f ${log.dir}/${log.file} -l info --session-id ${session.id}
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_workload}" />
+
+			<include prefix="delete_account" file="subs/ldap_delete.xml" args="${job.sid}-aerohive" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Configure many hostname in walled garden (mapped items less than 64 in FE)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		precondition:
+		-Walled garden is supported by e-cwp currently
+		Test procedure:
+		1:Configure many hostname in walled garden and other relative e-CWP on ap, result 1
+		2:Client accesses the hostname which are configured in walled garden, result 2
+		3:Client passes authentication, then accesses the hostname which are configured in walled garden, result 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="url" value="www.sina.com" />
+	<property name="url1" value="https://hztb-hm1.qaauto.aerohive.com/hm/login.action" />
+	<property name="selenium_path" value="/root/selenium-server-standalone-2.42.2.jar" />
+	<stage>
+		<step no="0.1">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "export DISPLAY=:1"
+				-v "nohup java -jar ${selenium_path} 1>logfile.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "printenv"
+			</ssh>
+		</step>
+		<step no="1">
+			<log-file>step1_show_int_mgt0.log</log-file>
+			<ssh target="ap1">
+			-v "show int mgt0"
+			</ssh>
+		</step>
+		<step no="1.1">
+			<setvar name="ap1.mgt0.ip">
+				python ${bin.dir}/getbyrexp.py -p "IP addr=(\d+.\d+.\d+.\d+)" -f ${log.dir}/step1_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+		
+		<step no="2">
+			<desc>
+				1: Configure authentication type CWP (passthrough/e-cwp) on ap
+			</desc>
+			<ssh target="ap1">
+				-v "security-object auto-cwp"
+				-v "security-object auto-cwp security aaa radius-server primary ${pub.radius2.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object auto-cwp security aaa radius-server accounting primary ${pub.radius2.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object auto-cwp security additional-auth-method captive-web-portal auth-user-profile-attr 1"
+				-v "security-object auto-cwp web-server"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object auto-cwp"
+				-v "security-object auto-cwp walled-garden hostname  hztb-hm1.qaauto.aerohive.com"
+				-v "security-object auto-cwp walled-garden hostname  hztb-hm2.qaauto.aerohive.com"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile 1 qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "_debug auth all"
+			</ssh>
+		</step>
+	</stage>
+	<stage loop-values="1..62" var-name="loop_id">
+  			<step no="3" type="loop-check" loop-max-times="10" loop-interval="10">
+  			<desc>config other 62 hostname in walled-garden</desc>
+  			<script>
+  				echo "${loop.idx}"
+  			</script>
+   			<ssh target="ap1">
+    			-v "security-object auto-cwp walled-garden hostname wall${loop.idx}.qaauto.aerohive.com"
+   			</ssh>
+  			</step>
+ 	</stage>
+	<stage>
+		<step no="4">
+			<log-file>step4_show_run.log</log-file>
+			<ssh target="ap1">
+				-v "show run"
+			</ssh>
+		</step>
+		<step no="5">
+			<desc>
+				check entries in walled-garden
+			</desc>
+			<log-file>step5_show_walled-garden.log</log-file>
+			<ssh target="ap1">
+				-v "show security-object auto-cwp walled-garden"
+			</ssh>
+			<log-match>-c -i "hztb-hm1.qaauto.aerohive.com" -re</log-match>
+			<log-match>-c -i "hztb-hm2.qaauto.aerohive.com" -re</log-match>
+			<log-match>-c -i "wall1.qaauto.aerohive.com" -re</log-match>
+			<log-match>-c -i "wall10.qaauto.aerohive.com" -re</log-match>
+			<log-match>-c -i "wall21.qaauto.aerohive.com" -re</log-match>
+			<log-match>-c -i "wall30.qaauto.aerohive.com" -re</log-match>
+		</step>
+		<step no="6">
+			<desc>
+				open debug mode and clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "_debug cgic basic"
+				-v "_debug auth all"
+				-v "_kdebug fe detail"
+				-v "_ff dst-port 80"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="7">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="8" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="9">
+			<desc>
+				client request a web page and get the page from walled-garden'hostname
+			</desc>
+			<log-file>cwp_walled_garden_hostname.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/AerohiveGUI/scripts/cwp/cwp_login.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters login.is_permit=true visit.url=${url} visit.permit_url=${url1} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -l info -f ${log.dir}/${log.file}
+			</script>
+		</step>
+	</stage>
+</testcase>

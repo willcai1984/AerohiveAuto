@@ -1,0 +1,343 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>All types of dh-group should work in phase 1</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+
+
+		Test Procedure:
+
+		1. Verify that default dh-group is group2
+		2. Check that the proposal contains group2 in first exchanged.
+		3. Check that the nonce payload is according to in the second exchanged and
+		the length of nonce payload MUST be between 8 and 256 bytes inclusive.
+		4. Check that the Diffie-Hellman public value passed in a KE payload, in
+		either a phase 1 or phase 2 exchange, MUST be the length of the
+		negotiated Diffie-Hellman group enforced, if necessary, by pre-pending
+		the value with zeros
+		5. Check that the content of "show vpn ike configuration"is according to
+		6. Repeated the upper steps when change the dh-group to group1
+		7. Repeated the upper steps when change the dh-group to group5
+		8. Verify that the default value is group5 when no command is excuted.
+		9. Repeated the upper steps in abg boxes.
+	</description>
+	<numofcvg>1</numofcvg>
+	<numofbr>1</numofbr>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+	
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+
+		<step no="pre.0.1">
+			<desc>enable vpn debug</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_debug vpn info"
+				-v "clear log buf"
+			</telnet>
+		</step>
+
+		<include prefix="1" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+
+		<step no="2.1">
+			<desc>config mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns1.route=$(echo ${cvg1.dns1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns2.route=$(echo ${cvg1.dns2.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.vpc1.route=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="3">
+			<desc>Check route distribution is correct</desc>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>On GW, will add the tunnel routes according to BR's modification </desc>
+			<log-file>3.1.show_route_cvg_.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="3.2" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>3.2_show_l3_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.dns1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${cvg1.dns2.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				show log buf
+			</desc>
+			<log-file>3.3.show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buf"
+				-v ""
+				-v ""
+				-v "clear log buf"
+				-v ""
+				-v ""
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="3.4">
+			<desc>
+				1. Verify that default Hash algorithm is SHA1
+				2. Check that the proposal contains hybrid in first exchanged
+				3. Verify that the content of “show vpn ike configuration”is according to
+				4. Verify that the config mode and phass II is hased by SHA1.
+			</desc>
+			<log-file>step3.4show_ike_config.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn ike configuration"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "configuration name:.+${br1.tunnel.name}.+" -ps p "nonce_size 16;" -ps p "phase1 proposal" -ps p "dh_group modp1024;" -ps p "encryption_algorithm aes;" -ps p "encryption_algorithm length 128;" -ps p "hash_algorithm sha1;" -ps p "phase2 proposal" -ps p "dh_group modp1024;" -ps p "encryption_algorithm aes;" -ps p "encryption_algorithm length 128;" -e "hash_algorithm sha1;" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				setup eth interface as access mode				
+			</desc>
+		</step>
+
+		<step no="4.1a">
+			<desc>configure vpc1</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">				
+				-v "user-profile sta qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+			</telnet>
+		</step>
+		
+		<step no="4.1b">
+			<desc>
+				Laptop1 connect to lan port eth2
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4.1c">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+		
+		<step no="5.1" type="loop-check" loop-max-times="7" loop-interval="10">
+			<desc>
+				br.vpc1 ping cvg.vpc1
+			</desc>
+			<log-file>ping_cvg_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 4"				
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>		
+
+		<step no="5.2">
+			<desc>set phase1 dh-group t group 1 on BR</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vpn ipsec-tunnel ${br1.tunnel.name} ike phase1 dh-group group1"
+			</telnet>
+		</step>
+
+		<step no="5.3">
+			<desc>set phase1 dh-group t group 1 on CVG</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "vpn ipsec-tunnel ${cvg1.tunnel.name} ike phase1 dh-group group1"
+			</telnet>
+		</step>
+
+		<step no="6.1" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check vpn ike sa on BR
+			</desc>
+			<log-file>step6.1_ike_sa_br${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				layer-3-tunnel status should be correct
+			</desc>
+			<log-file>step6.2_show_gre_tunnel_br.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "tunnel\d+[\t ]*gre/ipsec[\t ]*${cvg1.cvg.wan.ip}[\t ]*${br1.br.mgt0.ip}[\t ]*\d+[\t ]*${cvg1.cvg.tunnel.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>6.3_show_l3_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.dns1.route}" -p 3 -i "${br.route.netmask}"</log-match>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 3 -i "${br.route.netmask}"</log-match>
+		</step>
+
+		<step no="6.4" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				br.vpc1 ping cvg.vpc1
+			</desc>
+			<log-file>ping_cvg_vpc1_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 4"				
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>	
+
+		<step no="6.5">
+			<desc>
+				show log buf
+			</desc>
+			<log-file>step6.5_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buf"
+				-v ""
+				-v ""
+				-v "clear log buf"
+				-v ""
+				-v ""
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="6.6">
+			<desc>
+				1. Verify that default dh-group is group2
+				2. Check that the proposal contains group2 in first exchanged.
+				3. Check that the nonce payload is according to in the second exchanged and the length of nonce payload MUST be between 8 and 256 bytes inclusive.
+				4. Check that the Diffie-Hellman public value passed in a KE payload, in either a phase 1 or phase 2 exchange, MUST be the length of the negotiated Diffie-Hellman group enforced, if necessary, by pre-pending the value with zeros
+				5. Check that the content of “show vpn ike configuration”is according to
+			</desc>
+			<log-file>step6.6_show_ike_config.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn ike configuration"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "configuration name:.+${br1.tunnel.name}.+" -ps p "nonce_size 16;" -ps p "phase1 proposal" -ps p "dh_group modp768;" -ps p "encryption_algorithm aes;" -ps p "encryption_algorithm length 128;" -ps p "hash_algorithm sha1;" -ps p "phase2 proposal" -ps p "dh_group modp1024;" -ps p "encryption_algorithm aes;" -ps p "encryption_algorithm length 128;" -e "hash_algorithm sha1;" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>set phase1 dh-group t group 5 on BR</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vpn ipsec-tunnel ${br1.tunnel.name} ike phase1 dh-group group5"
+			</telnet>
+		</step>
+
+		<step no="7.2">
+			<desc>set phase1 dh-group t group 5 on CVG</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "vpn ipsec-tunnel ${cvg1.tunnel.name} ike phase1 dh-group group5"
+			</telnet>
+		</step>
+
+		<step no="8.1" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check vpn ike sa on br
+			</desc>
+			<log-file>step8.1_ike_sa_br_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				layer-3-tunnel status should be correct
+			</desc>
+			<log-file>step8.2_show_gre_tunnel_br.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "tunnel\d+[\t ]*gre/ipsec[\t ]*${cvg1.cvg.wan.ip}[\t ]*${br1.br.mgt0.ip}[\t ]*\d+[\t ]*${cvg1.cvg.tunnel.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.3" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>8.3_show_l3_ip_route_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.dns1.route}" -p 3 -i "${br.route.netmask}"</log-match>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 3 -i "${br.route.netmask}"</log-match>
+		</step>
+
+		<step no="8.4" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				br.vpc1 ping cvg.vpc1
+			</desc>
+			<log-file>ping_cvg_vpc1_${loop_check.idx}.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.vpc1.tif.ip} -c 4"				
+			</ssh>
+			<log-match>-c -i "from ${cvg1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>	
+		<step no="8.5">
+			<desc>
+				show log buf
+			</desc>
+			<log-file>step8.5_show_log_buf.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show log buf"
+				-v ""
+				-v ""
+				-v "clear log buf"
+				-v ""
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="8.6">
+			<desc>
+				1. Verify that default dh-group is group2
+				2. Check that the proposal contains group2 in first exchanged.
+				3. Check that the nonce payload is according to in the second exchanged and the length of nonce payload MUST be between 8 and 256 bytes inclusive.
+				4. Check that the Diffie-Hellman public value passed in a KE payload, in either a phase 1 or phase 2 exchange, MUST be the length of the negotiated Diffie-Hellman group enforced, if necessary, by pre-pending the value with zeros
+				5. Check that the content of “show vpn ike configuration”is according to
+			</desc>
+			<log-file>step8.6_show_ike_config.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn ike configuration"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "configuration name:.+${br1.tunnel.name}.+" -ps p "nonce_size 16;" -ps p "phase1 proposal" -ps p "dh_group modp1536;" -ps p "encryption_algorithm aes;" -ps p "encryption_algorithm length 128;" -ps p "hash_algorithm sha1;" -ps p "phase2 proposal" -ps p "dh_group modp1024;" -ps p "encryption_algorithm aes;" -ps p "encryption_algorithm length 128;" -e "hash_algorithm sha1;" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+	</stage>
+
+</testcase>
+

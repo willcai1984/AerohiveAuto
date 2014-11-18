@@ -1,0 +1,870 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Bridge PC to backhaul, configure a UPID </brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-configure two APs in the same subnet and same hive
+		-configure MP1 eth0 to bridge-access and mac-learning enable
+		-configure a use-profile and bind use-profile to eth0
+
+		Test Procedure:
+
+		1. When PC connected to MP1 ,check mac-learning table, route table in MP1
+		2. Show route, check route in Portal1
+		3. When PC connected to MP1 "debug fe_arp basic" in Portal
+		4. Laptop send ICMP packets.
+		PC ping MP1
+		PC Ping Portal1
+		PC ping gateway
+		5. Laptop broadcast packets.
+		6. Plug out cable of pc's ethlink.
+		7. Plug in cable of pc's ethlink
+		8. Shut down interface eth0
+		9. No shut down interface eth0
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" =="true"</if>
+
+		<include prefix="pre1.0" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="pre1.1">
+			<desc>
+				on ap2,
+				create hive ${hive.name}
+				ap2 as portal, shutdown eth1
+				interface mgt0 vlan ${tb.vlan1}
+				interface mgt0 hive ${hive.name}
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 40"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "interface eth1 shutdown"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+		
+		<step no="pre1.1_0">
+			<desc>
+				on ap2,
+				create hive ${hive.name}
+				ap2 as portal, shutdown eth1
+				interface mgt0 vlan ${tb.vlan1}
+				interface mgt0 hive ${hive.name}
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+				-v "interface wifi0 hive ${hive.name} shutdown"
+				-v "no interface wifi0 hive ${hive.name} shutdown"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "interface eth1 shutdown"
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="pre1.1b">
+			<desc>
+				-show interface in Portal1
+			</desc>
+			<log-file>step_pre1.1b_show_interface_por1.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="pre1.1c">
+			<desc>
+				Get mgt0 mac in Portal1
+			</desc>
+			<setvar name="por1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step_pre1.1b_show_interface_por1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.1d">
+			<desc>
+				Get wifi1 mac in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="por1.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1.1 *(\S+) *" -f ${log.dir}/step_pre1.1b_show_interface_por1.log -t str
+			</setvar>
+		</step>
+		
+		<step no="pre1.1d_0">
+			<desc>
+				Get wifi1 mac in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="por1.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1 *(\S+) *" -f ${log.dir}/step_pre1.1b_show_interface_por1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.1e" type="loop-check" loop-max-times="50" loop-interval="10">
+			<desc>
+				-show interface mgt0 in Portal1
+			</desc>
+			<log-file>step_pre1.1e_show_interface_mgt0_por1.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-i "IP addr=" -i "192.168.${tb.vlan1}"</log-match>
+			<log-match>-i "${ap2.tif.ip}"</log-match>
+		</step>
+
+		<step no="pre1.1f">
+			<desc>
+				Get mgt0 mac in mp1
+			</desc>
+			<setvar name="ap2.mgt0.ip1">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step_pre1.1e_show_interface_mgt0_por1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre2.1">
+			<desc>
+				on ap1,
+				create hive ${hive.name}
+				interface mgt0 vlan ${tb.vlan1}
+				interface eth0 shutdown
+				interface eth1 mode bridge-access
+				interface eth1 mac-learning enable
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 40"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface eth0 shutdown"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "interface eth1 mode bridge-access user-profile-attribute 2"
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+				-v "save config"
+			</console>
+		</step>
+		
+		<step no="pre2.1_0">
+			<desc>
+				on ap1,
+				create hive ${hive.name}
+				interface mgt0 vlan ${tb.vlan1}
+				interface eth0 shutdown
+				interface eth1 mode bridge-access
+				interface eth1 mac-learning enable
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+				-v "interface wifi0 hive ${hive.name} shutdown"
+				-v "no interface wifi0 hive ${hive.name} shutdown"
+				-v "interface eth0 shutdown"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile datapath"
+				-v "user-profile datapath vlan ${tb.vlan1}"
+				-v "user-profile datapath attribute 2"
+				-v "interface eth1 mode bridge-access user-profile-attribute 2"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="pre2.1b">
+			<desc>
+				-show interface in mp1
+			</desc>
+			<log-file>step_pre2.1b_show_interface_mp1.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="pre2.1c">
+			<desc>
+				Get mgt0 mac in mp1
+			</desc>
+			<setvar name="mp1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step_pre2.1b_show_interface_mp1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre2.1d">
+			<desc>
+				Get wifi1 mac in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="mp1.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1.1 *(\S+) *" -f ${log.dir}/step_pre2.1b_show_interface_mp1.log -t str
+			</setvar>
+		</step>
+		
+		<step no="pre2.1d_0">
+			<desc>
+				Get wifi1 mac in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="mp1.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1 *(\S+) *" -f ${log.dir}/step_pre2.1b_show_interface_mp1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre2.1e" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>
+				-show interface mgt0 in mp1
+			</desc>
+			<log-file>step_pre2.1e_show_interface_mgt0_mp1.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-i "IP addr=" -i "192.168.${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="pre2.1f">
+			<desc>
+				Get mgt0 mac in mp1
+			</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step_pre2.1e_show_interface_mgt0_mp1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre3">
+			<desc>Get Vpc's ip</desc>
+			<ssh target="bpc1">
+				-v "ifconfig ${bpc1.tif.name} down"
+			</ssh>
+		</step>
+
+		<step no="pre4">
+			<desc>
+				configure debug in Portal1
+			</desc>
+			<telnet target="ap2">
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="pre5">
+			<desc>ifconfig ${bpc1.tif.name} up</desc>
+			<ssh target="bpc1" timeout="500">
+				-v "killall dhclient -q"
+				-v "ifconfig ${bpc1.tif.name} down"
+				-v ""
+				-v ""
+				-v "ifconfig ${bpc1.tif.name} up"
+				-v ""
+				-v ""
+				-v ""
+				-v "dhclient ${bpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="pre6" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check bpc1's ip</desc>
+			<log-file>step_pre6_check_bpc1_ip.log</log-file>
+			<ssh target="bpc1">
+				-v "ifconfig ${bpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr" -i "192.168.${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="pre6.1a">
+			<desc>get ip address of ap2</desc>
+			<setvar name="bpc1.tif.ip">
+				${bin.dir}/getbyrexp.py -p "inet addr:([\d.]+)" -f ${log.dir}/step_pre6_check_bpc1_ip.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre6.1b">
+			<desc>get ip address of ap2</desc>
+			<setvar name="bpc1.tif.mac1">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step_pre6_check_bpc1_ip.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre6.1c">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="bpc1.tif.mac">
+				echo $(echo $(echo $(echo ${bpc1.tif.mac1} | cut -d : -f1)$(echo ${bpc1.tif.mac1} | cut -d : -f2,3)$(echo ${bpc1.tif.mac1} | cut -d : -f4,5)$(echo ${bpc1.tif.mac1} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-Portal1 will send gra-arp to switch1
+			</desc>
+			<log-file>step1.1_show_logging_buffered_por1.log</log-file>
+			<telnet target="ap2" timeout="400">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "eth0 send gratuitous ARP" -i "${bpc1.tif.mac}" -i "vlan ${tb.vlan1}"</log-match>
+			<log-match>-c -i "fe receive gratuitous ARP request" -i "${bpc1.tif.mac}" -i "vlan ${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="1.2.3">
+			<desc>
+				check mac-learning table in mp1
+			</desc>
+			<log-file>step1.2.3_check_mac-learning_table_mp1.log</log-file>
+			<console target="ap1">
+				-v "show interface eth1 mac-learning all"
+			</console>
+			<log-match>-c -i "${bpc1.tif.mac}"</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				check route table in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step1.3_check_route_table_mp1.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-c -i "0000:0000:0000" -i "wifi1.1"</log-match>
+			<log-match>-c -i "${bpc1.tif.mac}" -i "eth1"</log-match>
+		</step>
+		
+		<step no="1.3_0">
+			<desc>
+				check route table in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step1.3_check_route_table_mp1.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-c -i "0000:0000:0000" -i "wifi0.1"</log-match>
+			<log-match>-c -i "${bpc1.tif.mac}" -i "eth1"</log-match>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				check route table in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step1.4_check_route_table_por1.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${bpc1.tif.mac}" -i "wifi1.1"</log-match>
+		</step>
+		
+		<step no="1.4_0">
+			<desc>
+				check route table in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step1.4_check_route_table_por1.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${bpc1.tif.mac}" -i "wifi0.1"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				configure debug in Portal1
+			</desc>
+			<telnet target="ap2">
+				-v "no _kdebug fe_arp basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff id 1 protocol 1"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				configure debug in mp1
+			</desc>
+			<console target="ap1">
+				-v "no _kdebug fe_arp basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff id 1 protocol 1"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="2.3">
+			<desc>bpc1 ping MP1</desc>
+			<log-file>step2.3_bpc1_ping_mp1.log</log-file>
+			<ssh target="bpc1">
+				-v "ping ${ap1.mgt0.ip} -c 5"
+			</ssh>
+			<log-match>-i "from ${ap1.mgt0.ip}" -i "ttl=" -c</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step2.4_show_logging_buffered_por1</log-file>
+			<telnet target="ap2" timeout="400">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi1.1 ${bpc1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(0) wifi1.1 ${ap1.mgt0.ip}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="2.4_0">
+			<desc>
+				check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step2.4_show_logging_buffered_por1</log-file>
+			<telnet target="ap2" timeout="400">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-n -i "(i) wifi0.1 ${bpc1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(0) wifi0.1 ${ap1.mgt0.ip}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="2.5">
+			<desc>
+				show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step2.5_show_logging_buffered_mp1.log</log-file>
+			<console target="ap1" timeout="400">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) eth1 ${bpc1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi1.1 ${bpc1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi1.1 ${ap1.mgt0.ip}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth1 ${ap1.mgt0.ip}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="2.5_0">
+			<desc>
+				show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step2.5_show_logging_buffered_mp1.log</log-file>
+			<console target="ap1" timeout="400">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) eth1 ${bpc1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) wifi0.1 ${bpc1.tif.ip}-&gt;${ap1.mgt0.ip}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) wifi0.1 ${ap1.mgt0.ip}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth1 ${ap1.mgt0.ip}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				clear log all in Portal1
+			</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				clear log all in mp1
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="3.3">
+			<desc>bpc1 ping Portal1</desc>
+			<log-file>step3.3_bpc1_ping_por1.log</log-file>
+			<ssh target="bpc1">
+				-v "ping ${ap2.mgt0.ip1} -c 5"
+			</ssh>
+			<log-match>-i "from ${ap2.mgt0.ip1}" -i "ttl=" -c</log-match>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step3.4_show_logging_buffered_por1.log</log-file>
+			<telnet target="ap2" timeout="400">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(i) wifi1.1 ${bpc1.tif.ip}-&gt;${ap2.mgt0.ip1}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${bpc1.tif.ip}-&gt;${ap2.mgt0.ip1}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) eth0 ${ap2.mgt0.ip1}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi1.1 ${ap2.mgt0.ip1}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="3.4_0">
+			<desc>
+				check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step3.4_show_logging_buffered_por1.log</log-file>
+			<telnet target="ap2" timeout="400">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "(i) wifi0.1 ${bpc1.tif.ip}-&gt;${ap2.mgt0.ip1}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(o) eth0 ${bpc1.tif.ip}-&gt;${ap2.mgt0.ip1}" -i "icmp-echo-req"</log-match>
+			<log-match>-n -i "(i) eth0 ${ap2.mgt0.ip1}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) wifi0.1 ${ap2.mgt0.ip1}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step3.5_show_logging_buffered_mp1.log</log-file>
+			<console target="ap1" timeout="400">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) eth1 ${bpc1.tif.ip}-&gt;${ap2.mgt0.ip1}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi1.1 ${bpc1.tif.ip}-&gt;${ap2.mgt0.ip1}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi1.1 ${ap2.mgt0.ip1}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth1 ${ap2.mgt0.ip1}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="3.5_0">
+			<desc>
+				show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step3.5_show_logging_buffered_mp1.log</log-file>
+			<console target="ap1" timeout="400">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-i "(i) eth1 ${bpc1.tif.ip}-&gt;${ap2.mgt0.ip1}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(o) wifi0.1 ${bpc1.tif.ip}-&gt;${ap2.mgt0.ip1}" -i "icmp-echo-req"</log-match>
+			<log-match>-i "(i) wifi0.1 ${ap2.mgt0.ip1}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-i "(o) eth1 ${ap2.mgt0.ip1}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				clear log all in Portal1
+			</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				clear log all in mp1
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="4.3">
+			<desc>bpc1 ping gateway</desc>
+			<log-file>step4.3_bpc1_ping_gw.log</log-file>
+			<ssh target="bpc1">
+				-v "ping ${tb.vlan1.gw} -c 5"
+			</ssh>
+			<log-match>-i "from ${tb.vlan1.gw}" -i "ttl=" -c</log-match>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step4.4_show_logging_buffered_por1.log</log-file>
+			<telnet target="ap2" timeout="400">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi1.1 ${bpc1.tif.ip}-&gt;${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(o) eth0 ${bpc1.tif.ip}-&gt;${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) eth0 ${tb.vlan1.gw}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${tb.vlan1.gw}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="4.4_0">
+			<desc>
+				check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step4.4_show_logging_buffered_por1.log</log-file>
+			<telnet target="ap2" timeout="400">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${bpc1.tif.ip}-&gt;${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(o) eth0 ${bpc1.tif.ip}-&gt;${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) eth0 ${tb.vlan1.gw}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${tb.vlan1.gw}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step4.5_show_logging_buffered_mp1.log</log-file>
+			<console target="ap1" timeout="400">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "(i) eth1 ${bpc1.tif.ip}-&gt;${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${bpc1.tif.ip}-&gt;${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) wifi1.1 ${tb.vlan1.gw}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(o) eth1 ${tb.vlan1.gw}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+		
+		<step no="4.5_0">
+			<desc>
+				show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step4.5_show_logging_buffered_mp1.log</log-file>
+			<console target="ap1" timeout="400">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "(i) eth1 ${bpc1.tif.ip}-&gt;${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${bpc1.tif.ip}-&gt;${tb.vlan1.gw}" -i "icmp-echo-req"</log-match>
+			<log-match>-c -i "(i) wifi0.1 ${tb.vlan1.gw}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+			<log-match>-c -i "(o) eth1 ${tb.vlan1.gw}-&gt;${bpc1.tif.ip}" -i "icmp-echo-reply"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				configure debug in Portal1
+			</desc>
+			<telnet target="ap2">
+				-v "no _ff id 1"
+				-v "_ff id 1 etype 0806 bidirectional"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				configure debug in mp1
+			</desc>
+			<console target="ap1">
+				-v "no _ff id 1"
+				-v "_ff id 1 etype 0806 bidirectional"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="5.3">
+			<desc>bpc1 ping ${tb.unreach.ip1}</desc>
+			<log-file>step5.3_bpc1_ping_unreach.log</log-file>
+			<ssh target="bpc1">
+				-v "ping ${tb.unreach.ip1} -c 3"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="5.4">
+			<desc>
+				check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step5.4_show_logging_buffered_por1.log</log-file>
+			<telnet target="ap2" timeout="400">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi1.1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "(o) eth0 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "\[fe\]: interface down, don't flood on eth1"</log-match>
+		</step>
+		
+		<step no="5.4_0">
+			<desc>
+				check logging buffered in Portal1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step5.4_show_logging_buffered_por1.log</log-file>
+			<telnet target="ap2" timeout="400">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "(o) eth0 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "\[fe\]: interface down, don't flood on eth1"</log-match>
+		</step>
+
+		<step no="5.5">
+			<desc>
+				show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step5.5_show_logging_buffered_mp1.log</log-file>
+			<console target="ap1" timeout="400">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "(i) eth1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "\[fe\]: interface down, don't flood on eth0"</log-match>
+			<log-match>-c -i "\[fe\]: wifi1.1 drop illegal broadcast from ${por1.wifi1.mac}" -i "route-nhop ${mp1.mgt0.mac}"</log-match>
+		</step>
+		
+		<step no="5.5_0">
+			<desc>
+				show logging buffered in mp1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step5.5_show_logging_buffered_mp1.log</log-file>
+			<console target="ap1" timeout="400">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "(i) eth1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp"</log-match>
+			<log-match>-c -i "\[fe\]: interface down, don't flood on eth0"</log-match>
+			<log-match>-c -i "\[fe\]: wifi0.1 drop illegal broadcast from ${por1.wifi1.mac}" -i "route-nhop ${mp1.mgt0.mac}"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				shut down interface eth1 in mp1
+			</desc>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				check mac-learning table in mp1
+			</desc>
+			<log-file>step6.1_check_mac-learning_table_mp1.log</log-file>
+			<console target="ap1">
+				-v "show interface eth1 mac-learning all"
+			</console>
+			<log-match>-n -c -i "${bpc1.tif.mac}"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				check route table in mp1
+			</desc>
+			<log-file>step6.2_check_route_table_mp1.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-n -c -i "${bpc1.tif.mac}" -i "eth1"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				check route table in Portal1
+			</desc>
+			<log-file>step6.3_check_route_table_por1.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-n -c -i "${bpc1.tif.mac}" -i "wifi1.1"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				shut up interface eth1 in mp1
+			</desc>
+			<console target="ap1">
+				-v "no interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="7.1" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>
+				check mac-learning table in mp1
+			</desc>
+			<log-file>step7.1_check_mac-learning_table_mp1.log</log-file>
+			<console target="ap1">
+				-v "show interface eth1 mac-learning all"
+			</console>
+			<log-match>-c -i "${bpc1.tif.mac}"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				check route table in mp1
+			</desc>
+			<log-file>step7.2_check_route_table_mp1.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-c -i "${bpc1.tif.mac}" -i "eth1"</log-match>
+		</step>
+
+		<step no="7.3">
+			<desc>
+				check route table in Portal1
+			</desc>
+			<log-file>step7.3_check_route_table_por1.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-c -i "${bpc1.tif.mac}" -i "wifi1.1"</log-match>
+		</step>
+	</stage>
+</testcase>

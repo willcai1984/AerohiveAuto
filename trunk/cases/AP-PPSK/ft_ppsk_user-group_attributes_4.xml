@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>PPSK user get vlan-id from user group</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config PSK-generation-method to password-only
+		-config the password-generation-method to manual
+
+		Test Procedure:
+		-config the vlan-id to a valid number
+		-config a different attribute id with ssid default-attribute(contain
+		another vlan-id
+		-create a user, bind it to this group
+		-bind the group to ssid
+		-bind the ssid to wifi0
+		-check result 1, 2
+		-client connect to AP using PPSK
+		-check 3
+		-client connect to AP using default PSK
+		-check result 4
+		-check result 5
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="default.psk" value="aerohive" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-tkip-psk" />
+	<property name="conn1.psk" value="group1user" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.proto" value="wpa-tkip-psk" />
+	<property name="conn2.psk" value="aerohive" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config the vlan-id to a valid number
+				-create a user, bind it to this group
+			</desc>
+			<ssh target="ap1">
+				-v "user-group userGroup1"
+				-v "user-group userGroup1 vlan-id ${tb.vlan2}"
+				-v "user group1_user"
+				-v "user group1_user password group1user"
+				-v "user group1_user group userGroup1"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				show ap1's interface wifi0.1 info
+			</desc>
+			<log-file>show_ap1_interface_info.log</log-file>
+			<ssh target="ap1">
+				-v "show interface wifi0.1"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				get ap1's wifi0.1's mac address
+			</desc>
+			<setvar name="ap1.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_interface_info.log -i wifi0.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Config ap1
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key ${default.psk}"
+				-v "security-object ppsk default-user-profile-attr 2"
+				-v "security-object ppsk security private-psk"
+				-v "user-profile sss vlan-id ${tb.vlan1} attribute 2"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup1"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>
+				show user
+			</desc>
+			<log-file>step3_show_user.log</log-file>
+			<ssh target="ap1">
+				-v "show user"
+			</ssh>
+			<log-match>-c -i "group1_user" -i "Yes *userGroup1"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step3.1_show_user_group.log</log-file>
+			<ssh target="ap1">
+				-v "show user-group"
+			</ssh>
+			<log-match>-c -i "userGroup1 *n/a *${tb.vlan2}"</log-match>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="6">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step6_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${tb.vlan2} *Yes *2"</log-match>
+			<log-match>-c -i "${sta2.tif.mac} *${sta2.tif.ip}" -i "${tb.vlan1} *Yes *2"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				-sh roa ca
+			</desc>
+			<log-file>step7_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "2" -i "0 *YNNN"</log-match>
+			<log-match>-c -i "${sta2.tif.mac}" -p 5 -i "2" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step7.1_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta2.tif.mac} *2" -i "WPA/TKIP" -i "done"</log-match>
+			<log-match>-c -i "${sta1.tif.mac} *2" -i "WPA/TKIP" -i "group1_user" -i "done"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				-check the logging result
+			</desc>
+			<log-file>step7.2_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="200">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.mac} thru SSID ${ssid.name}"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) login to SSID(wifi0.1) by user_name=group1_user"</log-match>
+			<log-match>-c -i "Station ${sta2.tif.mac} is authenticated to ${ap1.wifi0.mac} thru SSID ${ssid.name}"</log-match>
+			<log-match>-c -i "STA(${sta2.tif.mac}) login to SSID(wifi0.1) by user_name="</log-match>
+		</step>
+
+		<include prefix="8" file="subs/sta_ping.xml" args="sta1, ${tb.vlan2.gw}, 5" />
+
+		<include prefix="9" file="subs/sta_ping.xml" args="sta2, ${tb.vlan1.gw}, 5" />
+	</stage>
+</testcase>

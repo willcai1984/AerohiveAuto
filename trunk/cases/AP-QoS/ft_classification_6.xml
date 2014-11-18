@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, package(class 0-7 80211e) mapping calss 0-7.wifi0 Test topology Top1 Device Configuration ssid DeathKnight interface wifi0 ssid DeathKnight qos classifier-profile 80211e 80211e ssid DeathKnight qos-classifier 80211e qos classifier-map 80211e 0 7</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		portal:
+		- Set "_kdebug qos classifi"on CLI
+		- Set "_ff id 1 src-mac sta2's mac"
+		- Set "_kdebug fe basic"
+		- STA2generates 80211e(0-7) traffic,then send to STA1.
+		Expected output
+		- Sniffering the traffic from STA1 incoming interface
+		- Verify the received traffic class from STA2 is (0-7)
+		- look over kdebug message
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="test.filename" value="${job.id}" />
+
+	<stage>
+		<step no="pre1">
+			<desc>
+				create ssid
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</console>
+		</step>
+
+		<include prefix="pre2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="pre3">
+			<desc>
+				Transfer a file to directory tftpboot in tftp server
+			</desc>
+			<ssh host="${tb.tftp}" prompt=">|.*#">
+				-v "echo \"12345\" &gt; /var/lib/tftpboot/${test.filename}"
+				-v "chmod 777 /var/lib/tftpboot/${tb.ftp.file3_small}"
+			</ssh>
+		</step>
+
+		<step no="1">
+			<desc>
+				- Set qos on portal
+			</desc>
+			<telnet target="ap1">
+				-v "qos classifier-profile 80211e 80211e"
+				-v "qos classifier-map 80211e 0 7"
+				-v "ssid ${ssid.name} qos-classifier 80211e"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				sta send udp paket
+			</desc>
+			<ssh target="sta1">
+				-v "tftp ${tb.tftp} -c get ${test.filename}"
+			</ssh>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "QoS: pkt forwarded"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${tb.tftp}\(\d+\) ttl\(\d+\) UDP" -ps p "QoS: ingress pkt fwd\(wifi0.1\) profile=0 qos=\d" p "Classifier\(wifi0.1:802.11e\) user priority=0 qos=\d" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${tb.tftp}\(\d+\) ttl\(\d+\) UDP" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${tb.tftp}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP" -ps p "QoS: ingress pkt fwd\(eth0\)" -e "\(i\) eth0 ${tb.tftp}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5.1">
+			<desc>get qos num</desc>
+			<setvar name="qos1">
+				${bin.dir}/getbyrexp.py -p "QoS: ingress pkt fwd\(wifi0.1\) profile=\d+ qos=(\d+)" -f ${log.dir}/show_log_buffered.log -g 0
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>get qos num</desc>
+			<setvar name="qos2">
+				${bin.dir}/getbyrexp.py -p "Classifier\(wifi0.1:802.11e\) user priority=\d+ qos=(\d+)" -f ${log.dir}/show_log_buffered.log -g 0
+			</setvar>
+		</step>
+
+		<step no="5.3">
+			<desc>get priority num</desc>
+			<setvar name="priority">
+				${bin.dir}/getbyrexp.py -p "Classifier\(wifi0.1:802.11e\) user priority=(\d+) qos=\d+" -f ${log.dir}/show_log_buffered.log -g 0
+			</setvar>
+		</step>
+
+		<step no="6.1">
+			<desc>check qos</desc>
+			<log-file>check_qos_num.log</log-file>
+			<script>
+				if [ ${qos1} -ge 0 ] &amp;&amp; [ ${qos1} -le 7 ];then echo "success";fi &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "success"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>check qos</desc>
+			<log-file>check_qos2_num.log</log-file>
+			<script>
+				if [ ${qos2} -ge 0 ] &amp;&amp; [ ${qos2} -le 7 ];then echo "success";fi &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "success"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>check priority</desc>
+			<log-file>check_priority_num.log</log-file>
+			<script>
+				if [ ${priority} -ge 0 ] &amp;&amp; [ ${priority} -le 7 ];then echo "success";fi &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "success"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>
+					rm test file
+				</desc>
+				<ssh host="${tb.tftp}" prompt=">|.*#">
+					-v "rm -f /var/lib/tftpboot/${test.filename}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

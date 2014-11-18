@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>
+		performance automation test, cover all the scenario
+	</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		sta1: chariot server
+		sta2: client1
+		sta3: client2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>3</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<step no="remove_known_host">
+				<desc>remove .ssh/known_hosts</desc>
+				<script>
+					rm -rf ~/.ssh/known_hosts
+				</script>
+			</step>
+			<!--need enough time to wait for chariot server restart, during this, we can reset config ap-->
+			<include prefix="chariot.reboot" file="subs/sta_reboot_windows.xml" obj-args="sta1" />
+			<step no="reset_ap">
+				<desc>clear ap config before running case</desc>
+				<console target="ap1">
+					-v "reset config"
+				</console>
+			</step>
+		</stage>
+	</pre-process>
+
+	<property name="chariot_server.mip" value="${sta1.mif.ip}" />
+	<property name="chariot_log_dir" value="D:/performance/${job.id}" />
+	<property name="client1.mip" value="${sta2.mif.ip}" />
+	<property name="client2.mip" value="${sta3.mif.ip}" />
+	<property name="client.ostype" value="MacOS" />
+	<property name="client.cardtype" value="Broadcom BCM4331 802.11 Wireless Controller" />
+	<property name="terminal_server.ip" value="10.155.31.240" />
+	<property name="ap_console_port" value="2038" />
+	<property name="ssid" value="performance_auto" />
+
+	<!--set master IPs for clients of different distance -->
+	<property name="dist_ips" value="5:10.155.40.203,10:10.155.40.204,20:10.155.40.205,30:10.155.40.206,50:10.155.40.207" />
+
+	<stage>
+		<step no="link_to_result_web">
+			<desc>link to result web page</desc>
+			<log-file>click_here_to_open_link.log</log-file>
+			<script>
+				echo "&lt;a href=\"https://10.155.40.200/performance/\"&gt;Performance statistic web&lt;/a&gt;" > ${log.dir}/${log.file}
+			</script>
+		</step>
+		<step no="show_config">
+			<desc>
+				show TB configuration:
+				sta1: chariot server @ 192.168.1.100
+				sta2: client1 @ 192.168.1.200
+				sta3: client2 @ 192.168.1.201
+			</desc>
+		</step>
+		<step no="create_dir">
+			<desc>create a folder for log of this job on chariot server</desc>
+			<staf target="sta1">
+				-v 'mkdir "${chariot_log_dir}"'
+			</staf>
+		</step>
+	</stage>
+
+	<!--handle job variables -->
+	<stage>
+		<step no="insert_job">
+			<desc>insert job variables into DB</desc>
+			<script>
+				${case.dir}/bin/insert_job.pl \
+				--jobid ${job.id} \
+				--var "distances=${distances};angles=${angles};encrypts=${encrypts};channels=${channels};linkmodes=${linkmodes};runtstimes=${runtstimes}"
+			</script>
+		</step>
+		<step no="parse_linkmode">
+			<desc>parse linkmodes and set vars</desc>
+			<multi-setvar>
+				perl -e '@mode=split / *, */, "${linkmodes}";for(@mode){print "$_=$_\n"}'
+			</multi-setvar>
+		</step>
+		<!--format is distance:angle:encrypt:channel -->
+		<step no="stringify_variables">
+			<desc>stringify job variables so that can be used in loop-values</desc>
+			<setvar name="loop_values">
+				${case.dir}/bin/stringify_variables.pl \
+				--distances "${distances}" \
+				--angles "${angles}" \
+				--channels "${channels}" \
+				--encrypts "${encrypts}"
+			</setvar>
+		</step>
+	</stage>
+
+	<stage loop-values="${loop_values}" var-name="value">
+		<step no="split_value">
+			<desc>split stringify value into vars</desc>
+			<multi-setvar>
+				perl -e '@a=split(/:/,"${value}");print "dist=$a[0]\nangl=$a[1]\nenpt=$a[2]\nchnl=$a[3]\n"'
+			</multi-setvar>
+		</step>
+		<step no="set_radio">
+			<desc>set radio according to channel</desc>
+			<setvar name="wifi">
+				if [ "${chnl}" -lt "13" ]; then
+				echo "wifi0"
+				else
+				echo "wifi1"
+				fi
+			</setvar>
+		</step>
+		<include prefix="loop" file="${case.dir}/subs/run_performance.xml" args="${dist}, ${angl}, ${chnl}, ${enpt}" />
+	</stage>
+
+	<failed-process>
+		<stage>
+			<step no="1">
+				<desc>reset config</desc>
+				<console target="ap1">
+					-v "reset config"
+				</console>
+			</step>
+		</stage>
+	</failed-process>
+	<post-process />
+</testcase>

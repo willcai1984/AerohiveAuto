@@ -1,0 +1,143 @@
+<include arg-names="at.name, at.password, at.en_scheme" obj-arg-names="__ACCT__">
+	<step no="0.01">
+		<desc>ldif file name</desc>
+		<setvar name="ldif_file">
+			echo "${log.dir}/${at.name}_${at.password}.ldif"
+		</setvar>
+	</step>
+	<step no="0.02">
+		<desc>ldif file name</desc>
+		<if>"${at.en_scheme}" != ""</if>
+		<setvar name="ldif_file">
+			echo "${log.dir}/${at.name}_${at.password}_${at.en_scheme}.ldif"
+		</setvar>
+	</step>
+	<step no="0.1">
+		<desc>LDAP entry scheme</desc>
+		<if>"${at.en_scheme}" == "nt"</if>
+		<setvar name="at.password">
+			echo $(smbencrypt ${at.password} 2>/dev/null |grep '[0-9A-F]' |awk '{print $2}' )
+		</setvar>
+		<failed>next</failed>
+	</step>
+	<step no="0.2">
+		<desc>LDAP entry scheme</desc>
+		<if>"${at.en_scheme}" == "lm"</if>
+		<setvar name="ldappassword">
+			echo $(smbencrypt ${at.password} 2>/dev/null |grep '[0-9A-F]' |awk '{print $1}')
+		</setvar>
+		<failed>next</failed>
+	</step>
+	<step no="0.3">
+		<desc>LDAP entry scheme</desc>
+		<if>"${at.en_scheme}" != ""</if>
+		<if>"${at.en_scheme}" != "nt"</if>
+		<if>"${at.en_scheme}" != "lm"</if>
+		<setvar name="at.password">
+			slappasswd -h {${at.en_scheme}} -s "${at.password}"
+		</setvar>
+		<failed>next</failed>
+	</step>
+	<step no="0.4">
+		<desc>LDAP entry scheme</desc>
+		<if>"${ldappassword}" != ""</if>
+		<setvar name="at.password">
+			echo {at.en_scheme}{ldappassword}
+		</setvar>
+	</step>
+	<step no="0.5">
+		<desc>relpace char</desc>
+		<if>"${at.en_scheme}" != ""</if>
+		<setvar name="at.password">
+			echo ${at.password} | sed 's/\//\\\\\//g'
+		</setvar>
+		<failed>next</failed>
+	</step>
+	<step no="0.6">
+		<desc>echo pwd</desc>
+		<if>"${at.en_scheme}" != ""</if>
+		<log-file>aaaa_${include.prefix}.log</log-file>
+		<script>
+			echo ${at.password} | sed 's/\//\\\\\//g'
+		</script>
+	</step>
+	
+	<step no="1">
+		<desc>add LDAP entry</desc>
+		<log-file>${ldif_file}</log-file>
+		<script>
+			cat ${auto.root.dir}/subs/conf/mac_ldif.temp \
+			| sed 's/__CNAME__/${at.name}/' \
+			| sed 's/__PASSWORD__/${at.password}/' \
+			> ${ldif_file}
+		</script>
+		<failed>next</failed>
+	</step>
+
+	<step no="2">
+		<if>"${__ACCT__.vlan}" != ""</if>
+		<script>
+			echo "radiusTunnelMediumType: 6" >> ${ldif_file}
+			echo "radiusTunnelType: 13" >> ${ldif_file}
+			echo "radiusTunnelPrivateGroupId: ${__ACCT__.vlan}" >> ${ldif_file}
+		</script>
+	</step>
+	<step no="3">
+		<if>"${__ACCT__.uid}" != ""</if>
+		<script>
+			echo "radiusTunnelMediumType: 1" >> ${ldif_file}
+			echo "radiusTunnelType: 10" >> ${ldif_file}
+			echo "radiusTunnelPrivateGroupId: ${__ACCT__.uid}" >> ${ldif_file}
+		</script>
+	</step>
+	<step no="4">
+		<if>"${__ACCT__.session_time}" != ""</if>
+		<script>
+			echo "radiusSessionTimeout: ${__ACCT__.session_time}" >> ${ldif_file}
+		</script>
+	</step>
+	<step no="5">
+		<if>"${__ACCT__.ter_act}" != ""</if>
+		<script>
+			echo "radiusTerminationAction: ${__ACCT__.ter_act}" >> ${ldif_file}
+		</script>
+	</step>
+	<step no="6">
+		<if>"${__ACCT__.filter_id}" != ""</if>
+		<script>
+			echo "radiusFilterId: ${__ACCT__.filter_id}" >> ${ldif_file}
+		</script>
+	</step>
+	<step no="7">
+		<if>"${__ACCT__.idle_time}" != ""</if>
+		<script>
+			echo "radiusIdleTimeout: ${__ACCT__.idle_time}" >> ${ldif_file}
+		</script>
+	</step>
+	<step no="8">
+		<if>"${__ACCT__.InterimInterval}" != ""</if>
+		<script>
+			echo "radiusAcctInterimInterval: ${__ACCT__.InterimInterval}" >> ${ldif_file}
+		</script>
+	</step>
+	<step no="9">
+		<if>"${__ACCT__.CallbackId}" != ""</if>
+		<script>
+			echo "radiusCallbackId: ${__ACCT__.CallbackId}" >> ${ldif_file}
+		</script>
+	</step>
+
+	<step no="10.1">
+		<desc>delete LDAP entry</desc>
+		<script>
+			ldapdelete -h ${pub.ldap1.ip} -D 'cn=admin,dc=qatest,dc=aerohive' -w aerohive cn=${at.name},dc=qatest,dc=aerohive
+		</script>
+		<failed>next</failed>
+	</step>
+
+	<step no="10.2">
+		<desc>add LDAP entry</desc>
+		<script>
+			ldapadd -h ${pub.ldap1.ip} -D 'cn=admin,dc=qatest,dc=aerohive' -w aerohive -f ${ldif_file}
+		</script>
+	</step></include>

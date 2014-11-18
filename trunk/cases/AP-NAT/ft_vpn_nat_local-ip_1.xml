@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that the local ip is same subnet with mgt0.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Match the ip-policy of NAT.
+
+		Test Procedure:
+		1. Verify that when local-ip is set in ip-policy then it is same subnet with
+		mgt0
+		2. Verify that dst-ip is same with it then traffic is nat( udp, tcp).
+		3. Verify that dst-ip is not different with it then traffic is not nat.
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				check mgt0 mac
+			</desc>
+			<log-file>step0_check_mgt0_mac.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				get mgt0 mac
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step0_check_mgt0_mac.log -p "MAC addr=(\S+);" -t str
+			</setvar>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				check mgt0 mac
+			</desc>
+			<log-file>step0.2_check_mgt0_mac.log</log-file>
+			<telnet target="ap2">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				get mgt0 mac
+			</desc>
+			<setvar name="ap2.mgt0.mac">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step0.2_check_mgt0_mac.log -p "MAC addr=(\S+);" -t str
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Configure AP1 via console(configure the first ssid)
+			</desc>
+			<console target="ap1">
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "user-profile ${conn1.ssid} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Configure AP2
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no interface mgt0 ip "
+				-v "interface mgt0  dhcp client"
+			</console>
+		</step>
+
+		<step no="pre1.1" delay="30">
+			<desc>
+				-show interface mgt0 in ap1
+			</desc>
+			<log-file>step_pre1.1c_show_interface_mgt0_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="pre1.2">
+			<desc>
+				Get mgt0 ap in ap1
+			</desc>
+			<setvar name="ap2.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\S+);" -f ${log.dir}/step_pre1.1c_show_interface_mgt0_ap2.log -t str
+			</setvar>
+		</step>
+		
+		<step no="2">
+			<desc>
+				Match the ip-policy of NAT
+			</desc>
+			<log-file>step2_Match_nat.log</log-file>
+			<telnet target="ap1">
+				-v "ip-policy nat-policy"
+				-v "ip-policy nat-policy id 1 service dhcp-server action permit"
+				-v "ip-policy nat-policy id 2 to local-subnet action nat"
+				-v "ip-policy nat-policy id 3 action permit"
+				-v "user-profile ${conn1.ssid} security ip-policy from-access nat-policy to-access nat-policy"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>
+				Open debug switch on AP
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+				-v "cons page 0"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				sta ping ap2
+			</desc>
+			<log-file>step5_sta_ping_pa2.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${ap2.mgt0.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${ap2.mgt0.ip}" -i "ttl="</log-match>
+		</step>
+
+		<include prefix="6" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step6_show_logging_buffered.log" />
+
+		<step no="7">
+			<desc>
+				check log
+			</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(o\) eth0 ${ap1.mgt0.ip}->${ap2.mgt0.ip}.* icmp-echo-req" -ps p "(?i)fflow ${sta1.tif.mac}->${ap2.mgt0.mac}" p "(?i)matched upid \[1\] dir \[ingress \(from-air\)\] group \[nat-policy\] id \[2\] \[nat\] mirror \[no\]" p "(?i)\(i\) mgt0 ${ap1.mgt0.ip}->${ap2.mgt0.ip}.* icmp-echo-req" p "(?i)fflow ${ap1.mgt0.mac}->${ap2.mgt0.mac}" -e "\(i\) wifi0.1 ${sta1.tif.ip}->${ap2.mgt0.ip}.* icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+			</telnet>
+		</step>
+	
+		<include prefix="9" file="subs/sta_ping.xml" args="sta1, ${pub.dns1.ip}, 4" />
+
+		<include prefix="10" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step10_show_logging_buffered.log" />
+
+		<step no="11">
+			<desc>
+				check log
+			</desc>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(o\) eth0 ${sta1.tif.ip}->${pub.dns1.ip}.* icmp-echo-req" -ps p "(?i)fflow ${sta1.tif.mac}->${tb.vlan1.gw.mac}" p0 "(?i)matched upid \[1\] dir \[ingress \(from-air\)\] group \[nat-policy\] id \[2\] \[nat\] mirror \[no\]" p0 "(?i)\(i\) mgt0 ${ap1.mgt0.ip}->${pub.dns1.ip}.* icmp-echo-req" p0 "(?i)fflow ${ap1.mgt0.mac}->${tb.vlan1.gw.mac}" -e "(?i)\(i\) wifi0.1 ${sta1.tif.ip}->${pub.dns1.ip}.* icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>IP-policy "after" attribute, using from policy.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptops has been associated with AP1 and assigned an ip address
+
+		Test Procedure:
+		1) Laptop1 ping Laptop2
+		2) Configure multi-policy in a IP-policy and bind it to user-profile:
+		"ip-policy FW"
+		"ip-policy FW id 1 from &lt;Laptop1 ip addr&gt; action permit"
+		"ip-policy FW id 2 from &lt;Laptop1 ip addr&gt; action deny"
+		"user-profile FW security ip-policy from-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Repeat step 1
+		4) Laptop2 ping Laptop1
+		5) Use the after attribute to change the sequence of id 1 and id 2
+		"ip-policy FW id 1 after id 2"
+		6) Show the running config
+		7) Repeat step 1
+		8) Laptop2 ping Laptop1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Configure AP1
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta2, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				"_ff id 1 src-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+
+		<include prefix="5" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step5_show_logging_buffered.log" />
+
+		<step no="6">
+			<desc>
+				Configure a ip-policy and bind it to FW:
+				"ip-policy FW"
+				"ip-policy FW id 1 from &lt;Laptop1 ip addr&gt; action permit"
+				"ip-policy FW id 2 from &lt;Laptop1 ip addr&gt; action deny"
+				"user-profile FW security ip-policy from-access FW"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${sta1.tif.ip} action permit"
+				-v "ip-policy ${user_id} id 2 from ${sta1.tif.ip} action deny"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="7" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4, negative" />
+
+		<step no="7.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step7.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "\(\!\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7.2">
+			<desc>
+				clear forwarding-engine ip-sessions
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="8" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4, negative" />
+
+		<step no="8.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "\(\!\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8.2">
+			<desc>
+				clear forwarding-engine ip-sessions
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="9">
+			<desc>
+				show running-config
+			</desc>
+			<log-file>step9_show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+			<log-match bin="${bin.dir}/mlinesearch.pl">
+				-l 'ip-policy ${user_id} id 1' \
+				-l 'ip-policy ${user_id} id 2' \
+				-f ${log.dir}/${log.file} \
+			</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				Use the after attribute to change the sequence of id 1 and id 2
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id} id 1 after id 2"
+			</telnet>
+		</step>
+
+		<step no="9.2">
+			<desc>
+				show running-config check the sequence of id 1 and id 2
+			</desc>
+			<log-file>step9.2_show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+			<log-match bin="${bin.dir}/mlinesearch.pl">
+				-l 'ip-policy ${user_id} id 2' \
+				-l 'ip-policy ${user_id} id 1' \
+				-f ${log.dir}/${log.file} \
+			</log-match>
+		</step>
+
+		<include prefix="10" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4, negative" />
+
+		<step no="10.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step10.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "\(\!\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[${user_id}\] id \[2\] \[deny\]" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="10.2">
+			<desc>
+				clear forwarding-engine ip-sessions
+				clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="11" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4, negative" />
+
+		<step no="11.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step11.1_show_loging_buffered.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "\(\!\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] upid default action \[deny\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

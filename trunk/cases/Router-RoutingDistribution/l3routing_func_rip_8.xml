@@ -1,0 +1,264 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Route delete testing</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		After RIP enable, GW can establish neighbors with other routers, VPN tunnel
+		establish
+
+		Test Procedure:
+
+		1. Enable RIPv2 on GW, Enable RIP advertise on lan, result 1
+		2.Disable the RIP on the other routers, result 2
+		3.Shutdown interface on other routes which enable the RIP, result 3
+		3.Disable RIPv2 on GW, result 4
+	</description>
+	<numofcvg>1</numofcvg>
+	<numofbr>1</numofbr>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+
+	<property name="vpn.client.list" value="clientList1" />
+	<property name="vpn.server.name" value="vpnServer1" />
+
+	<stage>
+
+		<step no="1.1">
+			<desc>config CVG act as l3 VPN server</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "save vpn ee-cert tftp://${pub.tftp1.tip}:certs/server_cert.pem"
+				-v "save vpn private-key tftp://${pub.tftp1.tip}:certs/server_key.pem"
+				-v "vpn xauth-client-list ${vpn.client.list} local"
+				-v "vpn xauth-client-list ${vpn.client.list} client-name ${br1.br.name} password aerohive"
+				-v "vpn server-ipsec-tunnel ${vpn.server.name} vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${vpn.server.name} client-list ${vpn.client.list}"
+				-v "vpn tunnel-policy vpn_tunnel_policy server ipsec-tunnel ${vpn.server.name}"
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.mgt0.supermask}"
+				-v ""
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>config BR as l3 VPN client</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "vpn client-ipsec-tunnel ${br1.br.name}_ipsec_1 vpn-mode layer-3"
+				-v "vpn ipsec-tunnel ${br1.br.name}_ipsec_1 gateway ${cvg1.cvg.tunnel.ip} client-name ${br1.br.name} password aerohive"
+				-v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel ${br1.br.name}_ipsec_1 primary"
+				-v "routing route-request enable"
+				-v ""
+				-v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.lan.netmask}"
+				-v ""
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="1.4a" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check vpn ike sa on BR side
+				destination to CVG public address
+			</desc>
+			<log-file>ike_sa_br${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.tunnel.ip}\[4500\]"</log-match>
+		</step>
+
+		<step no="1.4b" delay="10" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				check vpn ike sa on CVG side
+				destionation to BR public address
+			</desc>
+			<log-file>ike_sa_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show vpn ike sa"
+			</telnet>
+			<log-match>-p 3 -i "9" -p 4 -i "R" -i "${br1.br_fw.ip}"</log-match>
+		</step>
+
+		<step no="1.4c">
+			<desc>
+				check gre tunnel on br side
+				remote to CVG wan address, local mgt0 address ,gateway CVG public address
+			</desc>
+			<log-file>show_gre_tunnel_br.log</log-file>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i "${cvg1.cvg.tunnel.ip}"</log-match>
+		</step>
+
+		<step no="1.4d">
+			<desc>
+				check gre tunnel on cvg side
+				local to CVG wan address
+			</desc>
+			<log-file>show_gre_tunnel_cvg.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="30">
+				-v "show vpn layer-3-tunnel"
+			</telnet>
+			<log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match>
+		</step>
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "cvg1.cvg.lan.route=$(echo ${cvg1.cvg.lan.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.vpc1.route=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns1.route=$(echo ${cvg1.dns1.ip} | cut -d. -f1,2,3).0"
+				echo "br1.br.mgt0.route=$(echo ${br1.br.mgt0.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="1.6">
+			<desc>enable debug on CVG</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "_debug brd all"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				Enable RIPv2 on GW, Enable RIP advertise on lan, result 1
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="15">
+				-v "routing protocol ripv2 advertise eth1"
+				-v "routing protocol type ripv2"
+				-v "routing protocol enable"
+			</telnet>
+		</step>
+
+		<step no="2.2" delay="60" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				On GW, interfaces lan can learn routes from neighbor routers,
+				and update the routes’ status while receive the update message
+			</desc>
+			<log-file>2.2.show_cvg_route_1.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 8 -i "eth1"</log-match>
+			<log-match>-p 1 -i "${cvg1.dns1.route}" -p 8 -i "eth1"</log-match>
+		</step>
+
+		<include prefix="2.3" file="${case.dir}/subs/save_cvg_log_buff.xml" obj-args="cvg1" args="show log buffer, step2.3.ripd_debug_info.log" />
+
+		<step no="2.3b">
+			<desc>check if ripd process is running, and only lan port is advertise routes</desc>
+			<log-file>2.3b.chec_log_1.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ah_brd: \[brd_basic\]: begin start ripd." -f ${log.dir}/step2.3.ripd_debug_info.log</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ripd\[\d+\]: interface eth0: passive = 1" -f ${log.dir}/step2.3.ripd_debug_info.log</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ripd\[\d+\]: interface eth1: passive = 0" -f ${log.dir}/step2.3.ripd_debug_info.log</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ah_brd: routing is running: yes" -f ${log.dir}/step2.3.ripd_debug_info.log</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ah_brd: \[brd_basic\]: succeed to export route" -f ${log.dir}/step2.3.ripd_debug_info.log</log-match>
+			<failed>next</failed>
+		</step>
+
+		<include prefix="3" file="${case.dir}/subs/cvg_l3sw_proto_cfg.xml" obj-args="cvg1" args="disable, rip" />
+
+		<step no="3.2" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				2.Disable the RIP on the other routers, result 2: GW will set the routes as invalid after expiration time (180s), and delete them after flush time (180s + 120s)
+			</desc>
+			<log-file>3.2.show_l3_routes_rip.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show l3 routes rip"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${cvg1.vpc1.route}/[\d\t ]+\[120/\d+\]" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${cvg1.dns1.route}/[\d\t ]+\[120/\d+\]" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.3" type="loop-check" loop-max-times="12" loop-interval="10">
+			<desc>
+				On GW, interfaces lan can learn routes from neighbor routers,
+				and update the routes’ status while receive the update message
+			</desc>
+			<log-file>3.3.show_cvg_route_1.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-n -p 1 -i "${cvg1.vpc1.route}" -p 8 -i "eth1"</log-match>
+			<log-match>-n -p 1 -i "${cvg1.dns1.route}" -p 8 -i "eth1"</log-match>
+		</step>
+
+		<include prefix="3.4" file="${case.dir}/subs/save_cvg_log_buff.xml" obj-args="cvg1" args="show log buffer, step3.3_ripd_debug_info.log" />
+
+		
+
+		<include prefix="4_ensure" file="${case.dir}/subs/cvg_l3sw_proto_cfg.xml" obj-args="cvg1" args="enable, rip" />
+
+		<step no="4.1a" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				while neighbor begin to advertise routes again, CVG will update route accordingly
+			</desc>
+			<log-file>4.1a.show_cvg_route_1.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 8 -i "eth1"</log-match>
+			<log-match>-p 1 -i "${cvg1.dns1.route}" -p 8 -i "eth1"</log-match>
+		</step>
+
+		<step no="4.1b" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show l3 routes rip
+			</desc>
+			<log-file>4.1b.show_cvg_route_1.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="10">
+				-v "show l3 routes rip"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${cvg1.vpc1.route}/[\d\t ]+\[120/\d+\]" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${cvg1.dns1.route}/[\d\t ]+\[120/\d+\]" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				Shutdown interface on other routes which enable the RIP, result 3
+			</desc>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "int eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="4.3" type="loop-check" loop-max-times="12" loop-interval="10">
+			<desc>
+				route learned from neighbor will be deleted.
+			</desc>
+			<log-file>4.3.show_route_br_.log</log-file>
+			<telnet target="${cvg1.cvg.tunnel.ip}" timeout="5">
+				-v "show ip route"
+			</telnet>
+			<log-match>-n -p 1 -i "${cvg1.vpc1.route}" -p 8 -i "eth1"</log-match>
+			<log-match>-n -p 1 -i "${cvg1.dns1.route}" -p 8 -i "eth1"</log-match>
+		</step>
+
+		<include prefix="4.4" file="${case.dir}/subs/save_cvg_log_buff.xml" obj-args="cvg1" args="show log buffer, step4.4.ripd_debug_info.log" />
+
+		<step no="4.4b">
+			<desc>Check log</desc>
+			<log-file>4.4b.chec_log_1.log</log-file>
+			<!--<log-match bin="${bin.dir}/searchbyrexp.py">-p "ah_brd: WFOSM: Added event PPP_IF_DOWN" -f ${log.dir}/step4.4.ripd_debug_info.log</log-match>-->
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ah_dcd: access interface eth1 is down now" -f ${log.dir}/step4.4.ripd_debug_info.log</log-match>
+			<!--<log-match bin="${bin.dir}/searchbyrexp.py">-p "ah_brd: WFOSM: state IDLE -&gt; IDLE" -f ${log.dir}/step4.4.ripd_debug_info.log</log-match>-->
+		</step>
+
+	</stage>
+
+	<failed-process>
+		<stage>
+			<include prefix="0.1" file="${case.dir}/subs/cvg_l3sw_proto_cfg.xml" obj-args="cvg1" args="enable, rip" />
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+
+</testcase>
+

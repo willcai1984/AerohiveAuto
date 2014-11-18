@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mac format with style five-delimiter</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a ssid,mac auth enable
+		-config a user on radius server,pls pay attention to the format
+
+		Test Procedure:
+		-config the mac format,we has several parameters
+		-choose case-sensitivity , delimiter and style
+		-client connect to ssid
+		-config mac format with upper-case, e.g. AA-BB-CC-DD-EE-FF
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="0.1">
+			<setvar name="sta1.auth_mac">
+				echo "${sta1.tif.smac}" | sed 's/../&amp;-/g;s/.$//'
+			</setvar>
+		</step>
+		<include prefix="0.2" file="subs/ldap_add.xml" args="${sta1.auth_mac}, ${sta1.auth_mac}" />
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, open" />
+
+		<step no="1.1">
+			<desc>
+				config hive
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}_4"
+				-v "interface mgt0 hive ${hive.name}_4"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				set security-object parameters
+			</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security additional-auth-method mac-based-auth"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				check MAC-based auth status.
+			</desc>
+			<log-file>show_security_object_mac_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show security-object autoap"
+			</telnet>
+			<log-match>-e "Enabled" -i "MAC-based auth" -p 3</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				-config the mac format,choose case-sensitivity , delimiter and style
+			</desc>
+			<telnet target="ap1">
+				-v "aaa mac-format case-sensitivity upper-case"
+				-v "aaa mac-format delimiter dash"
+				-v "aaa mac-format style five-delimiter"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				check mac-format example via show aaa;
+			</desc>
+			<log-file>show_aaa_mac_format.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa"
+			</telnet>
+			<log-match>-e "AAA mac-format example:" -i "01-23-45-67-89-AB"</log-match>
+		</step>
+
+		<include prefix="5" file="subs/ssid_bind_and_check.xml" args="ap1, open" />
+
+		<include prefix="6" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="7">
+			<desc>
+				-client connect to ssid on sta1
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="8" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<include prefix="9" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, open, x, open, none" />
+
+		<step no="10">
+			<desc>
+				enable auth debug on AP
+			</desc>
+			<telnet target="ap1">
+				-v "_debug auth all"
+				-v "clear log buff"
+			</telnet>
+		</step>
+
+		<include prefix="11" file="subs/wpa_supplicant_start.xml" args="sta2" />
+
+		<step no="12">
+			<desc>
+				-client connect to ssid on sta2
+			</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "reas"
+				-v "quit";sleep 20;
+			</ssh>
+		</step>
+
+		<include prefix="13" file="subs/save_ap_log.xml" args="show logging buffered, ap1, auth_debug.log" />
+
+		<step no="14">
+			<desc>
+				get sta2 mac
+			</desc>
+			<setvar name="sta2.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta2.mif.ip} -u ${sta2.user} -p ${sta2.passwd} -i ${sta2.tif.name} -m -width 2
+			</setvar>
+		</step>
+
+		<step no="15">
+			<desc>
+				check log buffer
+			</desc>
+			<log-file>auth_debug.log</log-file>
+			<log-match>-e "MAC-based auth: RADIUS server send reject to station ${sta2.tif.mac}" -c</log-match>
+			<log-match>-e "MAC-based auth: ban ${sta2.tif.mac}" -c</log-match>
+		</step>
+
+		<step no="16">
+			<desc>show roaming cache on AP1 </desc>
+			<log-file>show_roaming_cache_sta2.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-e "${sta2.tif.mac}" -c -n</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="0.2" file="subs/ldap_delete.xml" args="${sta1.auth_mac}" />
+		</stage>
+
+		<include prefix="def_post" file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

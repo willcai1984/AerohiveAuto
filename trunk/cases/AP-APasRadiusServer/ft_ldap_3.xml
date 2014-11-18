@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>EAP based auth check</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-a local radius server must be configed first
+		-setup a ssid using 802.1x,radius server is local
+
+		Test Procedure:
+
+		-config the name of the ldap server,either ip or url
+		-config the basedn,like ou=radius,dc=qa,dc=aerohive,dc=com
+		-config a binddn,like cn=admin,dc=qa,dc=aerohive,dc=com
+		-config the attribule of password on ldap-server
+		-cache enabled
+		-client connect to ssid using LEAP
+		-client connect to ssid using EAP-PEAP/MSCHAPV2
+		-client connect to ssid using EAP-TTLS/PAP,CHAP,MSCHAP,MSCHAPV2
+		-client connect to ssid using EAP-TLS
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.hive">
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type ldap-server primary server ${pub.ldap1.ip}"
+				-v "aaa radius-server local db-type ldap-server primary basedn ${pub.ldap1.basedn}"
+				-v "aaa radius-server local db-type ldap-server primary binddn ${pub.ldap1.binddn} pass ${pub.ldap1.bindpwd}"
+				-v "aaa radius-server local en"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa-auto-8021x" />
+
+		<step no="ex.aaa-chk">
+			<desc>show status of radius server</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-e "Enabled" -i "Local RADIUS" -p 3 -c</log-match>
+		</step>
+
+		<include prefix="4" file="subs/wpa_supplicant_start.xml" args="sta1" />
+		<step no="4.1">
+			<telnet target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+		<step no="5">
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-f ft_ldap_1_pc.cfg
+				-v "set_network 0 identity \"${pub.radius1.username}\""
+				-v "set_network 0 anonymous_identity \"${pub.radius1.username}\""
+				-v "set_network 0 password \"${pub.radius1.passwd}\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="6" file="subs/chk_conn_in_sta.xml" args="sta1" />
+		<step no="6.1">
+			<log-file>log_on_ap.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered" ;exit 0
+			</telnet>
+			<no-error-check />
+		</step>
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+		<step no="8">
+			<desc>realse</desc>
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="8.1">
+			<desc>terminate wpa_supplicant on sta1</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v ""
+				-v "ter"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="0" file="subs/wpa_supplicant_start.xml" args="sta1" />
+		<step no="9">
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "_debug radiusd excessive"
+			</telnet>
+		</step>
+
+		<step no="10">
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-EAP"
+				-v "set_network 0 proto RSN"
+				-v "set_network 0 pairwise CCMP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 eap LEAP"
+				-v "set_network 0 phase2 "autheap=MSCHAPV2""
+				-v "set_network 0 priority 1000"
+				-v "set_network 0 identity \"${pub.radius1.username}\""
+				-v "set_network 0 anonymous_identity \"${pub.radius1.username}\""
+				-v "set_network 0 password \"${pub.radius1.passwd}\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="8" file="subs/chk_conn_in_sta.xml" args="sta1" />
+		<step no="11">
+			<log-file>log_on_ap.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered" ;exit 0
+			</telnet>
+			<no-error-check />
+		</step>
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+		<step no="11.1">
+			<desc>realse</desc>
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="11.2">
+			<desc>terminate wpa_supplicant on sta1</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v ""
+				-v "ter"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="0.1" file="subs/wpa_supplicant_start.xml" args="sta1" />
+		<step no="12">
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "_debug radiusd excessive"
+			</telnet>
+		</step>
+
+		<step no="13">
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-EAP"
+				-v "set_network 0 proto RSN"
+				-v "set_network 0 pairwise CCMP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 eap TTLS"
+				-v "set_network 0 phase2 "autheap=PAP""
+				-v "set_network 0 priority 1000"
+				-v "set_network 0 identity \"${pub.radius1.username}\""
+				-v "set_network 0 anonymous_identity \"${pub.radius1.username}\""
+				-v "set_network 0 password \"${pub.radius1.passwd}\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="9" file="subs/chk_conn_in_sta.xml" args="sta1" />
+		<step no="13.1">
+			<log-file>log_on_ap.log</log-file>
+			<telnet target="ap1" timeout="200">
+				-v "show logging buffered" ;exit 0
+			</telnet>
+			<no-error-check />
+		</step>
+		<include prefix="10" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+	</stage>
+</testcase>

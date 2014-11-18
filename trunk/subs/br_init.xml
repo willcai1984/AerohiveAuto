@@ -1,0 +1,112 @@
+<include obj-arg-names="__BRID__">
+	<step no="1">
+		<desc>clear log and open telnet</desc>
+		<console target="__BRID__" slow="yes">
+			-v "interface eth0 manage all"
+			-v "no interface mgt0 dhcp-server enable"
+			-v "save config"
+		</console>
+	</step>
+
+	<step no="2">
+		<desc>eth0 dhcp</desc>
+		<console target="__BRID__" slow="yes">
+			-v "no interface eth0 dhcp client"
+			-v ""
+			-v "interface eth0 dhcp client"
+			-v ""
+		</console>
+	</step>
+
+	<step no="3" delay="5">
+		<desc>show interface eth0 on BR</desc>
+		<log-file>show___BRID____eth0.log</log-file>
+		<console target="__BRID__">
+			-v "show interface eth0"
+		</console>
+	</step>
+	<step no="4">
+		<desc>get eth0 ip of br</desc>
+		<setvar name="__BRID__.wan.ip">
+			${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show___BRID____eth0.log -t str
+		</setvar>
+	</step>
+
+	<step no="5">
+		<desc>ping BR</desc>
+		<script>
+			ping ${__BRID__.wan.ip} -c 4
+		</script>
+	</step>
+
+	<step no="add.2">
+		<desc>remove harden firewall</desc>
+		<console target="__BRID__">
+			-v "exec bypass-wan-hardening"
+			-v "naas update 0 0 "
+			-v "save config"
+		</console>
+	</step>
+
+	<step no="6" type="loop-check" loop-max-times="10" loop-interval="5">
+		<desc>clear all logs and init</desc>
+		<telnet target="${__BRID__.wan.ip}">
+			-v "clear log all"
+			-v "no interface mgt0 dhcp-server enable"
+			-v "no interface mgt0 dhcp-server options default-gateway"
+			-v "no interface mgt0 dhcp-server options dns1"
+			-v "no interface mgt0 dhcp-server ip-pool 192.168.85.10 192.168.85.99"
+			-v "interface mgt0 ip ${__BRID__.mgt0.ip}/24"
+			-v "interface mgt0 dhcp-server ip-pool ${__BRID__.mgt0.ip_pool_start} ${__BRID__.mgt0.ip_pool_end}"
+			-v "interface mgt0 dhcp-server options netmask 255.255.255.0"
+			-v "interface mgt0 dhcp-server options default-gateway ${__BRID__.mgt0.ip}"
+			-v "interface mgt0 dhcp-server options dns1 ${pub.dns1.ip}"
+			-v "interface mgt0 dhcp-server enable"
+			-v "no track-wan use-for-wan-usbnet0 ip 8.8.8.8"
+			-v "no track-wan use-for-wan-eth0 ip 8.8.8.8"
+			-v "track-wan use-for-wan-usbnet0 ip 192.168.10.254"
+			-v "track-wan use-for-wan-eth0 ip 192.168.10.254"
+			-v "ntp server ${pub.ntp}"
+			-v "console page 0"
+			-v "console timeout 0"
+			-v "clock time-zone 8"
+			-v "no capwap client enable"
+			-v "save config"
+		</telnet>
+	</step>
+
+	<step no="show_run">
+		<desc>clear all logs and init</desc>
+		<telnet target="${__BRID__.wan.ip}">
+			-v "show run"
+		</telnet>
+	</step>
+
+	<step no="7">
+		<desc>check traffic through wan on BR</desc>
+		<log-file>__BRID__ping_server.log</log-file>
+		<telnet target="${__BRID__.wan.ip}" timeout="100">
+			-v "ping ${pub.dns1.ip} count 4" ;exit 0
+		</telnet>
+		<log-match>-c -i " from ${pub.dns1.ip}" -i " ttl="</log-match>
+	</step>
+
+	<step no="8">
+		<desc>generate the kernel port var</desc>
+		<multi-setvar>
+			echo "br1.br.wan.kport1=${br1.br.wan.int1}"
+			echo "br1.br.lan.kport1=${br1.br.lan.int1}"
+			echo "br1.br.lan.kport2=${br1.br.lan.int2}"
+			echo "br1.br.lan.kport3=${br1.br.lan.int3}"
+			echo "br1.br.lan.kport4=${br1.br.lan.int4}"
+		</multi-setvar>
+	</step>
+
+	<step no="9">
+		<desc>generate var</desc>
+		<multi-setvar>
+			echo "ssid.name=${br1.br.cons_name}-${job.sid}"
+		</multi-setvar>
+	</step>
+
+</include>

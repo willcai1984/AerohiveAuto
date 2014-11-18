@@ -1,0 +1,217 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that clients with routable IP address, attached to wifi0/wifi1 or eth1 of BR can still reach the internet even with NAT disabled</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Basic NAT features are validated
+
+		Test Procedure:
+		Connect clients to both eth1 and wifi0/wifi1 interface of BR, configure the clients
+		with the routable IP addresses via the WAN interface.
+		Disable NAT on BR.
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>linux</tbtype>	
+
+	<stage>
+
+		<include prefix="pre.1_1" file="subs/br_close_fw.xml" obj-args="br1" />
+
+		<step no="pre_1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<console target="br1.br">
+				-v "no interface ${br1.br.wan.int1} dhcp client"				
+				-v "interface ${br1.br.wan.int1} dhcp client"
+				-v "exec bypass-wan-hardening"
+			</console>
+		</step>		
+
+		<step no="pre_1.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>show eth0 dhcp to confirm get IP successfully</desc>
+			<log-file>step1.1_show_br1_eth0_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "show interface ${br1.br.wan.int1} dhcp client"
+			</console>
+			<log-match>-c -i "Get IP address 0.0.0.0" -n</log-match>
+		</step>
+
+		<step no="pre_2">
+			<desc>
+				show br wan
+			</desc>
+			<log-file>show_int_eth0_2.log</log-file>
+			<console target="br1.br" slow="yes">
+				-v "show l3 interface ${br1.br.wan.int1}"
+			</console>
+		</step>
+
+		<step no="pre_3">
+			<desc>get ip address of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/show_int_eth0_2.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre_4">
+			<desc>
+				Login into AP, it can ping domain name
+			</desc>
+			<log-file>show_dns.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show dns"
+			</telnet>
+			<log-match>-c -i "${pub.dns_server.ip}"</log-match>
+		</step>
+
+		<step no="0">
+			<desc>
+				Login into AP, it can ping domain name
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${pub.dns1.domain1}"
+			</telnet>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<step no="1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<console target="br1.br">
+				-v "vlan ${br1.vlan1}"
+				-v "interface mgt0 vlan ${br1.vlan1}"				
+				-v "user-profile fw11 qos-policy def-user-qos vlan-id ${br1.vlan1} attribute 1"				
+				-v "no interface ${br1.br.wan.int1} mode wan nat"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vlan1}"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				br1.vpc1 show ip address got from mgt0 dhcp client
+			</desc>
+			<log-file>step2_ifconfig_br1_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				it should NOT be able to access domain name.
+			</desc>
+			<log-file>step3_ping_domain.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.domain1} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from " -i "ttl="</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show ip route
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				show running-config include a CLI to disable NAT on eth0
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show running-config"
+			</telnet>
+			<log-match>-c -i "no interface ${br1.br.wan.int1} mode wan nat"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show interface eth0 indicates NAT is disabled
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show l3 interface ${br1.br.wan.int1}"
+			</telnet>
+			<log-match>-c -i "NAT support=disable;"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				enable NAT on eth0
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface ${br1.br.wan.int1} mode wan nat"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>
+				br1.vpc1 show ip address got from mgt0 dhcp client
+			</desc>
+			<log-file>step8_ifconfig_br1_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				it should be able to access domain name.
+			</desc>
+			<log-file>step8.1_ping_domain.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.domain1} -c 5"
+			</ssh>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>		
+
+		<step no="8.1">
+			<desc>
+				show ip route
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="9">
+			<desc>
+				show running-config include a CLI to disable NAT on eth0
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show running-config"
+			</telnet>
+			<log-match>-n -c -i "no interface ${br1.br.wan.int1} mode wan nat"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				show interface eth0 indicates NAT is enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show l3 interface ${br1.br.wan.int1}"
+			</telnet>
+			<log-match>-c -i "NAT support=enable;"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="1" file="subs/br_open_fw.xml" obj-args="br1" />
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

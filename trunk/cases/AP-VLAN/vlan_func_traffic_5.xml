@@ -1,0 +1,352 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>The vlan id and native vlan is not default value test</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition	
+			1.	There are the dhcp server on vlan1~10
+			2.	the dhcp server interface native vlan is 1 and allow all the vlans
+			3.	AP is the default configuration
+		Test procedure	
+			1.	Configure the mgt0  vlan id 2 and check the mgt0 interface,result 1
+			2.	Configure the eth0  native vlan  57 Check the eth0  interface,result 2
+			3.	Enable dhcp client on mgt0 interface,check the dhcp packets ,result 3
+			4.	Ap ping server,result 4
+			5.	Configure a ssid1 on wifi0 and the user-profile vlan is 3
+			6.	Sta connect to the ap wifi0 ,result 5
+			7.	Ap ping sta,result 6
+		Expect result	
+			1.	the vlan id  is 2 and native vlan is 1
+			2.	the native vlan is 57 and allow vlan all
+			3.	the  dhcp packet vlan info on eth0 
+				packet vlan: 2
+				interface vlan :57
+				and mgt0 get ip address from dhcp server vlan2
+			4.	ap can ping to server and the vlan info of the icmp packet on eth0
+				packet vlan: 2
+				interface vlan :57
+			5.	the dhcp packet vlan info on  wifi0.1   -----fail
+				vlan: 3
+				interface vlan :1
+				sta vlan:0
+				the dhcp packet vlan info on  eth0
+				vlan: 3
+				interface vlan :57
+				and sta get ip address from dhcp server vlan 3
+			6.	ap can ping to sta and the vlan info of the icmp packet on wifi0.1------fail
+				vlan: 3
+				interface vlan :1
+				sta vlan:3
+	</description>
+	
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	
+	<stage>
+		<step no="pre_1">
+			<desc> show mgt0 interface</desc>
+			<log-file>show_mgt0_mac.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		
+		<step no="pre_2">
+            <desc>get mac address of ap1</desc>
+                <setvar name="ap1.mgt0.mac">
+                    ${bin.dir}/getbyrexp.py -p "MAC addr=([\da-fA-F:]+)" -f ${log.dir}/show_mgt0_mac.log -t str
+                </setvar>
+        </step>
+		
+		<step no="pre_3">
+			<desc>get prefix of vlan ${tb.vlan2}</desc>
+			<multi-setvar>
+				echo "vlan2_network_prefix=$(echo ${tb.vlan2.dhcp_start} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+		
+		<step no="1">
+			<desc> 
+			1. configure the mgt0 vlan id ${tb.vlan2}, and check the mgt0 interface
+			</desc>
+			<log-file>step1_mgt0_vlan.log</log-file>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "VLAN id=${tb.vlan2};\ \ Native vlan id=1"</log-match>
+		</step>
+		
+		<step no="2">
+			<desc>
+			2. configure eth0 native vlan ${tb.vlan5}, and check the eth0 interface
+			</desc>
+			<log-file>step2_eth0_vlan.log</log-file>
+			<console target="ap1">
+				-v "interface eth0 native-vlan ${tb.vlan5}"
+				-v "show interface eth0"
+			</console>
+			<log-match>-c -i "Native-vlan=${tb.vlan5};" </log-match>
+		</step>
+		
+		<step no="3.1">
+			<desc>
+				3.1 open fe debug to check dhcp packets for ap mgt0
+			</desc>
+			<log-file>step3.1_fe_debug.log</log-file>
+			<console target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 dhcp-client ${ap1.mgt0.mac}"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe vlan"
+				-v "_kdebug eth vlan"
+				-v ""
+				-v ""
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+		
+		<step no="3.2">
+			<desc>
+				3.2 enable dhcp client on mgt0 interface
+			</desc>
+			<log-file>step3.2_mgt0_dhcp.log</log-file>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+		
+		<step no="3.3">
+			<desc>
+				3.3 show mgt0 ip address
+			</desc>
+			<log-file>step3.3_mgt0_ip.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>			
+		</step>
+		
+		<step no="3.4">
+            <desc>3.4 get ip address of ap1</desc>
+                <setvar name="ap1.mgt0.ip">
+                    ${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step3.3_mgt0_ip.log -t str
+                </setvar>
+        </step>
+		
+		<step no="3.5">
+			<desc>get prefix of mgt0 ip </desc>
+			<multi-setvar>
+				echo "ap1_mgt0_ip_prefix=$(echo ${ap1.mgt0.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+		
+        <step no="3.6">
+            <desc>
+                3.6 check if ap1 mgt0 get ip address from vlan ${tb1.vlan2} successfully
+            </desc>
+            <script>
+                if [ "${vlan2_network_prefix}" == "${ap1_mgt0_ip_prefix}" ]; then exit 0; else exit 1; fi
+            </script>
+        </step>		
+		
+		<step no="3.7">
+			<desc>3.7 check dhcp pkts from logging buffer</desc>
+			<log-file>step3.7_mgt0_dhcp_debug.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-e "packet vlan ${tb.vlan2}, interface vlan ${tb.vlan5}"</log-match>
+		</step>
+		
+		
+		<step no="4.1">
+			<desc>
+				4.1 set fe debug on ap1 for icmp
+			</desc>
+			<log-file>step4.1_fe_debug.log</log-file>
+			<console target="ap1">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-ip ${mpc.mif.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe vlan"
+				-v "_kdebug eth vlan"
+				-v ""
+			</console>
+		</step>
+		
+		<step no="4.2">
+			<desc>
+				4.2 AP ping server
+			</desc>
+			<log-file>step4.2_mgt0_ping.log</log-file>
+			<console target="ap1">
+				-v "clear log all"
+				-v "ping ${mpc.mif.ip}"
+			</console>
+			<log-match>-c -i "from ${mpc.mif.ip}: icmp_seq" -i "ttl="</log-match>
+		</step>
+		
+		<step no="4.3" timeout="200" delay="10">
+			<desc>
+				check logging buffered for icmp pkts
+			</desc>
+			<log-file>step4.3_show_log_icmp.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-i "kernel: \[eth\]: eth0: parent eth0" -i "packet vlan ${tb.vlan2}, interface vlan ${tb.vlan5}"</log-match>
+		</step>
+		
+		<step no="5">
+			<desc>
+				5. config ssid on wifi0 and the user-profile vlan is ${tb.vlan3}
+			</desc>
+			<log-file>step5_config_ssid.log</log-file>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite open"
+				-v "security-object ${ssid.name} default-user-profile-attr ${tb.vlan3}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile ap-vlan qos-policy def-user-qos vlan-id ${tb.vlan3} attribute ${tb.vlan3}"
+				-v "save config"
+				-v ""
+				-v "show interface"
+				-v ""
+				-v ""
+			</console>
+		</step>
+		
+		<step no="6.0.1">
+			<desc>
+				6.0. show interface of ap1
+			</desc>
+			<log-file>step6.0.1_show_int.log</log-file>
+			<ssh target="ap1">
+				-v "show station"
+				-v ""
+				-v ""
+			</ssh>
+		</step>		
+		
+		<step no="6.0.2">
+			<desc>
+                get wifi interface which bind with ssid
+            </desc>
+            <setvar name="ap1_ssid_wifi_tmp">
+               ${bin.dir}/getstring.pl -k "${ssid.name}" -p 1 -f ${log.dir}/step6.0.1_show_int.log
+            </setvar>
+		</step>
+		
+		<step no="6.0.3">
+			<desc>
+                get wifi interface which bind with ssid
+            </desc>
+ 			<multi-setvar>
+				echo "ap1_ssid_wifi_prefix=$(echo ${ap1_ssid_wifi_tmp} | cut -d, -f1)"
+				echo "ap1_ssid_wifi_ifname=$(echo ${ap1_ssid_wifi_prefix} | cut -d= -f2)"
+			</multi-setvar>
+		</step>
+
+		<step no="6.0.4">
+			<desc>
+                get wifi interface which bind with ssid
+            </desc>
+ 			<multi-setvar>
+				echo "ap1_ssid_wifi_ifname=$(echo ${ap1_ssid_wifi_prefix} | cut -d= -f2)"
+			</multi-setvar>
+		</step>
+		
+		<step no="6.1">
+			<desc>
+				6.1 set fe debug on sta
+			</desc>
+			<log-file>step4.1_fe_debug.log</log-file>
+			<console target="ap1">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe vlan"
+				-v "_kdebug eth vlan"
+				-v "_kdebug wifi-driver ${ap1_ssid_wifi_ifname} extend vlan"
+				-v "clear log buff"
+			</console>			
+		</step>
+		
+		<step no="6.2">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>		
+		
+		<include prefix="6.3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6.4" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				Show ssid station to check if station is connected
+			</desc>
+			<log-file>show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+		</step>
+		
+		<step no="6.5">
+			<desc>show log buff to check pkts vlan and interface vlan for sta dhcp pkts</desc>
+			<log-file>step6.5_sta_fe_dhcp.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-e "vlan ${tb.vlan3}, interface vlan ${tb.vlan3}, sta vlan ${tb.vlan3}"</log-match>
+		</step>
+		
+		<step no="7.1">
+			<desc>set fe debug for ap ping sta icmp pkts</desc>
+			<log-file>step7.1_sta_fe_debug.log</log-file>
+			<console target="ap1" timeout="1000">
+				-v "no _ff id 1"
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} protocol 1 bidirectional"
+			</console>
+		</step>
+		
+		<step no="7.2">
+			<desc>
+				7.2 AP ping sta
+			</desc>
+			<log-file>step7.2_mgt0_ping_sta.log</log-file>
+			<console target="ap1">
+				-v "clear log all"
+				-v "ping ${sta1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${sta1.tif.ip}: icmp_seq" -i "ttl="</log-match>
+		</step>		
+		
+		<step no="7.3">
+			<desc>7.3 check vlan info in log buffer for icmp pkts when ap ping ta</desc>
+			<log-file>step7.3_sta_fe_icmp.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-e "vlan ${tb.vlan3}, interface vlan ${tb.vlan3}, sta vlan ${tb.vlan3}"</log-match>
+		</step>
+		
+		
+		
+		
+ 
+	</stage>
+	
+</testcase>

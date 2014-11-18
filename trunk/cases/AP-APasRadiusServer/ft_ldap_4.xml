@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Standard Radius attribute got from ldap server</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configed first
+		-setup a ssid using wpa-auto-802.1x,radius server is local
+		-config a minimal ldap
+		-enable cache
+		-config the standard radius attribute on the openldap server,
+
+		Test Procedure:
+		-client connect to ssid
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="acct1.session_time" value="300" />
+	<property name="acct1.vlan" value="${tb.vlan2}" />
+	<property name="acct1.ter_act" value="1" />
+	<property name="acct2.uid" value="2" />
+	<property name="acct2.session_time" value="320" />
+	<property name="acct2.ter_act" value="1" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}_${job.sid}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.proto" value="wpa2-aes-8021x" />
+	<property name="conn2.username" value="${job.sid}_${pub.radius1.username}" />
+	<property name="conn2.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Config ap1's hive
+				-set security-object parameters
+			</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config ldap server
+			</desc>
+			<ssh target="ap1">
+				-v "security-object autoap security aaa radius primary ${ap1.mgt0.ip}"
+				-v "aaa radius-server local db-type ldap-server primary server ${pub.ldap1.ip}"
+				-v "aaa radius-server local db-type ldap-server primary basedn ${pub.ldap1.basedn}"
+				-v "aaa radius-server local db-type ldap-server primary binddn ${pub.ldap1.binddn} pass ${pub.ldap1.bindpwd}"
+				-v "aaa radius-server local en"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ttt vlan-id ${tb.vlan2} attribute 1"
+				-v "user-profile sss vlan-id ${tb.vlan1} attribute 2"
+				-v "_debug auth all"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>show status of radius server</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<ssh target="ap1">
+				-v "show aaa radius-server"
+			</ssh>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3 -c</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>show interface the wifi0 mac of ap1</desc>
+			<log-file>ap1_show_interface_wifi0.log</log-file>
+			<ssh target="ap1">
+				-v "show interface wifi0"
+			</ssh>
+		</step>
+
+		<step no="2.3">
+			<desc>get the wifi0 mac of ap1</desc>
+			<setvar name="ap1.wifi0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ap1_show_interface_wifi0.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<include prefix="4" file="subs/ldap_add.xml" args="${conn1.username}, ${conn1.passwd}" obj-args="acct1" />
+
+		<include prefix="5" file="subs/ldap_add.xml" args="${conn2.username}, ${conn2.passwd}" obj-args="acct2" />
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7" delay="20">
+			<desc>
+				-sh logging buffered
+			</desc>
+			<log-file>step7_log_on_ap.log</log-file>
+			<ssh target="ap1" timeout="200">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>extract a piece of the log file</desc>
+			<log-file>step7.1_sessiontime.log</log-file>
+			<script>
+				tac ${log.dir}/step7_log_on_ap.log |sed -n '/RADIUS message: code=2 (Access-Accept)/,/WPA: PMK from EAPOL state machine/p' > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="7.2">
+			<desc>check session timeout returned from radius server</desc>
+			<log-file>step7.1_sessiontime.log</log-file>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l Termination-Action -l "Value: ${acct1.ter_act}" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l Session-Timeout -l "Value: ${acct1.session_time}" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l Tunnel-Private-Group-ID -l "Value: '${acct1.vlan}'" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7.3">
+			<desc>
+				-clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="8">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step8_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${tb.vlan2} *Yes *1"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step8.1_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -p 8 -i "${acct1.session_time}" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step8.2_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA2/CCMP" -i "${conn1.username}" -p 7 -i "done" -p 6 -i "${acct1.session_time}"</log-match>
+		</step>
+
+		<step no="9" delay="30" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>
+				-sh logging buffered
+			</desc>
+			<log-file>step9_log_on_ap_${loop_check.idx}.log</log-file>
+			<ssh target="ap1" timeout="180">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "IEEE 802.1X: ${sta1.tif.mac} REAUTH_TIMER entering state REAUTHENTICATE"</log-match>
+		</step>
+
+		<include prefix="10" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="10.4">
+			<desc>
+				-clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<include prefix="11" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="12" delay="20">
+			<desc>
+				-sh logging buffered
+			</desc>
+			<log-file>step12_log_on_ap.log</log-file>
+			<ssh target="ap1" timeout="200">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="12.1">
+			<desc>extract a piece of the log file</desc>
+			<log-file>step12.1_sessiontime.log</log-file>
+			<script>
+				tac ${log.dir}/step12_log_on_ap.log |sed -n '/RADIUS message: code=2 (Access-Accept)/,/WPA: PMK from EAPOL state machine/p' > ${log.dir}/${log.file}
+			</script>
+		</step>
+
+		<step no="12.2">
+			<desc>check session timeout returned from radius server</desc>
+			<log-file>step12.1_sessiontime.log</log-file>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l Termination-Action -l "Value: ${acct2.ter_act}" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l Session-Timeout -l "Value: ${acct2.session_time}" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l Tunnel-Private-Group-ID -l "Value: '${acct2.uid}'" -i 1 -d -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step13_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${tb.vlan1} *Yes *2"</log-match>
+		</step>
+
+		<step no="13.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step13.1_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "2" -p 8 -i "${acct2.session_time}" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="13.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step13.2_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *2" -i "WPA2/CCMP" -i "${conn2.username}" -p 7 -i "done" -p 6 -i "${acct2.session_time}"</log-match>
+		</step>
+
+		<step no="13.3">
+			<desc>
+				-clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="14" delay="50" type="loop-check" loop-max-times="15" loop-interval="5">
+			<desc>
+				-sh logging buffered
+			</desc>
+			<log-file>step14_log_on_ap_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "IEEE 802.1X: ${sta1.tif.mac} REAUTH_TIMER entering state REAUTHENTICATE"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="delete_account1" file="subs/ldap_delete.xml" args="${conn1.username}" />
+
+			<include prefix="delete_account2" file="subs/ldap_delete.xml" args="${conn2.username}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

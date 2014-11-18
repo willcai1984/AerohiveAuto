@@ -1,0 +1,285 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>What would happen when receive NTP server from DHCP server, at the same time, the NTP server was set by CLI before</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Configure NTP server in DHCP server and NTP service be enabled in NTP server
+		Configure NTP server for AP by CLI and save config and NTP service be enabled in NTP server
+		Reboot AP
+
+		Test Procedure:
+		After bootup, set filter in AP, open kdebug fe basic and debug ssh:
+		_ff id 1 dst-port 123 bidirectional
+		_kdebug fe basic
+		debug ssh
+		Open _debug ntp all and debug ssh
+		Run interface mgt0 dhcp client to obtain IP address and other options from DHCP server
+		Check which NTP server be used
+		Check if time synchronization between AP and NTP server
+		5. Reboot then check the above again
+
+		Expect result
+		Show _ff can check filter
+		After command be executed, need check:
+		debug of sync with NTP server not be printed out(dhcp client didn’t affect ntp, when CLI configured with high priority)
+		show interface mgt0 dhcp client can see IP address and NTP server be obtained
+		Configured NTP server be used, display active
+		Time synchronization
+		NTP should work normal
+	</description>
+	<numofbr>1</numofbr>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+	
+			<include prefix="1" file="subs/br_close_fw.xml" obj-args="br1" />
+		<step no="1.1">
+			<desc>eth0 dhcp</desc>
+			<console target="br1.br" slow="yes">
+				-v "no interface eth0 dhcp client"
+				-v ""
+				-v "interface eth0 dhcp client"
+				-v ""
+			</console>
+		</step>
+
+		<step no="1.2" delay="5" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check traffic through wan on BR</desc>
+			<console target="br1.br">
+				-v "interface eth0 dhcp client"
+				-v "ping ${pub.dns1.ip}"
+			</console>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="1.3" delay="5">
+			<desc>show interface eth0 on BR</desc>
+			<log-file>show_br1.br__eth0.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+		</step>
+
+		<step no="1.4">
+			<desc>get eth0 ip of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/show_br1.br__eth0.log -t str
+			</setvar>
+		</step>
+	
+		<step no="2">
+			<desc>
+				no pre-configure
+			</desc>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "no ntp server ${pub.ntp.ip}"
+			</ssh>
+		</step>
+
+		<!-- Set NTP server is ntp2 on AP when the dhcp option is ntp1, AP can sync with the ntp server you config on AP -->
+		<step no="3">
+			<desc>
+				Show dhcp client status
+			</desc>
+			<log-file>step1_dhcp_client_status.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show interface eth0 dhcp client"
+			</ssh>
+			<log-match>-i "NTP server" -i "${pub.ntp1.ip}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Configure NTP server for AP by CLI
+			</desc>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "ntp server ${pub.ntp2.ip}"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				open ntp debug
+			</desc>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "_ff id 1 dst-port 123 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_debug ntp all"
+				-v "clear log buffered"
+			</ssh>
+		</step>
+
+		<step no="6">
+			<desc>
+				-Enable ntp to trigger
+			</desc>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "ntp enable"
+			</ssh>
+		</step>
+
+		<step no="7" delay="5">
+			<desc>
+				Check time synchronization status
+			</desc>
+			<log-file>step7_check_time_synchronization.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-c -i "1 NTP servers has been configured"</log-match>
+			<log-match>-c -i "trying 1 times on ${pub.ntp2.ip}"</log-match>
+			<log-match>-c -i "Connect \[${pub.ntp2.ip}\] successful"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>
+				show dhcp client status
+			</desc>
+			<log-file>step8_dhcp_client_status.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show interface eth0 dhcp client"
+			</ssh>
+			<log-match>-i "NTP server" -i "${pub.ntp1.ip}"</log-match>
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Check NTP server
+			</desc>
+			<log-file>step9_show_ntp_${loop_check.idx}.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show ntp"
+			</ssh>
+			<log-match>-c -i "State: *Enable"</log-match>
+			<log-match>-c -i "First *${pub.ntp2.ip}" -i "active"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step10.1_check_time.log</log-file>
+			<ssh host="${pub.ntp2.ip}">
+				-v "clock"
+			</ssh>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step10.2_check_time.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show clock"
+			</ssh>
+		</step>
+
+		<step no="11">
+			<desc>
+				Reboot then check the above again
+			</desc>
+			<console target="br1.br">
+				-v "reboot"
+			</console>
+		</step>
+
+		<include prefix="9.1" file="subs/br_renew_ip.xml" obj-args="br1.br" />
+
+
+		<step no="12">
+			<desc>
+				open ntp debug switch
+			</desc>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "_ff id 1 dst-port 123 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_debug ntp all"
+				-v "clear log buffered"
+			</ssh>
+		</step>
+
+		<step no="13">
+			<desc>
+				Enable mgt0 dhcp client
+			</desc>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "ntp enable"
+			</ssh>
+		</step>
+
+		<step no="14" delay="5">
+			<desc>
+				Check time synchronization status
+			</desc>
+			<log-file>step14_check_time_synchronization.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-e "1 NTP servers has been configured"</log-match>
+			<log-match>-e "trying 1 times on ${pub.ntp2.ip}"</log-match>
+			<log-match>-e "Connect \[${pub.ntp2.ip}\] successful"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="15">
+			<desc>
+				show dhcp client status to check the ntp info get from dhcp server is ntp1
+			</desc>
+			<log-file>step15_dhcp_client_status.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show interface eth0 dhcp client"
+			</ssh>
+			<log-match>-i "NTP server" -i "${pub.ntp1.ip}"</log-match>
+		</step>
+
+		<step no="16" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Check NTP server's active ntp server is ntp2
+			</desc>
+			<log-file>step16_show_ntp_${loop_check.idx}.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show ntp"
+			</ssh>
+			<log-match>-e "State: *Enable"</log-match>
+			<log-match> -i "First *${pub.ntp2.ip}" -i "active"</log-match>
+		</step>
+
+		<step no="17.1">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step171_check_time.log</log-file>
+			<ssh host="${pub.ntp2.ip}">
+				-v "date"
+			</ssh>
+		</step>
+
+		<step no="17.2">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step172_check_time.log</log-file>
+			<ssh target="${br1.br.wan.ip}" user="${ap.def.user}" password="${ap.def.passwd}">
+				-v "show clock"
+			</ssh>
+		</step>
+		
+		<include prefix="18" file="subs/br_open_fw.xml" obj-args="br1" />
+
+	</stage>
+	
+	<failed-process>
+		<stage>
+		
+			<include prefix="0.1" file="subs/br_open_fw.xml" obj-args="br1" />
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+
+</testcase>

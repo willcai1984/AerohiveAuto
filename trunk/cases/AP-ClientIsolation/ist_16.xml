@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unicast path when MP eth0 is in access mode </brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Topology to use
+		Switch——PC1
+		|
+		Laptop1---------AP- - - -MP[eth0]-------pc2
+
+		Description
+		Unicast path when MP eth0 is in access mode.
+
+		Pre-condition
+		-MP wifi0 and eth0 both in access mode.
+		-MP wifi1 in backhaul mode.
+		-laptop1 connect with ssid1 on AP wifi0.1;
+		-laptops pass authentication;
+		-PC1 connect with AP access interface eth0;
+		-all laptops and PC are in same vlan;
+		-inter-station-traffic is disabled on ssid1.
+
+		Test procedure
+		-disable IST on AP
+		AH-0001${tb.vlan1}#no ssid ssid1 inter-station-traffic
+		-set eth0 in access mode
+		AH-0001${tb.vlan1}#interface eth0 mode access
+		-laptop1 sends unicast like ping etc, to pc1. --R1
+		-laptop1 sends unicast like ping etc, to PC2 --R2
+		-PC2 sends unicast like ping etc, to laptop1 -R3
+
+		Expect result
+		R1: unicast bypassed by AP;
+		R2,R3: unicast be dropped on apbased on dst-mac lookup;
+		R3: Unicast be dropped on ap
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-1" />
+	<property name="user_id" value="FWtest" />
+
+	<stage>
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" =="true" &amp;&amp; "${ap.wifi1.existed}" =="true"</if>
+
+		<include prefix="0" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="1">
+			<desc>
+				Configure AP
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface wifi1 radio channel 36"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Configure MP
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface wifi1 mode backhaul"
+				-v "interface wifi1 radio channel 36"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				check wifi1
+			</desc>
+			<log-file>step1.2_check_wifi1.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				Get wifi1 mac
+			</desc>
+			<setvar name="ap2_wifi1_mac">
+				${bin.dir}/getbyrexp.py -p "MAC addr=(\S+);" -f ${log.dir}/step1.2_check_wifi1.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				check amrp neighbor
+			</desc>
+			<log-file>step1.4_check_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2_wifi1_mac}" -i "${ap2.mgt0.ip}" -i "TWO-WAY"</log-match>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				shutdown interface eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				wifi0 and eth1 both in access mode
+				wifi1 in backhaul mode
+			</desc>
+			<telnet target="ap2">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap2" />
+
+		<step no="5">
+			<desc>
+				Inter-station-traffic is disabled on ssid1.
+				- no forwarding-engine proxy-arp enable
+			</desc>
+			<telnet target="ap2">
+				-v "clear forwarding-engine mac-sessions"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "no ssid ${conn1.ssid} inter-station-traffic"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Set the ff and clear log all on AP
+			</desc>
+			<telnet target="ap2">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_ff id 2 src-mac ${bpc1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				laptop1 sends unicast like ping etc, to pc1
+			</desc>
+			<log-file>step6_sta1_ping_mpc.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${mpc.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${mpc.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="6.1" delay="20">
+			<desc>
+				Check log buffered
+			</desc>
+			<log-file>step6.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match>-c -i "traffic is from station, inter-station traffic is disabled, don't flood on wifi0.1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7">
+			<desc>
+				laptop1 sends unicast like ping etc, to PC2
+			</desc>
+			<log-file>step7_sta1_ping_pc2.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${bpc1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${bpc1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="7.1" delay="20">
+			<desc>
+				Check log buffered
+			</desc>
+			<log-file>step7.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match>-c -i "traffic is from station, inter-station traffic is disabled, don't flood on wifi0.1"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>
+				laptop1 sends unicast like ping etc, to PC2
+			</desc>
+			<log-file>step8_pc2_ping_sta1.log</log-file>
+			<ssh target="bpc1">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="8.1" delay="20">
+			<desc>
+				Check log buffered
+			</desc>
+			<log-file>step8.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

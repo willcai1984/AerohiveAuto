@@ -1,0 +1,261 @@
+<testcase>
+	<brief>Default auth type is open</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Description
+		Verify that the beacon interval in different values become effective(not default value)
+		Test procedure
+		1. Wifi0/wifi1 radio has 4 SSIDs, BI set min value, result 1.
+
+		Expect result
+		1. Wifi0 and wifi1 BI should be set correctly in beacon and Wifi0 and wifi1 should send beacons at every interval as radio setting.
+	</description>
+	<stage>
+		<step no="1">
+			<desc>show interface of mgt0 on AP1</desc>
+			<log-file>show_int_mgt0.log</log-file>
+			<telnet target="ap1">
+				-v "interface eth0 manage all"
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>get IP of mgt0 on AP1</desc>
+			<setvar name="ap1.mgt0.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_int_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>Set config for AP1 via console to  </desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi0 ssid ${ssid.name}2"
+				-v "ssid ${ssid.name}3"
+				-v "interface wifi0 ssid ${ssid.name}3"
+				-v "ssid ${ssid.name}4"
+				-v "interface wifi0 ssid ${ssid.name}4"
+				-f ng_beaconinterval_100.cfg
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 "
+				-v "capture save interface wifi0 ws_bi_no_default_no_client.pcap"
+				-v "capture interface wifi0 count 1000 filter 1"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>Capture pkts from AP</desc>
+			<telnet target="ap1">
+				-v "no filter 1"
+				-v "filter 1 l2 mgmt subtype 8 "
+				-v "capture save interface wifi0 ws_bi_no_default_no_client.pcap"
+				-v "capture interface wifi0 count 1000 filter 1"
+			</telnet>
+		</step>
+
+		<step no="6" delay="30">
+			<desc>Transmit pkts from AP to master</desc>
+			<telnet target="ap1" timeout="120">
+				-v "save capture local ws_bi_no_default_no_client.pcap tftp://${mpc.tif.ip}:/ws_bi_no_default_no_client.pcap"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>Use Tshark convert pcap file to packet tree</desc>
+			<script>
+				tshark -r /tftpboot/ws_bi_no_default_no_client.pcap -V > ${log.dir}/ts_bi_no_default_no_client.log 2>/dev/null
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>Show interface wifi0.1 of AP1 </desc>
+			<log-file>show_interface_wifi01.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+			</telnet>
+		</step>
+
+		<step no="9">
+			<desc>Get_mac of wifi0.1 on AP1 </desc>
+			<setvar name="ap1.wifi01.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi01.log -i wifi0.1 -o aero -m
+			</setvar>
+		</step>
+
+		<step no="10">
+			<desc>Get ssid1 on wifi0.1 BI in beacon frame</desc>
+			<setvar name="ssid1.bi">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_bi_no_default_no_client.log -k ${ap1.wifi01.mac} -o "Beacon Interval"
+			</setvar>
+		</step>
+
+		<step no="11">
+			<desc>Compare ssid1.bi to setting BI </desc>
+			<script>
+				if [ "${ssid1.bi}" != "0.102400" ]; then exit 1; fi
+			</script>
+		</step>
+
+		<step no="12">
+			<desc>Get wifi01 former beacon MAC timestamp </desc>
+			<setvar name="wifi01.former.timesamp">
+				${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_bi_no_default_no_client.log -k ${ap1.wifi01.mac} -o "Arrival Time"
+			</setvar>
+		</step>
+
+		<step no="13">
+			<desc>Get wifi01 BI according to MAC timestamp </desc>
+			<log-file>BI_loop1.log</log-file>
+			<script>
+				bash ${case.dir}/conf/BI_loop.sh ${ap1.wifi01.mac} ${wifi01.former.timesamp} BI_loop1.log ${bin.dir} ${log.dir} 0.102400 "" "" ""
+			</script>
+		</step>
+
+		<step no="14">
+			<desc>Show interface wifi0.2 of AP1 </desc>
+			<log-file>show_interface_wifi02.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.2"
+			</telnet>
+		</step>
+
+		<step no="15">
+			<desc>Get_mac of wifi0.2 on AP1 </desc>
+			<setvar name="ap1.wifi02.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi02.log -i wifi0.2 -o aero -m
+			</setvar>
+		</step>
+
+		<step no="16">
+			<desc>Get ssid1 on wifi0.2 BI in beacon frame</desc>
+			<setvar name="ssid2.bi">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_bi_no_default_no_client.log -k ${ap1.wifi02.mac} -o "Beacon Interval"
+			</setvar>
+		</step>
+
+		<step no="17">
+			<desc>Compare ssid2.bi to setting BI </desc>
+			<script>
+				if [ "${ssid2.bi}" != "0.102400" ]; then exit 1; fi
+			</script>
+		</step>
+
+		<step no="18">
+			<desc>Get wifi02 former beacon MAC timestamp </desc>
+			<setvar name="wifi02.former.timesamp">
+				${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_bi_no_default_no_client.log -k ${ap1.wifi02.mac} -o "Arrival Time"
+			</setvar>
+		</step>
+
+		<step no="19">
+			<desc>Get wifi02 BI according to MAC timestamp </desc>
+			<log-file>BI_loop2.log</log-file>
+			<script>
+				bash ${case.dir}/conf/BI_loop.sh ${ap1.wifi02.mac} ${wifi02.former.timesamp} BI_loop2.log ${bin.dir} ${log.dir} 0.102400 "" "" ""
+			</script>
+		</step>
+
+		<step no="20">
+			<desc>Show interface wifi0.3 of AP1 </desc>
+			<log-file>show_interface_wifi03.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.3"
+			</telnet>
+		</step>
+
+		<step no="21">
+			<desc>Get_mac of wifi0.3 on AP1 </desc>
+			<setvar name="ap1.wifi03.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi03.log -i wifi0.3 -o aero -m
+			</setvar>
+		</step>
+
+		<step no="22">
+			<desc>Get ssid1 on wifi0.3 BI in beacon frame</desc>
+			<setvar name="ssid3.bi">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_bi_no_default_no_client.log -k ${ap1.wifi03.mac} -o "Beacon Interval"
+			</setvar>
+		</step>
+
+		<step no="23">
+			<desc>Compare ssid3.bi to setting BI </desc>
+			<script>
+				if [ "${ssid3.bi}" != "0.102400" ]; then exit 1; fi
+			</script>
+		</step>
+
+		<step no="24">
+			<desc>Get wifi03 former beacon MAC timestamp </desc>
+			<setvar name="wifi03.former.timesamp">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_bi_no_default_no_client.log -k ${ap1.wifi03.mac} -o "Arrival Time"
+			</setvar>
+		</step>
+
+		<step no="25">
+			<desc>Get wifi03 BI according to MAC timestamp </desc>
+			<log-file>BI_loop3.log</log-file>
+			<script>
+				bash ${case.dir}/conf/BI_loop.sh ${ap1.wifi03.mac} ${wifi03.former.timesamp} BI_loop3.log ${bin.dir} ${log.dir} 0.102400 "" "" ""
+			</script>
+		</step>
+
+		<step no="26">
+			<desc>Show interface wifi0.4 of AP1 </desc>
+			<log-file>show_interface_wifi04.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.4"
+			</telnet>
+		</step>
+
+		<step no="27">
+			<desc>Get_mac of wifi0.4 on AP1 </desc>
+			<setvar name="ap1.wifi04.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi04.log -i wifi0.4 -o aero -m
+			</setvar>
+		</step>
+
+		<step no="28">
+			<desc>Get ssid1 on wifi0.4 BI in beacon frame</desc>
+			<setvar name="ssid4.bi">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_bi_no_default_no_client.log -k ${ap1.wifi04.mac} -o "Beacon Interval"
+			</setvar>
+		</step>
+
+		<step no="29">
+			<desc>Compare ssid3.bi to setting BI </desc>
+			<script>
+				if [ "${ssid4.bi}" != "0.102400" ]; then exit 1; fi
+			</script>
+		</step>
+
+		<step no="30">
+			<desc>Get wifi04 former beacon MAC timestamp </desc>
+			<setvar name="wifi04.former.timesamp">
+				perl ${bin.dir}/parse_pcap.pl -f ${log.dir}/ts_bi_no_default_no_client.log -k ${ap1.wifi04.mac} -o "Arrival Time"
+			</setvar>
+		</step>
+
+		<step no="31">
+			<desc>Get wifi04 BI according to MAC timestamp </desc>
+			<log-file>BI_loop4.log</log-file>
+			<script>
+				bash ${case.dir}/conf/BI_loop.sh ${ap1.wifi04.mac} ${wifi04.former.timesamp} BI_loop4.log ${bin.dir} ${log.dir} 0.102400 "" "" ""
+			</script>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,387 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>DHCP pkt process for L3 roaming (ap is dhcp server)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-construct this topology
+		-ap1 and ap2 in different subnet, and ap1 is the dhcp server
+		-disable proxy-arp on all ap
+
+		Test Procedure:
+		-laptop links to ap1 first, then roaming to ap2(change the power or
+		shutdown the interface)
+		Should meet result 1.
+		-renew ip address on laptop
+		Should meet result 2.
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="tb.vlan7.dhcp_start" value="192.168.${tb.vlan7}.200" />
+	<property name="tb.vlan7.dhcp_end" value="192.168.${tb.vlan7}.202" />
+	<property name="mgt0.1_ip" value="192.168.${tb.vlan7}.100" />
+
+	<stage>
+		<include prefix="add.ap1.permit.vlan" file="subs/l2swcfg_port_newvlan.xml" args="${ap1.eth0.swport}, ${tb.vlan7}" />
+
+		<include prefix="add.ap2.permit.vlan" file="subs/l2swcfg_port_newvlan.xml" args="${ap2.eth0.swport}, ${tb.vlan7}" />
+
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan2}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				close dhcp client
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				open dhcp client
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="0.3" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.3_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.4">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.3_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				-Config ap2's vlan and native-vlan
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="1.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step1.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				Config mgt0.1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}_type"
+				-v "interface mgt0 hive ${hive.name}_type"
+				-v "interface mgt0.1 vlan ${tb.vlan7}"
+				-v "interface mgt0.1 ip ${mgt0.1_ip}/24"
+				-v "interface mgt0.1 dhcp-server ip-pool ${tb.vlan7.dhcp_start} ${tb.vlan7.dhcp_end}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.1 dhcp-server options lease-time 200"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan7} mobility-policy FWtest attribute 1"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Config ap2
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}_type"
+				-v "interface mgt0 hive ${hive.name}_type"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "mobility-policy FWtest dnxp"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan7} mobility-policy FWtest attribute 1"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+				-v "interface wifi0 radio channel 1"
+				-v "no forwarding-engine proxy-arp enable"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>show_interface_wifi0_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				get wifi0's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap1.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_wifi0_info.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				set wifi1's channel
+			</desc>
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="2.5">
+			<desc>
+				set wifi1's channel
+			</desc>
+			<if>"${ap2.wifi1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "clear forwarding-engine mac-session"
+				-v "clear log all"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_debug dhcpd basic"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "clear forwarding-engine mac-session"
+				-v "clear log all"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_debug dhcpd basic"
+			</telnet>
+		</step>
+
+		<step no="4.2" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				Show roaming cache
+			</desc>
+			<log-file>step4.2_show_roaming_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${ap1.wifi0.mac}"</log-match>
+		</step>
+
+		<step no="4.3" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show amrp dnxp neighbor
+			</desc>
+			<log-file>show_amrp_dnxp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp dnxp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="4.4" delay="5">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.5" delay="5">
+			<desc>
+				-clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5" delay="5">
+			<desc>
+				up wifi0 interface of ssidA on portal2
+			</desc>
+			<telnet target="ap2">
+				-v "no interface wifi0 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="5.1" delay="5">
+			<desc>
+				Shutdown wifi0 interface of ssidA on portal1
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="6" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show route on ap1
+			</desc>
+			<log-file>step6_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-i "mgt0" -i "LTO"</log-match>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show route on ap2
+			</desc>
+			<log-file>step6.1_show_route_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show route"
+			</telnet>
+			<log-match>-i "wifi0.1" -i "LTO"</log-match>
+		</step>
+
+		<step no="7" delay="10" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				show station on ap2
+			</desc>
+			<log-file>step7_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="7.1" delay="10" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step7.1_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="7.2" delay="5">
+			<desc>realse</desc>
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+				-v "dhclient ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="8" delay="10">
+			<desc>
+				-show logging buffered on ap1
+			</desc>
+			<log-file>step8_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(o) *eth0 *${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(i) *mgt0 *${ap1.mgt0.ip}-&gt;${ap2.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(i) mgt0.1 ${mgt0.1_ip}-&gt;${sta1.tif.ip}" -i "DHCP Ack"</log-match>
+			<log-match>-c -i "(i) mgt0.1 ${mgt0.1_ip}-&gt;${sta1.tif.ip}" -i "DHCP Offer"</log-match>
+			<log-match>-c -i "(i) mgt0.1 ${mgt0.1_ip}-&gt;${sta1.tif.ip}" -i "DHCP Ack"</log-match>
+			<log-match>-c -i "\[dhcp_basic\]: received DHCP DISCOVER from client ${sta1.tif.mac} thro mgt0.1"</log-match>
+			<log-match>-c -i "\[dhcp_basic\]: sending DHCP ACK to ${sta1.tif.mac}(${sta1.tif.ip})"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				-show logging buffered on ap2
+			</desc>
+			<log-file>step8.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(o) *eth0 *${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(i) *mgt0 *${ap2.mgt0.ip}-&gt;${ap1.mgt0.ip}" -i "proto(47)"</log-match>
+			<log-match>-c -i "(o) *wifi0.1 *${mgt0.1_ip}-&gt;${sta1.tif.ip}" -i "UDP 67-&gt;68 DHCP Ack"</log-match>
+			<log-match>-c -i "(o) *wifi0.1 *${mgt0.1_ip}-&gt;${sta1.tif.ip}" -i "UDP 67-&gt;68 DHCP Offer"</log-match>
+			<log-match>-c -i "(r) *mgt0 *${mgt0.1_ip}-&gt;${sta1.tif.ip}" -i "UDP 67-&gt;68 DHCP Offer"</log-match>
+			<log-match>-c -i "(r) *mgt0 *${mgt0.1_ip}-&gt;${sta1.tif.ip}" -i "UDP 67-&gt;68 DHCP Ack"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					cancel new vlan
+				</desc>
+				<telnet host="${tb.l2sw}" prompt=".*[>|#]">
+					-v "enable"
+					-v "config"
+					-v "vlan database"
+					-v "no vlan ${tb.vlan7}"
+					-v "end"
+					-v "show vlan"
+				</telnet>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

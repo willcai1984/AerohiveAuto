@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+
+	<brief>(IxPort: CoF=2) Check frames forwarding when the frames are with inner/outer vlan tags </brief>
+	<priority>middle</priority>
+	<automated>yes</automated>>
+	<description>
+Pre-condition:	
+•	Reset config of switch to factory default
+•	Create vlan related vlan first on switch
+•	IXIA PORT1 connect to switch trunk port, pvid 10, allow 10,20
+•	IXIA PORT2 connect to switch trunk port, pvid 10, allow 10, 20
+Test procedure:
+1.	Set IXIA port2 to capture frames
+2.	IXIA port1 send frames with outer vlan tag 10, inner vlan tag 1        Result1
+3.	IXIA port1 send frames with outer vlan tag 20, inner vlan tag 2        Result2
+4.	IXIA port1 send frames with outer vlan tag 30, inner vlan tag 3        Result3
+Expect result:
+Result1:   IXIA port2 should capture frames with vlan tag 1
+Result2:   IXIA port2 should capture frames with vlan tag 20, and vlan tag 2
+Result3:   IXIA port2 shouldn’t receive any frames.
+
+
+	</description>
+	
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011" />
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012" />
+	<property name="stream1.txport1" value="${sw1.port1.ixia_port}" />
+	<property name="stream1.rxport2" value="${sw1.port2.ixia_port}" />
+	<property name="stream1.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+	<property name="stream1.rxport1.mac" value="ffff.ffff.ffff" />
+	<property name="stream1.etype" value="0x0800" />
+	<property name="stream1.UDFoffset" value="34" />
+	<property name="stream1.patternOffset1" value="38" />
+	<property name="stream1.inner.vlan1" value="1" />
+
+	<stage>
+		<step no="pre_1">
+			<desc>
+				pre-condition: config vlan and set port1,port2 mode, and vlans
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "vlan ${tb.vlan3}"
+				-v ""
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "no interface ${sw1.port1} switchport trunk allow vlan all"
+				-v "interface ${sw1.port1} switchport trunk native vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport trunk allow vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport trunk allow vlan ${tb.vlan2}"
+				-v ""
+				-v "interface ${sw1.port2} switchport mode trunk"
+				-v "no interface ${sw1.port2} switchport trunk allow vlan all"
+				-v "interface ${sw1.port2} switchport trunk native vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport trunk allow vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport trunk allow vlan ${tb.vlan2}"
+				-v ""
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show interface ${sw1.port1} switchport"
+				-v "show interface ${sw1.port2} switchport"
+			</telnet>
+		</step>
+
+
+
+		<step no="1">
+			<desc>add udf1 to check vlan</desc>
+			<setvar name="stream1.UDFsignature1">
+				echo "8100`printf %04x ${tb.vlan1}`"
+			</setvar>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				build stream1, send double tag packet
+			</desc>
+			<log-file>double_tagged_stream1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport2}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+				<!-- -vlan enable -vlan_id ${tb.vlan1} -vlan_dot1p 0 -vlan_cfi 0 -->
+				-eth2_protocol ${stream1.etype}
+				-frame_length 68\
+				-udf_offset 54\
+				-udf_value 0xBDBDBDBD\
+				-rate_pps 10\
+				-patternOffset2 54\
+				-rxPattern 0xBDBDBDBD"
+				-v ""
+
+				-v "stream_stack_vlan_set -portList ${stream1.txport1} -streamId 1\
+				-vlan_id_outer ${tb.vlan1} -vlan_protocolID_outer 0x8100\
+				-vlan_id_inner ${stream1.inner.vlan1} -vlan_protocolID_inner 0x88a8"
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport2}"
+
+				<!-- check the result -->
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport2}"
+				-v ""
+
+				-v "ctrl-c"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				analyse statistics on rxport, port2 can received packet; because switch will strip outter vlan tag, the inner vlan is seemed as data;
+			</desc>
+			<log-file>double_tagged_stream1.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport2} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+
+	<property name="stream2.inner.vlan1" value="2" />	
+	
+		<step no="3.1">
+			<desc>add udf1 to check vlan</desc>
+			<setvar name="stream2.UDFsignature1">
+				echo "8100`printf %04x ${tb.vlan2}`"
+			</setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				build stream2, send double tag packet
+			</desc>
+			<log-file>double_tagged_stream2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport2}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+				<!-- -vlan enable -vlan_id ${tb.vlan2} -vlan_dot1p 0 -vlan_cfi 0 -->
+				-eth2_protocol ${stream1.etype}
+				-frame_length 68\
+				-udf_offset 54\
+				-udf_value 0xBDBDBDBD\
+				-rate_pps 10\
+				-patternOffset2 54\
+				-rxPattern 0xBDBDBDBD"
+				-v ""
+
+				-v "stream_stack_vlan_set -portList ${stream1.txport1} -streamId 1\
+				-vlan_id_outer ${tb.vlan2} -vlan_protocolID_outer 0x88a8\
+				-vlan_id_inner ${stream2.inner.vlan1} -vlan_protocolID_inner 0x8100"
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport2}"
+
+				<!-- check the result -->
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport2}"
+				-v ""
+
+				-v "ctrl-c"
+			</ssh>
+		</step>
+
+		<step no="3.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				analyse statistics on rxport, port2 can received packet; because switch will strip outter vlan tag, the inner vlan is seemed as data;
+			</desc>
+			<log-file>double_tagged_stream2.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport2} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>	
+		
+	<property name="stream3.inner.vlan1" value="3" />	
+	
+		<step no="4.1">
+			<desc>add udf1 to check vlan</desc>
+			<setvar name="stream2.UDFsignature1">
+				echo "8100`printf %04x ${tb.vlan3}`"
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				send double tag packet
+			</desc>
+			<log-file>double_tagged_stream3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1},${stream1.rxport2}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+				<!-- -vlan enable -vlan_id ${tb.vlan2} -vlan_dot1p 0 -vlan_cfi 0 -->
+				-eth2_protocol ${stream1.etype}
+				-frame_length 68\
+				-udf_offset 54\
+				-udf_value 0xBDBDBDBD\
+				-rate_pps 10\
+				-patternOffset2 54\
+				-rxPattern 0xBDBDBDBD"
+				-v ""
+
+				-v "stream_stack_vlan_set -portList ${stream1.txport1} -streamId 1\
+				-vlan_id_outer ${tb.vlan3} -vlan_protocolID_outer 0x8100\
+				-vlan_id_inner ${stream3.inner.vlan1} -vlan_protocolID_inner 0x88a8"
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport2}"
+
+				<!-- check the result -->
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport2}"
+				-v ""
+
+				-v "ctrl-c"
+			</ssh>
+		</step>
+
+		<step no="4.3">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				analyse statistics on rxport, port2 can received packet; because switch will strip outter vlan tag, the inner vlan is seems as data;
+			</desc>
+			<log-file>double_tagged_stream3.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport2} framesSent userDefinedStat2 result is block"</log-match>
+		</step>			
+		
+		
+		
+		
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

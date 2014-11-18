@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>check channel RX utilization</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-create ssid and bind it to wifi0
+		-set wifi1 mode to access
+		-create ssid and bind to wifi1
+
+		Test Procedure:
+
+		1. connect laptop to wifi0 ssid and generate uplink traffic with
+		chariot
+		2. after one minute, check wifi0 channel RX utilization on Hm
+		3. disconnect laptop, after one minute, check wifi0 RX utilization on
+		HM
+		4. connect laptop to wifi1 ssid and generate uplink traffic with
+		chariot
+		5. after one minute, check wifi1 channel RX utilization on HM
+		6. disconnect laptop, after one minute, check wifi1 RX utilization on
+		HMHelp check
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>windows</tbtype>
+	<stage>
+		<step no="1">
+			<desc>
+				-create ssid and bind it to wifi0
+			</desc>
+			<log-file>save_ap_config_1.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi0 ssid ${ssid.name}1"
+				-v "radio profile ng"
+				-v "radio profile ng phymode 11ng"
+				-v "radio profile ng interference-map enable"
+				-v "interface wifi0 radio profile ng"
+				-v "interface wifi0 radio channel 11"
+				-v "report statistic period 1"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="1.1">
+		  <if>"${ap1.wifi1.existed}" =="true"</if>
+			<desc>
+				-create ssid and bind it to wifi1
+			</desc>
+			<log-file>save_ap_config_11.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}2"
+				-v "interface wifi1 ssid ${ssid.name}2"
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "radio profile na interference-map enable"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 radio channel 36"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="2">
+			<desc>Generate wifi_aerohive_test profile for ssid ${ssid.name}1 for laptop1</desc>
+			<script>
+				${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/open.xml -l ${log.dir} -o wifi_aerohive_test.xml -s "${ssid.name}1"
+			</script>
+		</step>
+
+		<step no="3">
+			<desc>Copy a wifi windows profile file to laptop1 </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+		<step no="4">
+			<desc>Bring down the client Wireless of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="5">
+			<desc>Delete current Wireless profile of laptop1</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan delete profile ${ssid.name}1 "
+			</script>
+		</step>
+
+		<step no="6">
+			<desc>Add new profile for ssid to laptop1
+			</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="7" delay="120">
+			<desc>Bring up the client Wireless on laptop1 </desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan connect name=${ssid.name}1 interface=\"${sta1.tif.name}\"" -v " netsh wlan show profiles ${ssid.name}1" -v "netsh wlan show interfaces"
+			</script>
+			<no-error-check />
+		</step>
+		<step no="8" delay="60">
+			<desc>Loop 10 times ipconfig to get ip in laptop1 </desc>
+			<script>
+				bash ${bin.dir}/aerohive/get_laptop_ip.sh ${sta1.mif.ip} ${log.dir} ipconfig1.log
+			</script>
+		</step>
+		<step no="9">
+			<desc>Show ipconfig in laptop1 </desc>
+			<log-file>ipconfig_${sta1.mif.ip}.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+		<step no="10">
+			<desc>Get the mac of laptop1</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -m -width 2
+			</setvar>
+		</step>
+		<step no="11">
+			<desc>Get the ip of laptop1</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+		<step no="12" delay="20">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi0_ssid_station.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|Total station count.*#" timeout="80">
+				-v "show ssid ${ssid.name}1 station"
+				-v ""
+			</telnet>
+
+		</step>
+		<step no="13">
+			<desc>Get laptop1 ip in AP1  </desc>
+			<setvar name="laptop1.ip.in.ap">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi0_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+		<step no="14">
+			<desc>Compare laptop1 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop1.ip.in.ap} != ${sta1.tif.ip}"
+				if [ "${laptop1.ip.in.ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="15">
+			<desc>Ping from remote host ${sta1.mif.ip} to master Server </desc>
+			<log-file>pingmaster_${sta1.mif.ip}.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ping ${mpc.tif.ip}" -l ${log.dir} -o ${log.file}
+			</script>
+			<log-match>-n -e "Lost = 0 (100\%)"</log-match>
+		</step>
+		<step no="15.1" delay="120">
+			<desc>
+				2. check interface rx cu
+			</desc>
+			<log-file>show_snapshot_wifi0_rx_cu_before.log</log-file>
+			<console target="ap1">
+				-v "_show report snapshot interface"
+			</console>
+		</step>
+		<step no="15.2">
+			<desc>
+				parse the log
+			</desc>
+			<log-file>parse_log_wifi0_before.log</log-file>
+			<setvar name="find.result.wifi0.before">
+				${bin.dir}/find_kwds -f ${log.dir}/show_snapshot_wifi0_rx_cu_before.log -i "wifi0" -a 30 -k " Rx utilization:" -m v
+			</setvar>
+		</step>
+		<!-- step 16: generate iperf packet -->
+		<include prefix="16" file="cases/InterferenceReport/conf/sub_run_iperf_uplink_sta1.xml" />
+		<step no="17" delay="120">
+			<desc>
+				2. check interface rx cu
+			</desc>
+			<log-file>show_snapshot_wifi0_rx_cu.log</log-file>
+			<console target="ap1">
+				-v "_show report snapshot interface"
+			</console>
+		</step>
+		<step no="18">
+			<desc>
+				parse the log
+			</desc>
+			<log-file>parse_log_wifi0.log</log-file>
+			<setvar name="find.result.wifi0">
+				${bin.dir}/find_kwds -f ${log.dir}/show_snapshot_wifi0_rx_cu.log -i "wifi0" -a 30 -k " Rx utilization:" -m v
+			</setvar>
+		</step>
+		<step no="19">
+			<desc>
+				check the result
+			</desc>
+			<log-file>check_result_wifi0.log</log-file>
+			<script>if [ ${find.result.wifi0} -lt ${find.result.wifi0.before} ] ; then exit 1; fi</script>
+		</step>
+ </stage>
+ <stage>
+	 <if>"${ap1.wifi1.existed}" =="true"</if>
+		<step no="20">
+			<desc>Generate wifi_aerohive_test profile for ssid ${ssid.name}2 for laptop1</desc>
+			<script>
+				${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/open.xml -l ${log.dir} -o wifi_aerohive_test.xml -s "${ssid.name}2"
+			</script>
+		</step>
+
+		<step no="21">
+			<desc>Copy a wifi windows profile file to laptop2 </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta2.mif.ip}
+			</script>
+		</step>
+		<step no="22">
+			<desc>Bring down the client Wireless of laptop2</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta2.tif.name}\""
+			</script>
+		</step>
+
+		<step no="23">
+			<desc>Delete current Wireless profile of laptop2</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan delete profile ${ssid.name}2 "
+			</script>
+		</step>
+
+		<step no="24">
+			<desc>Add new profile for ssid to laptop1
+			</desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${sta2.tif.name}\""
+			</script>
+		</step>
+
+		<step no="25" delay="120">
+			<desc>Bring up the client Wireless on laptop2 </desc>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan connect name=${ssid.name}2 interface=\"${sta2.tif.name}\"" -v " netsh wlan show profiles ${ssid.name}2" -v "netsh wlan show interfaces"
+			</script>
+			<no-error-check />
+		</step>
+		<step no="26" delay="60">
+			<desc>Loop 10 times ipconfig to get ip in laptop2 </desc>
+			<script>
+				bash ${bin.dir}/aerohive/get_laptop_ip.sh ${sta2.mif.ip} ${log.dir} ipconfig2.log
+			</script>
+		</step>
+		<step no="27">
+			<desc>Show ipconfig in laptop2 </desc>
+			<log-file>ipconfig_${sta2.mif.ip}.log</log-file>
+			<script>
+				${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+		<step no="28">
+			<desc>Get the mac of laptop2</desc>
+			<setvar name="sta2.tif.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta2.mif.ip}.log -i Wireless -o win -m -width 2
+			</setvar>
+		</step>
+		<step no="29">
+			<desc>Get the ip of laptop2</desc>
+			<setvar name="sta2.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta2.mif.ip}.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+		<step no="30" delay="20">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi1_ssid_station_2.log</log-file>
+			<telnet target="ap1" prompt="AH.*#|Total station count.*#" timeout="80">
+				-v "show ssid ${ssid.name}2 station"
+				-v ""
+			</telnet>
+
+		</step>
+		<step no="31">
+			<desc>Get laptop1 ip in AP2  </desc>
+			<setvar name="laptop2.ip.in.ap">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi1_ssid_station_2.log -k "${sta2.tif.mac}" -p 2
+			</setvar>
+		</step>
+		<step no="32">
+			<desc>Compare laptop2 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop2.ip.in.ap} != ${sta2.tif.ip}"
+				if [ "${laptop2.ip.in.ap}" != "${sta2.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="33">
+			<desc>Ping from remote host ${sta2.mif.ip} to master Server </desc>
+			<log-file>pingmaster_${sta2.mif.ip}.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "ping ${mpc.tif.ip}" -l ${log.dir} -o ${log.file}
+			</script>
+			<log-match>-n -e "Lost = 0 (100\%)"</log-match>
+		</step>
+		<step no="33.1" delay="120">
+			<desc>
+				2. check interface rx cu
+			</desc>
+			<log-file>show_snapshot_rx_cu_later.log</log-file>
+			<console target="ap1">
+				-v "_show report snapshot interface"
+			</console>
+		</step>
+		<step no="33.2">
+			<desc>
+				parse the log
+			</desc>
+			<log-file>parse_log_wifi1_before.log</log-file>
+			<setvar name="find.result.wifi1.before">
+				${bin.dir}/find_kwds -f ${log.dir}/show_snapshot_rx_cu_later.log -i "wifi1" -a 30 -k " Rx utilization:" -m v
+			</setvar>
+		</step>
+		<!-- step 34: generate iperf packet -->
+		<include prefix="34" file="cases/InterferenceReport/conf/sub_run_iperf_uplink_sta2.xml" />
+
+		<step no="35" delay="120">
+			<desc>
+				2. check interface rx cu
+			</desc>
+			<log-file>show_snapshot_rx_cu_1.log</log-file>
+			<console target="ap1">
+				-v "_show report snapshot interface"
+			</console>
+		</step>
+		<step no="36">
+			<desc>
+				parse the log
+			</desc>
+			<log-file>parse_log_wifi1.log</log-file>
+			<setvar name="find.result.wifi1">
+				${bin.dir}/find_kwds -f ${log.dir}/show_snapshot_rx_cu_1.log -i "wifi1" -a 30 -k " Rx utilization:" -m v
+			</setvar>
+		</step>
+		<step no="37">
+			<desc>
+				check the result
+			</desc>
+			<log-file>check_result_wifi1.log</log-file>
+			<script>if [ ${find.result.wifi1} -lt ${find.result.wifi1.before} ] ; then exit 1; fi</script>
+		</step>
+
+
+	</stage>
+
+</testcase>

@@ -1,0 +1,186 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=3) FDB work with Link Aggregation</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	        
+		PC1+++++Switch======IXIA
+		+
+		+
+		PC3
+		Description	FDB work with Link Aggregation
+		Platform Dependence	Chesapeake
+		Pre-condition	?	PC1 connect Switch port1, vlan 10
+		?	Port2,port3 are in same vlan 10
+		?	IXIA test tool connect to switch link aggregation port
+		?	PC3 connect to port4 in vlan 10
+		Test procedure	1.	Create link aggregation port
+		CLI: port-channel 1
+		Interface port1 port-channel 1
+		Interface port2 port-channel 1
+		2.	Enable mac-learning for vlan 10
+		3.	IXIA test tool send unicast frames with different src mac        
+		4.	Check FDB table for these unicast mac entries            Result1
+
+		5.	Set PC3, IXIA to capture frames
+
+		6.	PC1 send unicast frames with the dst mac learnt for step3     Result2
+
+		7.	Add static mac entry on the port-channel Result 3
+
+		8.	Delete the  port-channel  Result 4
+		Expect result	Result1:  add these unicast mac entries in FDB table.
+		For example: [mac,vlan 10, port-channel1]
+
+		Result2:  IXIA should receive all the frames sent by PC1
+		PC3 don’t receive any frames
+
+		Result 3: can add the static mac entry on the port-channel
+
+		Result 4: the port-channel is deleted , the static mac entry and dynamic mac entry on the port-channel  are deleted
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+		<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+		<property name="sw1.port3.ixia_port.mac" value="0000.0000.0013"/>
+		<step no="1">
+			<desc>port2 and port3 are agg port</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "agg 1"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} agg 1"
+				-v "interface ${sw1.port3} agg 1"
+				-v "interface agg1 switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port4} switchport access vlan ${tb.vlan1}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show vlan id ${tb.vlan2}"
+				-v "show agg 1"
+				-v "show interface ${sw1.port2} switchport"
+				-v "show interface ${sw1.port3} switchport"
+				-v "show mac-address-table all"
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				build stream, agg1 port sends frames with base src-mac 0000.0011.0001 
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "traffic_configure_eth2 -portListIn ${sw1.port2.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src 0000.0011.0001
+				-mac_src_count 10
+				-eth2_protocol 0x0800"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="2.2">
+			<desc>check FDB, make sure the mac entries learned by FDB on agg port</desc>
+			<log-file>check_FDB1.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table vlan ${tb.vlan1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.vlan1}\s*0000:0011:00[0-9a-f]{2}\s*agg1" -c 10 -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="3.1">
+			<desc>
+				build stream, port1 sends priority-untagged broadcast pkts
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def diable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port4.ixia_port} -streamId all -maintanceOp disable"
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}
+				-mac_dst 0000.0011.0001
+				-mac_dst_count 10
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port}"
+				-v ""
+				-v "check_sum_equal_tx_with_rx -txPortList ${sw1.port1.ixia_port} -txStParaList framesSent -rxPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port} -rxStParaList userDefinedStat2,userDefinedStat2"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port1.ixia_port} -oneRxPort ${sw1.port4.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="3.2">
+			<desc>check FDB</desc>
+			<log-file>check_FDB2.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.vlan1}\s*0000:0011:00[0-9a-f]{2}\s*agg1" -c 10 -f ${log.dir}/${log.file}</log-match>
+		</step>
+		<step no="3.3">
+			<desc>
+				analyse statistics on rxport, only port2 and port3 received pkts 
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<log-match>-e "sequence 0 check_sum_equal_tx_with_rx ${sw1.port1.ixia_port} framesSent ${sw1.port2.ixia_port},${sw1.port3.ixia_port} userDefinedStat2,userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port1.ixia_port} ${sw1.port4.ixia_port} framesSent userDefinedStat2 result is blocked"</log-match>
+		</step>
+		<step no="4.1">
+			<desc>add static mac ${sw1.port2.ixia_port.mac}</desc>
+			<telnet target="sw1">
+				-v "mac-address-table static ${sw1.port2.ixia_port.mac} vlan ${tb.vlan1} interface agg1"
+				-v "show mac-address-table vlan ${tb.vlan1}"
+			</telnet>
+		</step>
+<step no="4.2">
+			<desc>delete agg port on switch</desc>
+			<telnet target="sw1">
+				-v "no agg 1"
+				-v "show mac-address-table vlan ${tb.vlan1}"
+			</telnet>
+		</step>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.vlan1}\s*0000:0011:00[0-9a-f]{2}\s*agg1" -c 0 -f ${log.dir}/${log.file}</log-match>
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

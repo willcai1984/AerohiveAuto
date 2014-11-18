@@ -1,0 +1,151 @@
+<testcase>
+	<brief>COA reauthorize is working</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Topology to use
+		STA-----AP1-------AP2
+		Description
+		COA
+		reauthorize is working
+		Pre-condition
+		-two APs,they are roaming
+		neighbours
+		-ssid enable cwp auth
+		-ssid enable
+		dynamic-auth-extension,accounting
+		-ssid is active
+		-GM is ready for coa
+		Test procedure
+		-client connect to the ssid
+		-client pass the cwp auth,got
+		attributes correctly
+		-change the vlan id time on GM
+		-radius server sends
+		a COA-reauthorize by GM,with a active session
+		Expect result
+		1.Check the
+		config is right,sh aaa to check the dynamic-auth-extension is
+		enable
+		2.After client is connected ,make sure its state is correct,sh roa
+		ca,sh
+		auth,sh ssid xxx st to make sure
+		3.Change the account’s return
+		attributes
+		4.GM sends a COA-reauthorize
+		5.When AP received the
+		COA-reauthorize,it will do a reauthorzie with the
+		radius server
+		6.Check
+		the new attributs is applied,client should not be disconnected
+		7.AP
+		will update its neighbours with new roaming neighbours
+	</description>
+	<stage>
+		<step no="1">
+			<desc>Set SSID for ap1</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa-auto-8021x"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security aaa radius-server dynamic-auth-extension"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+			</ssh>
+		</step>
+		<step no="2">
+			<desc>show running config on </desc>
+			<log-file>show_run.log</log-file>
+			<ssh target="ap1">
+				-v "show run"
+			</ssh>
+		</step>
+		<step no="3">
+			<desc>show protocol suite</desc>
+			<log-file>show_proto.log</log-file>
+			<ssh target="ap1">
+				-v "show security- autoap security protocol-suite"
+			</ssh>
+			<log-match>-e "Method=wpa-auto-8021x"</log-match>
+		</step>
+		<step no="4">
+			<desc>show ssid</desc>
+			<log-file>show_ssid.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name}"
+			</ssh>
+			<log-match>-e "autoap"</log-match>
+		</step>
+
+		<property name="conn1.proto" value="wpa2-aes-8021x" />
+		<step no="pre5.1">
+			<desc>set username</desc>
+			<setvar name="conn1.username">
+				echo "${pub.radius1.username}"
+			</setvar>
+		</step>
+		<step no="pre5.2">
+			<desc>set password</desc>
+			<setvar name="conn1.passwd">
+				echo "${pub.radius1.passwd}"
+			</setvar>
+		</step>
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" args="1" />
+
+		<step no="6">
+			<desc>Ping from station to masterPC</desc>
+			<log-file>pingmaster_${mpc.tif.ip}.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${mpc.tif.ip} -c 4"
+			</ssh>
+			<log-match>-i "from ${mpc.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="7">
+			<desc>get mac from client with five dash</desc>
+			<setvar name="sta1.tif.mac_5dash">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -dash -uppercase
+			</setvar>
+		</step>
+		<step no="8">
+			<desc>show intface on wifi0</desc>
+			<log-file>show_interface.log</log-file>
+			<ssh target="ap1">
+				-v "show interface wifi0.1"
+			</ssh>
+		</step>
+		<step no="9">
+			<desc>get mac from bssid of wifi0.1</desc>
+			<setvar name="ssid.wifi0.bssid">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface.log -o aero -i wifi0.1 -m -dash -uppercase
+			</setvar>
+		</step>
+		<step no="10">
+			<desc>sent coa reauth from radius server</desc>
+			<log-file>coa_disc.log</log-file>
+			<ssh host="${pub.radius1.ip}" prompt=".*#">
+				-v "echo -e \"Calling-Station-Id=${sta1.tif.mac_5dash}\\nCalled-Station-Id=${ssid.wifi0.bssid}:${ssid.name}\\nUser-Name=${pub.radius1.username}\\nService-Type=Authorize-only\" | radclient -x ${ap1.mgt0.ip}:3799 disconnect aerohive"
+			</ssh>
+			<log-match>-e "Disconnect-NAK"</log-match>
+			<log-match>-e "Error-Cause = Request-Initiated"</log-match>
+		</step>
+		<step no="11">
+			<desc>show log buffer</desc>
+			<log-file reverse="true">show_buffer.log</log-file>
+			<ssh target="ap1">
+				-v "show logg buff"
+			</ssh>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-b "dynamic auth message from RADIUS server" -ps 
+			p "Received a Disconnect request from radius server ${pub.radius1.ip}" 
+			p "need re-authorize for user ${conn1.username}" 
+			p "Send a Disconnect-Nak message to ${pub.radius1.ip}"  -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

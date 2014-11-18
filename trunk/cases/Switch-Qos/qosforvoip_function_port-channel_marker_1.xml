@@ -1,0 +1,291 @@
+<testcase>
+	<brief>fiber_or_copper,port count:4</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		QOSFORVOIP_Function_port-channel_marker_1
+		Test marking, aerohive calss 0-7 mapping to 8021p(0-7) on port-channel
+	</description>
+	<comment>
+		sw1.port1=eth1/21;
+		sw1.port1.phytype=copper;
+		sw1.port5=eth1/25;
+		sw1.port1.ixia_port=1/2/1;
+		sw1.port1.ixia_port.phytype=copper;
+		sw1.terminal.port=2016;
+		tb.conserver.ip=localhost
+		ap1.cons_name=tb1-SR2024-2
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclserver1.ip=10.155.30.164;
+		pub.tclclient1.ip=10.155.40.10;
+		sw1.tclclient.ip=10.155.32.228;
+		sw1.mgmtport=eth1/1;
+		sw1.mgmtvlan=121;
+		tb.conserver.ip=10.155.32.228;
+		tb.conserver.user=root;
+		tb.conserver.passwd=aerohive;
+		sw1.cons_name=tb1-SR2024-2;
+		sw1.user=admin;
+		sw1.passwd=aerohive;
+		sw1.prompt="AH-[a-z0-9A-Z_]*#";
+	</comment>
+	<property name="correct_vlan" value="101" />
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="tx_port1.phytype" value="${sw1.port1.ixia_port.phytype}" />
+	<property name="rx_port1" value="${sw1.port2.ixia_port}" />
+	<property name="rx_port1.phytype" value="${sw1.port2.ixia_port.phytype}" />
+	<property name="rx_port2" value="${sw1.port3.ixia_port}" />
+	<property name="rx_port2.phytype" value="${sw1.port3.ixia_port.phytype}" />
+	<property name="qos_name" value="qos" />
+	<property name="agg_id" value="1" />
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include prefix="pre" file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				Set qos class profile to port1, qos marker profile to agg1(port2+port3), enable qos
+			</desc>
+			<telnet target="sw1">
+				-v 'no agg ${agg_id}'
+				-v 'agg ${agg_id}'
+				-v 'vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} switchport mode trunk'
+				-v 'interface ${sw1.port1} switchport trunk allow vlan ${correct_vlan}'
+				-v 'interface ${sw1.port2} agg ${agg_id}'
+				-v 'interface ${sw1.port3} agg ${agg_id}'
+				-v 'no interface agg${agg_id} shutdown'
+				-v 'interface agg${agg_id} switchport mode trunk'
+				-v 'interface agg${agg_id} switchport trunk allow vlan ${correct_vlan}'
+				-v 'qos classifier-profile ${qos_name} 8021p'
+				-v 'qos marker-profile ${qos_name} 8021p'
+				-v 'interface ${sw1.port1} qos-classifier ${qos_name}'
+				-v 'interface agg${agg_id} qos-marker ${qos_name}'
+				-v 'qos enable'
+				-v 'show running-config'
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				Set qos classifier map normal ordered
+			</desc>
+			<telnet target="sw1">
+				-v 'qos classifier-map 8021p 0 0'
+				-v 'qos classifier-map 8021p 1 1'
+				-v 'qos classifier-map 8021p 2 2'
+				-v 'qos classifier-map 8021p 3 3'
+				-v 'qos classifier-map 8021p 4 4'
+				-v 'qos classifier-map 8021p 5 5'
+				-v 'qos classifier-map 8021p 6 6'
+				-v 'qos classifier-map 8021p 7 7'
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				show classifier map table to check
+			</desc>
+			<log-file>step1.3_show_classifier_map.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos classifier-map 8021p'
+			</telnet>
+			<log-match>-e '^\d\s+0\s+0' -re</log-match>
+			<log-match>-e '^\d\s+1\s+1' -re</log-match>
+			<log-match>-e '^\d\s+2\s+2' -re</log-match>
+			<log-match>-e '^\d\s+3\s+3' -re</log-match>
+			<log-match>-e '^\d\s+4\s+4' -re</log-match>
+			<log-match>-e '^\d\s+5\s+5' -re</log-match>
+			<log-match>-e '^\d\s+6\s+6' -re</log-match>
+			<log-match>-e '^\d\s+7\s+7' -re</log-match>
+		</step>
+
+		<step no="2.0">
+			<desc>
+				kill exist screen process ${job.user}-${job.sid}-1
+			</desc>
+			<log-file>step2.0_kill_exist_screen_process.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				-v "python ${bin.dir}/remove_screen.py -p '${job.user}-${job.sid}-1'"
+			</ssh>
+		</step>
+
+		<!--Enter to IXIA firstly -->
+		<step no="2.1">
+			<desc>
+				connect to ixia firstly
+			</desc>
+			<log-file>step2.1_connect_to_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				<!-- new a screen -->
+				-v "screen -S ${job.user}-${job.sid}-1"
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${rx_port1},${rx_port2} -phyList ${tx_port1.phytype},${rx_port1.phytype},${rx_port2.phytype}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1},${rx_port2}
+				-mac_dst 0000.0000.0016
+				-mac_src 0000.0000.0015"
+				-v ""
+				-v "ctrl-a+d"
+			</ssh>
+		</step>
+
+	</stage>
+
+	<!--Start loop -->
+	<stage loop-values="0:0,0:1,0:2,0:3,0:4,0:5,0:6,0:7,
+						1:0,1:1,1:2,1:3,1:4,1:5,1:6,1:7,
+						2:0,2:1,2:2,2:3,2:4,2:5,2:6,2:7,
+						3:0,3:1,3:2,3:3,3:4,3:5,3:6,3:7,
+						4:0,4:1,4:2,4:3,4:4,4:5,4:6,4:7,
+						5:0,5:1,5:2,5:3,5:4,5:5,5:6,5:7,
+						6:0,6:1,6:2,6:3,6:4,6:5,6:6,6:7,
+						7:0,7:1,7:2,7:3,7:4,7:5,7:6,7:7" var-name="class_priority">
+
+		<step no="${class_priority}.1">
+			<desc>
+				${class_priority},Get class value
+			</desc>
+			<setvar name="class">
+				python ${bin.dir}/get_loop_value.py -s '${class_priority}' -p 1
+			</setvar>
+		</step>
+
+		<step no="${class_priority}.2">
+			<desc>
+				${class_priority},Get priority value
+			</desc>
+			<setvar name="priority">
+				python ${bin.dir}/get_loop_value.py -s '${class_priority}' -p 2
+			</setvar>
+		</step>
+
+		<step no="${class_priority}.3">
+			<desc>
+				${class_priority},Get ixia pattern
+			</desc>
+			<setvar name="ixia_pattern">
+				python ${bin.dir}/get_loop_value.py -s '${class_priority}' -p 2 -o '*' -v '2' -hex -c 'upper'
+			</setvar>
+		</step>
+
+		<step no="${class_priority}.4.1">
+			<desc>
+				${class_priority}, set marker-map,class ${class},priority ${priority},
+			</desc>
+			<log-file>step4.1_${class}_${priority}.log</log-file>
+			<telnet target="sw1">
+				-v "qos marker-map 8021p ${class} ${priority}"
+			</telnet>
+		</step>
+
+		<step no="${class_priority}.4.2">
+			<desc>
+				${class_priority}, show marker map table to confirm; expect class is ${class} priority is ${priority}
+			</desc>
+			<log-file>step4.2_${class}_${priority}.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos marker-map 8021p'
+			</telnet>
+			<log-match>-e '^\d+\s+${class}\s+${priority}' -re</log-match>
+		</step>
+
+		<step no="${class_priority}.4.3">
+			<desc>
+				${class_priority}, ixia send priority ${class} pkts;
+			</desc>
+			<log-file>step4.3_${class}_${priority}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+				<!-- get the screen -->
+				-v ""
+				-v "screen -r ${job.user}-${job.sid}-1"
+				-v ""
+				<!-- delete the traffic -->
+				-v "stream_delete_all -portList ${tx_port1}"
+				-v ""
+				<!-- set the vlan priority -->
+				-v "traffic_configure_eth2 -portListIn ${tx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-mac_src_count 8
+				-vlan enable
+				-vlan_id ${correct_vlan}
+				-vlan_dot1p ${class}
+				-rate_pps 8"
+				-v ""
+				<!-- start transmit -->
+				-v "stop_transmit -portList ${tx_port1},${rx_port1}"
+				-v ""
+				<!-- start port1 capture -->
+				-v "clear_statistic -portList ${tx_port1},${rx_port1}"
+				-v ""
+				-v "start_capture -portList ${rx_port1}"
+				-v ""
+				-v "start_transmit -portList ${tx_port1} -firstTryFlag false"
+				-v "wait_time -second 1"
+				-v ""
+				-v "stop_transmit -portList ${tx_port1}"
+				-v ""
+				<!-- stop port1 capture -->
+				-v "stop_capture -portList ${rx_port1}"
+				-v ""
+				<!-- save port1 capture -->
+				-v "save_capture -onePort ${rx_port1} -fileName ${job.id}_${class}_${priority}_p2.txt"
+				-v ""
+				-v "ctrl-a+d"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="${class_priority}.4.4">
+			<desc>
+				${class_priority}, ixia send priority ${class}, transfer to ${class} class(via classifier map), transfer to ${priority} priority(via marker map), transfer to ${ixia_pattern}0(ixia)
+			</desc>
+			<log-file>step4.4_${class}_${priority}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "cat ${job.id}_${class}_${priority}_p2.txt"
+			</ssh>
+			<log-match>-i '81 00\s+${ixia_pattern}0' -i '00 00 00 00 00 15' -re -c</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="${class_priority}.4.5">
+			<desc>
+				rm the capture files
+			</desc>
+			<log-file>step4.5_${class}_${priority}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="root@.*#|rm:.*\?" timeout="200">
+				-v "rm ${job.id}_${class}_${priority}_p2.txt -f"
+			</ssh>
+		</step>
+	</stage>
+	<!-- end loop -->
+
+	<post-process>
+		<stage>
+			<step no="post1">
+				<desc>
+					kill_screen_process
+				</desc>
+				<log-file>kill_screen_process.log</log-file>
+				<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180">
+					-v "python ${bin.dir}/remove_screen.py -p '${job.user}-${job.sid}-1'"
+				</ssh>
+			</step>
+		</stage>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include prefix="post" file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

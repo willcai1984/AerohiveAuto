@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=3) Switch can set/reset its router port aging time, and the router port aging time can be updated by IGMPv2 group specific query packet.</brief>
+	<priority>middle</priority>
+	<automated>no</automated>
+
+	<description>
+		Description	Switch can set/reset its router port aging time, and the router port aging time can be updated by IGMPv2 group specific query packet.
+		Platform	Chesapeake
+		Pre-condition	IGMP snooping is enabled on the switch; RouterA and hostA are in vlan 10; routerB, hostB and hostC are in vlan 100.
+		Test procedure	1.Waite for the multicast routers to send  IGMPv2 group specific query periodically,result 1
+		2.Shutdown the router ports,result 2
+		3. No shutdown the router ports, send IGMPv2 group specific query to the router port ,check information on the switch ,result 3
+		4. Configure “ip igmp snooping router-aging-time 100”, send IGMPv2 group specific query to the router port ,result 4
+		5. Send IGMPv2 group specific query to the router port ,after 10s send another query, result 5
+		6. Configure “ip igmp snooping router-aging-time 30”, send IGMPv2 group specific query to the router port ,result 6
+		7. Configure “ip igmp snooping router-aging-time 1000”, send IGMPv2 group specific query to the router port ,result 7
+		8. Configure “no ip igmp snooping router-aging-time vlan 10” “no ip igmp snooping router-aging-time vlan 100”, send IGMPv2 group specific query to the router port ,result 3
+
+		Expect result	1. When the ports on the switch which links to the multicast router receives IGMPv2 group specific query message, the switche adds the port to router port list.
+		2. Information for the router port on the router port list should be cleared.
+		3. Mrouter is aging, and after default time (250), information for the router port on the router port list should be cleared. One vlan timer should not affect other vlans.
+		4. Mrouter is aging, and after 100s, information for the router port on the router port list should be cleared. One vlan timer should not affect other vlans.
+		5. The mrouter timeout timer is100s when received the first query，and it is updated to 100s by the second query when the timer aging to 90s. One vlan timer should not affect other vlans.
+		6. Mrouter is aging, and after 30s, information for the router port on the router port list should be cleared. One vlan timer should not affect other vlans.
+		7. Mrouter is aging, and after 1000s, information for the router port on the router port list should be cleared. One vlan timer should not affect other vlans.
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+
+	<stage>
+		<step no="1">
+			<desc>
+				configure two vlans, enable igmp snooping	
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan2}"
+				-v "interface ${sw1.port4} switchport access vlan ${tb.vlan2}"
+				-v "ip igmp snooping vlan ${tb.vlan1}"
+				-v "ip igmp snooping vlan ${tb.vlan2}"
+				-v "ip igmp snooping"
+				 -v "show interface"
+			</telnet>
+		</step>
+		<step no="2.1">
+			<desc>check igmp snooping is enable in vlan ${tb.vlan1}</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping vlan ${tb.vlan1}"
+				-v "_debug swd igmp"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+		</step>
+		<step no="2.2">
+			<desc>check igmp snooping is enable in vlan ${tb.vlan2}</desc>
+			<telnet target="sw1">
+				-v "show ip igmp snooping vlan ${tb.vlan2}"
+			</telnet>
+			<log-match>-e "Snooping: enable"</log-match>
+		</step>
+		<step no="3">
+			<desc>
+				port1 and port3 send igmp v2 group specific query pkt 
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				-v "stream_import -onePort ${sw1.port1.ixia_port} -fileName ${case.dir}/conf/potr1.str"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId 6 -maintanceOp enable"
+				-v ""
+				-v "stream_import -onePort ${sw1.port3.ixia_port} -fileName ${case.dir}/conf/potr2.str"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId 6 -maintanceOp enable"	
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 1"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="4">
+			<desc>check the mroute table added the entry</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v2"</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port3}\s*v2"</log-match>
+		</step>
+		<step no="5.1">
+			<desc>shutdown port1, and check the mroute table</desc>
+			<telnet target="sw1">
+				-v "interface ${sw1.port1} shutdown"
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v2" -n</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port3}\s*v2"</log-match>
+		</step>
+		<step no="5.2">
+			<desc>show log buf</desc>
+			<log-file>check_igmp1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="6.1">
+			<desc>no shutdown port1, change route age time to 100</desc>
+			<telnet target="sw1">
+				-v "no interface ${sw1.port1} shutdown"
+				-v "ip igmp snooping router-aging-time 100"
+				-v "show ip igmp snooping"
+			</telnet>
+			<log-match>-e "Router port timeout: 100"</log-match>
+		</step>
+		<step no="6.2">
+			<desc>check the mroute table</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+		</step>
+		<step no="7">
+			<desc>port1 sends igmp v2 query pkt first, then wait 50sec and port3 sends igmp v2 query pkt</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 1"
+				-v "sleep 50"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="8.1">
+			<desc>wait for 50sec</desc>
+			<script>
+				sleep 50
+				exit 0
+			</script>
+		</step>
+		<step no="8.2" type="loop-check" loop-max-times="3" loop-interval="3">
+			<desc>check the route port1 is age timeout first</desc>
+			<log-file>check_timeout1_${loop_check.idx}.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v2" -n</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port3}\s*v2"</log-match>
+		</step>
+		<step no="8.3">
+			<desc>show log buf</desc>
+			<log-file>check_igmp2.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="9.1">
+			<desc>change route age time to 30</desc>
+			<telnet target="sw1">
+				-v "ip igmp snooping router-aging-time 30"
+				-v "show ip igmp snooping"
+			</telnet>
+			<log-match>-e "Router port timeout: 30"</log-match>
+		</step>
+		<step no="9.2">
+			<desc>check the mroute table</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+		</step>
+		<step no="10" delay="30">
+			<desc>port1 sends igmp v2 query pkt first, then wait 10sec and port3 sends igmp v2 query pkt</desc>
+			<log-file>eth2test3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 1"
+				-v "sleep 10"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="11.1">
+			<desc>wait for 10sec</desc>
+			<script>
+				sleep 10
+				exit 0
+			</script>
+		</step>
+		<step no="11.2" type="loop-check" loop-max-times="3" loop-interval="1">
+			<desc>check the route port1 is age timeout first</desc>
+			<log-file>check_timeout2_${loop_check.idx}.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v2" -n</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port3}\s*v2"</log-match>
+		</step>
+		<step no="11.3">
+			<desc>show log buf</desc>
+			<log-file>check_igmp3.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="12.1">
+			<desc>change route age time to 1000</desc>
+			<telnet target="sw1">
+				-v "ip igmp snooping router-aging-time 1000"
+				-v "show ip igmp snooping"
+			</telnet>
+			<log-match>-e "Router port timeout: 1000"</log-match>
+		</step>
+		<step no="12.2">
+			<desc>check the mroute table</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+		</step>
+		<step no="13">
+			<desc>port1 sends igmp v2 query pkt first, then wait 200sec and port3 sends igmp v2 query pkt</desc>
+			<log-file>eth2test4.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="205">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 1"
+				-v "sleep 200"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="14.1">
+			<desc>wait for 750sec</desc>
+			<script timeout="800">
+				sleep 780
+				exit 0
+			</script>
+		</step>
+		<step no="14.2" type="loop-check" loop-max-times="3" loop-interval="15">
+			<desc>check the route port1 is age timeout first</desc>
+			<log-file>check_timeout3_${loop_check.idx}.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v2" -n</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port3}\s*v2"</log-match>
+		</step>
+		<step no="14.3">
+			<desc>show log buf</desc>
+			<log-file>check_igmp4.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="15.1">
+			<desc>no router-aging-time in the two vlans</desc>
+			<telnet target="sw1">
+				-v "no ip igmp snooping router-aging-time"
+				-v "show ip igmp snooping"
+			</telnet>
+			<log-match>-e "Router port timeout: 250"</log-match>
+		</step>
+		<step no="15.2">
+			<desc>check the mroute table</desc>
+			<telnet target="sw1">
+				-v "sh ip igmp snooping mrouters"
+			</telnet>
+		</step>
+		<step no="16">
+			<desc>port1 sends igmp v2 query pkt first, then wait 50sec and port3 sends igmp v2 query pkt</desc>
+			<log-file>eth2test5.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 1"
+				-v "sleep 50"
+				-v "start_trans_getstats -txPortList ${sw1.port3.ixia_port} -rxPortList ${sw1.port3.ixia_port} -duration 1"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="17.1">
+			<desc>wait for 200sec</desc>
+			<script>
+				sleep 200
+				exit 0
+			</script>
+		</step>
+		<step no="17.2" type="loop-check" loop-max-times="3" loop-interval="3">
+			<desc>check the route port1 is age timeout first</desc>
+			<log-file>check_timeout4${loop_check.idx}.log</log-file>
+			<telnet target="sw1">
+				-v "show ip igmp snooping mrouters"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1}\s*v2" -n</log-match>
+			<log-match>-e "${tb.vlan2}\s*${sw1.port3}\s*v2"</log-match>
+		</step>
+		<step no="17.3">
+			<desc>show log buf</desc>
+			<log-file>check_igmp5.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

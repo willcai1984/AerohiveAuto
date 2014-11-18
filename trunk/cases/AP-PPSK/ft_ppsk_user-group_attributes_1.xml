@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify that the default value of user and user-group is working</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		1. create a user-group
+		2. create a user
+		3. create a password of user
+		4. bind the user to this group
+		5. check the default attribute values of user-group and user
+		sh user, sh user-group, sh run users to make sure [result 1]
+		6. bind this user-group to a PPSK SSID, leaving default-user-profile-attr
+		of the SSID as default.
+		7. bind this ssid to wifi0
+		8. check the PPSK is active, and PMK is ready
+		#sh auth pri to make sure [result 2]
+		9. client connect to this ssid use this PPSK [result 3]
+		10. check the attributes got is correct, the same as default ssid, sh
+		roa ca, sh ssid xxx st, sh auth to make sure [result 4]
+		11. check the traffic is ok, ping gateway to make sure [result 5]
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="default.psk" value="aerohive" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-tkip-psk" />
+	<property name="conn1.psk" value="aerohive" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-create a user-group
+				-create a user
+				-create a password of user
+				-bind the user to this group
+			</desc>
+			<telnet target="ap1">
+				-v "user-group userGroup"
+				-v "user ppsk_user"
+				-v "user ppsk_user password aerohive"
+				-v "user ppsk_user group userGroup"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				show user
+			</desc>
+			<log-file>step1.1_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "ppsk_user *manual" -i "Yes *userGroup"</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step1.2_show_user_group.log</log-file>
+			<telnet target="ap1">
+				-v "show user-group"
+			</telnet>
+			<log-match>-c -i "userGroup" -i "userGroup *8" -p 3 -i "n/a" -p 4 -i "n/a" -p 5 -i "1800" -p 6 -i "MP"</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				show run user
+			</desc>
+			<log-file>step1.3_show_run_user.log</log-file>
+			<telnet target="ap1">
+				-v "show run user"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-Config ap1
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key ${default.psk}"
+				-v "security-object ppsk security private-psk"
+				-v "security-object ppsk security private-psk default-psk-disabled"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-Config ap1
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show ap1's interface wifi0 info
+			</desc>
+			<log-file>show_ap1_interface_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				get ap1's wifi0's mac address
+			</desc>
+			<setvar name="ap1.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_interface_info.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				-check the PPSK is active, and PMK is ready
+			</desc>
+			<log-file>step3_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "ppsk_user *userGroup" -p 5 -i "Yes"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_debug auth info"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="5" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step5_show_logging_buffered.log" />
+
+		<step no="5.1">
+			<desc>
+				-check the logging result
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<log-match>-c -i "Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.mac} thru SSID ${ssid.name}"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) login to SSID(wifi0.1) by user_name=ppsk_user"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				-check the attributes got is correct, the same as default ssid,sh ssid xxx st
+				-make sure vlan is 1,not tb.vlan1(for example :181)
+			</desc>
+			<log-file>step6_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " 1 *Yes *0"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				10. check the attributes got is correct, the same as default ssid, sh
+				roa ca
+			</desc>
+			<log-file>step6.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				10. check the attributes got is correct, the same as default ssid, show auth
+			</desc>
+			<log-file>step6.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "WPA/TKIP" -i "ppsk_user" -i "done"</log-match>
+		</step>
+
+		<include prefix="7" file="subs/sta_ping.xml" args="sta1, ${tb.vlan1.gw}, 5" />
+	</stage>
+</testcase>

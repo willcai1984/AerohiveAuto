@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Configure one hostname in walled garden</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		precondition:
+		-Walled garden is supported by e-cwp currently
+		Test procedure:
+		1:Configure one hostname in walled garden and other relative e-CWP on ap, result 1
+		2:Client accesses the hostname which is configured in walled garden, result  
+		3:Client passes authentication, then accesses the hostname which is configured in walled garden, result 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="url" value="www.sina.com" />
+	<property name="url1" value="https://hztb-hm1.qaauto.aerohive.com/hm/login.action" />
+	<property name="selenium_path" value="/root/selenium-server-standalone-2.42.2.jar" />
+	<stage>
+		<step no="0.1">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "export DISPLAY=:1"
+				-v "nohup java -jar ${selenium_path} 1>logfile.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "printenv"
+			</ssh>
+		</step>
+
+		<step no="1">
+			<desc>
+				1: Configure authentication type CWP (passthrough/e-cwp) on ap
+			</desc>
+			<ssh target="ap1">
+				-v "security-object auto-cwp"
+				-v "security-object auto-cwp security aaa radius-server primary ${pub.radius2.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object auto-cwp security aaa radius-server accounting primary ${pub.radius2.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object auto-cwp security additional-auth-method captive-web-portal auth-user-profile-attr 1"
+				-v "security-object auto-cwp web-server"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object auto-cwp"
+				-v "security-object auto-cwp walled-garden hostname  hztb-hm1.qaauto.aerohive.com"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile 1 qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "_debug auth all"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>step1.1_show_interface_wifi0_info.log</log-file>
+			<ssh target="ap1" timeout="180">
+				-v "show interface ${ssid_bind_interface}"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>Get ap1's wifi0‘s mac</desc>
+			<setvar name="ap1.wifi0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_wifi0_info.log -i ${ssid_bind_interface} -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				open debug mode and clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "_debug cgic basic"
+				-v "_debug auth all"
+				-v "_kdebug fe detail"
+				-v "_ff dst-port 80"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				client request a web page and get the page from walled-garden'hostname
+			</desc>
+			<log-file>cwp_walled_garden_hostname.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/AerohiveGUI/scripts/cwp/cwp_login.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters login.is_permit=true visit.url=${url} visit.permit_url=${url1} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -l info -f ${log.dir}/${log.file}
+			</script>
+		</step>
+		<step no="4">
+			<desc>Get laptop1's ip after authentication</desc>
+			<setvar name="sta1.tif.ip.auth">
+				python ${bin.dir}/getinfo_ip.py -d '${sta1.mif.ip}' -i '${sta1.tif.name}' -v 'ip' -u 'root'
+			</setvar>
+		</step>
+		<step no="5">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step5_show_roam.log</log-file>
+			<ssh target="ap1">
+				-v "show roam cache"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "${sta1.tif.mac}" -i "YYNN"</log-match>
+		</step>
+		
+		<step no="6" delay="60">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step6_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -e "${sta1.tif.mac}\s*${ssid_bind_interface}.*\s*\d*04\s*${sta1.tif.ip.auth}" -re</log-match>
+		</step>
+	</stage>
+</testcase>

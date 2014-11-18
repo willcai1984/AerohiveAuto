@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check if box will switch dfs channel after encounter radar when there is client.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Set wifi1 mode to access
+		Set country code to 826
+		Test Procedure:
+		5. enable dfs
+		6. set wifi1 channel to dfs channel,there is a client.
+		7. simulate dfs with cli:
+		int wifi1 _bang
+		8. check if box will switch channel
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<stage>
+		<if>"${ap1.wifi1.existed}" == "true"</if>	
+		<step no="0">
+			<desc>
+				change the region code.
+				"boot-param region world"
+				"boot-param country-code 826"
+				"Note: To apply radio setting for the new country code, you must reboot the HiveAP.
+				Do you want to reboot it now? &lt;Y/N&gt;y"
+			</desc>
+			<console target="ap1">
+				-v "boot-param region world"
+				-v "boot-param country-code 826"
+			</console>
+		</step>
+		<step no="1">
+			<desc>
+				Initial configuration:
+				"radio profile na"
+				"radio profile na phymode 11na"
+				"interface wifi1 radio profile na"
+				"radio profile ng"
+				"radio profile ng phymode 11ng"
+				"radio profile na dfs"
+				"interface wifi0 radio profile ng"
+				"ssid test"
+			</desc>
+			<log-file>ap_config_1.log</log-file>
+			<console target="ap1">
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}1"
+				-v "interface wifi1 ssid ${ssid.name}1"
+				-v "radio profile na"
+				-v "radio profile na phymode 11na"
+				-v "radio profile na dfs"
+				-v "interface wifi1 radio profile na"
+				-v "interface wifi1 radio channel 52"
+				-v "save config"
+			</console>
+		</step>
+		<property name="conn1.pif" value="wifi1" />
+		<property name="conn1.channel" value="52" />
+		<property name="conn1.ssid" value="${ssid.name}1" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="11" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+
+		<step no="12" delay="20">
+			<desc>Show ssid station in AP1  </desc>
+			<log-file>show_wifi0_ssid_station.log</log-file>
+			<console target="ap1" prompt="AH.*#|Total station count.*#" timeout="80">
+				-v "show ssid ${ssid.name}1 station"
+				-v ""
+			</console>
+
+		</step>
+		<step no="13">
+			<desc>Get laptop1 ip in AP1  </desc>
+			<setvar name="laptop1.ip.in.ap">
+				${bin.dir}/getstring.pl -f ${log.dir}/show_wifi0_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+		
+		<step no="14">
+			<desc>Compare laptop1 show ip to AP1 show station ip  </desc>
+			<script>
+				echo "${laptop1.ip.in.ap} != ${sta1.tif.ip}"
+				if [ "${laptop1.ip.in.ap}" != "${sta1.tif.ip}" ]
+				then
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="15">
+			<desc>open debug</desc>
+			<log-file>open_debug.log</log-file>
+			<console target="ap1">
+				-v "_debug dcd chnl"
+			</console>
+		</step>
+		<step no="16">
+			<desc>simulate radar</desc>
+			<log-file>radar.log</log-file>
+			<console target="ap1">
+				-v "interface wifi1 _bang"
+			</console>
+		</step>
+		<step no="17">
+			<desc>show log buffer	</desc>
+			<log-file>show_wifi1_logbuffer.log</log-file>
+			<console target="ap1">
+				-v "show logging buffer | include Radar"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "wifi1" -i "ACSP DFS Radar found on chan" -i "switch to chan "</log-match>
+		</step>
+	</stage>
+	
+	<post-process>
+        <stage>
+            <step no="10">
+                <desc>
+                change the region code.
+              </desc>
+              <console target="ap1">
+                -v "boot-param region FCC"
+                -v "reset config"
+            </console>
+        </step>
+        </stage>
+        <include prefix="def_post" file="include/default_post_process.xml" />
+  </post-process> 
+	
+</testcase>

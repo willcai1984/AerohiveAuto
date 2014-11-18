@@ -1,0 +1,373 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Disassociate wifix to ssid, should remove all the group membership lists on the ssid at once </brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Active multicast souce stream is: 238.1.1.1
+		On portal:
+		Ssid A, binding to wifi0
+		Ssid B, binding to wifi1
+		Laptop1 connects to ssidA, and be authenticated
+		Laptop2 connects to ssidB, and be authenticated
+
+		Test Procedure:
+		1. Laptop1 and laptop2 both report to join group 238.1.1.1, check group
+		membership table on portal
+		2. Disconnect wifi0 to ssid A, check group membership table on portal
+		Cli: no interface wifi0 ssid A
+		3. Disconnect wifi1 to ssid B, check group membership table on portal
+		Cli: no interface wifi1 ssid B
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				On portal:
+				Ssid A, binding to wifi0
+				Laptop1 connects to ssidA, and be authenticated
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name} multicast conversion-to-unicast auto"
+				-v "ssid ${ssid.name} multicast member-threshold 1"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="2.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="2.2" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<step no="2.3">
+			<desc>Get sta1's ip</desc>
+			<setvar name="sta1.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta1.log -i ${sta1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				get sta1's mac with two delimiter style
+			</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				On portal:
+				Ssid B, binding to wifi1
+				Laptop2 connects to ssidB, and be authenticated
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}_1"
+				-v "interface wifi1 ssid ${ssid.name}_1"
+				-v "interface wifi1 radio channel 36"
+				-v "ssid ${ssid.name}_1 multicast conversion-to-unicast auto"
+				-v "ssid ${ssid.name}_1 multicast member-threshold 1"
+			</telnet>
+		</step>
+
+		<include prefix="4" file="subs/wpa_supplicant_start.xml" args="sta2" />
+
+		<step no="4.1">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta2" prompt=">|.*#">
+				-v "ifconfig ${sta2.tif.name} up"
+				-v "iwconfig ${sta2.tif.name} channel 36"
+				-v "iwconfig ${sta2.tif.name} commit"
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}_1\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="4.2" file="subs/chk_conn_in_sta.xml" args="sta2" />
+
+		<step no="4.3">
+			<desc>Get sta2's ip</desc>
+			<setvar name="sta2.tif.ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig_sta2.log -i ${sta2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				get sta2's mac with two delimiter style
+			</desc>
+			<setvar name="sta2.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta2.mif.ip} -u ${sta2.user} -p ${sta2.passwd} -i ${sta2.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				Laptop1 report to join group 238.1.1.1,
+			</desc>
+			<log-file>step5_join_group.log</log-file>
+			<ssh target="sta1">
+				-v "nohup ./mrecv -d ${pub.mtcast1.group1.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="5.1" delay="5">
+			<desc>
+				"show interface wifi0 multicast"
+			</desc>
+			<log-file>step5.1_show_interface_wifi0_multicast.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 multicast"
+			</telnet>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				get the number of transmitted Multicast packet(s) number
+			</desc>
+			<setvar name="wifi0.transmit.multicast.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.1_show_interface_wifi0_multicast.log -p "Transmitted Multicast packet\(s\) number:\s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5.2.1">
+			<desc>
+				get the number of Multicast conversion to unicast packet(s) number
+			</desc>
+			<setvar name="wifi0.transmit.unicast.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.1_show_interface_wifi0_multicast.log -p "Multicast conversion to unicast packet\(s\) number: \s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				get pid of "mrecv" on sta1
+			</desc>
+			<setvar name="sta1.join.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_join_group.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5.4" delay="60">
+			<desc>
+				"show interface wifi0 multicast" to check multicast group’s membership table on portal
+			</desc>
+			<log-file>step5.4_check_group_membership.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 multicast"
+			</telnet>
+			<log-match>-e "Group IP address : ${pub.mtcast1.group1.ip}"</log-match>
+			<log-match>-e "Group MAC address : ${pub.mtcast1.group1.mac}"</log-match>
+			<log-match>-c -e "MAC Address : ${sta1.tif.mac} *IP Address : ${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="5.5">
+			<desc>
+				get the number of transmitted Multicast packet(s) number after 60 seconds
+			</desc>
+			<setvar name="wifi0.transmit.multicast.number.second">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.4_check_group_membership.log -p "Transmitted Multicast packet\(s\) number:\s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5.6">
+			<desc>
+				check transmit number,if the number > 500,return true,else false.
+			</desc>
+			<log-file>step5.6_check_transmit_number.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.4_check_group_membership.log -p "Multicast conversion to unicast packet\(s\) number: \s*(\d+)" --script "int(m.group(1))+${wifi0.transmit.multicast.number.second}-${wifi0.transmit.unicast.number}-${wifi0.transmit.multicast.number} &gt; 500" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				Laptop2 report to join group 238.1.1.1,
+			</desc>
+			<log-file>step6_join_group.log</log-file>
+			<ssh target="sta2">
+				-v "nohup ./mrecv -d ${pub.mtcast1.group1.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="6.1" delay="5">
+			<desc>
+				"show interface wifi1 multicast"
+			</desc>
+			<log-file>step6.1_show_interface_wifi1_multicast.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 multicast"
+			</telnet>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				get the number of transmitted Multicast packet(s) number
+			</desc>
+			<setvar name="wifi1.transmit.multicast.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6.1_show_interface_wifi1_multicast.log -p "Transmitted Multicast packet\(s\) number:\s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.2.1">
+			<desc>
+				get the number of Multicast conversion to unicast packet(s) number
+			</desc>
+			<setvar name="wifi1.transmit.unicast.number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6.1_show_interface_wifi1_multicast.log -p "Multicast conversion to unicast packet\(s\) number: \s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				get pid of "mrecv" on sta2
+			</desc>
+			<setvar name="sta2.join.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_join_group.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.4" delay="60">
+			<desc>
+				"show interface wifi1 multicast" to check multicast group’s membership table on portal
+			</desc>
+			<log-file>step6.4_check_group_membership.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 multicast"
+			</telnet>
+			<log-match>-e "Group IP address : ${pub.mtcast1.group1.ip}"</log-match>
+			<log-match>-e "Group MAC address : ${pub.mtcast1.group1.mac}"</log-match>
+			<log-match>-c -e "MAC Address : ${sta2.tif.mac} *IP Address : ${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="6.5">
+			<desc>
+				get the number of transmitted Multicast packet(s) number after 60 seconds
+			</desc>
+			<setvar name="wifi1.transmit.multicast.number.second">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6.4_check_group_membership.log -p "Transmitted Multicast packet\(s\) number:\s*(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.6">
+			<desc>
+				check transmit number,if the number > 500,return true,else false.
+			</desc>
+			<log-file>step6.6_check_transmit_number.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6.4_check_group_membership.log -p "Multicast conversion to unicast packet\(s\) number: \s*(\d+)" --script "int(m.group(1))+${wifi1.transmit.multicast.number.second}-${wifi1.transmit.unicast.number}-${wifi1.transmit.multicast.number} &gt; 500" > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "True"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				Disconnect wifi0 to ssid A, check group membership table on portal
+				Cli: no interface wifi0 ssid A
+			</desc>
+			<telnet target="ap1">
+				-v "no interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				"show interface wifi0 multicast" to check multicast group’s membership table on portal
+			</desc>
+			<log-file>step7.1_check_group_membership.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 multicast"
+			</telnet>
+			<log-match>-n -e "Group IP address :"</log-match>
+			<log-match>-n -e "Group MAC address :"</log-match>
+			<log-match>-n -c -e "MAC Address : ${sta1.tif.mac} *IP Address : ${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				"show interface wifi1 multicast" to check multicast group’s membership table on portal
+			</desc>
+			<log-file>step7.2_check_group_membership.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 multicast"
+			</telnet>
+			<log-match>-e "Group IP address : ${pub.mtcast1.group1.ip}"</log-match>
+			<log-match>-e "Group MAC address : ${pub.mtcast1.group1.mac}"</log-match>
+			<log-match>-c -e "MAC Address : ${sta2.tif.mac} *IP Address : ${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				Disconnect wifi1 to ssid B, check group membership table on portal
+				Cli: no interface wifi1 ssid B
+			</desc>
+			<telnet target="ap1">
+				-v "no interface wifi1 ssid ${ssid.name}_1"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				"show interface wifi1 multicast" to check multicast group’s membership table on portal
+			</desc>
+			<log-file>step8.1_check_group_membership.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1 multicast"
+			</telnet>
+			<log-match>-n -e "Group IP address :"</log-match>
+			<log-match>-n -e "Group MAC address :"</log-match>
+			<log-match>-n -c -e "MAC Address : ${sta2.tif.mac} *IP Address : ${sta2.tif.ip}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<include file="include/default_post_process.xml" />
+
+		<stage>
+			<step no="0">
+				<desc>
+					kill process which run in background.
+				</desc>
+				<ssh target="sta1">
+					-v "kill ${sta1.join.pid}"
+				</ssh>
+			</step>
+
+			<step no="0.1">
+				<desc>
+					kill process which run in background.
+				</desc>
+				<ssh target="sta2">
+					-v "kill ${sta2.join.pid}"
+				</ssh>
+			</step>
+		</stage>
+	</post-process>
+</testcase>

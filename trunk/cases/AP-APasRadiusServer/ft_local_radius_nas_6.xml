@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Mixed use with static and auto shared-secret</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-AP1 use static share secret
+		-AP3 use auto share secret
+		-radius server config a nas with AP1
+		-config a 802.1x ssid both on AP1 and AP3
+
+		Test Procedure:
+		-client connect to ssid
+		-check the debug info on auth side
+	</description>
+	<numofap>3</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="auto" />
+	<property name="conn1.passwd" value="aerohive" />
+	<property name="conn2.ssid" value="${ssid.name}_ap3" />
+	<property name="conn2.proto" value="wpa2-aes-8021x" />
+	<property name="conn2.username" value="auto" />
+	<property name="conn2.passwd" value="aerohive" />
+
+	<stage>
+		<step no="1">
+			<desc>set security-object parameters</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "ssid ${ssid.name}"
+				-v "security-object autoap security aaa radius-server primary ${ap2.mgt0.ip} shared-secret aerohive"
+				-v "interface wifi0 radio channel 1"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile aaa vlan-id 1 attr 1"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>Set radius service on DUT2</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "user-group autotest"
+				-v "user auto"
+				-v "user auto pass aerohive"
+				-v "user auto group autotest"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "ssid ${ssid.name}_nas"
+				-v "security-object autoap security aaa radius primary ${ap2.mgt0.ip}"
+				-v "ssid ${ssid.name}_nas security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}_nas"
+				-v "aaa radius-server local db-type local"
+				-v "aaa radius-server local user-group autotest"
+				-v "aaa radius-server local nas ${ap1.mgt0.ip} shared-key aerohive"
+				-v "aaa radius-server local shared-secret-auto-gen"
+				-v "aaa radius-server local enable"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile aaa vlan-id 1 attr 1"
+				-v "_debug auth all"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-config a ssid with 802.1x on ap3
+			</desc>
+			<telnet target="ap3">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "ssid ${ssid.name}_ap3"
+				-v "security-object autoap security aaa radius primary ${ap2.mgt0.ip}"
+				-v "ssid ${ssid.name}_ap3 security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}_ap3"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile aaa vlan-id 1 attr 1"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>show status of the radius server</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap2">
+				-v "show aaa radius-server NAS"
+			</telnet>
+			<log-match>-i "${ap1.mgt0.ip}"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>enable radius debug on AP2</desc>
+			<telnet target="ap2">
+				-v "_debug radiusd excessive"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>show logging buffered</desc>
+			<log-file>show_debug.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "RADIUS: accepted user 'auto' through the NAS at ${ap1.mgt0.ip}."</log-match>
+			<log-match>-i "NAS-IP-Address = ${ap1.mgt0.ip}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="7.1">
+			<desc>clear log</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="8" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap3" />
+
+		<step no="9">
+			<desc>show logging buffered</desc>
+			<log-file>step9_show_debug.log</log-file>
+			<telnet target="ap2" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-i "RADIUS: accepted user 'auto' through the NAS at ${ap3.mgt0.ip}."</log-match>
+			<log-match>-i "NAS-IP-Address = ${ap3.mgt0.ip}"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,316 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=4) Static entry:  add/delete static entry for unicast manually for same vlan/ different mac</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	
+
+		IXIA port1+++++(access)switch(access)++++++IXIA port2
+		+                  +    
+		+                   +
+		IXIA port3         IXIA port4
+		Description	Static entry:  add/delete static entry for unicast manually for same vlan/ different mac
+		Platform Dependence	Chesapeake
+		Pre-condition	?	FDB table size doesn’t exceed
+		?	IXIA port1 connect to switch access port1, pvid 10
+		?	IXIA port2 connect to switch access port2, pvid 10
+		?	IXIA port3 connect to switch access port3, pvid 10
+		?	IXIA port4 connect to switch access port4, pvid 20
+		?	IXIA port5 connect to switch access port5, pvid 20
+		?	Switch access ports are with learning/forwarding state
+		Test procedure	1.	Add a static unicast mac entry  for port1, port2
+		CLI: mac-address-table static  0000-1111-2222  vlan 10  interface g/1/1
+		mac-address-table static 0000-3333-4444 vlan 10 interface g/1/2
+		2.	Check FDB table for port g/1/1, g/1/2      Result1
+
+		3.	Set IXIA port1,port2 to capture frames, IXIA port3 to monitor whether the frames are flooding
+		4.	IXIA port1 send a unicast frames with dst mac 0000-3333-4444, capture frames on IXIA port2，port3       Result2
+		5.	IXIA port2 send a unicast frames with dst mac 0000-1111-2222, capture frames on IXIA port1 ,port3   Result3
+
+		6.	delete a static unicast mac entry with mac 0000-3333-4444 for port2 manually                  Result4
+		CLI: no mac-address-table static  0000-3333-4444  vlan 10  interface g/1/2
+
+		7.	set IXIA port2,port3 to capture frames
+		8.	IXIA port1 send a unicast frames with dst mac 0000-3333-4444        Result5
+
+		9.	Mac 0000-1111-2222 don’t have the mac entry in vlan 20
+		10.	Set IXIA port1, IXIA port5 to capture frames
+		11.	IXIA port4 send a unicast frames with dst mac 0000-1111-2222      
+		12.	check the packets forwarding            Result6
+		Expect result	Result1:   the mac entries can be added success.  
+		[0000-1111-2222, vlan10, port1]
+		[0000-3333-4444, vlan10, port2]
+
+		Result2:   IXIA port2 should receive the frames
+		IXIA port3 don’t receive the frames
+
+		Result3:   IXIA port1 should receive the frames
+		IXIA port3 don’t receive the frames
+
+		Result4:  the mac entry removed success
+
+		Result5:   the mac entry for dst mac 0000-3333-4444 in vlan10 is removed from HW/SW table, so flooding the frames to all ports in vlan10.
+		Both IXIA port2, port3 should receive the frames.
+
+		Result6:   IXIA port1 should not receive the frames sent from IXIA port4
+		IXIA port5 should receive the frames sent from IXIA port4, because the frames is flooding in vlan 20.
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0012"/>
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				configure three access ports in same vlans, port1, port2 and port3
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan1}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show mac-address-table all"
+				-v "show interface"
+			</telnet>
+		</step>
+		<step no="1.2">
+			<desc>reset ixia port</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="1.3">
+			<desc>
+				configure static mac addr on switch
+			</desc>
+			<telnet target="sw1">
+				-v "mac-address-table static ${sw1.port1.ixia_port.mac} vlan ${tb.vlan1} interface ${sw1.port1}"
+				-v "mac-address-table static ${sw1.port2.ixia_port.mac} vlan ${tb.vlan1} interface ${sw1.port2}"
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port1.ixia_port.mac}\s*${sw1.port1}\s*yes"</log-match>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port2.ixia_port.mac}\s*${sw1.port2}\s*yes"</log-match>
+		</step>
+		<step no="2.1">
+			<desc>
+				port1 sends pkts with src-mac ${sw1.port1.ixia_port.mac} to dst-mac ${sw1.port2.ixia_port.mac} 
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port}
+				-mac_dst ${sw1.port2.ixia_port.mac}
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port1.ixia_port} -oneRxPort ${sw1.port2.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port1.ixia_port} -oneRxPort ${sw1.port3.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				analyse statistics on rxport, only port2 received pkt from port3 
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port1.ixia_port} ${sw1.port2.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port1.ixia_port} ${sw1.port3.ixia_port} framesSent userDefinedStat2 result is block"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				port2 sends pkts with src-mac ${sw1.port2.ixia_port.mac} to dst-mac ${sw1.port1.ixia_port.mac} 
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId all -maintanceOp disable"
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port}
+				-mac_dst ${sw1.port1.ixia_port.mac}
+				-mac_src ${sw1.port2.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port},${sw1.port3.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port1.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port3.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				analyse statistics on rxport, only port2 received pkt from port3 
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port1.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port3.ixia_port} framesSent userDefinedStat2 result is block"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				delete a mac entrance ${sw1.port2.ixia_port.mac}
+			</desc>
+			<telnet target="sw1">
+				-v "no mac-address-table static ${sw1.port2.ixia_port.mac} vlan ${tb.vlan1}"
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-e "${tb.vlan1}\s*${sw1.port2.ixia_port.mac}\s*${sw1.port2}" -n</log-match>
+		</step>	
+		<step no="5.1">
+			<desc>
+				port1 sends pkt with dst-mac ${sw1.port2.ixia_port.mac} in vlan${tb.vlan1} 
+			</desc>
+			<log-file>eth2test3.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId all -maintanceOp disable"
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port}
+				-mac_dst ${sw1.port2.ixia_port.mac}
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port2.ixia_port},${sw1.port3.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port1.ixia_port} -oneRxPort ${sw1.port2.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port1.ixia_port} -oneRxPort ${sw1.port3.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="5.2">
+			<desc>
+				analyse statistics on rxport, port2 and port3 both received 
+			</desc>
+			<log-file>eth2test3.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port1.ixia_port} ${sw1.port2.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port1.ixia_port} ${sw1.port3.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+		<step no="6">
+			<desc>
+				change the port2 and port3 to vlan${tb.vlan2} on switch
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan2}"
+				-v "interface ${sw1.port2} switchport access vlan ${tb.vlan2}"
+				-v "interface ${sw1.port3} switchport access vlan ${tb.vlan2}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan1}"
+				-v "show vlan id ${tb.vlan2}"
+				-v "show mac-address-table all"	
+			</telnet>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				port2 sends pkt with dst-mac ${sw1.port1.ixia_port.mac} 
+			</desc>
+			<log-file>eth2test4.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port3.ixia_port} -streamId all -maintanceOp disable"
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port}
+				-mac_dst ${sw1.port1.ixia_port.mac}
+				-mac_src ${sw1.port2.ixia_port.mac}
+				-eth2_protocol 0x0800
+				-udf_offset 34
+				-patternOffset2 34"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port},${sw1.port3.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port1.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port3.ixia_port}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="7.2">
+			<desc>
+				analyse statistics on rxport, only port3 received 
+			</desc>
+			<log-file>eth2test4.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port1.ixia_port} framesSent userDefinedStat2 result is blocked"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port3.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

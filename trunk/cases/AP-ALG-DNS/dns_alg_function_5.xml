@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>The mac-session and ip-session can not be removed immediately when AP receive one invalid DNS request packet or receive corresponding DNS response packet.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+		-Configure on AP
+		“security-object cw-330-1”
+		“security-object cw-330-1 security protocol-suite wpa-auto-psk ascii-key 12345678”
+		“security-object cw-330-1 default-user-profile-attr 1”
+		“ssid cw-330-1”
+		“ssid cw-330-1 security-object cw-330-1”
+		“interface wifi0 ssid cw-330-1”
+		“interface wifi1 ssid cw-330-1”
+		“user-profile cw-330-1 qos-policy def-user-qos vlan-id 1 attribute 1”
+		“alg dns enable”
+		Laptop connect to AP
+
+		Test Procedure:
+
+		1.Open debug switch
+		2.Laptop send invalid DNS request packet twice
+		3.Look up mac-session and logs on AP
+		4.Laptop send DNS request and get reply(such as ping www.baidu.com)
+		5.Look up mac-session and logs on AP
+		6.Laptop send invalid DNS request packet twice
+		7.Look up ip-session and logs on AP
+		8.Laptop send DNS request and get reply(such as ping www.baidu.com)
+		9.Look up ip-session and logs on AP
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="invalid.dns.sour.port" value="200" />
+	<stage>
+
+		<step no="1.1">
+			<desc>
+				-Configure AP1 via console
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "ip-policy fw"
+				-v "ip-policy fw service dns action permit"
+				-v "ip-policy fw service dhcp-client action permit"
+				-v "ip-policy fw service dhcp-server action permit"
+				-v "ip-policy fw service icmp action permit"
+				-v "user-profile ${ssid.name} security ip-policy from-access fw to-access fw"
+				-v "alg dns enable"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+		<include prefix="1.3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+
+		<step no="2.1">
+			<desc>
+				-Show laptop1's dns info
+			</desc>
+			<log-file>sta1.dns.log</log-file>
+			<ssh target="sta1" timeout="80">
+				-v "cat /etc/resolv.conf"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				-Get laptop1's dns IP
+			</desc>
+			<setvar name="sta1.dns.ip">
+				python ${bin.dir}/getbyrexp.py -p "nameserver (\d+\.\d+\.\d+\.\d+)" -f ${log.dir}/sta1.dns.log -t str
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-Open alg debug switch and clear log buffer clear mac/ip session
+			</desc>
+			<ssh target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+				-v "_debug fed alg_dns_pkt"
+				-v "_debug fed alg_dns_error"
+				-v "clear log buffered"
+			</ssh>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				-Laptop send invalid DNS request packet(Hping)
+			</desc>
+			<ssh target="sta1">
+				-v "hping3 ${sta1.dns.ip} -2 -I wlan0 -s ${invalid.dns.sour.port} -p 53 -d 100 -c 1 -k"
+			</ssh>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				-Check log if the invalid DNS packets get to ALG
+			</desc>
+			<log-file>step3.3_invalid_DNS_request_log.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "\[fed_alg_dns_error\]: Received invalied DNS packet, packet length is \d+" -c 1 -f ${log.dir}/${log.file}</log-match> -->
+		</step>
+
+		<!-- <step no="3.4"> -->
+		<!-- <desc> -->
+		<!-- -Show mac-session if the DNS session is alive -->
+		<!-- </desc> -->
+		<!-- <log-file>step3.4_mac_session_AP_log.log</log-file> -->
+		<!-- <ssh target="ap1"> -->
+		<!-- -v "show forwarding-engine mac-sessions" -->
+		<!-- </ssh> -->
+		<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.vlan1.gw.mac}->${sta1.tif.mac},eth[01]" -c 1 -f ${log.dir}/${log.file}</log-match> -->
+		<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac}->${tb.vlan1.gw.mac},wifi[01]\.\d+" -c 1 -f ${log.dir}/${log.file}</log-match> -->
+		<!-- </step> -->
+
+		<!-- <step no="3.5"> -->
+		<!-- <desc> -->
+		<!-- -Show ip-session if the DNS session is alive -->
+		<!-- </desc> -->
+		<!-- <log-file>step3.5_ip_session_AP_log.log</log-file> -->
+		<!-- <ssh target="ap1"> -->
+		<!-- -v "show forwarding-engine ip-sessions" -->
+		<!-- </ssh> -->
+		<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/${invalid.dns.sour.port} -> ${sta1.dns.ip}/53" -c 1 -f ${log.dir}/${log.file}</log-match> -->
+		<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.dns.ip}/53 -> ${sta1.tif.ip}/${invalid.dns.sour.port}" -c 1 -f ${log.dir}/${log.file}</log-match> -->
+		<!-- </step> -->
+
+		<!-- <step no="4.1"> -->
+		<!-- <desc> -->
+		<!-- -Clear mac/ip sessions clear log buffer -->
+		<!-- </desc> -->
+		<!-- <ssh target="ap1"> -->
+		<!-- -v "clear forwarding-engine ip-sessions" -->
+		<!-- -v "clear forwarding-engine mac-sessions" -->
+		<!-- -v "clear log buffered" -->
+		<!-- </ssh> -->
+		<!-- </step> -->
+
+		<!-- <step no="4.2"> -->
+		<!-- <desc> -->
+		<!-- -Laptop send DNS request packet to dns server and get the reply packet -->
+		<!-- </desc> -->
+		<!-- <ssh target="sta1"> -->
+		<!-- -v "ping hztb-ip2 -c 1" -->
+		<!-- </ssh> -->
+		<!-- </step> -->
+
+		<!-- <step no="4.3"> -->
+		<!-- <desc> -->
+		<!-- -Check log if the DNS reply packets get to ALG -->
+		<!-- </desc> -->
+		<!-- <log-file>step4.3_DNS_reply_log.log</log-file> -->
+		<!-- <ssh target="ap1"> -->
+		<!-- -v "show logging buffered" -->
+		<!-- </ssh> -->
+		<!-- <no-error-check /> -->
+		<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p ".*\[fed_alg_dns_pkt\]: Received packet.*src ip:${sta1.dns.ip}.*src port:53.*dst ip:${sta1.tif.ip}.*protocol:17" -f ${log.dir}/${log.file}</log-match> -->
+		<!-- </step> -->
+
+		<!-- <step no="4.4"> -->
+		<!-- <desc> -->
+		<!-- -Show mac-session if the DNS session is alive -->
+		<!-- </desc> -->
+		<!-- <log-file>step4.4_mac_session_AP_log.log</log-file> -->
+		<!-- <ssh target="ap1"> -->
+		<!-- -v "show forwarding-engine mac-sessions" -->
+		<!-- </ssh> -->
+		<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.vlan1.gw.mac}->${sta1.tif.mac},eth[01]" -c 1 -f ${log.dir}/${log.file}</log-match> -->
+		<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac}->${tb.vlan1.gw.mac},wifi[01]\.\d+" -c 1 -f ${log.dir}/${log.file}</log-match> -->
+		<!-- </step> -->
+
+		<!-- <step no="4.5"> -->
+		<!-- <desc> -->
+		<!-- -Get dns packet source port -->
+		<!-- </desc> -->
+		<!-- <setvar name="effect.dns.sour.port"> -->
+		<!-- awk '/Received packet.*src port:53/ {print $(NF-1)}' ${log.dir}/step4.3_DNS_reply_log.log | awk 'NR==1' | sed 's/[^0-9]//g' -->
+		<!-- </setvar> -->
+		<!-- </step> -->
+
+		<!-- <step no="4.6"> -->
+		<!-- <desc> -->
+		<!-- -Show ip-session if the DNS session is alive -->
+		<!-- </desc> -->
+		<!-- <log-file>step4.5_ip_session_AP_log.log</log-file> -->
+		<!-- <ssh target="ap1"> -->
+		<!-- -v "show forwarding-engine ip-sessions" -->
+		<!-- </ssh> -->
+		<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/${effect.dns.sour.port} -> ${sta1.dns.ip}/53" -c 1 -f ${log.dir}/${log.file}</log-match> -->
+		<!-- <log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.dns.ip}/53 -> ${sta1.tif.ip}/${effect.dns.sour.port}" -c 1 -f ${log.dir}/${log.file}</log-match> -->
+		<!-- </step> -->
+	</stage>
+</testcase>

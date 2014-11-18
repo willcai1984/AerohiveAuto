@@ -1,0 +1,370 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Roam after COA disconnect</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a ssid with radius auth
+		-ssid enable dynamic-auth-extension, accounting
+		-ssid is active
+
+		Test Procedure:
+		-STA1 connect to the ssid on AP1
+		-client pass the cwp auth, got attributes correctly
+		-change the account password on GM(radius server) side
+		-radius server sends a COA-disconnet
+		-make sure the client will not automatically reconnect
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<include prefix="start_selenium_server" file="subs/start_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<include prefix="0" file="subs/ldap_add.xml" args="${job.sid}-aerohive, aerohive" />
+
+		<step no="1">
+			<desc>
+				-config e-CWP on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "security-object in_cwp"
+				-v "security-object in_cwp default-user-profile-attr 1"
+				-v "security-object in_cwp security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal auth-user-profile-attr 1 timer-display"
+				-v "security-object in_cwp default-user-profile-attr 1"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal external-server primary login-page http://${pub.ecwp1.ip}/weblogin.php/7"
+				-v "security-object in_cwp walled-garden ip-address ${pub.ecwp1.ip}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal failure-redirect login-page"
+				-v "security-object in_cwp web-server"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal timer-display alert 10"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-config a ssid
+			</desc>
+			<telnet target="ap1">
+				-v "security-object in_cwp security aaa radius-server dynamic-auth-extension"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object in_cwp"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config e-cwp on ap2
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "security-object in_cwp"
+				-v "security-object in_cwp default-user-profile-attr 1"
+				-v "security-object in_cwp security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal auth-user-profile-attr 1 timer-display"
+				-v "security-object in_cwp default-user-profile-attr 1"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal external-server primary login-page http://${pub.ecwp1.ip}/weblogin.php/7"
+				-v "security-object in_cwp walled-garden ip-address ${pub.ecwp1.ip}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal failure-redirect login-page"
+				-v "security-object in_cwp web-server"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal timer-display alert 10"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-config a ssid
+			</desc>
+			<telnet target="ap2">
+				-v "security-object in_cwp security aaa radius-server dynamic-auth-extension"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object in_cwp"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show ap2's interface wifi0 info
+			</desc>
+			<log-file>show_ap2_interface_info.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi0"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				get ap2's wifi0's mac address
+			</desc>
+			<setvar name="ap2.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_interface_info.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>station_log_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${job.sid}-aerohive login.password=aerohive -t ff -f ${log.dir}/${log.file} -l info --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				- 'sh ssid xxx sta',
+			</desc>
+			<log-file>step5_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i " 1 *yes *1 " </log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				-'sh roa ca'
+			</desc>
+			<log-file>step6_show_roaming.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YYNN"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-'sh auth'
+			</desc>
+			<log-file>step6.1_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *wifi0.1 *04 *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				-show sta1's ip
+			</desc>
+			<log-file>step6.2_ipconfig.log</log-file>
+			<staf target="sta1">
+				-v "ipconfig /all"
+			</staf>
+		</step>
+
+		<step no="6.3">
+			<desc>get mac from client with five dash</desc>
+			<setvar name="sta1.tif.mac_5dash">
+				${bin.dir}/getrmtip.pl perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step6.2_ipconfig.log -i ${sta1.tif.name} -o win -m -dash -uppercase
+			</setvar>
+		</step>
+
+		<step no="6.4">
+			<desc>show intface wifi0 on ap1</desc>
+			<log-file>show_interface.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+			</telnet>
+		</step>
+
+		<step no="6.5">
+			<desc>get mac from bssid of wifi0.1</desc>
+			<setvar name="ssid.wifi0.bssid">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface.log -o aero -i wifi0.1 -m -dash -uppercase
+			</setvar>
+		</step>
+
+		<step no="6.6">
+			<desc>enable auth debug to check COA</desc>
+			<telnet target="ap1">
+				-v "_debug auth all"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<include prefix="7" file="subs/ldap_delete.xml" args="${job.sid}-aerohive" />
+
+		<include prefix="8" file="subs/ldap_add.xml" args="${job.sid}-aerohive, aerohive123" />
+
+		<step no="9">
+			<desc>sent coa disconnect request from radius server</desc>
+			<log-file>coa_disc_svr.log</log-file>
+			<ssh host="${pub.radius1.ip}" prompt=".*#">
+				-v "echo -e \"Calling-Station-Id=${sta1.tif.mac_5dash}\\nCalled-Station-Id=${ssid.wifi0.bssid}:${ssid.name}\" | radclient -x ${ap1.mgt0.ip}:3799 disconnect aerohive"
+			</ssh>
+			<log-match>-i "Disconnect-ACK"</log-match>
+		</step>
+
+		<step no="10" delay="2">
+			<desc>show roaming cache</desc>
+			<log-file>step10_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache mac ${sta1.tif.mac}"
+			</telnet>
+			<log-match>-c -i "CWP flag: not set"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>show roaming cache</desc>
+			<log-file>step10.1_show_roaming_cache.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming cache mac ${sta1.tif.mac}"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "CWP flag: not set"</log-match>
+		</step>
+
+		<step no="10.2">
+			<desc>check debug on AP</desc>
+			<log-file>step10.2_show_roaming_cache.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Received a Disconnect request from radius server ${pub.radius1.ip}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Try to disassoc ${sta1.tif.mac} from.*?for ssid ${ssid.name} because auth receives COA disconnect message" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Send a Disconnect-Ack message to ${pub.radius1.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				up interface wifi0 on ap2
+			</desc>
+			<telnet target="ap2">
+				-v "no interface wifi0 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				shutdown interface wifi0 on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="12" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show station on ap2
+			</desc>
+			<log-file>step12_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="12.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step12.1_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="13" delay="30">
+			<desc>
+				Show roaming cache
+			</desc>
+			<log-file>step13_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${ap2.wifi0.mac}" -i "1 *YNNN"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>station_log_in_through_ap2.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${job.sid}-aerohive login.password=aerohive123 -t ff -f ${log.dir}/${log.file} -l info --preserve-session &gt; ${log.dir}/ap2_session_id.log
+			</script>
+		</step>
+
+		<step no="14.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="ap2.session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/ap2_session_id.log
+			</setvar>
+		</step>
+
+		<step no="14.2">
+			<desc>
+				Show roaming cache
+			</desc>
+			<log-file>ap2_session_id.log</log-file>
+			<log-match>-c -i "left 11 hours 60 minutes left"</log-match>
+		</step>
+
+		<step no="15">
+			<desc>
+				Show roaming cache
+			</desc>
+			<log-file>step15_show_roaming_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${ap2.wifi0.mac}" -i " 0 *YYNN"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				do log out operate
+			</desc>
+			<log-file>station_log_out_through_ap2.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${job.sid}-aerohive login.password=aerohive123 -t ff -f ${log.dir}/${log.file} -l info --session-id ${ap2.session.id}
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_workload}" />
+
+			<include prefix="1" file="subs/ldap_delete.xml" args="${job.sid}-aerohive" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

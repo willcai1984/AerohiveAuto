@@ -1,0 +1,1109 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Configure bridge-802.1q lan ports allowed-vlan</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Laptop1 connect to lan port eth1 with trunk mode
+		Laptop2 connect to lan port eth4 with trunk mode
+		Laptop3 connect to lan port eth2 with port-based mode configured native-vlan 50
+		BR connect to switch
+
+		Test Procedure:
+
+		1. Lan port eth1/eth4 work with bridge-802.1q mode
+		2. Configure native-vlan for eth1/eth4 mapped from mgt0 native-vlan, such as 10
+		CLI:
+		Interface mgt0 native-vlan 10
+		Enable vlan-id-check: config as auto
+		3. Configure eth1/eth4 allow-vlan as auto
+		CLI:
+		Interface eth1 allow-vlan auto
+		Interface eth4 allow-vlan auto
+		4. Laptop1 ping laptop2 Result1
+		5. Laptop1 send packet with vlan tag , matches native-vlan/user-profile vlan Result2
+		6. Laptop1 send packet with vlan tag 50 Result3
+		Disable vlan-id-check:
+		7. CLI:
+		No interface eth1 allow-vlan auto
+		8. Laptop1 send packet with vlan tag 50 Result4
+		Enable vlan-id-check : configure allow-vlan
+		9. Configure allowed-vlan for eth1/eth4 , such as allowed-vlan 20
+		CLI:
+		Interface eth1 allow-vlan 20
+		Interface eth4 allow-vlan 20
+		10. Show lan
+		port-config/ show lan vlan-table to check vlan configuration Result5
+		11. Laptop1 ping laptop2 Result6
+		12. Laptop1 send packet with vlan tag which matches native-vlan/allow-vlan, such as vlan tag
+		20 Result7
+		13. Laptop1 send packet with vlan tag not matched native-vlan/allow-vlan, such as vlan tag 50
+		Result8
+		Disable vlan-id-check:
+		14. CLI:
+		Interface eth1 allow-vlan all
+		15. Laptop1 send packet with vlan tag not matched native-vlan/allow-vlan, such as vlan tag 50
+		Result9
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+	<stage>
+
+		<step no="br1.vpc10.vlan">
+			<setvar name="br1.vpc10.vlan">
+				expr ${br1.vpc2.vlan} + 7
+			</setvar>
+		</step>
+		<step no="br1.vpc0.vlan">
+			<setvar name="br1.vpc0.vlan">
+				expr ${br1.vpc1.vlan} - 5
+			</setvar>
+		</step>
+		<!--  
+		<include prefix="pre.1_1_2" file="subs/br_vpc1_setvlan.xml" obj-args="br1" args="vlan1" />
+		-->
+		<include prefix="pre1.2" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="${br1.vpc2.vlan},${br1.vpc2.vlan}\,${br1.vpc3.vlan}" />
+
+
+		<step no="pre_1">
+			<desc>
+				set mgt0.1 (vlan br.vpc1.vlan), mgt0.2 (vlan br.vpc2.vlan)
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.2 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1.0_1">
+			<desc>
+				Laptop1 connect to lan port eth4 with trunk mode
+				Laptop2 connect to lan port eth1 with trunk mode
+				Laptop3 connect to lan port eth2 with port-based mode configured native-vlan br1.vpc2.vlan
+				BR connect to switch
+				1. Lan port eth1/eth4 work with bridge-802.1q mode
+				2. Configure native-vlan for eth1/eth4 mapped from mgt0 native-vlan, such as br.vpc1.vlan
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 mode bridge-802.1q"				
+				-v "interface eth3 mode bridge-802.1q"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute ${br1.vpc2.vlan}"
+				-v "interface eth2 mode bridge-access user-profile-attribute ${br1.vpc2.vlan}"
+				-v "interface mgt0 native-vlan ${br1.vpc1.vlan}"
+			</telnet>
+		</step>
+		
+		<step no="1.0_2">
+			<if>"${br.platform}" == "br100"</if>
+				<desc>
+				If platform is BR100, should change eth1 as access port becuase of bug15388 to avoid the case failed 
+				</desc>
+				<telnet target="${br1.br.wan.ip}">
+					-v "interface eth1 mode bridge-access"
+					-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute ${br1.vpc1.vlan}"
+					-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vpc1.vlan}"
+				</telnet>
+		</step>
+
+		<step no="1.1a">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				how lan port-config, check vlan config for eth1/eth2/eth3/eth4
+			</desc>
+			<log-file>step1.1a_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "No"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "No"</log-match>
+		</step>
+		
+		<step no="1.1a">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				how lan port-config, check vlan config for eth1/eth2/eth3/eth4
+			</desc>
+			<log-file>step1.1a_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "port-based" -p 5 -i "1" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "No"</log-match>
+		</step>		
+		
+
+		<step no="1.1a">
+		<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step1.1b_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth2[\t ]+eth3[\t ]+${br1.vpc2.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="1.1b">
+		<if>"${br.platform}" == "br100"</if>
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step1.1b_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth4[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth2[\t ]+eth3[\t ]+${br1.vpc2.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				AP1 as Laptop2 connect to lan port eth3
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0 native-vlan ${br1.vpc1.vlan}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="1.2b" delay="20">
+			<desc>
+				show AP1 mgt0
+			</desc>
+			<log-file>step1.2b_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.2c">
+			<desc>get ip address of ap1</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step1.2b_show_int_mgt0.log -t str
+			</setvar>
+		</step>	     
+               
+		<step no="1.3">
+			<desc>br1.vpc1 connect to lan ports eth1, dhclient retrieve ip address</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.3b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="1.4">
+			<desc>br1.vpc2 connect to lan ports eth2, dhclient retrieve ip address</desc>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.4b">
+			<desc>set br1.vpc2.tif.ip var for vpc2 on BR side</desc>
+			<setvar name="br1.vpc2.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc2.mif.ip} -u ${br1.vpc2.user} -p ${br1.vpc2.passwd} -i ${br1.vpc2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="get_prefix">
+			<multi-setvar>
+				echo "br1.mgt0.1.prefix=$(echo ${br1.br.mgt0.1.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.mgt0.2.prefix=$(echo ${br1.br.mgt0.2.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.vpc1.prefix=$(echo ${br1.vpc1.tif.ip} | cut -d. -f1,2,3)"
+				echo "br1.vpc2.prefix=$(echo ${br1.vpc2.tif.ip} | cut -d. -f1,2,3)"
+				echo "br1.ap1.prefix=$(echo ${br1.ap1.mgt0.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+
+		<step no="1.5a">
+			<desc>
+				check ip address of AP2: AP1 obtain ip address from mgt0.1 dhcp server (br.vpc1.vlan)
+			</desc>
+			<script>
+				if [ "${br1.mgt0.1.prefix}" == "${br1.ap1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="1.5b">
+			<desc>
+				check ip address of vpc1 in the same vlan of AP1 the same subnet(same vlan)
+			</desc>
+			<script>
+				if [ "${br1.vpc1.prefix}" == "${br1.ap1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="1.5c">
+			<desc>
+				check ip address of vpc2: vpc2 obtain ip address from mgt0.2 dhcp server br.vpc2.vlan
+			</desc>
+			<script>
+				if [ "${br1.mgt0.2.prefix}" == "${br1.vpc2.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="2">
+			<desc>
+				3. Configure eth4 with trunk mode, and allow-vlan with vlan range
+				Interface eth4 mode bridge-802.1q
+				Interface eth4 allow-vlan ${br1.vpc0.vlan} - ${br1.vpc1.vlan}
+				Interface eth4 allow-vlan ${br1.vpc10.vlan}
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth4 mode bridge-802.1q"
+				-v "interface eth4 allowed-vlan ${br1.vpc0.vlan} - ${br1.vpc1.vlan}"
+				-v "interface eth4 allowed-vlan ${br1.vpc10.vlan}"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc> allow-vlan set successfully</desc>
+			<log-file>step2.1_config_check.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show run | in eth4"
+			</telnet>
+			<log-match>-i "interface eth4 mode bridge-802.1q"</log-match>
+			<log-match>-i "interface eth4 allowed-vlan ${br1.vpc0.vlan} - ${br1.vpc1.vlan}"</log-match>
+			<log-match>-i "interface eth4 allowed-vlan ${br1.vpc10.vlan}"</log-match>
+		</step>
+
+		<step no="2.1a_1">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				how lan port-config, check vlan config for eth1/eth2/eth3/eth4
+			</desc>
+			<log-file>step2.1a_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}"</log-match>
+		</step>
+		
+			<step no="2.1a_2">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				how lan port-config, check vlan config for eth1/eth2/eth3/eth4 [change br100 eth1 config because of bug15388]
+			</desc>
+			<log-file>step2.1a_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "${br1.vpc1.vlan}"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}"</log-match>
+		</step>
+	
+
+		<step no="2.1b_1">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step2.1b_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth2[\t ]+eth3[\t ]+${br1.vpc2.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="2.1b_2">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				show lan vlan-table [change br100 eth1 config because of bug15388]
+			</desc>
+			<log-file>step2.1b_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth2[\t ]+eth3[\t ]+${br1.vpc2.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+		</step>		
+
+
+		<step no="3">
+			<desc>
+				4. Configure eth1/eth3 allow-vlan as auto
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 allowed-vlan auto"
+				-v "interface eth3 allowed-vlan auto"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>show interface allowed vlan</desc>
+			<log-file>step3.1_show_interface_allowed.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth3 allowed-vlan"
+			</telnet>
+			<log-match>-p 1 -i "1" -p 2 -i "${br1.vpc1.vlan}-${br1.vpc2.vlan}"</log-match>
+		</step>
+
+		<step no="3.2">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>show interface allowed vlan</desc>
+			<log-file>step3.2_show_interface_allowed.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth1 allowed-vlan"
+			</telnet>
+			<log-match>-p 1 -i "1" -p 2 -i "${br1.vpc1.vlan}-${br1.vpc2.vlan}"</log-match>
+		</step>
+
+		<step no="3.3a_1">
+		<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				show lan port-config, check vlan config for eth1/eth2/eth3/eth4
+			</desc>
+			<log-file>step3.3a_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+		</step>
+		
+		<step no="3.3a_2">
+		<if>"${br.platform}" == "br100"</if>
+			<desc>
+				show lan port-config, check vlan config for eth1/eth2/eth3/eth4 [change br100 eth1 config becuase of bug15388]
+			</desc>
+			<log-file>step3.3a_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+		</step>
+		
+
+		<step no="3.3b_1">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step3.3b_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth2[\t ]+eth3[\t ]+${br1.vpc2.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="3.3b_2">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				show lan vlan-table [change br100 eth1 config because of bug15388]
+			</desc>
+			<log-file>step3.3b_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth2[\t ]+eth3[\t ]+${br1.vpc2.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth3[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="3.3c">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+			temp step	
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 native-vlan ${br1.vpc1.vlan}"
+				-v "no interface eth1 native-vlan"
+			</telnet>
+		</step>	
+               
+		<step no="3.3d">
+			<desc>br1.vpc1 connect to lan ports eth1, dhclient retrieve ip address</desc>
+			<ssh target="br1.vpc1" timeout="120">
+			    -v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+                
+		<step no="4">
+			<desc>
+				5. Laptop1 ping laptop2: success
+			</desc>
+			<log-file>step4_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5.1a">
+			<desc>
+				packet capture on br1.vpc1
+			</desc>
+			<log-file>step5.1a_vpc1_packet_capture.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "nohup tshark -l -i ${br1.vpc1.tif.name} ip proto 1 &gt; ${job.id}vpc1_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="5.1b">
+			<desc>
+				get vpc1 tshark process
+			</desc>
+			<setvar name="vpc1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.1a_vpc1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5.1c">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+			temp step	
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth3 native-vlan ${br1.vpc2.vlan}"
+			</telnet>
+		</step>
+		
+		<step no="5.2">
+			<desc>
+				change mgt0 vlan setting
+			</desc>
+			<log-file>step5.2_mgt0_vlan.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 ip ${br1.br.mgt0.1.ip_pool_start}/${br.lan.netmask}"
+				-v "ip route default gateway ${br1.br.mgt0.1.ip}"
+				-v "no interface mgt0 native-vlan"
+			</console>
+		</step>
+		
+		
+		<step no="5.3" delay="2">
+			<desc>
+				6. Laptop1 send packet to laptop2 with vlan tag , matches native-vlan/user-profile vlan
+			</desc>
+			<log-file>step5.3_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc1.vlan}"
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		
+		<step no="5.4" delay="10">
+			<desc>
+				Result3: laptop2 can receive packet
+			</desc>
+			<log-file>vpc1_check_ping_packet_int.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "kill -9 ${vpc1.tshark.id_1}"
+				-v "cat ${job.id}vpc1_icmp_1.log"
+				-v "rm -f ${job.id}vpc1_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.ap2.mgt0.ip} -&gt; ${br1.vpc1.tif.ip}[\t ]+ICMP Echo.+request" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.1a">
+			<desc>
+				packet capture on br1.vpc2
+			</desc>
+			<log-file>step6.1a_vpc2_packet_capture.log</log-file>
+			<ssh target="br1.vpc2">
+				-v "nohup tshark -l -i ${br1.vpc2.tif.name} ip proto 1 &gt; ${job.id}vpc2_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="6.1b">
+			<desc>
+				get vpc2 tshark process
+			</desc>
+			<setvar name="vpc2.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6.1a_vpc2_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				7. Laptop1 send packet to laptop3 with vlan tag br1.vpc2.vlan
+			</desc>
+			<log-file>step6.2_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+				-v "show l3 interface"
+				-v ""
+				-v "ping ${br1.vpc2.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="6.3" delay="10">
+			<desc>
+				Result4: laptop3 can receive packet (differ from cases expectation, since allowed auto will add eth2 access vlan into its allowed vlan lists
+			</desc>
+			<log-file>vpc2_check_ping_packet_int.log</log-file>
+			<ssh target="br1.vpc2">
+				-v "kill -9 ${vpc2.tshark.id_1}"
+				-v "cat ${job.id}vpc2_icmp_1.log"
+				-v "rm -f ${job.id}vpc2_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.ap1.mgt0.ip} -&gt; ${br1.vpc2.tif.ip}[\t ]+ICMP Echo.+request" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				8. No interface eth3 allow-vlan auto
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface eth3 allowed-vlan auto"
+				-v "interface eth3 native-vlan ${br1.vpc1.vlan}"
+			</telnet>
+		</step>
+
+		<step no="7.1">
+			<desc> show interface allowed vlan</desc>
+			<log-file>step7.1_show_interface_allowed.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth3 allowed-vlan"
+			</telnet>
+			<log-match>-i "1-4094"</log-match>
+		</step>
+
+		<step no="7.2a_1">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				show lan port-config, check vlan config for eth1/eth2/eth3/eth4
+			</desc>
+			<log-file>step7.2a_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "No"</log-match>
+		</step>
+
+		<step no="7.2a_2">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				show lan port-config, check vlan config for eth1/eth2/eth3/eth4 [change br100 eth1  because of bug15388]
+			</desc>
+			<log-file>step7.2a_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "No"</log-match>
+		</step>		
+		
+
+		<step no="7.2b_1">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step7.2b_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth2[\t ]+eth3[\t ]+${br1.vpc2.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+		
+		<step no="7.2b_2">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				show lan vlan-table [change br100 eth1  because of bug15388]
+			</desc>
+			<log-file>step7.2b_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth2[\t ]+eth3[\t ]+${br1.vpc2.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth3[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+		
+
+		<step no="8.1a">
+			<desc>
+				packet capture on br1.vpc2
+			</desc>
+			<log-file>step8.1a_vpc2_packet_capture.log</log-file>
+			<ssh target="br1.vpc2">
+				-v "nohup tshark -l -i ${br1.vpc2.tif.name} ip proto 1 &gt; ${job.id}vpc2_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="8.1b">
+			<desc>
+				get vpc2 tshark process
+			</desc>
+			<setvar name="vpc2.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step8.1a_vpc2_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				9. Laptop1 send packet with vlan tag br1.vpc2.vlan
+			</desc>
+			<log-file>step8.2_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.vpc2.tif.ip}"
+			</console>
+		</step>
+
+		<step no="8.3" delay="10">
+			<desc>
+				Result5: laptop3 can receive packet(disabled vlan-id-check, means allow all)
+			</desc>
+			<log-file>vpc2_check_ping_packet_int.log</log-file>
+			<ssh target="br1.vpc2">
+				-v "kill -9 ${vpc2.tshark.id_1}"
+				-v "cat ${job.id}vpc2_icmp_1.log"
+				-v "rm -f ${job.id}vpc2_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.ap1.mgt0.ip} -&gt; ${br1.vpc2.tif.ip}[\t ]+ICMP Echo.+request" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="9_1">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				10. Configure allowed-vlan for eth1/eth3 , such as allowed-vlan 20
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth3 native-vlan ${br1.vpc1.vlan}"
+				-v "interface eth1 allowed-vlan ${br1.vpc3.vlan}"
+				-v "interface eth3 allowed-vlan ${br1.vpc1.vlan}"
+				-v "interface eth3 allowed-vlan ${br1.vpc3.vlan}"
+			</telnet>
+		</step>
+
+		<step no="9_1">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				10. Configure allowed-vlan for eth1/eth3 , such as allowed-vlan 20 [change br100 eth1 becuase of bug15338]
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth3 allowed-vlan ${br1.vpc3.vlan}"
+			</telnet>
+		</step>		
+
+		<step no="9.1">
+			<desc> show interface allowed vlan</desc>
+			<log-file>step9.1_show_interface_allowed.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth3 allowed-vlan"
+			</telnet>
+			<log-match>-i "${br1.vpc3.vlan}"</log-match>
+		</step>
+
+		<step no="10.1_1">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				port-config table shows native-vlan, vlan-table shows allow-vlan list correctly
+			</desc>
+			<log-file>step10.1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes" </log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}"</log-match>
+			<log-match>-p 1 -i "eth4" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes" </log-match>
+			<log-match>-p 1 -i "eth3" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes" </log-match>
+		</step>
+		
+		<step no="10.1_2">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				port-config table shows native-vlan, vlan-table shows allow-vlan list correctly[change br100 eth1 because of bug15388]
+			</desc>
+			<log-file>step10.1_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "${br1.vpc1.vlan}"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}"</log-match>
+			<log-match>-p 1 -i "eth4" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes" </log-match>
+			<log-match>-p 1 -i "eth3" -p 2 -i "U" -p 3 -i "Y" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes" </log-match>
+		</step>
+		
+
+		<step no="10.2_1">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step10.2_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+${br1.vpc3.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+		
+		<step no="10.2_2">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				show lan vlan-table [change br100 eth1 becuase of bug15388]
+			</desc>
+			<log-file>step10.2_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth3[\t ]+${br1.vpc3.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>		
+
+		<step no="11">
+			<desc>
+				12. Laptop1 ping laptop2: success
+			</desc>
+			<log-file>step11_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0 native-vlan ${br1.vpc1.vlan}"
+				-v ""
+				-v ""
+				-v ""
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="12.1a">
+			<desc>
+				packet capture on br1.vpc1
+			</desc>
+			<log-file>step12.1a_vpc1_packet_capture.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "nohup tshark -l -i ${br1.vpc1.tif.name} ip proto 1 &gt; ${job.id}vpc1_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="12.1b">
+			<desc>
+				get vpc1 tshark process
+			</desc>
+			<setvar name="vpc1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step12.1a_vpc1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="12.1c">
+			<desc> change eth3 native vlan</desc>
+			<log-file>step12_show_eth3_vlan.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth3 native-vlan ${br1.vpc2.vlan}"
+			</telnet>
+		</step>		
+		
+		<step no="12.2">
+			<desc>
+				13. Laptop1 send packet to laptop2 with vlan tag which matches native-vlan/allow-vlan, such as vlan tag 20
+			</desc>
+			<log-file>step12.2_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "no interface mgt0 native-vlan"
+				-v ""
+				-v ""
+				-v ""
+				-v "ping ${br1.vpc1.tif.ip}"
+			</console>
+			<log-match>-c -i "from ${br1.vpc1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="12.3" delay="10">
+			<desc>
+				Result8: laptop2 can receive packet
+			</desc>
+			<log-file>vpc1_check_ping_packet_int_03.log</log-file>
+			<ssh target="br1.vpc1">
+				-v "kill -9 ${vpc1.tshark.id_1}"
+				-v "cat ${job.id}vpc1_icmp_1.log"
+				-v "rm -f ${job.id}vpc1_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.ap1.mgt0.ip} -&gt; ${br1.vpc1.tif.ip}[\t ]+ICMP Echo.+request" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="13.1a">
+			<desc>
+				packet capture on br1.vpc2
+			</desc>
+			<log-file>step13.1a_vpc2_packet_capture.log</log-file>
+			<ssh target="br1.vpc2">
+				-v "nohup tshark -l -i ${br1.vpc2.tif.name} ip proto 1 &gt; ${job.id}vpc2_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="13.1b">
+			<desc>
+				get vpc2 tshark process
+			</desc>
+			<setvar name="vpc2.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step13.1a_vpc2_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>	
+
+		<step no="13.1c">
+			<desc> change eth3 native vlan</desc>
+			<log-file>step13_show_eth3_vlan.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth3 native-vlan ${br1.vpc1.vlan}"
+			</telnet>
+		</step>			
+		
+		<step no="13.2">
+			<desc>
+				14. Laptop1 send packet to laptop3 with vlan tag not matched native-vlan/allow-vlan, such as vlan tag 30
+			</desc>
+			<log-file>step13.2_ping.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc2.vlan}"
+				-v ""
+				-v ""
+				-v ""
+				-v "ping ${br1.vpc2.tif.ip}"
+			</console>
+			<log-match>-n -c -i "from ${br1.vpc2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="13.3" delay="10">
+			<desc>
+				Result9: laptop3 can't receive packet
+			</desc>
+			<log-file>vpc2_check_ping_packet_int.log</log-file>
+			<ssh target="br1.vpc2">
+				-v "kill -9 ${vpc2.tshark.id_1}"
+				-v "cat ${job.id}vpc2_icmp_1.log"
+				-v "rm -f ${job.id}vpc2_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.ap1.mgt0.ip} -&gt; ${br1.vpc2.tif.ip}[\t ]+ICMP Echo.+request" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				15. Interface eth3 allow-vlan all
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth3 allowed-vlan all"
+			</telnet>
+		</step>
+
+		<step no="14.1">
+			<desc> show interface allowed vlan</desc>
+			<log-file>step14.1_show_interface_allowed.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth3 allowed-vlan"
+			</telnet>
+			<log-match>-i "1-4094"</log-match>
+		</step>
+
+		<step no="14.2">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc> show interface allowed vlan</desc>
+			<log-file>step14.2_show_interface_allowed.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth1 allowed-vlan"
+			</telnet>
+			<log-match>-i "${br1.vpc3.vlan}"</log-match>
+		</step>
+
+		<step no="14.3a_1">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				show lan port-config, check vlan config for eth1/eth2/eth3/eth4
+			</desc>
+			<log-file>step14.3a_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "No"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+		</step>
+
+		<step no="14.3a_2">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				show lan port-config, check vlan config for eth1/eth2/eth3/eth4 [change br100 eth1 becuase of bug15388]
+			</desc>
+			<log-file>step14.3a_show_lan_portconfig.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan port-config"
+			</telnet>
+			<log-match>-p 1 -i "eth1" -p 4 -i "port-based" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth2" -p 4 -i "port-based" -p 5 -i "${br1.vpc2.vlan}" -p 6 -i "-"</log-match>
+			<log-match>-p 1 -i "eth3" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "No"</log-match>
+			<log-match>-p 1 -i "eth4" -p 4 -i "trunk" -p 5 -i "${br1.vpc1.vlan}" -p 6 -i "Yes"</log-match>
+		</step>		
+		
+		<step no="14.3b_1">
+			<if>"${br.platform}" == "br200wp"</if>
+			<desc>
+				show lan vlan-table
+			</desc>
+			<log-file>step14.3b_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth2[\t ]+eth3[\t ]+${br1.vpc2.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+${br1.vpc3.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="14.3b_2">
+			<if>"${br.platform}" == "br100"</if>
+			<desc>
+				show lan vlan-table[change br100 eth1 because of bug15388]
+			</desc>
+			<log-file>step14.3b_show_lan_vlantable.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show lan vlan-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth2[\t ]+eth3[\t ]+${br1.vpc2.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1[\t ]+eth3[\t ]+eth4[\t ]+${br1.vpc1.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth3[\t ]+${br1.vpc3.vlan}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth3[\t ]+1" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="15.1a">
+			<desc>
+				packet capture on br1.vpc2
+			</desc>
+			<log-file>step15.1a_vpc2_packet_capture.log</log-file>
+			<ssh target="br1.vpc2">
+				-v "nohup tshark -l -i ${br1.vpc2.tif.name} ip proto 1 &gt; ${job.id}vpc2_icmp_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="15.1b">
+			<desc>
+				get vpc2 tshark process
+			</desc>
+			<setvar name="vpc2.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step15.1a_vpc2_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="15.2">
+			<desc>
+				16. Laptop1 send packet to laptop3 with vlan tag not matched native-vlan/allow-vlan, such as vlan tag 30
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "ping ${br1.vpc2.tif.ip}"
+			</console>
+		</step>
+
+		<step no="15.3" delay="10">
+			<desc>
+				Result10: laptop3 can receive packet
+			</desc>
+			<log-file>vpc2_check_ping_packet_int.log</log-file>
+			<ssh target="br1.vpc2">
+				-v "kill -9 ${vpc2.tshark.id_1}"
+				-v "cat ${job.id}vpc2_icmp_1.log"
+				-v "rm -f ${job.id}vpc2_icmp_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.ap1.mgt0.ip} -&gt; ${br1.vpc2.tif.ip}[\t ]+ICMP Echo.+request" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="17" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="999,${br1.vpc2.vlan}\,${br1.vpc3.vlan}" />
+
+	</stage>
+
+	<failed-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					kill tshark process on br1.vpc1
+				</desc>
+				<ssh target="br1.vpc1">
+					-v "kill -9 ${vpc1.tshark.id_1}"
+					-v "rm -f ${job.id}vpc1_icmp_1.log"
+				</ssh>
+				<no-error-check />
+			</step>
+			<step no="0.2">
+				<desc>
+					kill tshark process on br1.vpc2
+				</desc>
+				<ssh target="br1.vpc2">
+					-v "kill -9 ${vpc2.tshark.id_1}"
+					-v "rm -f ${job.id}vpc2_icmp_1.log"
+				</ssh>
+				<no-error-check />
+			</step>
+			<include prefix="0.4" file="subs/br_eth2_l2swcfg.xml" obj-args="br1" args="999,${br1.vpc2.vlan}\,${br1.vpc3.vlan}" />
+
+		</stage>
+
+		<include file="include/br_default_failed_process.xml" />
+
+	</failed-process>
+
+</testcase>

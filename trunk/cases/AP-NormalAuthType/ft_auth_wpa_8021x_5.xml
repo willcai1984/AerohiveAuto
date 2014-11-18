@@ -1,0 +1,111 @@
+<testcase>
+	<brief>Config a ssid with wpa-auto-8021x</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<description>
+		Topology to use
+		Description
+		Config a ssid with wpa-auto-8021x
+		Pre-condition
+		-config a ssid with wpa-auto-8021x
+		Test procedure
+		-STA1 connects to ssid with wpa-tkip
+		-STA2 connects to ssid with wpa-aes
+		-STA3 connects to ssid with wpa2-tkip
+		-STA4 connects to ssid with wpa2-aes
+		Expect result
+		1.Clients connection successful
+		2.Sh auth,sh roa ca,sh ssid xxx st are correct
+		3.Make sure the traffic run well,ping gateway for 10 minutes
+	</description>
+
+	<property name="so1.name" value="autoap1" />
+	<property name="so1.proto" value="wpa-auto-8021x" />
+	<property name="so1.radius.ip" value="${pub.radius1.ip}" />
+	<property name="so1.radius.sharesecret" value="${pub.radius1.sharesecret}" />
+
+	<stage>
+		<include prefix="1" file="subs/set_so_for_ssid.xml" obj-args="ap1, so1" args="${ssid.name}" />
+		<step no="1.1">
+			<ssh target="ap1">
+				-v "int wifi1 ssid ${ssid.name}"
+			</ssh>
+		</step>
+		<step no="1.2">
+			<setvar name="pub.cert.radius.tftp">
+			echo "certs/cert_radius/"
+			</setvar>
+		</step>
+		<include prefix="2" file="subs/bind_ssid_for_radio.xml" args="ap1, ${ssid.name}, wifi0" />
+
+		<include prefix="sta1.1" file="subs/wpa_supplicant_start_v2.xml" obj-args="sta1" />
+
+		<step no="sta1.2">
+			<desc>transport 3 certificate files to station</desc>
+			<ssh target="sta1">
+				-v "cd /tmp"
+				-v "tftp ${pub.tftp1.ip} -c get ${pub.cert.radius.tftp}/cacert.pem"
+				-v "tftp ${pub.tftp1.ip} -c get ${pub.cert.radius.tftp}/autotest_cert.pem"
+				-v "tftp ${pub.tftp1.ip} -c get ${pub.cert.radius.tftp}/autotest_key.key"
+			</ssh>
+		</step>
+
+		<step no="sta1.3">
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-EAP"
+				-v "set_network 0 proto RSN"
+				-v "set_network 0 pairwise CCMP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 eap TLS"
+				-v "set_network 0 priority 5"
+				-v "set_network 0 identity \"${pub.radius1.username}\""
+				-v "set_network 0 ca_cert \"/tmp/cacert.pem\""
+				-v "set_network 0 client_cert \"/tmp/autotest_cert.pem\""
+				-v "set_network 0 private_key \"/tmp/autotest_key.key\""
+				-v "set_network 0 private_key_passwd \"${pub.radius1.passwd}\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="sta1.4" file="subs/chk_conn_status_in_sta.xml" obj-args="sta1" />
+
+		<include prefix="sta1.5" file="subs/chk_sta_conn_status_in_ap.xml" obj-args="ap1, sta1" args="wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+		<include prefix="sta2.2" file="subs/wpa_supplicant_start_v2.xml" obj-args="sta2" />
+
+		<step no="sta2.3">
+			<ssh target="sta2" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt WPA-EAP"
+				-v "set_network 0 proto WPA"
+				-v "set_network 0 pairwise TKIP"
+				-v "set_network 0 group TKIP"
+				-v "set_network 0 eap PEAP"
+				-v "set_network 0 priority 5"
+				-v "set_network 0 identity \"${pub.radius1.username}\""
+				-v "set_network 0 password \"${pub.radius1.passwd}\""
+				-v "select_network 0"
+				-v "reas"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="sta2.4" file="subs/chk_conn_status_in_sta.xml" obj-args="sta2" />
+
+		<include prefix="sta2.5" file="subs/chk_sta_conn_status_in_ap.xml" obj-args="ap1, sta2" args="wpa-tkip-8021x, WPA/TKIP, wpa-8021x, tkip" />
+	</stage>
+
+</testcase>

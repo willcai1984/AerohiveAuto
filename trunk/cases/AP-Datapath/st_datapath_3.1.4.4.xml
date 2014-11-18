@@ -1,0 +1,127 @@
+﻿<testcase>
+	<brief>DHCP broadcast datapath. Dhcp-relay in portal</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<description>
+		Topology to use
+		Laptop1-----Portal------Switch------Dhcp-server
+		Objective
+		DHCP broadcast datapath. Dhcp-relay in portal
+		Pre-condition
+		Make sure that Dhcp server can’t receive the broadcast from Portal.
+		Make sure wifi0 and wifi1 are up on portal AP(You can bind a ssid to wifi0 and make a neighbor via wifi1)
+		Test procedure
+		-set mgt0.x as dhcp-relay and send dhcp discover pkt to get ip
+		address.
+		check the FE debug to see.
+		Meet result 1,2,3
+		- repeated the above step when dhcp-relay is set in mgt0
+		Expect result
+		1:Dhcp discover/request pkt should be send to mgt0.x and eth0.
+		2:Mgt0.x should transfer the dhcp pkt to dhcp-relay pkt. And mgt0 mac is src-mac, gateway mac as destination mac, mgt0.x ip as source-ip, dhcp-relay ip as destination ip. and transfer it only from eth0.
+		3:Portal receive the dhcp offer/ack pkt from eth0 and mgt0.x will deal the pkt. The pkt will be forward to the specifical wifi0.x only and not other wifi interfaces
+		3.2. Mesh Topo
+		3.2.1. Known unicast datapth
+	</description>
+	<stage>
+		<step no="0.1">
+			<desc>
+				Modify AP vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<include prefix="0.2" file="subs/ap_renew_ip.xml" obj-args="ap1" />
+
+		<step no="1">
+			<desc>Set up interface through sw menu</desc>
+			<ssh target="ap1">
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 100"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface mgt0.1 vlan ${tb.vlan2}"
+				-v "interface mgt0.1 ip 192.168.${tb.vlan2}.111/24"
+				-v "interface mgt0.1 ip-helper address ${pub.dhcp.ip}"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan2} attribute 100"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>enable debug on demand to trace DHCP issue</desc>
+			<ssh target="ap1">
+				-v "_ff dst-port 67 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				Configure sta connect parameters
+			</desc>
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+
+		<include prefix="3.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>show log buffer</desc>
+			<log-file>4_log_help_mgt01.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "(i) wifi0.1" -i "DHCP Discover"</log-match>
+			<log-match>-c -i "special handling for DHCP request pkts, tx on eth0"</log-match>
+			<log-match>-c -i "deliver pak to self on mgt0.1 input wifi0.1"</log-match>
+			<log-match>-c -i "(u) mgt0.1" -i "DHCP Discover"</log-match>
+			<log-match>-c -i "(u) mgt0.1" -i "${pub.dhcp.ip}-&gt;192.168.${tb.vlan2}.111" -i "UDP 67-&gt;67"</log-match>
+			<log-match>-c -i "(i) mgt0.1 192.168.${tb.vlan2}.111" -i "DHCP Ack"</log-match>
+			<log-match>-c -i "(o) wifi0.1 192.168.${tb.vlan2}.111" -i "DHCP Ack"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="5">
+			<desc>Set up interface through sw menu</desc>
+			<ssh target="ap1" timeout="1000">
+				-v "no interface mgt0.1 ip-helper address ${pub.dhcp.ip}"
+				-v "no interface mgt0.1 ip "
+				-v "no interface mgt0.1 vlan "
+				-v "interface mgt0 ip-helper address ${pub.dhcp.ip}"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 100"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>show log buffer</desc>
+			<log-file>log_help_mgt0.log</log-file>
+			<ssh target="ap1" timeout="1000">
+				-v "show logging buffered"
+			</ssh>
+			<log-match>-c -i "(i) wifi0.1" -i "DHCP Discover"</log-match>
+			<log-match>-c -i "special handling for DHCP request pkts, tx on eth0"</log-match>
+			<log-match>-c -i "deliver pak to self on mgt0 input wifi0.1"</log-match>
+			<log-match>-c -i "(u) mgt0" -i "DHCP Discover"</log-match>
+			<log-match>-c -i "(u) mgt0" -i "${pub.dhcp.ip}-&gt;${ap1.mgt0.ip}" -i "UDP 67-&gt;67"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap1.mgt0.ip}" -i "DHCP Ack"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${ap1.mgt0.ip}" -i "DHCP Ack"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

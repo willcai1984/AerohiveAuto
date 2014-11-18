@@ -1,0 +1,409 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Set max transmit power per radio,check the final power.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Make sure wifi0 access mode,wifi1 backhaul mode.
+		Initial configuration:
+		"radio profile ng"
+		"radio profile ng phymode 11ng"
+		"interface wifi0 radio profile ng"
+		"interface wifi0 mode access"
+		"ssid test-ng"
+
+		Test Procedure:
+		1.open power debug mode.
+		_debug dcd power
+		Debug console
+		2.bind ssid to wifi0 and AP wifi0 will do acsp scan.
+		Interface wifi0 ssid test-ng
+		3. After ACSP completed scan and enter run state and wait for 2 minutes, "show acsp" to check the final power. Checking logging buffer backoff power and compare if acsp power equal 20dbm minus backoffPower.
+		Show logging buffered | include backoff
+		4.clear log.
+		clear log buffered
+		5.set max-power to 10.
+		Radio profile ng acsp max-power 10
+		6.Check if ACSP still do acsp power scan and backoff in log. Get the updated backoff power and compared with "show acsp" power. (acsp power equal 20dbm minus backoffPower). If ACSP skip power scan, we should check the log : "Show logging buffered | in "Skip power adjust, detect neighbor chnl
+		selction"
+		Check acsp neighbor state in current channel. Get current channel by "show acsp". Check the neighbor:"show acsp _nbr | in XX"
+		10.set max-power back to 20.
+		Radio profile ng acsp max-power 20
+		11.if wifi0 Skip power adjust for detect neighbor chnl selction,wifi0 final power will be 20-backoff, backoff is the value last time power backoff happened.that is the value in step 3.
+		Show logging buffered | in "Skip power adjust, detect neighbor chnl selction"
+		12.check the final by
+		Show acsp
+		13.if wifi0 hasn’t skip power adjust,and backoff power,wifi0 final power is 20-backoff,backoff is derived by
+		Show logging buffered | include backoff
+		14.check the final by
+		Show acsp
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				Make sure wifi0 access mode,wifi1 backhaul mode.
+				Initial configuration:
+				"radio profile ng"
+				"radio profile ng phymode 11ng"
+				"interface wifi0 radio profile ng"
+				"interface wifi0 mode access"
+				"ssid test-ng"
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 mode access"
+				-v "radio profile ng"
+				-v "radio profile ng phymode 11ng"
+				-v "interface wifi0 radio profile ng"
+				-v "ssid ${ssid.name}"
+			</telnet>
+		</step>
+		
+		<step no="1.2">
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<desc>
+				Make sure wifi0 access mode,wifi1 backhaul mode.
+				Initial configuration:
+				"interface wifi1 mode backhaul"
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi1 mode backhaul"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				1.open power debug mode.
+				_debug dcd power
+				Debug console
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "_debug dcd power"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2.bind ssid to wifi0,check the current channel power of wifi0 by show acsp.
+				"interface wifi0 ssid test"
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<step no="2.1" type="loop-check" loop-max-times="10" loop-interval="30">
+			<desc>
+				check if ACSP completed scan and enter run state.
+			</desc>
+			<log-file>step2.1_show_acsp_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show acsp"
+			</telnet>
+			<log-match>-e "Enable" -i "Wifi0" -p 4</log-match>
+		</step>
+
+		<step no="2.2" delay="120">
+			<desc>
+				3. After ACSP completed scan and enter run state and wait for 2 minutes, "show acsp" to check the final power. Checking logging buffer backoff power and compare if acsp power equal 20dbm minus backoffPower.
+				Show logging buffered | include backoff
+			</desc>
+			<log-file>step2.2_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-e "interfacewifi0" -i "backoff is"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				get backoff power for wifi0.
+			</desc>
+			<setvar name="wifi0_backoff_value">
+				${bin.dir}/getbyrexp.py -p "interfacewifi0.*backoff\s+is\s+(\d+)" -f ${log.dir}/step2.2_show_logging_buffered.log -t str
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				get actual power for wifi0.
+			</desc>
+			<setvar name="wifi0_final_power">
+				perl ${case.dir}/bin/gain_actual_power.pl 20 ${wifi0_backoff_value}
+			</setvar>
+		</step>
+
+		<step no="3" delay="120">
+			<desc>
+				"show acsp" to check the final power. Checking logging buffer backoff power and compare if acsp power equal 20dbm minus backoffPower.
+			</desc>
+			<log-file>step3_show_acsp.log</log-file>
+			<telnet target="ap1">
+				-v "show acsp"
+			</telnet>
+			<log-match>-e "Wifi0 " -i " ${wifi0_final_power} "</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				4.clear log.
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				set max transmit power of wifi0 to 10
+			</desc>
+			<telnet target="ap1">
+				-v "radio profile ng acsp max-tx-power 10"
+			</telnet>
+		</step>
+
+		<step no="5.1" type="loop-check" loop-max-times="10" loop-interval="30">
+			<desc>
+				check if ACSP completed scan and enter run state.
+			</desc>
+			<log-file>step5.1_show_acsp_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show acsp"
+			</telnet>
+			<log-match>-e "Enable" -i "Wifi0" -p 4</log-match>
+		</step>
+
+		<step no="5.2" delay="120">
+			<desc>
+				"show logging buffer | include backoff"
+			</desc>
+			<log-file>step5.2_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="5.3">
+			<desc>
+				check whether ap1 do skip power scan
+			</desc>
+			<setvar name="skip_power_scan_number">
+				perl ${bin.dir}/getbyrexp.py -p "Skip\s.*(\S*), detect neighbor chnl selction" -f ${log.dir}/step5.2_show_logging_buffered.log -t str --script_ms "1 if len(ms) else 0"
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				"show logging buffered | include backoff" if ap1 don't skip power scan.
+			</desc>
+			<if>${skip_power_scan_number} == 0</if>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-e "interfacewifi0" -i "backoff is"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				get update backoff power for wifi0.
+			</desc>
+			<if>${skip_power_scan_number} == 0</if>
+			<setvar name="wifi0_backoff_value_update">
+				${bin.dir}/getbyrexp.py -p "interfacewifi0.*backoff\s+is\s+(\d+)" -f ${log.dir}/step6_show_logging_buffered.log -t str
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				get update actual power for wifi0.
+			</desc>
+			<if>${skip_power_scan_number} == 0</if>
+			<setvar name="wifi0_final_power_update">
+				perl ${case.dir}/bin/gain_actual_power.pl 10 ${wifi0_backoff_value_update}
+			</setvar>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				"show acsp" to check the final power
+			</desc>
+			<if>${skip_power_scan_number} == 0</if>
+			<log-file>step6.3_show_acsp.log</log-file>
+			<telnet target="ap1">
+				-v "show acsp"
+			</telnet>
+			<log-match>-e "Wifi0 " -i " ${wifi0_final_power_update} "</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				get actual power for wifi0 if ap1 skip power scan.
+			</desc>
+			<if>${skip_power_scan_number} == 1</if>
+			<setvar name="wifi0_final_power_skip">
+				perl ${case.dir}/bin/gain_actual_power.pl 10 ${wifi0_backoff_value}
+			</setvar>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				"show acsp" to check the final power.
+			</desc>
+			<if>${skip_power_scan_number} == 1</if>
+			<log-file>step7.1_show_acsp.log</log-file>
+			<telnet target="ap1">
+				-v "show acsp"
+			</telnet>
+			<log-match>-e "Wifi0 " -i " ${wifi0_final_power_skip} "</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>
+				get current channel
+			</desc>
+			<if>${skip_power_scan_number} == 1</if>
+			<setvar name="current_channel">
+				perl ${bin.dir}/getbyrexp.py -p "Wifi0\s*Enable\s*(\d+)\s*" -f ${log.dir}/step7.1_show_acsp.log
+			</setvar>
+		</step>
+
+		<step no="7.3">
+			<desc>
+				Check acsp neighbor state in current channel. Get current channel by "show acsp". Check the neighbor:"show acsp _nbr | in XX"
+			</desc>
+			<if>${skip_power_scan_number} == 1</if>
+			<log-file>step7.3_show_acsp_info.log</log-file>
+			<telnet target="ap1">
+				-v "show acsp _nbr | include ${current_channel}"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>
+				clear log buffered
+			</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				set max-power back to 20.
+				Radio profile ng acsp max-power 20
+			</desc>
+			<telnet target="ap1">
+				-v "radio profile ng acsp max-tx-power 20"
+			</telnet>
+		</step>
+
+		<step no="9" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				check if ACSP completed scan and enter run state.
+			</desc>
+			<log-file>step9_show_acsp_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show acsp"
+			</telnet>
+			<log-match>-e "Enable" -i "Wifi0" -p 4</log-match>
+		</step>
+
+
+		<step no="9.1" delay="120">
+			<desc>
+				"show logging buffer | include backoff"
+			</desc>
+			<log-file>step9.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="9.2">
+			<desc>
+				get whether ap1 do skip power scan
+			</desc>
+			<setvar name="skip_power_scan_number_second">
+				perl ${bin.dir}/getbyrexp.py -p "Skip\s.*(\S*), detect neighbor chnl selction" -f ${log.dir}/step9.1_show_logging_buffered.log -t str --script_ms "1 if len(ms) else 0"
+			</setvar>
+		</step>
+
+		<step no="10">
+			<desc>
+				"show logging buffer | include backoff" if ap1 don't skip power scan.
+			</desc>
+			<if>${skip_power_scan_number_second} == 0</if>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-e "interfacewifi0" -i "backoff is"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				get update backoff power for wifi0 when ap1 don't skip power scan.
+			</desc>
+			<if>${skip_power_scan_number_second} == 0</if>
+			<setvar name="wifi0_backoff_value_update_second">
+				${bin.dir}/getbyrexp.py -p "interfacewifi0.*backoff\s+is\s+(\d+)" -f ${log.dir}/step10_show_logging_buffered.log -t str
+			</setvar>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				get update actual power for wifi0 when ap1 don't skip power scan.
+			</desc>
+			<if>${skip_power_scan_number_second} == 0</if>
+			<setvar name="wifi0_final_power_update_second">
+				perl ${case.dir}/bin/gain_actual_power.pl 20 ${wifi0_backoff_value_update_second}
+			</setvar>
+		</step>
+
+		<step no="10.3">
+			<desc>
+				"show acsp" to check the final power.
+			</desc>
+			<if>${skip_power_scan_number_second} == 0</if>
+			<log-file>step10.3_show_acsp.log</log-file>
+			<telnet target="ap1">
+				-v "show acsp"
+			</telnet>
+			<log-match>-e "Wifi0 " -i " ${wifi0_final_power_update_second} "</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				get update actual power for wifi0 when ap1 do skip power scan.
+			</desc>
+			<if>${skip_power_scan_number_second} == 1</if>
+			<setvar name="wifi0_final_power_skip_second">
+				perl ${case.dir}/bin/gain_actual_power.pl 20 ${wifi0_backoff_value}
+			</setvar>
+		</step>
+
+		<step no="11.1" delay="120">
+			<desc>
+				"show acsp" to check the final power.
+			</desc>
+			<if>${skip_power_scan_number} == 1</if>
+			<log-file>step11.1_show_acsp.log</log-file>
+			<telnet target="ap1">
+				-v "show acsp"
+			</telnet>
+			<log-match>-e "Wifi0 " -i " ${wifi0_final_power_skip_second} "</log-match>
+		</step>
+	</stage>
+</testcase>

@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>In certain time ,will record byte counters per ICMP protocol
+	</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Enable data collection
+		Data-collection
+		collect interval 5 min
+		Set filter on AP "_ff id 1 src-mac xxxx:yyyy:zzzz protocol 1 bi"(xxxx:yyyy:zzzz is client's mac)
+		_kdebug fe basic
+		_kdebug fe detail
+		Exec data-collection clear
+		Clear log all
+		Use wireshark to capture icmp packet
+
+		Test Procedure:
+
+		1. Client ping PC,
+		check byte counters of captured packet and check by show logging
+		buffered | in update
+		2. Check collected data by show data-collection
+		protocol, and check by show forwarding-engine counters _d
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="true" value="1" />
+	<property name="false" value="0" />
+	<property name="a" value="0" />
+	<property name="is_show_data_collect_ok" value="0" />
+	<property name="is_show_forward_ok" value="0" />
+	<property name="tx_byte" value="0" />
+	<property name="rx_byte" value="0" />
+
+	<stage>
+		<step no="1.1">
+			<desc>create ssid and enable data-collection</desc>
+			<log-file>config_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${tb.name}"
+				-v "security-object ${tb.name} security protocol-suite open"
+				-v "ssid ${ssid.name} security-object ${tb.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "data-collection enable"
+				-v "data-collection collect interval 5 minutes"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>show running-config</desc>
+			<log-file>show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+		<step no="2.5">
+			<desc>check the connection by CLI:show ssid ${ssid.name} station </desc>
+			<log-file>show_log_ssid_${ssid.name}.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-e "open" -i "${sta1.tif.mac}" -p 7 -c</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>enable fe debug on ap and clear log buffer</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "Exec data-collection clear"
+				-v "clear log all"
+				-v "clear auth roaming-cache "
+			</telnet>
+		</step>
+
+
+		<include prefix="4.1" file="subs/sta_ping.xml" args="${sta1.mif.ip}, ${pub.ntp.ip}, 4" />
+
+		<step no="4.2" delay="10">
+			<desc>show forwarding-engine counters _data-collection | in icmp</desc>
+			<log-file>show_forward_count.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine counters _data-collection | in icmp"
+			</telnet>
+		</step>
+
+		<step no="4.3" delay="60">
+			<desc>show logging buffered | in update</desc>
+			<log-file>show_logbuf_update.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered | in update"
+			</telnet>
+		</step>
+
+		<step no="4.4">
+			<desc>show data-collection protocol | in icmp</desc>
+			<log-file>show_protocol_count.log</log-file>
+			<telnet target="ap1">
+				-v "show data-collection protocol | in icmp"
+			</telnet>
+		</step>
+
+		<step no="4.5">
+			<desc>get tx_byte</desc>
+			<log-file>show_get_tx.log</log-file>
+			<setvar name="tx_byte">
+				cat ${log.dir}/show_logbuf_update.log | awk '/to-access/ {a+=$(NF-1)} END {print a}'
+			</setvar>
+		</step>
+
+		<step no="4.6">
+			<desc>get rx_byte</desc>
+			<log-file>show_get_rx.log</log-file>
+			<setvar name="rx_byte">
+				cat ${log.dir}/show_logbuf_update.log | awk '/from-access/ {a+=$(NF-1)} END {print a}'
+			</setvar>
+		</step>
+
+		<step no="4.7">
+			<desc>search tx_byte and rx_byte in show_protocol_count.log</desc>
+			<log-file>search_protocol.log</log-file>
+			<setvar name="is_show_data_collect_ok">
+				cat ${log.dir}/show_protocol_count.log | awk '$1=="icmp" &amp;&amp; $4=="${rx_byte}" &amp;&amp; $6=="${tx_byte}" {print ${true}; exit}'
+			</setvar>
+		</step>
+
+		<step no="4.8">
+			<desc>compare is_show_data_collect_ok</desc>
+			<log-file>compare_data_collect.log</log-file>
+			<script>
+				if [ "${is_show_data_collect_ok}" != "${true}" ]; then exit 1;fi
+			</script>
+		</step>
+
+		<step no="4.9">
+			<desc>search tx_byte and rx_byte in show_forward_count.log</desc>
+			<log-file>search_forward.log</log-file>
+			<setvar name="is_show_forward_ok">
+				cat ${log.dir}/show_forward_count.log | awk '$1=="icmp" &amp;&amp; $4=="${rx_byte}" &amp;&amp; $6=="${tx_byte}" {print ${true}; exit}'
+			</setvar>
+		</step>
+
+		<step no="4.10">
+			<desc>compare is_show_forward_tx_ok</desc>
+			<log-file>compare_forward.log</log-file>
+			<script>
+				if [ "${is_show_forward_ok}" != "${true}" ]; then exit 1;fi
+			</script>
+		</step>
+
+	</stage>
+</testcase>

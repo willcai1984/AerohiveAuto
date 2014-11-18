@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Create radio profile both on 2.4GHz and 5GHz</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Radio profile
+	</description>
+	<numofap>1</numofap>
+	<tbtype>winlin</tbtype>
+
+    <property name="job_selenium_jar" value="${job_selenium_jar}" />
+	<property name="owner.id" value="102" />
+	<property name="access_addr" value="${tb.http_server}" />
+	<property name="login_addr" value="${tb.http_server}/login" />
+	<property name="policy_name" value="aaa" />
+	<property name="template_name" value="bbb" />
+	<property name="wifi0_name" value="80211bg" />
+	<property name="wifi1_name" value="80211a" />
+	
+    <property name="job_selenium_port" value="${cloud.selenium.port}" />
+	<property name="job_selenium_log" value="/tmp/selenium-${job.id}.log" />	
+	
+	<stage>
+        <step no="debu.0">
+            <script>
+                echo ${tb.browser_type}
+                echo "${tb.browser_path}"
+                echo ${tb.browser_type}
+            </script>
+        </step>
+    
+		<include prefix="start_selenium_server1" file="subs/start_selenium_server_${tb.os}.xml" args="${job_selenium_jar}, ${job_selenium_port}, ${job_selenium_log}, ${tb.browser_type},${tb.browser_path}" />
+        
+        <step no="pre.0">
+			<desc>
+				get access addr
+			</desc>
+			<setvar name="access_addr">
+				echo "${tb.http_server}"
+			</setvar>
+		</step>
+		
+		<step no="pre.1">
+			<desc>
+				get login addr
+			</desc>
+			<setvar name="login_addr">
+				echo "${tb.http_server}/login"
+			</setvar>
+		</step>
+		
+		<step no="pre.2">
+			<desc>
+				get random number
+			</desc>
+			<setvar name="random.number">
+				echo $RANDOM
+			</setvar>
+		</step>
+
+        <step no="1">
+            <desc>
+                access cloud3.0
+            </desc>
+            <log-file>login_cloud.html</log-file>
+            <file>session_id.log</file>
+            <script>
+                export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/cloud_login_positive.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub -t ${tb.browser_type} -f ${log.dir}/${log.file} -l debug --preserve-session --parameters visit.pre_url=${login_addr} visit.url=${access_addr} &gt; ${log.dir}/session_id.log
+            </script>
+        </step>
+
+        <step no="2">
+            <desc>
+                get session id
+            </desc>
+            <setvar name="session.id">
+                ${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log -t str
+            </setvar>
+        </step>
+ 
+		<step no="check.connect.capwap">
+			<desc>
+				1. Check the duttype capwap connect state.
+			</desc>
+			<console target="ap1">
+				-v ""
+				-v "show capwap client"
+				-v ""
+				-v "show running-config"
+				-v ""
+			</console>
+		</step> 
+		
+		<step no="3">
+			<desc>
+				execute script to create radio profile, then push config to device
+			</desc>
+			<log-file>radio_profile.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/Radio_Proflie.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --preserve-session --parameters device.ap_mac=${ap1.mgt0.mac} visit.ap.platform=${img.prodtype} visit.wifi0_mode_name=${wifi0_name}-${random.number} visit.wifi1_mode_name=${wifi1_name}-${random.number} visit.network_template_name=${template_name}-${random.number} visit.network_policy_name=${policy_name}-${random.number} visit.pre_url=${login_addr} visit.url=${access_addr} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l debug --session-id=${session.id}				
+			</script>
+		</step>
+
+		<step no="4">
+			<desc>
+				deploy policy
+			</desc>
+			<log-file>deploy_policy.html</log-file>
+			<script timeout="500">
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cloud/deploy_policy.py -r http://${wpc.mif.ip}:${job_selenium_port}/wd/hub --parameters deploy_policy.check_mac=${ap1.mgt0.mac} visit.url=${access_addr} --session-id=${session.id} -t ${tb.browser_type} -f ${log.dir}/${log.file} -l debug
+			</script>
+		</step>		
+
+		<step no="5.1" delay="120">
+			<if>"${img.prodtype}" == "AP230"</if>
+				<desc>
+					1. show run config on AP230
+				</desc>
+				<log-file>check_config.log</log-file>
+				<console target="ap1">
+					-v "sh running-config"
+					-v "show radio profile"
+				</console>
+		</step>
+
+		<step no="5.1" delay="120">
+			<if>"${img.prodtype}" == "AP330" || "${img.prodtype}" == "AP350"</if>
+				<desc>
+					1. show run config on AP330 or AP350
+				</desc>
+				<log-file>check_config.log</log-file>
+				<console target="ap1">
+					-v "sh running-config"
+					-v "show radio profile"
+				</console>
+		</step>		
+	</stage>
+	<post-process>
+		<stage>
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${wpc.mif.ip}, ${job_selenium_workload}" />
+		</stage>
+	</post-process>
+</testcase>

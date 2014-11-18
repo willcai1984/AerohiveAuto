@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+<brief>Client could send some type traffic before login (passthrough/e-cwp authenticate)</brief>
+<priority>Accept</priority>
+<automated>yes</automated>
+<description>
+		Pre-Condition:
+		Test Procedure:
+		1:Configure passthrough/ecwp on ap, and configure one ethernet port
+		bridge mode, enable mac-learning, bind cwp to the bridge ethernet port
+		2:Client links to ap through the bridge ethernet port, result 1
+		3:Client ping a hostname ,such as www.sohu.com, result 2
+		4:Client tries to access internet or other service, result 3
+</description>
+<numofap>1</numofap>
+<numofsta>0</numofsta>
+<tbtype>linux</tbtype>
+<stage>
+	<if>
+		"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" =="true"
+	</if>
+<include prefix="0" file="subs/bpc_reboot.xml" obj-args="ap1.bpc"/>
+	<step no="1">
+		<desc>
+				1:Configure passthrough/ecwp on ap, and configure one ethernet port
+				bridge mode, enable mac-learning, bind cwp to the bridge ethernet port
+		</desc>
+		<ssh target="ap1">
+				-v "security-object cwp"
+				-v "security-object cwp security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object cwp security additional-auth-method captive-web-portal auth-user-profile-attr 1"
+				-v "security-object cwp security additional-auth-method captive-web-portal pass-through vlan 1"
+				-v "security-object cwp web-server"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "interface eth1 security-object cwp"
+		</ssh>
+	</step>
+	<include prefix="1.1" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="ap1.bpc"/>
+	<step no="2" delay="10">
+		<desc>ifconfig to show the ip adrr</desc>
+		<log-file>ifconfig.log</log-file>
+		<ssh target="${ap1.bpc.mif.ip}">
+				-v "ifconfig  ${ap1.bpc.tif.name}"
+		</ssh>
+		<log-match> -e "inet addr"</log-match>
+	</step>
+	<step no="2.2">
+		<desc>Get clinet's mac</desc>
+		<setvar name="bpc1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${ap1.bpc.tif.name} -m -width
+		</setvar>
+	</step>
+	<step no="2.3">
+		<desc>Get client's ip</desc>
+		<setvar name="bpc1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${ap1.bpc.tif.name} -nomask
+		</setvar>
+	</step>
+	<step no="2.4">
+		<desc>setup debugger</desc>
+		<telnet target="ap1">
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff src-mac ${bpc1.tif.mac} bidirectional"
+				-v "clear log all"
+		</telnet>
+	</step>
+	<step no="3">
+		<desc>3:Client ping a hostname ,such as www.sohu.com, result 2</desc>
+		<log-file>step3_client_ping_hostname.log</log-file>
+		<ssh target="${ap1.bpc.mif.ip}">
+				-v "ping ${pub.dnstest.name1} -c 10"
+		</ssh>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "(\d+)% packet loss" -f ${log.dir}/${log.file} --script "int(m.group(1))&lt;50"</log-match>
+	</step>
+	<include prefix="3.1" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step3.1_show_logging_buffered.log"/>
+	<step no="3.2">
+		<desc>check log buffered</desc>
+		<log-file>step3.1_show_logging_buffered.log</log-file>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth0 ${bpc1.tif.ip}->${pub.dnstest.ip1}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth0 ${pub.dnstest.ip1}->${bpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-reply" -f ${log.dir}/${log.file}</log-match>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1 ${bpc1.tif.ip}->${pub.dnstest.ip1}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1 ${pub.dnstest.ip1}->${bpc1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-reply" -f ${log.dir}/${log.file}</log-match>
+	</step>
+	<step no="4">
+		<desc>4:Client tries to access internet or other service, result 3</desc>
+		<log-file>step4_sta_download_file_by_tftp.log</log-file>
+		<ssh target="${ap1.bpc.mif.ip}" timeout="150">
+				-v "tftp ${pub.tftp1.tip} -c get test"
+		</ssh>
+		<log-match>-e "Transfer timed out"</log-match>
+	</step>
+	<include prefix="4.1" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step4.1_show_logging_buffered.log"/>
+	<step no="4.2">
+		<desc>check log buffered</desc>
+		<log-file>step4.1_show_logging_buffered.log</log-file>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "eth1 ${bpc1.tif.ip}->${pub.tftp1.tip}\(\d+\) ttl\(\d+\) UDP \d+->\d+" -f ${log.dir}/${log.file}</log-match>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "MAC session \(id \[\d+\]\) found" -f ${log.dir}/${log.file}</log-match>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "fflow ${bpc1.tif.mac}->${tb.vlan1.gw.mac} flag \S+, rflow ${tb.vlan1.gw.mac}->${bpc1.tif.mac} flag \S+" -f ${log.dir}/${log.file}</log-match>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "fflow acl 0x0/0x0, rflow acl 0x0/0x0" -f ${log.dir}/${log.file}</log-match>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "invalid udp port \d+->\d+, drop" -f ${log.dir}/${log.file}</log-match>
+		<log-match bin="${bin.dir}/searchbyrexp.py">-p "auth: incorrect protocol, drop pak" -f ${log.dir}/${log.file}</log-match>
+	</step>
+	</stage>
+	<post-process>
+	<stage>
+	<step no="0">
+		<desc>clear client</desc>
+		<ssh target="${ap1.bpc.mif.ip}">
+					-v "ifconfig ${ap1.bpc.tif.name} down"
+					-v "dhclient ${ap1.bpc.tif.name} -r"
+		</ssh>
+	</step>
+	</stage>
+	<include file="include/default_post_process.xml"/>
+	</post-process>
+	</testcase>

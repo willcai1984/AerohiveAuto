@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>ldaps support</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configed first
+		-setup a ssid using wpa-auto-802.1x,radius server is local
+
+		Test Procedure:
+		-config a minimal edir
+		-set the protocol to be ldaps,config the port(default is 636)
+		-client connect to ssid
+		-enable cache
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+
+		<step no="1">
+			<desc>set security-object parameters</desc>
+			<ssh target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type ldap-server primary server ${pub.edir1.ip}"
+				-v "aaa radius-server local db-type ldap-server primary basedn ${pub.edir1.basedc}"
+				-v "aaa radius-server local db-type ldap-server primary binddn ${pub.edir1.binddn} pass ${pub.edir1.bindpwd}"
+				-v "aaa radius-server local db-type ldap-server sub-type edirectory"
+				-v "save radius-server-key ldap-client tftp://${pub.tftp1.tip}:certs/cacert.pem"
+				-v "aaa radius-server local ldap-auth primary type tls ca-cert cacert.pem verify-server never"
+				-v "aaa radius-server local enable"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>config ssid and bind it to interface</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile aaa vlan-id 1 attr 1"
+				-v "aaa radius-server local db-type ldap-server primary protocol ldaps"
+				-v "aaa radius-server local db-type ldap-server primary port 636"
+			</ssh>
+		</step>
+
+		<step no="3">
+			<desc>show running-config</desc>
+			<log-file>step3_show_run.log</log-file>
+			<ssh target="ap1">
+				-v "show running-config"
+			</ssh>
+			<log-match>-i "aaa radius-server local db-type ldap-server sub-type edirectory"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>show status of radius server</desc>
+			<log-file>step3.1_show_rad_srv.log</log-file>
+			<ssh target="ap1">
+				-v "show aaa radius-server"
+			</ssh>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3 -c</log-match>
+			<log-match>-i "CA: *cacert.pem"</log-match>
+			<log-match>-i "Verify Server: *never"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>open debug and clear log all</desc>
+			<ssh target="ap1">
+				-v "_debug radius excessive"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="6" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step6_show_logging_buffered.log" />
+
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+	</stage>
+</testcase>

@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>The data session will be released once max-duration expires</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		security-object zhhtest
+		security-object zhhtest default-user-profile-attr 1
+		ssid zhhtest
+		ssid zhhtest security-object zhhtest
+		interface wifi0 ssid zhhtest
+		user-profile uu qos-policy def-user-qos vlan-id 1 attribute 1
+		ip-policy xx
+		ip-policy xx id 1 service tftp action permit
+		ip-policy xx id 2 service dhcp-server action permit
+		ip-policy xx id 3 service dhcp-client action permit
+		ip-policy xx id 4 service icmp action permit
+		user-profile uu security ip-policy from-access xx
+		alg tftp enable
+		Laptop connect to SSID and obtain ip address
+		_debug fe alg_tftp_error
+		_debug fe alg_tftp_fsm
+		_debug fe alg_tftp_gate
+		_debug fe alg_tftp_pkt
+		_ff id 1 src-mac xxxx:yyyy:zzzz bidirectional
+		_kdebug fe basic
+		_kdebug fe detail
+		debug console
+		clear forwarding-engine ip-sessions
+
+		Test Procedure:
+		1. Test default value
+		2. Set the max-duration to 1 min by "alg tftp max-duration 3"
+		3. Laptop send data to tftp server, verify data session be created
+		4. When data is transferring, stop tftp service in tftp server, check
+		if data session
+		still exist
+		5. After max-duration, check if data session be deleted
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="user_id" value="TFtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				security-object zhhtest
+				security-object zhhtest default-user-profile-attr 1
+				ssid zhhtest
+				ssid zhhtest security-object zhhtest
+				interface wifi0 ssid zhhtest
+				user-profile uu qos-policy def-user-qos vlan-id 1 attribute 1
+				ip-policy xx
+				ip-policy xx id 1 service tftp action permit
+				ip-policy xx id 2 service dhcp-server action permit
+				ip-policy xx id 3 service dhcp-client action permit
+				ip-policy xx id 4 service icmp action permit
+				user-profile uu security ip-policy from-access xx
+				alg tftp enable
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} attribute 1"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "ip-policy test"
+				-v "ip-policy test id 1 service tftp action permit"
+				-v "ip-policy test id 2 service dhcp-server action permit"
+				-v "ip-policy test id 3 service dhcp-client action permit"
+				-v "ip-policy test id 4 service icmp action permit"
+				-v "user-profile uu security ip-policy from-access test"
+				-v "alg tftp enable"
+				-v "save config"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				Set filter and open some debug, clear ip-session and clear log all
+				_debug fe alg_tftp_error
+				_debug fe alg_tftp_fsm
+				_debug fe alg_tftp_gate
+				_debug fe alg_tftp_pkt
+				_ff id 1 src-mac xxxx:yyyy:zzzz bidirectional
+				_kdebug fe basic
+				_kdebug fe detail
+				debug console
+				clear forwarding-engine ip-sessions
+				Stop tftp service in tftp server
+			</desc>
+			<console target="ap1">
+				-v "_debug fed alg_tftp_error"
+				-v "_debug fed alg_tftp_fsm"
+				-v "_debug fed alg_tftp_gate"
+				-v "_debug fed alg_tftp_pkt"
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "debug console"
+				-v "clear log all"
+				-v "clear forwarding-engine ip-sessions"
+			</console>
+		</step>
+
+		<step no="4.1" delay="10">
+			<desc>
+				- Test default value
+			</desc>
+			<log-file>step4.1_show_alg_tftp.log</log-file>
+			<console target="ap1">
+				-v "show alg tftp"
+			</console>
+			<log-match>-p 2 -i "tftp" -p 6 -i "60"</log-match>
+		</step>
+
+		<step no="4.2" delay="15">
+			<desc>
+				- Set the max-duration to 1 min by "alg tftp max-duration 3"
+			</desc>
+			<console target="ap1">
+				-v "alg tftp max-duration 3"
+			</console>
+		</step>
+
+		<step no="4.3" delay="15">
+			<desc>
+				- Show alg tftp can see max-duration is 1
+			</desc>
+			<log-file>step4.3_show_alg_again.log</log-file>
+			<console target="ap1">
+				-v "show alg tftp"
+			</console>
+			<log-match>-i "1 *tftp *enable *0 *30 *3"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				- creat file on tftp
+			</desc>
+			<ssh host="${pub.tftp1.ip}">
+				-v "dd if=/dev/zero of=/tftpboot/${job.id}newfile bs=1k count=10000"
+			</ssh>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				- get file from tftp
+			</desc>
+			<log-file>step5.2_get_file.log</log-file>
+			<ssh target="sta1">
+				-v "nohup tftp ${pub.tftp1.tip} -c get ${job.id}newfile &amp;"
+			</ssh>
+		</step>
+
+		<step no="6.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				- verify data session be created
+			</desc>
+			<log-file>step6_check_ip_session.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${pub.tftp1.tip}/\d+ -> ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+ -> ${pub.tftp1.tip}/\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				check data session exist
+			</desc>
+			<log-file>data_session_exist.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p "${pub.tftp1.tip}/(\d+) -> ${sta1.tif.ip}/" -f ${log.dir}/step6_check_ip_session.log | awk -F "," '{if ($1 != 69 || $2!= 69 ) {print "success"} }' > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "success"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				- When data is transferring, stop tftp service in tftp server
+			</desc>
+			<ssh host="${pub.tftp1.ip}">
+				-v "service xinetd stop"
+			</ssh>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				- verify data session still exist
+			</desc>
+			<log-file>step8_check_ip_session.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${pub.tftp1.tip}/\d+ -> ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+ -> ${pub.tftp1.tip}/\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				check data session still exist
+			</desc>
+			<log-file>data_session_still_exist.log</log-file>
+			<script>
+				${bin.dir}/getbyrexp.py -p "${pub.tftp1.tip}/(\d+) -> ${sta1.tif.ip}/" -f ${log.dir}/step8_check_ip_session.log | awk -F "," '{if ($1 != 69 || $2!= 69 ) {print "success"} }' > ${log.dir}/${log.file}
+			</script>
+			<log-match>-e "success"</log-match>
+		</step>
+
+		<step no="9.1" delay="120" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				- After max-duration, check if data session be deleted
+			</desc>
+			<log-file>step9_check_ip_session.log</log-file>
+			<console target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-c 0 -p "${pub.tftp1.tip}/69 -> ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-c 0 -p "${sta1.tif.ip}/\d+ -> ${pub.tftp1.tip}/69" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="9.2" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step9_show_log.log" />
+
+		<step no="9.3">
+			<desc>
+				check log
+			</desc>
+			<log-file>step9_show_log.log</log-file>
+			<log-match>-i "\[fed_alg_tftp_fsm\]: tftp object release timer expire,go to delete object."</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "\[fed_alg_tftp_gate\]: TFTP ALG delete gate src_ip:${pub.tftp1.tip},src_port:0,dst_ip:${sta1.tif.ip},dst_port:\d+,protocol:17" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-i "\[fe\]: fe delete gate OR data session"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="10">
+				<desc>
+					- delete created file on tftp
+				</desc>
+				<ssh target="sta1">
+					-v "rm -f ${job.id}newfile"
+				</ssh>
+			</step>
+
+			<step no="11">
+				<desc>
+					start tftp service in tftp server
+				</desc>
+				<ssh host="${pub.tftp1.ip}">
+					-v "service xinetd start"
+				</ssh>
+			</step>
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,459 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify the display statistic infromation is correct when run “show ssid counter station” command.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		1.wifi0 is up
+		2.There is a ssid binding with wifi0.1 interface
+		3. There is two stations associated with this ssid
+		Test Procedure:
+		1. Turn on packets sniffer
+		2. Ececute CLI command on each MP:
+		# clear ssid &lt;ssid&gt; counter station
+		# show ssid &lt;ssid&gt; counter station
+		3. verify the number of beacon frames
+		4. verify the number of tx data frames
+		5. verify the number of rx date frames
+		6. verify the number of droped frames
+		7. verify the number of error frames
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>windows</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				"interface wifi0 mode access"
+				"ssid ${ssid.name}"
+				"security-object ${ssid.name}"
+				"ssid ${ssid.name} security-object ${ssid.name}"
+				"security-object ${ssid.name} security protocol-suite wpa-auto-psk ascii-key aerohive"
+				"interface wifi0 ssid ${ssid.name}"
+				"interface wifi0 radio channel 1"
+			</desc>
+			<log-file>step1_config_client_connects_AP.log</log-file>
+			<console target="ap1">
+				-v "interface wifi0 mode access"
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite wpa-auto-psk ascii-key aerohive"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Generate wifi_aerohive_test profile for ssid ${ssid.name}
+			</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/winprof.xml -o step1.1_wifi_prof.xml -s "${ssid.name}" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password
+			</desc>
+			<script>
+				staf local fs copy file ${log.dir}/step1.1_wifi_prof.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				verify profile copied
+			</desc>
+			<log-file>step1.3_cat_profile_sta.log</log-file>
+			<ssh target="sta1">
+				-v "cat /cygdrive/c/staf/wifi_aerohive_test.xml | grep ${ssid.name}"
+			</ssh>
+			<log-match>-e "&lt;name&gt;${ssid.name}&lt;/name&gt;"</log-match>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				Delete all current Wireless profile of host ${sta1.mif.ip}
+				Bring down the client Wireless ${sta1.mif.ip}
+				Bring up the client Wireless on host ${sta1.mif.ip}
+				Add new profile for ssid ${ssid.name} to host ${sta1.mif.ip}
+				Check profile for ssid ${ssid.name} on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.4_wlan_conf_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan delete profile name=* interface=\"${sta1.tif.name}\""
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=DISABLED"
+				-v "netsh interface set interface name=\"${sta1.tif.name}\" admin=ENABLED"
+				-v "netsh wlan add profile filename=\"c:\\staf\\wifi_aerohive_test.xml\" interface=\"${sta1.tif.name}\""
+				-v "netsh wlan show profiles ${ssid.name}"
+			</ssh>
+			<log-match>-i "SSID name" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="1.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show wlan network on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.5_wlan_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show network | grep SSID"
+			</ssh>
+			<log-match>-i "SSID" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="1.6">
+			<desc>
+				connect to ssid ${ssid.name} on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.6_wlan_conn_sta.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan connect ssid=${ssid.name} name=${ssid.name} interface=\"${sta1.tif.name}\""
+			</ssh>
+		</step>
+
+		<step no="1.7" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ssid ${ssid.name} connected on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.7_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-i "State" -i " connected"</log-match>
+		</step>
+
+		<step no="1.8" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ip assigned on host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.8_wlan_ip_chk_sta.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+			<log-match>-i "IPv4 Address" -i "192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="1.9">
+			<desc>
+				Dump all interfaces data from remote host ${sta1.mif.ip}
+			</desc>
+			<log-file>step1.9_wlan_ip_dump_sta.log</log-file>
+			<ssh target="sta1">
+				-v "ipconfig /all"
+			</ssh>
+		</step>
+
+		<step no="1.10">
+			<desc>
+				Get station's MAC
+			</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.9_wlan_ip_dump_sta.log -i Wireless -o win -m -width
+			</setvar>
+		</step>
+
+		<step no="1.11">
+			<desc>
+				show mgt0.1 ip of ap1
+			</desc>
+			<log-file>step1.11_show_interface_mgt0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="1.12">
+			<desc>
+				Get ap1's ip
+			</desc>
+			<setvar name="ap_ip_1">
+				${bin.dir}/getbyrexp.py -p "(?i)IP addr=(.*?);" -f ${log.dir}/step1.11_show_interface_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.13">
+			<desc>
+				sta ping ap
+			</desc>
+			<log-file>step2_sta_ping_ap.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${ap_ip_1} -c 5"
+			</ssh>
+			<log-match>-e "from ${ap_ip_1}"</log-match>
+			<log-match>-n -e "100% packet loss"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Generate wifi_aerohive_test profile for ssid ${ssid.name}
+			</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/winprof.xml -o step2.1_wifi_prof.xml -s "${ssid.name}" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				Copy to target Windows host machine a wifi windows profile file containing WEP aerohive password
+			</desc>
+			<script>
+				staf local fs copy file ${log.dir}/step2.1_wifi_prof.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${sta2.mif.ip}
+			</script>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				verify profile copied
+			</desc>
+			<log-file>step2.3_cat_profile_sta.log</log-file>
+			<ssh target="sta2">
+				-v "cat /cygdrive/c/staf/wifi_aerohive_test.xml | grep ${ssid.name}"
+			</ssh>
+			<log-match>-e "&lt;name&gt;${ssid.name}&lt;/name&gt;"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				Delete all current Wireless profile of host ${sta2.mif.ip}
+				Bring down the client Wireless ${sta2.mif.ip}
+				Bring up the client Wireless on host ${sta2.mif.ip}
+				Add new profile for ssid ${ssid.name} to host ${sta2.mif.ip}
+				Check profile for ssid ${ssid.name} on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.4_wlan_conf_sta.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan delete profile name=* interface=\"${sta2.tif.name}\""
+				-v "netsh interface set interface name=\"${sta2.tif.name}\" admin=DISABLED"
+				-v "netsh interface set interface name=\"${sta2.tif.name}\" admin=ENABLED"
+				-v "netsh wlan add profile filename=\"c:\\staf\\wifi_aerohive_test.xml\" interface=\"${sta2.tif.name}\""
+				-v "netsh wlan show profiles ${ssid.name}"
+			</ssh>
+			<log-match>-i "SSID name" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="2.5" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show wlan network on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.5_wlan_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan show network | grep SSID"
+			</ssh>
+			<log-match>-i "SSID" -i "${ssid.name}"</log-match>
+		</step>
+
+		<step no="2.6">
+			<desc>
+				connect to ssid ${ssid.name} on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.6_wlan_conn_sta.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan connect ssid=${ssid.name} name=${ssid.name} interface=\"${sta2.tif.name}\""
+			</ssh>
+		</step>
+
+		<step no="2.7" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ssid ${ssid.name} connected on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.7_wlan_conn_chk_sta_${loop_check.idx}.log</log-file>
+			<ssh target="sta2">
+				-v "netsh wlan show interfaces"
+			</ssh>
+			<log-match>-i "State" -i " connected"</log-match>
+		</step>
+
+		<step no="2.8" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				wait until ip assigned on host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.8_wlan_ip_chk_sta.log</log-file>
+			<ssh target="sta2">
+				-v "ipconfig /all"
+			</ssh>
+			<log-match>-i "IPv4 Address" -i "192.168.${tb.vlan1}."</log-match>
+		</step>
+
+		<step no="2.9">
+			<desc>
+				Dump all interfaces data from remote host ${sta2.mif.ip}
+			</desc>
+			<log-file>step2.9_wlan_ip_dump_sta.log</log-file>
+			<ssh target="sta2">
+				-v "ipconfig /all"
+			</ssh>
+		</step>
+
+		<step no="2.10">
+			<desc>
+				Get station's MAC
+			</desc>
+			<setvar name="sta2.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step2.9_wlan_ip_dump_sta.log -i Wireless -o win -m -width
+			</setvar>
+		</step>
+		<step no="2.10.1">
+			<desc>Get the laptop2's Wireless IP</desc>
+			<setvar name="sta2.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step2.9_wlan_ip_dump_sta.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+		<step no="2.11">
+			<desc>
+				show mgt0.1 ip of ap1
+			</desc>
+			<log-file>step2.11_show_interface_mgt0.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+
+		<step no="2.12">
+			<desc>
+				Get ap1's ip
+			</desc>
+			<setvar name="ap_ip_2">
+				${bin.dir}/getbyrexp.py -p "(?i)IP addr=(.*?);" -f ${log.dir}/step2.11_show_interface_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="2.13">
+			<desc>
+				sta ping ap
+			</desc>
+			<log-file>step2.13_sta_ping_ap.log</log-file>
+			<ssh target="sta2">
+				-v "ping ${ap_ip_2} -c 5"
+			</ssh>
+			<log-match>-e "from ${ap_ip_2}"</log-match>
+			<log-match>-n -e "100% packet loss"</log-match>
+		</step>
+		<step no="3">
+			<desc>
+				clear ssid counter station
+			</desc>
+			<telnet target="ap1">
+				-v "clear ssid ${ssid.name} counter station"
+			</telnet>
+		</step>
+		<step no="4" delay="120">
+			<desc>
+				Ececute CLI command on MP:
+				show ssid ${ssid.name} counter station
+			</desc>
+			<log-file>stpe4_show_ssid_counter_sta1.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name} counter station ${sta1.tif.mac}"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get station1 content "tx data frames"
+			</desc>
+			<setvar name="sta1_content_1">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+tx data frames" -f ${log.dir}/stpe4_show_ssid_counter_sta1.log -t str
+			</setvar>
+		</step>
+		<step no="5">
+			<desc>
+				Ececute CLI command on MP:
+				show ssid ${ssid.name} counter station
+			</desc>
+			<log-file>stpe5_show_ssid_counter_sta2.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name} counter station ${sta2.tif.mac}"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="5.1">
+			<desc>
+				get station2 content "rx data frames"
+			</desc>
+			<setvar name="sta2_content_2">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+rx data frames" -f ${log.dir}/stpe5_show_ssid_counter_sta2.log -t str
+			</setvar>
+		</step>
+		<step no="6">
+			<desc>
+				sta1 ping sta2
+			</desc>
+			<log-file>step6_sta1_ping_sta2.log</log-file>
+			<ssh target="sta1" timeout="200">
+				-v "ping ${sta2.tif.ip} 4000 100"
+			</ssh>
+			<log-match>-e "from ${sta2.tif.ip}"</log-match>
+			<log-match>-n -e "100% packet loss"</log-match>
+		</step>
+		<step no="7">
+			<desc>
+				Ececute CLI command on MP:
+				show ssid ${ssid.name} counter station
+			</desc>
+			<log-file>stpe7_show_ssid_counter_sta1.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name} counter station ${sta1.tif.mac}"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="7.1">
+			<desc>
+				get station1 content "tx data frames"
+			</desc>
+			<setvar name="sta1_content_1_1">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+tx data frames" -f ${log.dir}/stpe7_show_ssid_counter_sta1.log -t str
+			</setvar>
+		</step>
+		<step no="8">
+			<desc>
+				Ececute CLI command on MP:
+				show ssid ${ssid.name} counter station
+			</desc>
+			<log-file>stpe8_show_ssid_counter_sta2.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name} counter station ${sta2.tif.mac}"
+			</console>
+			<no-error-check />
+		</step>
+		<step no="8.1">
+			<desc>
+				get station2 content "rx data frames"
+			</desc>
+			<setvar name="sta2_content_2_1">
+				${bin.dir}/getbyrexp.py -p "(\d+)\s+rx data frames" -f ${log.dir}/stpe8_show_ssid_counter_sta2.log -t str
+			</setvar>
+		</step>
+		<step no="8.3">
+			<desc>
+				compare content "rx data frames"
+			</desc>
+			<script>
+				if [ ${sta2_content_2_1} -gt ${sta2_content_2} ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+		<step no="8.4">
+			<desc>
+				compare content "tx data frames"
+			</desc>
+			<script>
+				if [ ${sta1_content_1_1} -gt ${sta1_content_1} ]
+				then
+				exit 0
+				else
+				exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+</testcase>

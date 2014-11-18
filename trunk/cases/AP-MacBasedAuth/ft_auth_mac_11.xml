@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the mac re-auth time</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config an account on radius server, username and password are both the mac addr of STA1, it will return session-timeout after radius auth success
+
+		Test Procedure:
+		-config a ssid with mac auth enable
+		-STA1 connects to ssid, result 1
+		-check the status of STA1 on AP result 2,3
+		-wait for session timeout
+		-check the debug info on AP1,4
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="acct1.session_time" value="120" />
+	<property name="conn1.ssid" value="${ssid.name}_${job.sid}" />
+
+	<stage>
+		<step no="0">
+			<desc>ipconfig to show the ip add</desc>
+			<log-file>ipconfig.log</log-file>
+			<staf target="sta1">
+				-v "ipconfig /all"
+			</staf>
+		</step>
+
+		<step no="0.1">
+			<desc>Get sta1's mac</desc>
+			<setvar name="sta1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig.log -i ${sta1.tif.name} -o win -m -uppercase -dash
+			</setvar>
+		</step>
+
+		<include prefix="1" file="subs/ldap_add.xml" args="${sta1.mac}, ${sta1.mac}" obj-args="acct1" />
+
+		<step no="2">
+			<desc>
+				-config a ssid with mac auth enable
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ${ssid.name}_${job.sid}"
+				-v "security-object ${ssid.name}_${job.sid} default-user-profile-attr 1"
+				-v "security-object ${ssid.name}_${job.sid} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object ${ssid.name}_${job.sid} security additional-auth-method mac-based-auth"
+				-v "ssid ${ssid.name}_${job.sid}"
+				-v "ssid ${ssid.name}_${job.sid} security-object ${ssid.name}_${job.sid}"
+				-v "interface wifi0 ssid ${ssid.name}_${job.sid}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id ${tb.vlan2} attribute 1"
+				-v "aaa mac-format case-sensitivity upper-case"
+				-v "aaa mac-format delimiter dash"
+				-v "aaa mac-format style five-delimiter"
+				-v "_debug auth all"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>show running config</desc>
+			<log-file>step3_show_running_config.log</log-file>
+			<ssh target="ap1">
+				-v "show running-config"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>show security-object XXX</desc>
+			<log-file>step3.1_show_security_object.log</log-file>
+			<ssh target="ap1">
+				-v "show security-object ${ssid.name}_${job.sid}"
+			</ssh>
+			<log-match>-c -i "MAC-based auth: *Enabled"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				-show ssid XXX station
+			</desc>
+			<log-file>step4_show_station_info.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name}_${job.sid} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "open" -i "${tb.vlan2} *Yes *1"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				-show roaming cache
+			</desc>
+			<log-file>step5_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YNNN"</log-match>
+		</step>
+
+		<step no="6" delay="200">
+			<desc>
+				-check the debug info on AP1
+			</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="300">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "MAC Re-Auth: RADIUS server send OK to station ${sta1.tif.mac}"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>Get the second times of reauth</desc>
+			<setvar name="second.reauth.times">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_show_logging_buffered.log -p "(?i)(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*MAC Re-Auth: RADIUS server send OK to station ${sta1.tif.mac}" -t str -g0 -s none
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>Get the first times of reauth</desc>
+			<setvar name="first.reauth.times">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step6_show_logging_buffered.log -p "(?i)(\S{4}-\S{2}-\S{2}\s*\d+:\d+:\d+).*MAC Re-Auth: RADIUS server send OK to station ${sta1.tif.mac}" -t str -g1 -s none
+			</setvar>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				check if the interval is 120s.
+			</desc>
+			<log-file>step6.3_check_result.log</log-file>
+			<script>
+				${bin.dir}/pyeval.py "(mktime(datetime.strptime('${second.reauth.times}', '%Y-%m-%d %H:%M:%S').timetuple()) - mktime(datetime.strptime('${first.reauth.times}', '%Y-%m-%d %H:%M:%S').timetuple())) == 120.0" &gt; ${log.dir}/${log.file}
+			</script>
+			<log-match>-c -i "true"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="delete.mac.account" file="subs/ldap_delete.xml" args="${sta1.mac}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

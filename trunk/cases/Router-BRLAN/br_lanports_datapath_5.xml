@@ -1,0 +1,150 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check dhcp packet process for laptop1/laptop2 with lan ports port based mode</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+		PC1 connect to switch
+		Laptop1 connect to lan port eth1
+		Laptop2 connect to lan port eth4
+		Station1 connect to wifi
+		BR lan port works with port based/trunk mode
+
+		Test Procedure:
+		1. Configure mgt0.1 vlan 20
+		2. Configure user-profile vlan 20 attribute 20
+		User-profile test20 vlan 20 attribute 20
+		3. Configure lan port eth1/eth4 user-profile-attribute 20
+		Interface eth1 mode bridge-access user-profile-attribute 20
+		Interface eth4 mode bridge-access user-profile-attribute 20
+
+		4. Laptop1 connect to eth1, retrieve ip address from mgt0.1dhcp server. Result1
+
+		5. Laptop2 connect to eth4, retrieve ip address from mgt0.1 dhcp server. Result2
+
+	</description>
+
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				1. Configure mgt0.1 vlan 20
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Configure user-profile vlan 20 attribute 20
+				User-profile test20 vlan 20 attribute 20
+				3. Configure lan port eth1/eth4 user-profile-attribute 20
+				Interface eth1 mode bridge-access user-profile-attribute 20
+				Interface eth3 mode bridge-access user-profile-attribute 20
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute ${br1.vpc1.vlan}"
+				-v "interface eth1 mode bridge-access user-profile-attribute ${br1.vpc1.vlan}"
+				-v "interface eth3 mode bridge-access user-profile-attribute ${br1.vpc1.vlan}"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				Laptop1 connect to lan port eth1
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.1b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+
+		<step no="get_prefix">
+			<multi-setvar>
+				echo "br1.mgt0.1.prefix=$(echo ${br1.br.mgt0.1.ip_pool_start} | cut -d. -f1,2,3)"
+				echo "br1.vpc1.prefix=$(echo ${br1.vpc1.tif.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				Result1: laptop1 get ip address successfully assigned by mgt0.1 dhcp server
+			</desc>
+			<script>
+				if [ "${br1.vpc1.prefix}" == "${br1.mgt0.1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+		<step no="4">
+			<desc>
+				4. Laptop2 connect to eth3, retrieve ip address from mgt0.1 dhcp server. Result2
+			</desc>
+			<console target="br1.ap1" slow="yes">
+				-v "interface mgt0 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0 native-vlan ${br1.vpc1.vlan}"
+				-v "no interface mgt0 dhcp client"
+				-v ""
+				-v ""
+				-v "interface mgt0 dhcp client"
+				-v ""
+				-v ""
+			</console>
+		</step>
+
+		<step no="4.1b" delay="30">
+			<desc>
+				show AP1 mgt0
+			</desc>
+			<log-file>step4.1b_show_int_mgt0.log</log-file>
+			<console target="br1.ap1" slow="yes">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="4.1c">
+			<desc>get IP address of ap1 mgt0</desc>
+			<setvar name="br1.ap1.mgt0.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/step4.1b_show_int_mgt0.log -t str
+			</setvar>
+		</step>
+
+		<step no="get_prefix">
+			<multi-setvar>
+				echo "br1.ap1.prefix=$(echo ${br1.ap1.mgt0.ip} | cut -d. -f1,2,3)"
+			</multi-setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				Result2: laptop1 get ip address successfully assigned by mgt0.1 dhcp server
+			</desc>
+			<script>
+				if [ "${br1.ap1.prefix}" == "${br1.mgt0.1.prefix}" ]; then exit 0; else exit 1; fi
+			</script>
+		</step>
+
+	</stage>
+
+</testcase>

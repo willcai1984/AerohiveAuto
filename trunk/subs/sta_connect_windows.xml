@@ -1,0 +1,145 @@
+<include rarg-names="__STA__">
+	<step no="pre.e">
+		<desc>set default ap to connect</desc>
+		<if>"${__STA__.debug}" != ""
+			&amp;&amp; "${__STA__.ap.name}" == ""</if>
+		<setvar name="__STA__.ap.name">
+			echo "ap1"
+		</setvar>
+	</step>
+
+	<step no="gene.the.temple.file">
+		<desc>Generate profile for ssid ${__STA__.ssid}</desc>
+		<script>
+			${bin.dir}/winprof_gen.pl -f ${auto.root.dir}/subs/conf/${__STA__.proto}.xml -l ${log.dir} -o __STA___to_${__STA__.ssid}.xml -s "${__STA__.ssid}";
+		</script>
+	</step>
+
+	<step no="change_the_psk_if_the_proto_is_psk">
+		<desc>Generate profile for ssid ${__STA__.ssid}</desc>
+		<if>"${__STA__.psk}" != ""</if>
+		<script>
+			sed -i "s/_PSK_/${__STA__.psk}/" ${log.dir}/__STA___to_${__STA__.ssid}.xml
+		</script>
+	</step>
+
+	<step no="transfer.the.file.tohost">
+		<desc>send the above ssid profile file to __STA__</desc>
+		<script>
+			staf local fs copy file ${log.dir}/__STA___to_${__STA__.ssid}.xml tofile "c:\\staf\\wifi_aerohive_test.xml" tomachine ${__STA__.mif.ip}
+		</script>
+	</step>
+
+	<step no="3">
+		<desc>Bring down the Wireless interface of __STA__</desc>
+		<script>
+			${bin.dir}/stafcmd.pl -d ${__STA__.mif.ip} -v "netsh wlan disconnect interface=\"${__STA__.tif.name}\""
+		</script>
+	</step>
+
+	<step no="4">
+		<desc>Delete current Wireless profile on __STA__</desc>
+		<script>
+			${bin.dir}/stafcmd.pl -d ${__STA__.mif.ip} -v "netsh wlan delete profile * "
+		</script>
+	</step>
+	<step no="5">
+		<desc>Add new profile for ssid ${__STA__.ssid} to __STA__</desc>
+		<script>
+			${bin.dir}/stafcmd.pl -d ${__STA__.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test.xml" interface=\"${__STA__.tif.name}\""
+		</script>
+	</step>
+	<step no="get___STA___ip_info">
+		<desc>Show interface on laptop2</desc>
+		<log-file>ipconfig_${__STA__.mif.ip}.log</log-file>
+		<script>
+			perl ${bin.dir}/stafcmd.pl -d ${__STA__.mif.ip}  -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+		</script>
+	</step>
+
+	<step no="get___STA___mac">
+		<desc>Get __STA__'s mac</desc>
+		<setvar name="__STA__.tif.mac">
+			perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${__STA__.mif.ip}.log -i ${__STA__.tif.name} -m -o win -width
+		</setvar>
+	</step>
+	<step no="6.1">
+		<desc>enable debug on demand to trace DHCP issue</desc>
+		<if>"${__STA__.debug}" == "1" || "${__STA__.debug}" >= "5"</if>
+		<telnet target="${__STA__.ap.name }">
+			-v "_df id 1 data src-mac ${__STA__.tif.mac} bidirectional interface wifi0"
+			-v "_kde wifi-driver wifi0 xmit"
+			-v "_kde wifi basic"
+			-v "_ff id 1 src-port 68 bidirectional"
+			-v "_kde fe basic"
+		</telnet>
+	</step>
+
+	<step no="connet_to_ssid" delay="60">
+		<desc>Bring up the client Wireless on __STA__</desc>
+		<script>
+			${bin.dir}/stafcmd.pl -d ${__STA__.mif.ip} -v "netsh wlan connect name=${__STA__.ssid} interface=\"${__STA__.tif.name}\"" -v " netsh wlan show profiles"
+		</script>
+	</step>
+
+	<step no="check_the_connection" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>heck if __STA__ is associated successfully</desc>
+		<if> "${__STA__.status_negative}" != "true"</if>
+		<log-file>ipconfig___STA___${loop_check.idx}.log</log-file>
+		<script>
+			${bin.dir}/stafcmd.pl -d ${__STA__.mif.ip} -v "netsh wlan show interface " -l ${log.dir} -o ${log.file}
+			${bin.dir}/stafcmd.pl -d ${__STA__.mif.ip} -v "netsh wlan show interface " -l ${log.dir} -o ${log.file}
+		</script>
+		<log-match>-i "State" -i "connected" </log-match>
+		<log-match>-i "SSID" -i "${__STA__.ssid}" </log-match>
+	</step>
+
+	<step no="5.a" delay="15">
+		<desc>check if __STA__ is associated unsuccessfully</desc>
+		<if> "${__STA__.status_negative}" == "true"</if>
+		<log-file>connect__STA___${loop_check.idx}.log</log-file>
+		<script>
+			${bin.dir}/stafcmd.pl -d ${__STA__.mif.ip} -v "netsh wlan show interface " -l ${log.dir} -o ${log.file}
+		</script>
+		<log-match> -n -i "State" -i "connected" </log-match>
+		<log-match> -n -i "SSID" -i "${__STA__.ssid}" </log-match>
+	</step>
+
+
+	<step no="get_log">
+		<desc>check debug on demand to trace DHCP issue</desc>
+		<if>"${__STA__.debug}" == "1" || "${__STA__.debug}" >= "5"</if>
+		<log-file>trace___STA1__dhcp.log</log-file>
+		<telnet target="${__STA__.ap.name}" timeout="200">
+			-v "show logging buffered"
+		</telnet>
+		<no-error-check />
+	</step>
+	
+	<step no="get___STA___ip" delay="15" type="loop-check" loop-max-times="10" loop-interval="5">
+		<desc>Show interface on laptop2</desc>
+		<if> "${__STA__.status_negative}" != "true"</if>
+		<log-file>get_ip_${loop_check.idx}.log</log-file>
+		<script>
+			perl ${bin.dir}/stafcmd.pl -d ${__STA__.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+		</script>
+		<log-match> -i "Default Gateway" -i "192.168" </log-match>
+	</step>
+	
+	<step no="get___STA___ip_info2" >
+		<desc>Show interface on laptop2</desc>
+		<if> "${__STA__.status_negative}" != "true"</if>
+		<log-file>ipconfig__${__STA__.mif.ip}_1_.log</log-file>
+		<script>
+			perl ${bin.dir}/stafcmd.pl -d ${__STA__.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+		</script>
+	</step>
+
+	<step no="get__STA__ip">
+		<desc>Get laptop1's ip</desc>
+		<if> "${__STA__.status_negative}" != "true"</if>
+		<setvar name="__STA__.tif.ip">
+			perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig__${__STA__.mif.ip}_1_.log -i ${__STA__.tif.name} -o win -nomask
+		</setvar>
+	</step>
+</include>

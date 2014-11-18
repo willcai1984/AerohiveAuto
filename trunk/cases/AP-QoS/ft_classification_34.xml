@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, Incoming pkt base on oui action deny wifi1 interface Test topology Top1 Device Configuration Portal: ssid DeathKnight interface wifi1 mode access interface wifi1 ssid DeathKnight qos classifier-profile mac mac ssid DeathKnight qos-classifer mac qos classifier-map mac 000fb5 qos 0 action deny notice 000fb5 is STA2's oui</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		portal:
+		- Set "_kdebug qos classifi"on CLI
+		- Set "_ff id 1 src-mac sta2's mac"
+		- Set "_kdebug fe basic"
+		- STA2generates traffic,then send to STA1.
+		Expected output
+		- Sniffering the traffic from STA1 incoming mac
+		- look over kdebug message
+		1970-01-02 08:07:04 debug [fe]: (i) wifi1.1
+		18.18.21.12-&gt;18.18.21.7(41) ttl(64) UDP 1773-&gt;10000 28
+		bytes
+		1970-01-02 08:07:04 debug [fe]: no MAC sess found
+		1970-01-02 08:07:04 debug [fe]: dst route lookup
+		001d:0f0a:0c28: GET_ROUTE dev(eth0)
+		nhop(0000:0000:0000) flag (0xc11)
+		1970-01-02 08:07:04 debug [fe]: owner flag set
+		1970-01-02 08:07:04 debug [fe]: dst route lookup
+		000f:b59c:8954: GET_ROUTE dev(wifi0.1)
+		nhop(0019:7700:0110) flag (0xc03)
+		1970-01-02 08:07:04 debug [fe]: owner flag set
+		1970-01-02 08:07:04 debug [fe]: mac sess id [9] created,
+		ageout time 300 sec
+		1970-01-02 08:07:04 debug [fe]: QoS: first pkt
+		(wifi0.1-&gt;eth0) upid=0 src=0 dst=0
+		1970-01-02 08:07:04 debug [fe]: pkt(wifi1.1) dropped by
+		classifier qos=0
+		1970-01-02
+		08:07:04 debug [fe]: (!) wifi1.1
+		18.18.21.12-&gt;18.18.21.7(41) ttl(64) UDP 1773-&gt;10000 28
+		bytes
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<if>"${ap.wifi1.existed}" == "true"</if>
+
+		<step no="create.ssid">
+			<desc>
+				create ssid
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi1 ssid ${ssid.name}"
+				-v "interface wifi1 radio channel 44"
+			</telnet>
+		</step>
+
+		<include prefix="pre1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="pre3">
+			<desc>
+				get server mac
+			</desc>
+			<script>
+				${bin.dir}/getrmtip.pl -d ${tb.dns} -u ${tb.dns.user} -p ${tb.dns.passwd} -i ${tb.dns.name} -m | tr '[A-F]' '[a-f]' &gt; ${log.dir}/serveroui.log
+			</script>
+		</step>
+
+		<step no="pre4">
+			<desc>get server oui</desc>
+			<setvar name="server.oui">
+				${bin.dir}/getbyrexp.py -p "(.*?:.*?:.*?):.*?:.*?:.*?" -f ${log.dir}/serveroui.log -t str
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				config qos
+			</desc>
+			<telnet target="ap1">
+				-v "qos classifier-profile mac mac"
+				-v "ssid ${ssid.name} qos-classifier mac"
+				-v "qos classifier-map oui ${server.oui} qos 2 action deny"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} dst-ip ${tb.dns} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_ping.xml" args="sta1, ${tb.dns}, 10, negative" />
+
+		<step no="4" delay="30">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\!\) wifi1.1 ${sta1.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "pkt\(wifi1.1\) dropped by classifier qos=2" -e "\(i\) wifi1.1 ${sta1.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

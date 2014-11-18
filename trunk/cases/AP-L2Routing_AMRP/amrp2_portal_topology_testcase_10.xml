@@ -1,0 +1,597 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check BMT change</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+			-Configure  Portals in the same subnet and same hive
+			-Portal1 and Portal2 are wifi neighbor
+			-Configure a SSID on AP1 client associate to Portal1
+		Test procedure	
+			1.	Client associate to Portal1, check bmt-table in portal1 (show amrp interface eth0 bmt-table)
+			2.	Client send broadcast “debug FE basic” in Portal1
+			3.	Plug out cable of eth0. check bmt-table in portal1, portal2 (show amrp interface eth0 bmt-table)
+			4.	Client send broadcast “debug FE basic” in Portal1,Portal2
+			5.	Plug in cable of eth0 again. check bmt-table in portal1, portal2 (show amrp interface eth0 bmt-table)
+			6.	Client send broadcast “debug FE basic” in Portal1,Portal2
+		Expect result
+			1.	BMT should be self.
+			2.	Client’s broadcast Packets send out via (eth0, wifi0.1 wifi1.1)
+			3.	In AP1 should not have BMT table and in AP2 should be AP1’s BMT,only Portal forwarding broadcast from Portal1
+			4.	Packets send out via  ( in AP1 wifi1.1 wifi0.1) in AP2 (wifi1.1 wifi0.1 eth0) 
+			5.	AP1 should be BMT self again
+			6.	Packets send out via (eth0, wifi0.1 wifi1.1)
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0.1">
+			<desc>
+				shutdown AP1 eth1 port
+			</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				shutdown AP2 eth1 port
+			</desc>
+			<if>"${ap2.eth1.existed}" =="true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1.1_1">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 44"
+			</console>
+		</step>
+		
+		<step no="1.1_2">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+			</console>
+		</step>
+
+		<step no="1.2_1">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 44"
+				-v "ssid ${ssid.name}.1"
+				-v "interface wifi0 ssid ${ssid.name}.1"
+			</console>
+		</step>
+		
+		<step no="1.2_2">
+			<desc>
+				-Configure Portals in the same subnet and same hive in AP2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"				
+				-v "ssid ${ssid.name}.1"
+				-v "interface eth0 mode backhaul"
+				-v "interface eth0 mac-learning enable" 
+				-v "no interface mgt0 dhcp-server enable"
+				-v "no interface mgt0 ip"
+				-v "interface mgt0 dhcp client"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 6"
+				-v "interface wifi0 ssid ${ssid.name}.1"
+			</console>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				-show interface for AP1
+			</desc>
+			<log-file>step1.3_show_interface_ap1.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				-Get AP1's mgt0 mac
+			</desc>
+			<setvar name="ap1_m0_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step1.3_show_interface_ap1.log -k "Mgt0" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.5_1">
+			<desc>
+				-Get AP1's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="ap1_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step1.3_show_interface_ap1.log -k "Wifi1" -p 2
+			</setvar>
+		</step>
+		
+		<step no="1.5_2">
+			<desc>
+				-Get AP1's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="ap1_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step1.3_show_interface_ap1.log -k "Wifi0" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.6_1">
+			<desc>
+				-show interface of mgt0 on AP1
+			</desc>
+			<log-file>step1.6_show_ap1_int_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.6_2">
+			<desc>
+				-get IP of mgt0 on AP1
+			</desc>
+			<setvar name="ap1_m0_ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step1.6_show_ap1_int_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.7_1">
+			<desc>
+				-show interface for AP2
+			</desc>
+			<log-file>step1.7_show_interface_ap2.log</log-file>
+			<console target="ap2">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="1.7_2">
+			<desc>
+				-Get AP2's mgt0 mac
+			</desc>
+			<setvar name="ap2_m0_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step1.7_show_interface_ap2.log -k "Mgt0" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.7_3">
+			<desc>
+				-Get AP2's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<setvar name="ap2_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step1.7_show_interface_ap2.log -k "Wifi1" -p 2
+			</setvar>
+		</step>
+		
+		<step no="1.7_4">
+			<desc>
+				-Get AP2's wifi1 mac
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<setvar name="ap2_w1_mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step1.7_show_interface_ap2.log -k "Wifi0" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.8_1">
+			<desc>
+				-show interface of mgt0 on AP2
+			</desc>
+			<log-file>step1.8_show_ap2_int_mgt0.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="1.8_2">
+			<desc>
+				-get IP of mgt0 on AP2
+			</desc>
+			<setvar name="ap2_m0_ip">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step1.8_show_ap2_int_mgt0.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.9">
+			<desc>
+				-Config SSID in AP1
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</console>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="1.10" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="1.11" delay="60">
+			<desc>
+				-Show ssid station in AP1
+			</desc>
+			<log-file>step1.11_show_ssid_station.log</log-file>
+			<console target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</console>
+		</step>
+
+		<step no="1.12">
+			<desc>
+				-Get laptop1 ip in AP1
+			</desc>
+			<setvar name="laptop1_ip_in_ap">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/step1.11_show_ssid_station.log -k "${sta1.tif.mac}" -p 2
+			</setvar>
+		</step>
+
+		<step no="1.13">
+			<desc>
+				-Compare laptop1 show ip to AP1 show station ip
+			</desc>
+			<script>
+				if [ "${laptop1_ip_in_ap}" != "${sta1.tif.ip}" ]; then exit 1;fi
+			</script>
+		</step>
+
+		<step no="1.14">
+			<desc>
+				-check bmt table information from AP1
+			</desc>
+			<log-file>show_amrp_interface_eth0_bmt-table_ap1_19.log</log-file>
+			<console target="ap1">
+				-v "show amrp interface eth0 bmt-table"
+			</console>
+			<no-error-check />
+			<log-match>-c -e ${ap1_m0_mac}</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-Enable debug in AP1
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff src-mac ${sta1.tif.mac} dst-ip 255.255.255.255"
+			</console>
+		</step>
+
+		<include prefix="2.2" file="subs/sta_dhcp_check.xml" obj-args="sta1" />
+		
+		<step no="2.3" delay="15">
+			<desc>
+				-sta1 sends broadcast packet if the sta1 is a linux system
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step2.3_server_ping.log</log-file>
+			<ssh target="sta1" timeout="30">
+				-v "hping3 255.255.255.255 -c 2 -2 -s 68 -p 67"
+			</ssh>
+		</step>
+
+		<step no="2.4_1">
+			<desc>
+				-Check log information
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step2.4_show_log_ap1.log</log-file>
+			<console target="ap1" timeout="200">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi1.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+		</step>
+		
+		<step no="2.4_2">
+			<desc>
+				-Check log information
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step2.4_show_log_ap1.log</log-file>
+			<console target="ap1">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.2 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.2 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-shutdown AP1 eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="3.2" delay="30">
+			<desc>
+				-Get bmt table information from AP1, AP1 should not have table
+			</desc>
+			<log-file>step3.2_show_amrp_interface_eth0_bmt-table_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp interface eth0 bmt-table"
+			</console>
+			<log-match>-c -e "amrp can't find eth0"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.3" delay="60">
+			<desc>
+				-Get bmt table from AP2, AP2 should have AP1's MAC
+			</desc>
+			<log-file>step3.3_show_amrp_interface_eth0_bmt-table_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp interface eth0 bmt-table"
+			</console>
+			<no-error-check />
+			<log-match>-c -e ${ap1_m0_mac}</log-match>
+			<log-match>-c -e ${ap2_m0_mac}</log-match>
+		</step>
+
+		<step no="4.1" delay="60">
+			<desc>
+				-Check AP2 is AP1's neighbor
+			</desc>
+			<log-file>step4.1_show_amrp_neighbor_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp neighbor"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2_w1_mac} ${ap2_m0_ip}\s+TWO-WAY" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				-Check AP1 is AP2's neighbor
+			</desc>
+			<log-file>step4.2_show_amrp_neighbor_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp neighbor"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1_w1_mac} ${ap1_m0_ip}\s+TWO-WAY" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				-Enable debug in AP1 and AP2
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff src-mac ${sta1.tif.mac} dst-ip 255.255.255.255"
+			</console>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				-Enable debug in AP2
+			</desc>
+			<console target="ap2">
+				-v "clear log all"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff src-mac ${sta1.tif.mac} dst-ip 255.255.255.255"
+			</console>
+		</step>
+
+		<include prefix="4.5" file="subs/sta_dhcp_check.xml" obj-args="sta1" />
+		
+		<step no="4.6" delay="15">
+			<desc>
+				-sta1 sends broadcast packet if the sta1 is a linux system
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step4.6_server_ping.log</log-file>
+			<ssh target="sta1" timeout="30">
+				-v "hping3 255.255.255.255 -c 2 -2 -s 68 -p 67"
+			</ssh>
+		</step>
+
+		<step no="4.7_1">
+			<desc>
+				-Check log information in AP1
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step4.7_show_log_ap1.log</log-file>
+			<console target="ap1">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi1.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -n -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+		</step>
+		
+		<step no="4.7_2">
+			<desc>
+				-Check log information in AP1
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step4.7_show_log_ap1.log</log-file>
+			<console target="ap1">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.2 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.2 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -n -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+		</step>
+
+		<step no="4.8">
+			<desc>
+				-Check log information in AP2
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step4.8_show_log_ap2.log</log-file>
+			<console target="ap2">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi1.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi1.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+		</step>
+		
+		<step no="4.8">
+			<desc>
+				-Check log information in AP2
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step4.8_show_log_ap2.log</log-file>
+			<console target="ap2">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.2 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-no shutdown AP1 eth0
+			</desc>
+			<console target="ap1">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5.2" delay="30">
+			<desc>
+				-Get bmt table information from AP1
+			</desc>
+			<log-file>step5.2_show_amrp_interface_eth0_bmt-table_ap1.log</log-file>
+			<console target="ap1">
+				-v "show amrp interface eth0 bmt-table"
+			</console>
+			<no-error-check />
+			<log-match>-c -e ${ap1_m0_mac}</log-match>
+		</step>
+
+		<step no="5.3" delay="60">
+			<desc>
+				-Get bmt table informaiton from AP2
+			</desc>
+			<log-file>step5.3show_amrp_interface_eth0_bmt-table_ap2.log</log-file>
+			<console target="ap2">
+				-v "show amrp interface eth0 bmt-table"
+			</console>
+			<no-error-check />
+			<log-match>-c -n -e ${ap1_m0_mac}</log-match>
+			<log-match>-c -e ${ap2_m0_mac}</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-Enable debug in AP1
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff src-mac ${sta1.tif.mac} dst-ip 255.255.255.255"
+			</console>
+		</step>
+
+		<include prefix="6.2" file="subs/sta_dhcp_check.xml" obj-args="sta1" />
+		
+		<step no="6.3" delay="15">
+			<desc>
+				-sta1 sends broadcast packet if the sta1 is a linux system
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step6.3_server_ping.log</log-file>
+			<ssh target="sta1" timeout="30">
+				-v "hping3 255.255.255.255 -c 2 -2 -s 68 -p 67"
+			</ssh>
+		</step>
+
+		<step no="6.4_1">
+			<desc>
+				-Check log information
+			</desc>
+			<if> "${ap.is_aptbbr}" != "true" &amp;&amp; "${ap.is_br}" != "true" </if>
+			<log-file>step6.4_show_log_buff.log</log-file>
+			<console target="ap1">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi1.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+		</step>
+		
+		<step no="6.4_2">
+			<desc>
+				-Check log information
+			</desc>
+			<if> "${ap.is_aptbbr}" == "true" || "${ap.is_br}" == "true" </if>
+			<log-file>step6.4_show_log_buff.log</log-file>
+			<console target="ap1">
+				-v "show log buffer"
+			</console>
+			<no-error-check />
+			<log-match>-c -e "(i) wifi0.2 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.1 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) wifi0.2 ${sta1.tif.ip}->255.255.255.255"</log-match>
+			<log-match>-c -e "(o) eth0 ${sta1.tif.ip}->255.255.255.255"</log-match>
+		</step>
+	</stage>
+
+</testcase>

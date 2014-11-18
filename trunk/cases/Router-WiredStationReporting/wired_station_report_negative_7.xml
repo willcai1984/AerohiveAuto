@@ -1,0 +1,395 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unset eth0 mode or disable mac-learning, check wired station</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Eth0 with access or 802.1q mode and mac-learning is enabled:
+		Interface eth0 mode bridge-access/bridge-802.1q
+		Interface eth0 mac-learning enable
+		Set roaming cache time:
+		roaming cache update-interval 60 ageout 2
+		PC be learned by eth0
+		AP connect with HM
+		_debug auth basic
+		_debug auth info
+		_debug auth comm
+		Debug telnet
+
+		Test Procedure:
+		1. Show interface eth0 mac-learning all to check PC
+		2. Show auth to check connected PC
+		4. Show route to check if exist corresponding route of PC
+		5. Unset eth0 mode by "no interface eth0 mode", show auth to check if default
+		SO be removed, show interface eth0 mac-learning all and show route to check if
+		corresponding route be removed, check if PC entry be removed from HM
+		6. Set interface eth0 to access or 802.1q mode again by "interface eth0 mode
+		bridge-access/bridge-802.1q", show auth to check if default SO be bound to eth0,
+		show interface eth0 mac-learning all and show route to check if corresponding
+		route be added, check if PC be reported to HM again
+		7. Disable mac-learning of eth0 by "no interface eth0 mac-learning enable", show
+		auth to check if default SO be removed, show interface eth0 mac-learning all and
+		show route to check if corresponding route be removed, check if PC entry be
+		removed from HM
+		8. Enable mac-learning again by " interface eth0 mac-learning ebale", show auth to
+		check if default SO be bound to eth0, show interface eth0 mac-learning all and
+		show route to check if corresponding route be added, check if PC be reported to
+		HM again
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>config BR with WAN interface, nat enable, config mgt0.1</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "exec bypass-wan-hardening"
+				-v "roaming cache update-interval 60 ageout 2"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>HTTP enable and connect to HM</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "alg http enable"
+				-v "capwap client enable"
+				-v "capwap client server name ${pub.hm1.ip}"
+			</telnet>
+		</step>
+
+		<step no="1.2" delay="30" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				AP connect with HM
+			</desc>
+			<log-file>show_capwap_client_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show capwap client"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "RUN state: Connected securely to the CAPWAP server" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				eth0 access br1.vpc1.vlan
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "security-object lan"
+				-v "security-object lan default-user-profile-attr 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "interface eth1 security-object lan"
+			</telnet>
+		</step>
+
+		<step no="1.4">
+			<desc>
+				enable debug
+			</desc>
+			<console target="br1.br">
+				-v "_debug auth basic"
+				-v "_debug auth info"
+				-v "_debug auth comm"
+				-v "_debug capwap basic"
+				-v "_debug capwap trap"
+				-v "clear log buf"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>1. Connect a PC to switch</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.1c">
+			<desc>get eth1 ip of br</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/ifconfig_vpc1_.log -t str
+			</setvar>
+		</step>
+
+		<step no="2.1c">
+			<desc>get eth1 ip of br</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6)) | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="2.1b">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>vpc ping br</desc>
+			<log-file>vpc1_ping_br.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.br.wan.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.br.wan.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Show interface eth1 mac-learning all to check PC
+			</desc>
+			<log-file>step4_show_intreface_mac_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth1 mac-learning all"
+			</telnet>
+			<log-match>-p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "${br1.vpc1.vlan}"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				Show auth to check PC
+			</desc>
+			<log-file>step5_show_auth_bind_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth"
+			</telnet>
+			<log-match>-p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "1" -p 5 -i "open"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				Show route to check if exist corresponding route of PC
+			</desc>
+			<log-file>step6_show_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.vpc1.tif.mac}" -p 3 -i "eth1" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="7" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Check if connected client be reported to HM(?)
+			</desc>
+			<log-file>step7_show_debug_info_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "trap ifname :eth1" -ps p "trap client channel :0" p "trap user profile id :1" p "trap client vlan id :${br1.vpc1.vlan}" p "trap client ip:${br1.vpc1.tif.ip}" p "trap remote id:${br1.vpc1.tif.mac}" -e "Station ${br1.vpc1.tif.mac} is authenticated to[a-fA-F0-9: ]+thru SSID lan" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>
+				Disconnect PC
+			</desc>
+			<log-file>step8_Disconnect_PC.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface eth1 security-object lan"
+				-v "no interface eth1 mode"
+			</telnet>
+		</step>
+
+		<step no="9" delay="10" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				show interface eth1 mac-learning all to check if PC be removed
+			</desc>
+			<log-file>step9_show_intreface_mac_learning_${loop_check.idx}.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth1 mac-learning all"
+			</telnet>
+			<log-match>-n -p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "${br1.vpc1.vlan}"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				show auth to check if PC be removed
+			</desc>
+			<log-file>step10_show_auth_bind_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth"
+			</telnet>
+			<log-match>-n -p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "1" -p 5 -i "open"</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				Show route to check if corresponding route be removed
+			</desc>
+			<log-file>step11_show_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show route"
+			</telnet>
+			<log-match>-n -p 1 -i "${br1.vpc1.tif.mac}" -p 3 -i "eth1" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>
+				Connect PC again, check client info
+			</desc>
+			<log-file>step12_enable_eth1.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 security-object lan"
+			</telnet>
+		</step>
+
+		<step no="12.1">
+			<desc>Connect a PC to switch</desc>
+			<log-file>step12.1_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>vpc ping br</desc>
+			<ssh target="br1.vpc1">
+				-v "ping ${br1.br.wan.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.br.wan.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				show interface eth1 mac-learning all to check PC
+			</desc>
+			<log-file>step14_show_intreface_mac_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth1 mac-learning all"
+			</telnet>
+			<log-match>-p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "${br1.vpc1.vlan}"</log-match>
+		</step>
+
+		<step no="15">
+			<desc>
+				show auth to check PC
+			</desc>
+			<log-file>step15_show_auth_bind_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth"
+			</telnet>
+			<log-match>-p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "1" -p 5 -i "open"</log-match>
+		</step>
+
+		<step no="16">
+			<desc>
+				Show route to check if exist corresponding route of PC
+			</desc>
+			<log-file>step16_show_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.vpc1.tif.mac}" -p 3 -i "eth1" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="17">
+			<desc>
+				Disable mac-learning of eth1
+			</desc>
+			<log-file>step17_Disable_mac-learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="18">
+			<desc>
+				show interface eth1 mac-learning all to check if PC be removed
+			</desc>
+			<log-file>step18_show_intreface_mac_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth1 mac-learning all"
+			</telnet>
+			<log-match>-n -p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "${br1.vpc1.vlan}"</log-match>
+		</step>
+
+		<step no="19">
+			<desc>
+				show auth to check if PC be removed
+			</desc>
+			<log-file>step19_show_auth_bind_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth"
+			</telnet>
+			<log-match>-n -p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "1" -p 5 -i "open"</log-match>
+		</step>
+
+		<step no="20">
+			<desc>
+				Show route to check if corresponding route be removed
+			</desc>
+			<log-file>step20_show_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show route"
+			</telnet>
+			<log-match>-n -p 1 -i "${br1.vpc1.tif.mac}" -p 3 -i "eth1" -p 5 -i "1"</log-match>
+		</step>
+
+		<step no="21">
+			<desc>
+				Enable mac-learning again
+			</desc>
+			<log-file>step21_Enable_mac-learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="22">
+			<desc>vpc ping br</desc>
+			<ssh target="br1.vpc1">
+				-v "ping ${br1.br.wan.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.br.wan.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="23">
+			<desc>
+				show interface eth1 mac-learning all to check PC
+			</desc>
+			<log-file>step23_show_intreface_mac_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth1 mac-learning all"
+			</telnet>
+			<log-match>-p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "${br1.vpc1.vlan}"</log-match>
+		</step>
+
+		<step no="24">
+			<desc>
+				show auth to check PC
+			</desc>
+			<log-file>step24_show_auth_bind_learning.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth"
+			</telnet>
+			<log-match>-p 2 -i "${br1.vpc1.tif.mac}" -p 3 -i "1" -p 5 -i "open"</log-match>
+		</step>
+
+		<step no="25">
+			<desc>
+				Show route to check if exist corresponding route of PC
+			</desc>
+			<log-file>step25_show_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.vpc1.tif.mac}" -p 3 -i "eth1" -p 5 -i "1"</log-match>
+		</step>
+	</stage>
+</testcase>

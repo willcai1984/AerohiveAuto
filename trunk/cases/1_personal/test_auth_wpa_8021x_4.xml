@@ -1,0 +1,116 @@
+<testcase>
+	<brief>Config a ssid with wpa2-aes-psk</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<description>
+		Topology to use
+		Description
+		Config a ssid with wpa2-aes-psk
+		Pre-condition
+		-config a ssid with wpa2-aes-psk
+		Test procedure
+		-client connect to ssid with the correct credentials
+		Expect result
+		1.Client connection successful
+		2.Make sure the traffic run well,ping gateway for 10 minutes
+	</description>
+
+	<property name="conn.proto" value="wpa2-aes-8021x" />
+	<property name="conn.eap_type" value="TLS" />
+
+	<stage>
+		<step no="config_ap">
+			<desc>config AP1</desc>
+			<telnet target="ap1">
+				-v "clear log buff"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite ${conn.proto}"
+				-v "security-object autoap security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface ${ssid_bind_interface} mode access"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<step no="show_ssid" delay="20">
+			<desc>show ssid on AP1</desc>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name}"
+			</telnet>
+			<log-match>-e "autoap"</log-match>
+		</step>
+		<step no="check_proto">
+			<desc>check protocol-suite</desc>
+			<telnet target="ap1">
+				-v "show security- autoap security protocol-suite"
+			</telnet>
+			<log-match>-e "Method=${conn.proto}"</log-match>
+		</step>
+
+		<step no="connect_ap">
+			<log-file>connect_wifi.log</log-file>
+			<ssh target="sta1" timeout="3600">
+				-v "/usr/local/auto/bin/connect_wifi
+				'{
+				\"target\"      : \"sta1\",
+				\"ifname\"      : \"${sta1.tif.name}\",
+				\"bind\"        : \"${ssid_bind_interface}\",
+				\"ssid\"        : \"${ssid.name}\",
+				\"proto\"       : \"${conn.proto}\",
+				\"eap_type\"    : \"${conn.eap_type}\",
+				\"username\"    : \"${pub.radius1.username}\",
+				\"password\"    : \"${pub.radius1.passwd}\"
+				}'"
+			</ssh>
+			<log-match>-e "&gt;&gt;&gt;&gt; Pass &lt;&lt;&lt;&lt;"</log-match>
+		</step>
+		
+		<step no="get_sta_ip_mac">
+			<desc>parse station IP and MAC from connect wifi log file</desc>
+			<multi-setvar>
+				grep "^&lt;&lt;&lt;&lt;" ${log.dir}/connect_wifi.log | \
+				sed -e 's/^&lt;&lt;&lt;&lt;//g'
+			</multi-setvar>
+		</step>
+		
+		<step no="check_ping_to_sta">
+			<desc>ping from AP to station</desc>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip} count 10"
+			</telnet>
+			<log-match>-c -i " from " -i " ttl="</log-match>
+		</step>
+		
+		<step no="check_auth_info">
+			<desc>check auth info</desc>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-i "${sta1.tif.mac}" -p 7 -i "done" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 9 -i "WPA2/CCMP" -c</log-match>
+		</step>
+		<step no="check_conn_info">
+			<desc>check station connection info</desc>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-i "${sta1.tif.mac}" -p 12 -i "Yes" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 7 -i "wpa2-8021x" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 8 -i "aes" -c</log-match>
+			<log-match>-i "${sta1.tif.mac}" -p 2 -i "${sta1.tif.ip}" -c</log-match>
+		</step>
+		<step no="check_roaming_check_info">
+			<desc>check check roaming cache info</desc>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-i "${sta1.tif.mac}" -p 12 -i "YNNN" -c</log-match>
+		</step>
+	</stage>
+</testcase>

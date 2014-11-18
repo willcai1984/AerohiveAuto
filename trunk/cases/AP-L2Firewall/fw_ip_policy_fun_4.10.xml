@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>IP-session delete.(icmp replay packet)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+
+		1) Config ip-policy which permit Laptop's ip_address
+		"ip-policy FW"
+		"ip-policy FW from/to &lt;Laptop ip addr&gt; action permit"
+		"user-profile FW security ip-policy from/to-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Server ping Laptop
+		3) Check the ip-session table on AP1
+		4) Check the debug log
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="user_id" value="FW" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Laptop uses user-profile "FW"
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				1) Config ip-policy which permit Laptop's ip_address
+				"ip-policy FW"
+				"ip-policy FW from/to &lt;Laptop ip addr&gt; action permit"
+				"user-profile FW security ip-policy from/to-access FW"
+			</desc>
+			<telnet target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 to ${sta1.tif.ip} action permit"
+				-v "user-profile ${user_id} security ip-policy to-access ${user_id}"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				Server ping Laptop in background
+			</desc>
+			<log-file>step2.1_server_start_ping.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "nohup ping ${sta1.tif.ip} &gt; /tmp/${job.id}ping.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				get server ping id
+			</desc>
+			<setvar name="server.pingid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2.1_server_start_ping.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4.3" delay="60">
+			<desc>
+				check server ping result
+			</desc>
+			<log-file>step2.3_check_server_ping_result.log</log-file>
+			<ssh host="${tb.server1}">
+				-v "tail /tmp/${job.id}ping.log"
+			</ssh>
+			<log-match>-c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				3) Check the ip-session table on AP1
+			</desc>
+			<log-file>show_ip_sessions.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match>-c -i "${tb.server1}" -i "${sta1.tif.ip}" -i "Proto 1;"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				kill server ping process
+			</desc>
+			<ssh host="${tb.server1}">
+				-v "kill ${server.pingid}"
+			</ssh>
+		</step>
+
+		<include prefix="7" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step7_show_logging_buffered.log" />
+
+		<step no="7.1">
+			<desc>
+				check log
+			</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(\o\) eth0 ${sta1.tif.ip}-&gt;${tb.server1}\(\d+\) ttl\(\d+\) icmp-echo-reply" -ps p "QoS: ingress pkt fwd\(wifi0.1\)" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${tb.server1}\(\d+\) ttl\(\d+\) icmp-echo-reply" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				3) Check the ip-session table on AP1
+			</desc>
+			<log-file>show_ip_sessions2.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match>-n -c -i "${tb.server1}" -i "${sta1.tif.ip}" -i "Proto 1;"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>
+					kill server ping process
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "kill ${server.pingid}"
+				</ssh>
+			</step>
+
+			<step no="2">
+				<desc>
+					delete tmp file on server
+				</desc>
+				<ssh host="${tb.server1}">
+					-v "rm -f /tmp/${job.id}ping.log"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

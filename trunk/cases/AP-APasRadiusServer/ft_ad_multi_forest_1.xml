@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Setup a forest trust relationship to do auth,basic function check</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-setup a default forest,like aerohive-hz.cn
+		-setup a second forest,like aerohive.com
+		-create forest trust between them
+		-there are accounts in the two domains
+		-machine auth enable
+		-cache enable
+		-net join HIVE AP to the default domain
+		-add the second domain in the other forest
+		-actvie a ssid with 802.1x auth,use local radius server to do auth
+
+		Test Procedure:
+		-client connects to the ssid
+		-client use the account in default domain to do auth
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-tkip-8021x" />
+	<property name="conn1.username" value="${pub.ad2.realm}\\${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.proto" value="wpa-tkip-8021x" />
+	<property name="conn2.username" value="${pub.ad1.realm}\\${pub.ad1.username}" />
+	<property name="conn2.passwd" value="${pub.ad1.passwd}" />
+
+	<stage>
+
+		<step no="1">
+			<desc>
+				-setup a local radius server
+				-config a default domain and the binddn for it
+			</desc>
+			<telnet target="ap1">
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security protocol-suite wpa-tkip-8021x"
+				-v "security-object autoap security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type active-directory primary server ${pub.ad2.ip}"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad2.name} fullname ${pub.ad2.realm} default"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad2.name} binddn ${pub.ad2.binddn} password ${pub.ad2.bindpwd}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-set local radius parameters
+			</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local db active-directory primary login admin-user ${pub.ad2.admin} password ${pub.ad2.adminpwd}"
+				-v "aaa radius-server local db-type active-directory primary global-catalog"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} fullname ${pub.ad1.realm}"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				-v "aaa radius-server local cache"
+				-v "aaa radius-server local enable"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-config ssid and bind it to interface
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				-show running-config
+			</desc>
+			<log-file>step4_show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				-show aaa radius-server
+			</desc>
+			<log-file>step5_show_radius_server.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-c -i "Local RADIUS: *Enabled"</log-match>
+			<log-match>-c -i "Full Domain Name: *${pub.ad2.realm}"</log-match>
+			<log-match>-c -i "Global Catalog: *yes"</log-match>
+			<log-match>-c -i "Domain Name *${pub.ad2.name}"</log-match>
+			<log-match>-c -i "Domain Name *${pub.ad1.name}"</log-match>
+			<log-match>-c -i "Server: *${pub.ad2.ip}"</log-match>
+			<log-match>-c -i "Server: *${pub.ad1.realm}"</log-match>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa-tkip-8021x, WPA/TKIP, wpa-8021x, tkip" />
+
+		<include prefix="8" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<include prefix="9" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta2, wpa-tkip-8021x, WPA/TKIP, wpa-8021x, tkip" />
+	</stage>
+</testcase>

@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Wireless client send RRQ to tftp server, verify ip-gate and control session will be created</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		security-object zhhtest
+		security-object zhhtest default-user-profile-attr 1
+		ssid zhhtest
+		ssid zhhtest security-object zhhtest
+		interface wifi0 ssid zhhtest
+		user-profile uu qos-policy def-user-qos vlan-id 1 attribute 1
+		ip-policy xx
+		ip-policy xx id 1 service tftp action permit
+		ip-policy xx id 2 service dhcp-server action permit
+		ip-policy xx id 3 service dhcp-client action permit
+		ip-policy xx id 4 service icmp action permit
+		user-profile uu security ip-policy from-access xx
+		alg tftp enable
+		alg tftp inactive-data-timeout 120
+		Laptop connect to SSID and obtain ip address
+		_debug fe alg_tftp_error
+		_debug fe alg_tftp_fsm
+		_debug fe alg_tftp_gate
+		_debug fe alg_tftp_pkt
+		_ff id 1 src-mac xxxx:yyyy:zzzz bidirectional
+		_kdebug fe basic
+		_kdebug fe detail
+		debug console
+		clear forwarding-engine ip-sessions
+		Stop tftp service in tftp server
+
+		Test Procedure:
+		1. Laptop send RRQ to PC, check debug
+		2. Check if ip-gate be created by show forwarding-engine ip-gate
+		3. Check if ip-session be created by show
+		forwarding-engine ip-session
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="user_id" value="TFtest" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				security-object zhhtest
+				security-object zhhtest default-user-profile-attr 1
+				ssid zhhtest
+				ssid zhhtest security-object zhhtest
+				interface wifi0 ssid zhhtest
+				user-profile uu qos-policy def-user-qos vlan-id 1 attribute 1
+				ip-policy xx
+				ip-policy xx id 1 service tftp action permit
+				ip-policy xx id 2 service dhcp-server action permit
+				ip-policy xx id 3 service dhcp-client action permit
+				ip-policy xx id 4 service icmp action permit
+				user-profile uu security ip-policy from-access xx
+				alg tftp enable
+				alg tftp inactive-data-timeout 1000
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${user_id} attribute 1"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "ip-policy test"
+				-v "ip-policy test id 1 service tftp action permit"
+				-v "ip-policy test id 2 service dhcp-server action permit"
+				-v "ip-policy test id 3 service dhcp-client action permit"
+				-v "ip-policy test id 4 service icmp action permit"
+				-v "user-profile uu security ip-policy from-access test"
+				-v "alg tftp enable"
+				-v "alg tftp inactive-data-timeout 1000"
+				-v "save config"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				Set filter and open some debug, clear ip-session and clear log all
+				_debug fe alg_tftp_error
+				_debug fe alg_tftp_fsm
+				_debug fe alg_tftp_gate
+				_debug fe alg_tftp_pkt
+				_ff id 1 src-mac xxxx:yyyy:zzzz bidirectional
+				_kdebug fe basic
+				_kdebug fe detail
+				debug console
+				clear forwarding-engine ip-sessions
+				Stop tftp service in tftp server
+			</desc>
+			<telnet target="ap1">
+				-v "_debug fed alg_tftp_error"
+				-v "_debug fed alg_tftp_fsm"
+				-v "_debug fed alg_tftp_gate"
+				-v "_debug fed alg_tftp_pkt"
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "debug console"
+				-v "clear log all"
+				-v "clear forwarding-engine ip-sessions"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				- creat file on tftp
+			</desc>
+			<ssh host="${pub.tftp1.ip}">
+				-v "touch /tftpboot/${job.id}newfile"
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				- Stop tftp service
+			</desc>
+			<telnet target="ap1">
+				-v "ip route host ${pub.tftp1.tip} gateway ${tb.vlan1.dhcp_start}"
+			</telnet>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				- get file from tftp
+			</desc>
+			<log-file>step4_get_file.log</log-file>
+			<ssh target="sta1">
+				-v "nohup tftp ${pub.tftp1.tip} -c get ${job.id}newfile &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.4" delay="60">
+			<desc>
+				- show logging buffered, check debug
+			</desc>
+			<log-file>step4_show_logging.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "\[fed_alg_tftp_pkt\]: TFTP ALG receive packet control ID :\d+,control Cookie:\d+ packet length:\d+ src_ip:\d+.\d+.\d+.\d+,src_port:\d+,dst_ip:${pub.tftp1.tip},dst_port:69 protocol:17" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "\[fed_alg_tftp_fsm\]: TFTP ALG current event=1 state=0" -f ${log.dir}/${log.file}</log-match>
+			<log-match>-i "\[fed_alg_tftp_gate\]: TFTP ALG open gate src_ip:${pub.tftp1.tip}"</log-match>
+			<log-match>-i "\[fed_alg_tftp_gate\]: FE create TFTP ALG gate successfully."</log-match>
+			<log-match>-i "\[fed_alg_tftp_fsm\]: Object state change to: Port-Open."</log-match>
+			<log-match>-i "\[fe\]: create new IP session"</log-match>
+			<log-match>-i "\[fe\]: doing from-air IP ACL filter"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				- Check if ip-gate be created by show forwarding-engine ip-gate
+			</desc>
+			<log-file>step5_check_ip_gate.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-gates"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "${pub.tftp1.tip}/0 -> ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				- Check if ip-session be created by show forwarding-engine ip-session
+			</desc>
+			<log-file>step6_check_ip_session.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "${sta1.tif.ip}/\d+ -> ${pub.tftp1.tip}/69; Proto 17" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "${pub.tftp1.tip}/69 -> ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="7">
+				<desc>
+					- delete created file on tftp
+				</desc>
+				<ssh host="${pub.tftp1.ip}">
+					-v "rm -f ${job.id}newfile"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

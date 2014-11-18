@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Fail over to local/cache when all servers down</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configed first
+		-AP's clock should be sync to the AD server via a ntp server
+		-config a primary AD server,valid
+		-config all backup AD servers,unreachable
+		-enable cache
+		-config a user in local database
+		-the primary server and backup server are in the same domain
+		-setup a ssid using wpa2-tkip-802.1x,radius server is local
+
+		Test Procedure:
+		-client connect to ssid using a user in AD,
+		-client connect to ssid using a user in local database
+		-primary server is down
+		-client connect to ssid using the AD user above
+		-client connect to ssid using the user in local DB
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.proto" value="wpa2-aes-8021x" />
+	<property name="conn2.username" value="auto123" />
+	<property name="conn2.passwd" value="aerohive123" />
+
+	<stage>
+		<include prefix="1" file="subs/ssid_and_so_create.xml" args="ap1, wpa2-aes-8021x" />
+
+		<step no="ex.hive">
+			<desc>set hive parameters</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>set local radius server parameters</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type active-directory primary server ${pub.ad1.ip}"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				-v "aaa radius-server local db-type active-directory primary login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local db-type active-directory backup1 server 1.1.1.1"
+				-v "aaa radius-server local db-type active-directory backup1 domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory backup1 domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set local radius server parameters</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local db-type active-directory backup1 login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local db-type active-directory backup2 server 2.2.2.2"
+				-v "aaa radius-server local db-type active-directory backup2 domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory backup2 domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				-v "aaa radius-server local db-type active-directory backup2 login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local db-type active-directory backup3 server 3.3.3.3"
+				-v "aaa radius-server local db-type active-directory backup3 domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory backup3 domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>set local radius server parameters</desc>
+			<telnet target="ap1">
+				-v "aaa radius-server local db-type active-directory backup3 login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local cache"
+				-v "user-group autotest"
+				-v "user auto123"
+				-v "user auto123 pass aerohive123"
+				-v "user auto123 group autotest"
+				-v "aaa radius-server local user-group autotest"
+				-v "clear log all"
+				-v "aaa radius-server local db-type local"
+				-v "aaa radius-server local enable"
+				-v "user-profile ttt vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/ssid_bind_and_check.xml" args="ap1, wpa2-aes-8021x" />
+
+		<step no="4">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>step4_show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-i "primary active-directory (active)"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>open debug and clear log all</desc>
+			<telnet target="ap1">
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<include prefix="7" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+		<include prefix="8" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta2, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+		<step no="9">
+			<desc>set wrong ip route</desc>
+			<telnet target="ap1">
+				-v "ip route host ${pub.ad1.ip} gateway ${tb.unreach.ip1}"
+			</telnet>
+		</step>
+
+		<include prefix="10" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<include prefix="11" file="subs/release_station_wifi.xml" obj-args="sta2" />
+
+		<include prefix="12" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="13" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<include prefix="14" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step14_show_logging_buffered.log" />
+
+		<step no="15">
+			<desc>check if failover successful</desc>
+			<log-file>step14_show_logging_buffered.log</log-file>
+			<log-match>-c -i "all LDAP servers down. Try RADIUS cache and local DB. Left time"</log-match>
+			<log-match>-c -i "user ${pub.ad1.name}\\\\\${pub.radius1.username}, added vlan=" -i "attr-id=" -i "re-auth=" -i "in reply items from RADIUS cache"</log-match>
+		</step>
+
+		<include prefix="16" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+
+		<include prefix="17" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta2, wpa2-aes-8021x, WPA2/CCMP, wpa2-8021x, aes" />
+	</stage>
+</testcase>

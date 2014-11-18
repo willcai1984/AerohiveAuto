@@ -1,0 +1,123 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Hostname is resolved in normal situation</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP
+		Enable 1 dhcp server（mgt0.1）
+		Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+		Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+		AP get IPaddr(interface wan) &lt;IP1&gt; from server
+		The server's hostname is &lt;hostname1&gt;
+
+		Test Procedure:
+		1) Configure network firewall rule
+		"network-firewall name 1001 to hostname www.google.com action permit
+		logging off"
+		"network-firewall name 1002 from any to any action deny logging off"
+		2) Show network firewall rules in shell
+		"_shell"
+		"iptables -nL"
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+	
+	<property name="pub.dnstest.name1" value="hztb-ip1" />
+	<property name="test.ip1" value="192.168.10.222" />
+	<property name="test.ip2" value="192.168.13.254" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Configure AP
+				Enable 1 dhcp server（mgt0.1）
+				Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+				Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${cvg1.cvg.wan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask 255.255.255.0"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server enable"
+				-v "dns server-ip ${pub.dns1.ip}"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				Set interface eth0 to wan mode,eth1/eth2 to access mode and enable mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+			    -v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"						
+			</telnet>
+		</step>
+		
+		<step no="2.1">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+		
+		<step no="2.2">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				Configure network firewall rule
+				“network-firewall name 1001 to hostname hztb-ip1.qaauto.aerohive.com action permit logging off”
+				“network-firewall name 1002 from any to any action deny logging off”
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "network-firewall name 1001 to hostname ${pub.dnstest.name1}.${pub.dns_server.domain1} action permit logging on"
+				-v "network-firewall name 1002 from any to any action deny logging on"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show network-firewall
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show network-firewall"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				Show network firewall rules in shell
+			</desc>
+			<log-file>step4_Show_network_firewall.log</log-file>
+			<telnet target="${br1.br.wan.ip}" prompt="\$|AH.*#">
+				-b -sp "${br1.br.shellpwd}"
+				-v "_shell"
+				-v "iptables -nL"
+				-v "exit 0"
+				-v ""
+			</telnet>
+			<log-match>-i "${test.ip1}" -i "1001 ACCEPT"</log-match>
+			<log-match>-i "${pub.invalid_dns1.ip}" -i "1001 ACCEPT"</log-match>
+			<log-match>-i "${test.ip2}" -i "1001 ACCEPT"</log-match>
+			<log-match>-i "${pub.dnstest.ip1}" -i "1001 ACCEPT"</log-match>
+		</step>
+	</stage>
+</testcase>

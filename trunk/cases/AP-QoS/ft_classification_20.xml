@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, incoming pkt base on ssid(wifi0) mapping class 0-7 Test topology Top1 Device Configuration Portal: ssid DeathKnight interface wifi0 ssid DeathKnight qos classifier-profile ssid interface/ssid ssid DeathKnight qos-classifier ssid qos classifier-map ssid DeathKnight 0-7</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		portal:
+		- Set "_kdebug qos classifi"on CLI
+		- Set "_ff id 1 src-mac sta2's mac"
+		- Set "_kdebug fe basic"
+		- STA2generates traffic,then send to STA1. (A)
+		- STA1generates traffic,then send to STA2.(B)
+		Expected output
+		- Sniffering the traffic from STA1 incoming interface
+		- look over kdebug message
+		(A)
+		1970-01-02 07:27:31 debug [fe]: (i) wifi0.1
+		18.18.21.12-&gt;18.18.21.7(41) ttl(64) UDP 2024-&gt;10000 28
+		bytes
+		1970-01-02 07:27:31 debug [fe]: MAC session (id [3])
+		found
+		1970-01-02 07:27:31 debug [qos]: Classifier(interface)
+		qos=0-7
+		1970-01-02 07:27:31 debug [fe]: QoS: ingress pkt
+		fwd(wifi0.1) profile=0 qos=0-7
+		1970-01-02 07:27:31 debug [fe]: eth0 Tx 000f:b59c:8954 -&gt;
+		001d:0f0a:0c28 type 0x0800 42 bytes
+		1970-01-02 07:27:31 debug [fe]: (o) eth0
+		18.18.21.12-&gt;18.18.21.7(41) ttl(64) UDP 2024-&gt;10000 42
+		bytes
+		1970-01-02 07:27:31 debug [fe]: QoS: pkt forwarded
+		(B)
+		1970-01-02 07:30:20 debug [fe]: (i) eth0
+		18.18.21.45-&gt;18.18.21.12(41) ttl(64) UDP 1575-&gt;10000 46
+		bytes
+		1970-01-02 07:30:20 debug [fe]: MAC session (id [5])
+		found
+		1970-01-02 07:30:20 debug [qos]: Classifier(interface)
+		qos=0-7
+		1970-01-02 07:30:20 debug [fe]: QoS: ingress pkt
+		fwd(eth0) profile=0 qos=0-7
+		1970-01-02 07:30:20 debug [fe]: wifi0.1 Tx
+		0016:d432:9159 -&gt; 000f:b59c:8954 type 0x0800 60 bytes
+		1970-01-02 07:30:20 debug [fe]: (o) wifi0.1
+		18.18.21.45-&gt;18.18.21.12(41) ttl(64) UDP 1575-&gt;10000 60
+		bytes
+		1970-01-02 07:30:20 debug [fe]: QoS: pkt queued
+		1970-01-02 07:30:20 debug [fe]: Tx:wifi0.1&gt;
+		0016:d432:9159-&gt;000f:b59c:8954 profile idx=0 pkt_len=60
+		q_len=0 QoS buf=0
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="test.filename" value="${job.id}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				create ssid
+			</desc>
+			<console target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "qos classifier-profile ssid interface/ssid"
+				-v "ssid ${ssid.name} qos-classifier ssid"
+				-v "qos classifier-map ssid ${ssid.name} 2"
+			</console>
+		</step>
+
+		<include prefix="pre1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="pre2">
+			<desc>
+				Transfer a file to directory tftpboot in tftp server
+			</desc>
+			<ssh host="${tb.tftp}" prompt=">|.*#">
+				-v "echo \"12345\" &gt; /var/lib/tftpboot/${test.filename}"
+				-v "chmod 777 /var/lib/tftpboot/${tb.ftp.file3_small}"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				sta send udp paket
+			</desc>
+			<ssh target="sta1">
+				-v "tftp ${tb.tftp} -c get ${test.filename}"
+			</ssh>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "QoS: pkt forwarded"</log-match>
+			<log-match>-c -i "Classifier(interface:wifi0.1) qos=2"</log-match>
+			<log-match>-c -i "Classifier(interface:eth0) qos=2"</log-match>
+			<log-match>-c -i "QoS: pkt queued"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${tb.tftp}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP" -ps p "QoS: ingress pkt fwd\(eth0\) profile=\d+ qos=2" -e "\(i\) eth0 ${tb.tftp}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) UDP" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${tb.tftp}\(\d+\) ttl\(\d+\) UDP" -ps p "QoS: ingress pkt fwd\(wifi0.1\) profile=\d+ qos=2" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${tb.tftp}\(\d+\) ttl\(\d+\) UDP" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>
+					rm test file
+				</desc>
+				<ssh host="${tb.tftp}" prompt=">|.*#">
+					-v "rm -f /var/lib/tftpboot/${test.filename}"
+				</ssh>
+			</step>
+
+			<step no="2">
+				<desc>
+					rm tmp file
+				</desc>
+				<ssh target="sta1">
+					-v "rm -f /tftpboot/${test.filename}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

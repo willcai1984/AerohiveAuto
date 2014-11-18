@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>AP action when receive no response from NTP server(service stop or configure a accessible IP address as NTP server or config a hostname could not be parsed)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Configure a NTP server in DHCP server
+		NTP server is unaccessible or NTP service not be enabled
+		Open _debug ntp all and debug console
+		Set filter in AP, open kdebug fe basic and debug console:
+		_ff id 1 dst-port 123 bidirectional
+		_kdebug fe basic
+		debug console
+
+		Test Procedure:
+		Run interface mgt0 dhcp client to obtain IP address and other options
+		Check if NTP server be used and if time synchronization between AP and NTP server
+
+		Expect result
+		After execute command, need check:
+		debug of sync with NTP server be printed out
+		show interface mgt0 dhcp client can see NTP server be obtained
+		NTP server not active, time not be synchronized, AP will trying to sync with NTP server(try 1 time every 5s)
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+
+	<!-- pub.invalid_ntp1.ip=1.1.1.1 -->
+
+	<stage>
+		<step no="0">
+			<desc>
+				no pre-configure
+			</desc>
+			<ssh target="ap1">
+				-v "no ntp server ${pub.ntp1.ip}"
+				-v "show run"
+			</ssh>
+		</step>
+		
+		<step no="0">
+			<desc>
+				-Configure invalid NTP server
+			</desc>
+			<ssh target="ap1">
+				-v "ntp server ${pub.invalid_ntp1.ip}"
+			</ssh>
+		</step>
+
+		<step no="1">
+			<desc>
+				open ntp debug switch
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 dst-port 123 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_debug ntp all"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="2">
+			<desc>
+				Enable ntp to trigger NTP action
+			</desc>
+			<console target="ap1">
+				-v "ntp enable"
+			</console>
+		</step>
+
+		<step no="3" delay="20">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step3_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="300">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-e "1 NTP servers has been configured"</log-match>
+			<log-match>-e "trying 1 times on ${pub.invalid_ntp1.ip}"</log-match>
+			<log-match>-e "trying 2 times on ${pub.invalid_ntp1.ip}"</log-match>
+			<log-match>-e "trying 3 times on ${pub.invalid_ntp1.ip}"</log-match>
+			<log-match>-e "Connect ${pub.invalid_ntp1.ip} failed, try next server."</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				show dhcp client status to check the ntp info get from dhcp server is ntp1
+			</desc>
+			<log-file>step4_dhcp_client_status.log</log-file>
+			<ssh target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</ssh>
+			<log-match>-i "NTP server" -i "${pub.ntp1.ip}"</log-match>
+		</step>
+
+		<step no="5" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Check NTP server
+			</desc>
+			<log-file>step4.1_show_ntp_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show ntp"
+			</ssh>
+			<log-match>-c -i "State: *Enable"</log-match>
+			<log-match>-c -i "First *${pub.invalid_ntp1.ip}"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step61_check_time.log</log-file>
+			<ssh host="${pub.ntp2.ip}">
+				-v "date"
+			</ssh>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step62_check_time.log</log-file>
+			<ssh target="ap1">
+				-v "show clock"
+			</ssh>
+		</step>
+
+	</stage>
+</testcase>

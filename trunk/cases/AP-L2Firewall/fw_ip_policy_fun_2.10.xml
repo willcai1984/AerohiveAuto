@@ -1,0 +1,216 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Config "from to" simultaneous policy(deny, through MP)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop1 has been associated with AP1 and assigned an ip address
+		-Laptop1 uses user-profile "FW"
+
+		Test Procedure:
+		1) Laptop1 and Laptop2 ping each other through MP
+		2) Configure a ip-policy on MP and bind it to FW:
+		"ip-policy FW"
+		"ip-policy FW from &lt;Laptop1 ip addr&gt; action deny"
+		"ip-policy FW to &lt;Laptop1 ip addr&gt; action deny"
+		"user-profile FW security ip-policy from-access FW to-access FW
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		3) Repeat step 1
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="user_id" value="FWtest" />
+	<property name="conn1.ssid" value="${ssid.name}-1" />
+	<property name="conn2.ssid" value="${ssid.name}-2" />
+
+	<stage>
+		<if>"${ap1.wifi1.existed}" == "true"</if>
+
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+			</console>
+		</step>
+
+		<step no="1">
+			<desc>
+				Configure AP
+			</desc>
+			<console target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}-1"
+				-v "ssid ${ssid.name}-1 security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}-1"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "interface wifi1 radio channel 36"
+				-v "clear forwarding-engine ip-sessions"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				Configure MP
+			</desc>
+			<console target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}-2"
+				-v "ssid ${ssid.name}-2 security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}-2"
+				-v "user-profile ${user_id} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "interface wifi1 radio channel 36"
+				-v "clear forwarding-engine ip-sessions"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				check wifi1
+			</desc>
+			<log-file>step1.2_check_wifi1.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				Get wifi1 mac
+			</desc>
+			<setvar name="ap2_wifi1_mac">
+				${bin.dir}/getbyrexp.py -p "MAC addr=(\S+);" -f ${log.dir}/step1.2_check_wifi1.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.4" type="loop-check" loop-max-times="10" loop-interval="30">
+			<desc>
+				check amrp neighbor
+			</desc>
+			<log-file>step1.4_check_amrp_neighbor.log</log-file>
+			<telnet target="ap1">
+				-v "show amrp neighbor"
+			</telnet>
+			<log-match>-c -i "${ap2_wifi1_mac}" -i "${ap2.mgt0.ip}" -i "TWO-WAY"</log-match>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				shutdown interface eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap2" />
+
+		<step no="open.debug">
+			<desc>
+				open debug
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 src-ip ${sta2.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<include prefix="4" file="subs/sta_ping.xml" args="sta1, ${sta2.tif.ip}, 4" />
+
+		<include prefix="5" file="subs/sta_ping.xml" args="sta2, ${sta1.tif.ip}, 4" />
+
+		<step no="6">
+			<desc>
+				Configure a ip-policy on MP and bind it to FW:
+				“ip-policy FW”
+				"ip-policy FW from &lt;Laptop1 ip addr&gt; action deny"
+				"ip-policy FW to &lt;Laptop1 ip addr&gt; action deny"
+				"user-profile FW security ip-policy from-access FW to-access FW
+			</desc>
+			<console target="ap1">
+				-v "ip-policy ${user_id}"
+				-v "ip-policy ${user_id} id 1 from ${sta1.tif.ip} action deny"
+				-v "ip-policy ${user_id} id 2 to ${sta1.tif.ip} action deny"
+				-v "user-profile ${user_id} security ip-policy from-access ${user_id} to-access ${user_id}"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="7">
+			<desc>
+				sta1 ping sta2
+			</desc>
+			<log-file>step7_sta1_ping_sta2_unsuccessfully.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${sta2.tif.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${sta2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step7.1_show_loging_buffered.log</log-file>
+			<console target="ap1">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "\(\!\) wifi1.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -p "ACL: matched upid \[\d+\] dir \[egress \(to-air\)\] group \[${user_id}\] id \[1\] \[deny\]" -e "\(i\) wifi1.1 ${sta1.tif.ip}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7.2">
+			<desc>
+				clear forwarding-engine ip-sessions
+				clear log buffered
+			</desc>
+			<console target="ap1">
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="8">
+			<desc>
+				sta2 ping sta1
+			</desc>
+			<log-file>step8_sta2_ping_sta1_unsuccessfully.log</log-file>
+			<ssh target="sta2">
+				-v "ping ${sta1.tif.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${sta1.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8.1_show_loging_buffered.log</log-file>
+			<console target="ap1">
+				-v "show logging buffered"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-b "\(\!\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -p "ACL: matched upid \[\d+\] dir \[ingress \(from-air\)\] group \[${user_id}\] id \[2\] \[deny\]" -e "\(i\) wifi0.1 ${sta2.tif.ip}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

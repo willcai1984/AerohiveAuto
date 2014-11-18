@@ -1,0 +1,405 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>MTU test</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		1) BR connect to PPPoE server
+		2) Laptop sends packet size 1 packets to PPPoE server
+		3) Laptop sends packet size 1492 packets to PPPoE server
+		4) Laptop sends packet size 1500 packets to PPPoE server (no fragment)
+		5) Laptop sends packet size 2000 packets to PPPoE server (fragment)
+		6) Enable TCP mss on BR
+		7) Laptop sends packet size 1500 packets to PPPoE server (no fragment)
+		8) Disable TCP mss on BR and enable PMTUD on sw
+		9) Laptop sends packet size 1500 packets to PPPoE server (no fragment)
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<property name="pppoe.Remote.ip" value="10.0.10.22" />
+	<property name="br.route.netmask" value="255.255.255.0" />
+
+	<stage>
+		<step no="0">
+			<desc>configure mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask ${br.route.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				Set one user-profile and define the attribute x
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				-BR connect to PPPoE server
+			</desc>
+			<console target="br1.br" timeout="180">
+				-v "interface ${br1.br.wan.int1} pppoe username ${pub.pppoe1.username} password ${pub.pppoe1.passwd}"
+				-v "interface ${br1.br.wan.int1} pppoe enable"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step3_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="4" delay="30">
+			<desc>
+				show interface eth0 pppoe
+			</desc>
+			<log-file>step4_show_interface_eth0_pppoe.log</log-file>
+			<console target="br1.br" timeout="300">
+				-v "show interface ${br1.br.wan.int1} pppoe"
+			</console>
+			<log-match>-c -i "Remote IP: ${pppoe.Remote.ip}"</log-match>
+			<log-match>-c -i "PPPoE status: enabled"</log-match>
+			<log-match>-c -i "Username: ${pub.pppoe1.username}"</log-match>
+			<log-match>-c -i "Connection status: connected"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get pppoe local ip
+			</desc>
+			<setvar name="pppoe.local.ip">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4_show_interface_eth0_pppoe.log -p "Local IP: (\d+.\d+.\d+.\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				packet capture on internal dns server
+			</desc>
+			<log-file>step5_ifconfig.log</log-file>
+			<ssh host="${pub.pppoe1.ip}">
+				-v "ifconfig"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				get pppoe interface
+			</desc>
+			<setvar name="pppoe.interface">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_ifconfig.log -p "(ppp\d+)\s*Link encap:" -e "inet addr:${pppoe.Remote.ip}" -g -1 -t str
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				packet capture on pppoe server
+			</desc>
+			<log-file>step5.2_tshark.log</log-file>
+			<ssh host="${pub.pppoe1.ip}">
+				-v "nohup tshark -l -i ${pppoe.interface}  &gt; step5.2_capture_packet.log  &amp;"
+				-v ""
+			</ssh>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				get tshark process
+			</desc>
+			<setvar name="tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5.2_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				-Laptop sends packet size 1 packets to PPPoE server
+			</desc>
+			<log-file>step6_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="500">
+				-v "ping ${pub.tftp1.tip} -s 1 -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.tftp1.tip}:" -i "ttl="</log-match>
+		</step>
+
+		<step no="6.1" delay="30">
+			<desc>
+				check ping packet on pppoe server
+			</desc>
+			<log-file>step6.1_intdns_check_ping_packet.log</log-file>
+			<ssh host="${pub.pppoe1.ip}">
+				-v "kill -9 ${tshark.id_1}"
+				-v "cat step5.2_capture_packet.log"
+				-v "rm -f step5.2_capture_packet.log"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "${pppoe.local.ip} *-&gt; *${pub.tftp1.tip} *ICMP Echo (ping) request"</log-match>
+			<log-match>-c -i "${pub.tftp1.tip} *-&gt; *${pppoe.local.ip} *ICMP Echo (ping) reply"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				packet capture on pppoe server
+			</desc>
+			<log-file>step7_tshark.log</log-file>
+			<ssh host="${pub.pppoe1.ip}">
+				-v "nohup tshark -l -i ${pppoe.interface}  &gt; step7_capture_packet.log  &amp;"
+				-v ""
+			</ssh>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				get tshark process
+			</desc>
+			<setvar name="tshark.id_2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step7_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="8">
+			<desc>
+				-Laptop sends packet size 1492 packets to PPPoE server
+			</desc>
+			<log-file>step8_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="500">
+				-v "ping ${pub.tftp1.tip} -s 1492 -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.tftp1.tip}:" -i "ttl="</log-match>
+		</step>
+
+		<step no="8.1" delay="30">
+			<desc>
+				check ping packet on pppoe server
+			</desc>
+			<log-file>step8.1_intdns_check_ping_packet.log</log-file>
+			<ssh host="${pub.pppoe1.ip}">
+				-v "kill -9 ${tshark.id_2}"
+				-v "cat step7_capture_packet.log"
+				-v "rm -f step7_capture_packet.log"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "${pppoe.local.ip} *-&gt; *${pub.tftp1.tip} *IP Fragmented IP protocol (proto=ICMP"</log-match>
+			<log-match>-c -i "${pppoe.local.ip} *-&gt; *${pub.tftp1.tip} *ICMP Echo (ping) request"</log-match>
+			<log-match>-c -i "${pub.tftp1.tip} *-&gt; *${pppoe.local.ip} *ICMP Echo (ping) reply"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				packet capture on pppoe server
+			</desc>
+			<log-file>step9_tshark.log</log-file>
+			<ssh host="${pub.pppoe1.ip}">
+				-v "nohup tshark -l -i ${pppoe.interface} &gt; step9_capture_packet.log &amp;"
+				-v ""
+			</ssh>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				get tshark process
+			</desc>
+			<setvar name="tshark.id_3">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step9_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="10">
+			<desc>
+				-Laptop sends packet size 1500 packets to PPPoE server
+			</desc>
+			<log-file>step10_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="500">
+				-v "ping ${pub.tftp1.tip} -s 1500 -M do -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${pub.tftp1.tip}:" -i "ttl="</log-match>
+		</step>
+
+		<step no="10.1" delay="30">
+			<desc>
+				check ping packet on pppoe server
+			</desc>
+			<log-file>step10.1_intdns_check_ping_packet.log</log-file>
+			<ssh host="${pub.pppoe1.ip}">
+				-v "kill -9 ${tshark.id_3}"
+				-v "cat step9_capture_packet.log"
+				-v "rm -f step9_capture_packet.log"
+			</ssh>
+			<no-error-check />
+			<log-match>-n -c -i "${pppoe.local.ip} *-&gt; *${pub.tftp1.tip} *ICMP Echo (ping) request"</log-match>
+			<log-match>-n -c -i "${pub.tftp1.tip} *-&gt; *${pppoe.local.ip} *ICMP Echo (ping) reply"</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				packet capture on pppoe server
+			</desc>
+			<log-file>step11_tshark.log</log-file>
+			<ssh host="${pub.pppoe1.ip}">
+				-v "nohup tshark -l -i ${pppoe.interface} &gt; step11_capture_packet.log &amp;"
+				-v ""
+			</ssh>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				get tshark process
+			</desc>
+			<setvar name="tshark.id_4">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step11_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="12">
+			<desc>
+				-Laptop sends packet size 2000 packets to PPPoE server
+			</desc>
+			<log-file>step12_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="500">
+				-v "ping ${pub.tftp1.tip} -s 2000 -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.tftp1.tip}:" -i "ttl="</log-match>
+		</step>
+
+		<step no="12.1" delay="30">
+			<desc>
+				check ping packet on pppoe server
+			</desc>
+			<log-file>step12.1_intdns_check_ping_packet.log</log-file>
+			<ssh host="${pub.pppoe1.ip}">
+				-v "kill -9 ${tshark.id_4}"
+				-v "cat step11_capture_packet.log"
+				-v "rm -f step11_capture_packet.log"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "${pppoe.local.ip} *-&gt; *${pub.tftp1.tip} *IP Fragmented IP protocol (proto=ICMP"</log-match>
+			<log-match>-c -i "${pppoe.local.ip} *-&gt; *${pub.tftp1.tip} *ICMP Echo (ping) request"</log-match>
+			<log-match>-c -i "${pub.tftp1.tip} *-&gt; *${pppoe.local.ip} *ICMP Echo (ping) reply"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				-Enable TCP mss on BR
+			</desc>
+			<console target="br1.br" timeout="180">
+				-v "ip tcp-mss-threshold enable"
+				-v "ip tcp-mss-threshold threshold-size 1460"
+			</console>
+		</step>
+
+		<step no="14">
+			<desc>
+				packet capture on pppoe server
+			</desc>
+			<log-file>step14_tshark.log</log-file>
+			<ssh host="${pub.pppoe1.ip}">
+				-v "nohup tshark -l -i ${pppoe.interface} &gt; step14_capture_packet.log &amp;"
+				-v ""
+			</ssh>
+		</step>
+
+		<step no="14.1">
+			<desc>
+				get tshark process
+			</desc>
+			<setvar name="tshark.id_5">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step14_tshark.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="15">
+			<desc>
+				Send TCP traffic from eth1 to eth0(wan)
+			</desc>
+			<log-file>step15_download_files.log</log-file>
+			<ssh target="br1.vpc1" timeout="500">
+				-v "rm -f /tmp/${pub.ftp1.file3_small}"
+				-v "curl -u ${pub.ftp1.username}:${pub.ftp1.passwd} ftp://${pub.ftp1.ip}/${pub.ftp1.file3_small} -o /tmp/${pub.ftp1.file3_small} --connect-timeout 100"
+			</ssh>
+		</step>
+
+		<step no="15.1" delay="20">
+			<desc>
+				check ping packet on pppoe server
+			</desc>
+			<log-file>step15.1_intdns_check_ping_packet.log</log-file>
+			<ssh host="${pub.pppoe1.ip}" timeout="500">
+				-v "kill -9 ${tshark.id_5}"
+				-v "cat step14_capture_packet.log"
+				-v "rm -f step14_capture_packet.log"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "${pub.ftp1.ip} *-&gt; *${pppoe.local.ip} *FTP-DATA FTP Data:"</log-match>
+			<log-match>-c -i "${pppoe.local.ip} *-&gt; *${pub.ftp1.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "${pub.ftp1.ip} *-&gt; *${pppoe.local.ip}" -i "TCP"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear vpc file
+				</desc>
+				<ssh host="${pub.pppoe1.ip}">
+					-v "kill -9 ${tshark.id_1}"
+					-v "kill -9 ${tshark.id_2}"
+					-v "kill -9 ${tshark.id_3}"
+					-v "kill -9 ${tshark.id_4}"
+					-v "kill -9 ${tshark.id_5}"
+					-v "rm -f step5.2_capture_packet.log"
+					-v "rm -f step7_capture_packet.log"
+					-v "rm -f step9_capture_packet.log"
+					-v "rm -f step11_capture_packet.log"
+					-v "rm -f step14_capture_packet.log"
+				</ssh>
+				<no-error-check />
+			</step>
+
+			<step no="0.1">
+				<desc>
+					clear local file
+				</desc>
+				<ssh target="br1.vpc1">
+					-v "rm -f /tmp/${pub.ftp1.file3_small}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

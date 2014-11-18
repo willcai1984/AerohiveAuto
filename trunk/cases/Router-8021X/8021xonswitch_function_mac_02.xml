@@ -1,0 +1,630 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Single VLAN Multiple MAC The host passed MAC procedure can access the network, VLAN from RADIUS will be assigned to the interface other hosts connect to the port need to do authenticate. VLAN needs to be same with the first authenticated host's VLAN Platform Dependence SR2024</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Auth is host based, MAC based Auth enabled in the port,
+		security-object &lt;security-object name&gt;
+		security-object &lt;security-object name&gt; security aaa radius-
+		server primary &lt;ip address of radius server&gt; shared-secret
+		&lt;share-key&gt;
+		security-object &lt;security-object name&gt; security aaa radius-
+		server accounting primary &lt;ip address of radius server&gt;
+		shared-secret &lt;share-key&gt;
+		security-object &lt;security-object name&gt; security additional-
+		auth-method mac-based-auth auth-method chap
+		security-object &lt;security-object name&gt; security auth-mode
+		host-based
+		security-object &lt;security-object name&gt; security initial-
+		auth-method mac-based-auth
+		interface &lt;ethx/y&gt; switchport mode access
+		interface &lt;ethx/y&gt; security-object &lt;security-object name&gt;
+		vlan 10
+		vlan 20
+		vlan 30
+		Port configured VLAN 10,
+		Radius server response MAC1 return VLAN 20, MAC2 return VLAN 30, MAC3 return
+		VLAN20
+		Radius users configure(free radius)
+		a. Return vlan id
+		directly
+		MAC1 Cleartext-Password := MAC1
+		Tunnel-Type = 13,
+		Tunnel-Medium-Type = 6,
+		Tunnel-Private-Group-ID = 20
+		MAC2 Cleartext-Password := MAC2
+		Tunnel-Type = 13,
+		Tunnel-Medium-Type = 6,
+		Tunnel-Private-Group-ID = 30
+		MAC3 Cleartext-Password := MAC3
+		Tunnel-Type = 13,
+		Tunnel-Medium-Type = 6,
+		Tunnel-Private-Group-ID = 20
+		b. Return upid
+		MAC1 Cleartext-Password := MAC1
+		Tunnel-Type = 10,
+		Tunnel-Medium-Type = 1,
+		Tunnel-Private-Group-ID = 20
+		MAC2 U Cleartext-Password := MAC2
+		Tunnel-Type = 10,
+		Tunnel-Medium-Type = 1,
+		Tunnel-Private-Group-ID = 30
+		MAC3 Cleartext-Password := MAC3
+		Tunnel-Type = 10,
+		Tunnel-Medium-Type = 1,
+		Tunnel-Private-Group-ID = 20
+		In this case, we need configure user profile in switch, the clis is:
+		user-profile upid20 qos-policy def-user-qos vlan-id 20
+		attribute 20
+		user-profile upid30 qos-policy def-user-qos vlan-id 30
+		attribute 30
+		PC1, PC2, PC3 didn't do auth
+
+		Test Procedure:
+		1. Enable MAC authentication, Check port access, result 1
+		2. PC1 do MAC auth, check port access, result 2
+		3. PC2 do MAC auth, check port
+		access, result 3
+		4. PC3 do MAC auth, check port access, result 4
+		5. PC1, PC3 deauth, PC2 do MAC auth, check port access, result 5
+		6. PC2 deauth, result 6
+	</description>
+	<numofcvg>0</numofcvg>
+	<numofbr>1</numofbr>
+	<tbtype>linux</tbtype>
+
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="acct1.vlan" value="${br1.vpc1.vlan}" />
+	<property name="acct2.vlan" value="${br1.vpc2.vlan}" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				6. Connect one laptop to the l2switch and auth successfully.
+			</desc>
+			<log-file>step0_ifconfig_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="60">
+				-v "ifconfig ${br1.vpc1.tif.name} up"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="0.1a">
+			<desc>get raw mac of vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step0_ifconfig_vpc1.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="0.1b">
+			<desc>get mac of br1.vpc1</desc>
+			<setvar name="br1.vpc1.tif.mac">
+				echo $(echo $(echo ${br1.vpc1.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				6. Connect one laptop to the l2switch and auth successfully.
+			</desc>
+			<log-file>step1_ifconfig_vpc1.log</log-file>
+			<ssh target="br1.vpc2" timeout="60">
+				-v "ifconfig ${br1.vpc2.tif.name} up"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="1.1a">
+			<desc>get raw mac of vpc2</desc>
+			<setvar name="br1.vpc2.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step1_ifconfig_vpc1.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="1.1b">
+			<desc>get mac of br1.vpc2</desc>
+			<setvar name="br1.vpc2.tif.mac">
+				echo $(echo $(echo ${br1.vpc2.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc2.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc1.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc2.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				6. Connect one laptop to the l2switch and auth successfully.
+			</desc>
+			<log-file>step2_ifconfig_vpc1.log</log-file>
+			<ssh target="br1.vpc3" timeout="60">
+				-v "ifconfig ${br1.vpc3.tif.name} up"
+				-v "ifconfig ${br1.vpc3.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.1a">
+			<desc>get raw mac of vpc3</desc>
+			<setvar name="br1.vpc3.tif.mac1">
+				echo $(${bin.dir}/getbyrexp.py -p "HWaddr ([\da-fA-F:]+)" -f ${log.dir}/step2_ifconfig_vpc1.log -t str | tr "A-F" "a-f")
+			</setvar>
+		</step>
+
+		<step no="2.1b">
+			<desc>get mac of br1.vpc3</desc>
+			<setvar name="br1.vpc3.tif.mac">
+				echo $(echo $(echo ${br1.vpc3.tif.mac1} | cut -d : -f1)$(echo ${br1.vpc3.tif.mac1} | cut -d : -f2,3)$(echo ${br1.vpc3.tif.mac1} | cut -d : -f4,5)$(echo ${br1.vpc3.tif.mac1} | cut -d : -f6))
+			</setvar>
+		</step>
+
+		<include prefix="add.account1" file="subs/ldap_add.xml" args="${br1.vpc1.tif.mac}, ${br1.vpc1.tif.mac}" obj-args="acct1" />
+
+		<include prefix="add.account2" file="subs/ldap_add.xml" args="${br1.vpc2.tif.mac}, ${br1.vpc2.tif.mac}" obj-args="acct2" />
+
+		<include prefix="add.account3" file="subs/ldap_add.xml" args="${br1.vpc3.tif.mac}, ${br1.vpc3.tif.mac}" obj-args="acct1" />
+
+		<step no="pre_step">
+			<desc>configure mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask ${br.route.netmask}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.2 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/${br.lan.netmask}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.2 dhcp-server options netmask ${br.route.netmask}"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.2 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				1. Set one security-object with radius-server
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object lan1"
+				-v "security-object lan1 security aaa radius primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object lan1 security aaa radius-server accounting primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object lan1 security additional-auth-method mac-based-auth auth-method chap"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Set one user-profile and define the attribute x,
+				3. Set the eth1 mode as bridge-access and bind the attribute to it
+				4. Bind the security-object to the eth1.
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "security-object lan1 security initial-auth-method mac-based-auth"
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute 2"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 security-object lan1"
+				-v "interface eth1 mac-learning enable"
+				-v "interface eth1 native-vlan ${br1.vpc3.vlan}"
+				-v "interface eth2 mode bridge-802.1q"
+				-v "interface eth2 security-object lan1"
+				-v "interface eth2 mac-learning enable"
+				-v "interface eth2 native-vlan ${br1.vpc3.vlan}"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step3_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.br.mgt0.1.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${br1.br.mgt0.1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step3.3_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="3.4">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="3.5" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show 802.1x-mac-table
+			</desc>
+			<log-file>step3.5_show_8021x_mac.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}[\t ]+${br1.vpc1.vlan}[\t ]+eth1[\t ]+CLOSE[\t ]+N/A" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="3.5a">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step3.5a_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface eth1"
+			</telnet>
+			<log-match>-c -i "Initial-auth=MAC-based-auth"</log-match>
+			<log-match>-c -i "Protocol-suite=802.1X; *MAC-based-auth=Enabled *Auth-mode=port-based"</log-match>
+			<log-match>-c -i "${br1.vpc1.tif.mac}" -i "done" -i "${br1.vpc1.tif.mac}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="3.5b">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step3.5b_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "Station ${br1.vpc1.tif.mac} is authenticated to" -i "thru SSID lan1"</log-match>
+			<log-match>-c -i "STA(${br1.vpc1.tif.mac}) login to SSID(eth1) by user_name="</log-match>
+			<log-match>-c -i "MAC-based auth: RADIUS server send OK to station ${br1.vpc1.tif.mac}"</log-match>
+			<log-match>-c -i "authentication OK, username ${br1.vpc1.tif.mac}"</log-match>
+			<log-match>-c -i "start MAC-based auth for sta ${br1.vpc1.tif.mac}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="3.6" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step3.6_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="3.6a">
+			<desc>
+				check auth
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step4_ifconfig_vpc2.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-n -i "inet addr"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="4.1" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show 802.1x-mac-table
+			</desc>
+			<log-file>step4.1_show_8021x_mac.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc2.tif.mac}[\t ]+${br1.vpc2.vlan}[\t ]+eth1[\t ]+CLOSE[\t ]+N/A" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step4.2_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface eth1"
+			</telnet>
+			<log-match>-c -i "Initial-auth=MAC-based-auth"</log-match>
+			<log-match>-c -i "Protocol-suite=802.1X; *MAC-based-auth=Enabled *Auth-mode=port-based"</log-match>
+			<log-match>-c -i "${br1.vpc1.tif.mac}" -i "done" -i "${br1.vpc1.tif.mac}"</log-match>
+			<log-match>-n -c -i "${br1.vpc2.tif.mac}" -i "done" -i "${br1.vpc2.tif.mac}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step4.3_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-n -c -i "Station ${br1.vpc2.tif.mac} is authenticated to" -i "thru SSID lan1"</log-match>
+			<log-match>-n -c -i "STA(${br1.vpc2.tif.mac}) login to SSID(eth1) by user_name="</log-match>
+			<log-match>-n -c -i "MAC-based auth: RADIUS server send OK to station ${br1.vpc2.tif.mac}"</log-match>
+			<log-match>-n -c -i "authentication OK, username ${br1.vpc2.tif.mac}"</log-match>
+			<log-match>-n -c -i "start MAC-based auth for sta ${br1.vpc2.tif.mac}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="4.4" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step4.4_ping_log.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step5_ifconfig_vpc2.log</log-file>
+			<ssh target="br1.vpc3" timeout="120">
+				-v "dhclient ${br1.vpc3.tif.name}"
+				-v "ifconfig ${br1.vpc3.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="5.1" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show 802.1x-mac-table
+			</desc>
+			<log-file>step5.1_show_8021x_mac.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc3.tif.mac}[\t ]+${br1.vpc1.vlan}[\t ]+eth1[\t ]+CLOSE[\t ]+N/A" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step5.2_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface eth1"
+			</telnet>
+			<log-match>-c -i "Initial-auth=MAC-based-auth"</log-match>
+			<log-match>-c -i "Protocol-suite=802.1X; *MAC-based-auth=Enabled *Auth-mode=port-based"</log-match>
+			<log-match>-c -i "${br1.vpc1.tif.mac}" -i "done" -i "${br1.vpc1.tif.mac}"</log-match>
+			<log-match>-c -i "${br1.vpc3.tif.mac}" -i "done" -i "${br1.vpc3.tif.mac}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step5.3_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "Station ${br1.vpc3.tif.mac} is authenticated to" -i "thru SSID lan1"</log-match>
+			<log-match>-c -i "STA(${br1.vpc3.tif.mac}) login to SSID(eth1) by user_name="</log-match>
+			<log-match>-c -i "MAC-based auth: RADIUS server send OK to station ${br1.vpc3.tif.mac}"</log-match>
+			<log-match>-c -i "authentication OK, username ${br1.vpc3.tif.mac}"</log-match>
+			<log-match>-c -i "start MAC-based auth for sta ${br1.vpc3.tif.mac}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="5.4" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step5.4_ping_log.log</log-file>
+			<ssh target="br1.vpc3" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				get ip address
+			</desc>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "ifconfig ${br1.vpc1.tif.name} down"
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				get ip address
+			</desc>
+			<ssh target="br1.vpc3" timeout="120">
+				-v "dhclient ${br1.vpc3.tif.name} -r"
+				-v "ifconfig ${br1.vpc3.tif.name} down"
+			</ssh>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step6.2_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="6.3">
+			<desc>set br1.vpc1.tif.ip var for vpc2 on BR side</desc>
+			<setvar name="br1.vpc2.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc2.mif.ip} -u ${br1.vpc2.user} -p ${br1.vpc2.passwd} -i ${br1.vpc2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="6.4" type="loop-check" loop-max-times="6" loop-interval="10">
+			<desc>
+				show 802.1x-mac-table
+			</desc>
+			<log-file>step6.4_show_8021x_mac.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc2.tif.mac}[\t ]+${br1.vpc2.vlan}[\t ]+eth1[\t ]+CLOSE[\t ]+N/A" -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="6.4a">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step6.4a_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface eth1"
+			</telnet>
+			<log-match>-c -i "Initial-auth=MAC-based-auth"</log-match>
+			<log-match>-c -i "Protocol-suite=802.1X; *MAC-based-auth=Enabled *Auth-mode=port-based"</log-match>
+			<log-match>-c -i "${br1.vpc2.tif.mac}" -i "done" -i "${br1.vpc2.tif.mac}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="6.4b">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step6.4b_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "Station ${br1.vpc2.tif.mac} is authenticated to" -i "thru SSID lan1"</log-match>
+			<log-match>-c -i "STA(${br1.vpc2.tif.mac}) login to SSID(eth1) by user_name=${br1.vpc2.tif.mac}"</log-match>
+			<log-match>-c -i "MAC-based auth: RADIUS server send OK to station ${br1.vpc2.tif.mac}"</log-match>
+			<log-match>-c -i "authentication OK, username ${br1.vpc2.tif.mac}"</log-match>
+			<log-match>-c -i "start MAC-based auth for sta ${br1.vpc2.tif.mac}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="6.5" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step6.5_ping_log.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				get ip address
+			</desc>
+			<log-file>step7_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "dhclient ${br1.vpc2.tif.name} -r"
+				-v "ifconfig ${br1.vpc2.tif.name} down"
+			</ssh>
+		</step>
+
+		<step no="7.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step7.1_ping_log.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7.2" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step7.2_ping_log.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="7.3" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				vpc1 ping mgt0.1
+			</desc>
+			<log-file>step7.3_ping_log.log</log-file>
+			<ssh target="br1.vpc3" timeout="120">
+				-v "ping ${pub.dns1.ip} -c 4"
+			</ssh>
+			<log-match>-n -c -i "from ${pub.dns1.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				show 802.1x-mac-table
+			</desc>
+			<log-file>step8_show_8021x_mac.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show 802.1x-mac-table"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc2.tif.mac}[\t ]+${br1.vpc2.vlan}[\t ]+eth1[\t ]+CLOSE[\t ]+N/A" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc1.tif.mac}[\t ]+${br1.vpc1.vlan}[\t ]+eth1[\t ]+CLOSE[\t ]+N/A" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.vpc3.tif.mac}[\t ]+${br1.vpc1.vlan}[\t ]+eth1[\t ]+CLOSE[\t ]+N/A" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				check auth
+			</desc>
+			<log-file>step8.1_check_auth.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show auth interface eth1"
+			</telnet>
+			<log-match>-c -i "Initial-auth=MAC-based-auth"</log-match>
+			<log-match>-c -i "Protocol-suite=802.1X; *MAC-based-auth=Enabled *Auth-mode=port-based"</log-match>
+			<log-match>-n -c -i "${br1.vpc1.tif.mac}" -i "done" -i "${br1.vpc1.tif.mac}"</log-match>
+			<log-match>-n -c -i "${br1.vpc2.tif.mac}" -i "done" -i "${br1.vpc2.tif.mac}"</log-match>
+			<log-match>-n -c -i "${br1.vpc3.tif.mac}" -i "done" -i "${br1.vpc3.tif.mac}"</log-match>
+			<failed>next</failed>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="del.account1" file="subs/ldap_delete.xml" args="${br1.vpc1.tif.mac}" />
+
+			<include prefix="del.account2" file="subs/ldap_delete.xml" args="${br1.vpc2.tif.mac}" />
+
+			<include prefix="del.account3" file="subs/ldap_delete.xml" args="${br1.vpc3.tif.mac}" />
+
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+</testcase>

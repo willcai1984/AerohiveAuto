@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Tracing a client with 802.1x eap-peap auth success</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-AP connected to capwap server success
+		-config a ssid with wpa 802.1x
+
+		Test Procedure:
+
+		-add the STA to monitor
+		'exec client-monitor 001e:65f2:5628'
+		-check the Client Trace Table, result 1
+		-STA connects to ssid, check debug info, '_de capwap itk' to make sure
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="pub.radius1.ip" value="192.168.10.32" />
+	
+	<property name="so1.name" value="autoap1" />
+	<property name="so1.proto" value="wpa-aes-8021x" />
+	<property name="so1.radius.ip" value="${pub.radius1.ip}" />
+	<property name="so1.radius.sharesecret" value="${pub.radius1.sharesecret}" />
+	
+
+	<stage>
+	
+		<include prefix="1" file="subs/set_so_for_ssid.xml" obj-args="ap1, so1" args="${ssid.name}" />
+
+		<include prefix="2" file="subs/bind_ssid_for_radio.xml" args="ap1, ${ssid.name}, wifi0" />
+	
+	
+		<step no="3">
+			<desc>setup ap</desc>
+			<telnet target="ap1">
+				-v "capwap client server name ${pub.hm1.ip}"
+				-v "capwap client enable"
+			</telnet>
+		</step>
+
+		<step no="4" delay="30" type="loop-check" loop-max-times="10" loop-interval="15">
+			<desc>check the capwap connection is success</desc>
+			<log-file>capwap_conn_check_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show capwap client"
+			</telnet>
+			<log-match>-i "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>STA up wifi interface</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "ifconfig ${sta1.tif.name} up"
+			</ssh>
+		</step>
+
+		<step no="6">
+			<desc>get mac of sta1's sta1.tif.name</desc>
+			<setvar name="sta1.tif.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="7">
+			<desc>add STA1 to monitor</desc>
+			<telnet target="ap1">
+				-v "exec client-monitor ${sta1.tif.mac}"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>check the Client Trace Table</desc>
+			<log-file>check_client_trace_table.log</log-file>
+			<telnet target="ap1">
+				-v "_show client-monitor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)Entry\(${sta1.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="9">
+			<desc>enable debug on AP trace the client</desc>
+			<telnet target="ap1">
+				-v "_debug capwap itk"
+				-v "_debug capwap basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="10">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=${so1.proto}"
+				echo "conn1.pif=wifi0"
+				echo "conn1.username=${pub.radius1.username}"
+				echo "conn1.passwd=${pub.radius1.passwd}"
+				echo "conn1.eap_type=TLS"
+			</multi-setvar>
+		</step>
+
+		<include prefix="11" file="${case.dir}/subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="12" file="subs/chk_sta_conn_status_in_ap.xml" obj-args="ap1, sta1" args="wpa-aes-8021x, WPA/CCMP, wpa-8021x, aes" />
+
+		<step no="13" delay="10">
+			<desc>check the STA connection process</desc>
+			<log-file>trace_client.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(802.11\).*?report sta\(${sta1.tif.mac}\).*?Rx auth &lt;open&gt; \(frame 1.*?step\(3\/6\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(802.11\).*?report sta\(${sta1.tif.mac}\).*?Tx auth &lt;open&gt; \(frame 2.*?step\(4\/6\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(802.11\).*?report sta\(${sta1.tif.mac}\).*?Rx assoc req.*?step\(5\/6\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(802.11\).*?report sta\(${sta1.tif.mac}\).*?Tx assoc resp &lt;accept&gt;.*?step\(6\/6\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?IEEE802.1X auth is starting.*?step\(1\/8\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?Access-Request.*?User-Name=${pub.radius1.username} NAS-IP-Address=${ap1.mgt0.ip}.*?step\(1\/8\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?Access-Accept.*?step\(1\/8\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?Sending 1/4 msg of 4-Way Handshake.*?step\(3\/8\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?Received 2/4 msg of 4-Way Handshake.*?step\(4\/8\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?Sending 3/4 msg of 4-Way Handshake.*?step\(5\/8\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?Received 4/4 msg of 4-Way Handshake.*?step\(6\/8\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?PTK is set.*?step\(7\/8\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(AUTH\).*?report sta\(${sta1.tif.mac}\).*?Authentication is successfully finished.*?step\(0\/0\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)module\(DHCP\).*?report sta\(${sta1.tif.mac}\).*?DHCP session completed for station.*?step\(0\/0\) SUCCESS" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+	</stage>
+	
+</testcase>

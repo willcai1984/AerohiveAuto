@@ -1,0 +1,223 @@
+<testcase>
+	<brief>(IxPort: CaF=1+1)Verify default MTU (1500) configured on BASE-T ports with trunk mode;</brief>
+	<priority>Low</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<description>
+		switch's mtu in fact is mru, and mru should remove the protcol head and fcs, the range is 18-22(14 mac header+4fcs+4vlantag)
+		does not include the framing, Protocol field, FCS, nor any transparency bits or bytes
+		sr2024 6.0r1's default mtu is 1536
+		sr2024 6.1r1's default mtu is 1500
+	</description>
+	<comment>
+		sw1.port1=eth1/21;
+		sw1.port1.phytype=copper;
+		sw1.port5=eth1/25;
+		sw1.port1.ixia_port=1/2/1;
+		sw1.port1.ixia_port.phytype=copper;
+		sw1.terminal.port=2016;
+		sw1.conserver.ip=localhost
+		ap1.cons_name=tb1-SR2024-2
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclserver1.ip=10.155.30.164;
+		pub.tclclient1.ip=10.155.40.10;
+		sw1.tclclient.ip=10.155.32.228;
+		sw1.mgmtport=eth1/1;
+		sw1.mgmtvlan=121;
+		sw1.conserver.ip=10.155.32.228;
+		sw1.conserver.user=root;
+		sw1.conserver.passwd=aerohive;
+		sw1.cons_name=tb1-SR2024-2;
+		sw1.user=admin;
+		sw1.passwd=aerohive;
+		sw1.prompt="AH-[a-z0-9A-Z_]*#";
+	</comment>
+	<property name="sw1.user" value="admin" />
+	<property name="sw1.passwd" value="aerohive" />
+	<property name="correct_vlan" value="101" />
+	<property name="incorrect_vlan" value="102" />
+	<property name="tcl_script_server.ip" value="10.155.32.129" />
+	<property name="tcl_script_server.user" value="root" />
+	<property name="tcl_script_server.passwd" value="aerohive" />
+	<property name="tcl_script_server.path" value="/home/python/tcl/v1" />
+	<property name="tx_port1" value="${sw1.port5.ixia_port}" />
+	<property name="rx_port1" value="${sw1.port2.ixia_port}" />
+	<property name="default_mtu" value="1500" />
+	<property name="more_default_mtu" value="1501" />
+	<property name="default_mtu_ixia" value="1522" />
+	<property name="more_default_mtu_ixia" value="1523" />
+	<stage>
+		<step no="1.0.1">
+			<desc>
+				Show interface mgt0 to get ip address
+			</desc>
+			<log-file>step1.0.1_mgt0_ip_info.log</log-file>
+			<console target="sw1">
+				-v 'show interface mgt0'
+			</console>
+		</step>
+
+		<step no="1.0.2">
+			<desc>
+				Get mgt0's ip address
+			</desc>
+			<setvar name="sw1.ip">
+				python ${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/step1.0.1_mgt0_ip_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				mode:copper access, set port5 and port2 to the same vlan
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port2} shutdown'
+				-v 'interface ${sw1.port2} speed auto'
+				-v 'interface ${sw1.port2} duplex auto'
+				-v 'interface ${sw1.port2} switchport mode trunk'
+				-v 'interface ${sw1.port2} switchport trunk native vlan 1'
+				-v 'interface ${sw1.port2} switchport trunk allow vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port5} shutdown'
+				-v 'interface ${sw1.port5} speed auto'
+				-v 'interface ${sw1.port5} duplex auto'
+				-v 'interface ${sw1.port5} switchport mode trunk'
+				-v 'interface ${sw1.port5} switchport trunk native vlan 1'
+				-v 'interface ${sw1.port5} switchport trunk allow vlan ${correct_vlan}'
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				mode:copper access, set port2 send pkts(1522)
+			</desc>
+			<log-file>step1.2_1522.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-new="${job.user}-${job.sid}-1">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${rx_port1} -phyList ${sw1.port5.ixia_port.phytype},${sw1.port2.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-frame_length ${default_mtu_ixia}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1}
+				-mac_dst 0000.0000.0016
+				-mac_src 0000.0000.0015
+				-frame_length ${default_mtu_ixia}"
+				-v ""
+			</ssh>
+		</step>
+		
+		<step no="1.2.1">
+			<desc>
+				check state of interface on switch
+			</desc>
+			<log-file>step1.2.1_InterfaceState.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw1.port2}'
+			</ssh>
+			<log-match>-c -e "Port Name: *${sw1.port2}; *Port Type: *10\/100\/1000BASE-T" -re</log-match>
+			<log-match>-c -e "Link status: *up"</log-match>
+		</step>
+		
+		<step no="1.2.2">
+			<desc>
+				check state of interface on switch
+			</desc>
+			<log-file>step1.2.2_InterfaceState.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw1.port5}'
+			</ssh>
+			<log-match>-c -e "Port Name: *${sw1.port5}; *Port Type: *SFP"</log-match>
+			<log-match>-c -e "Link status: *up"</log-match>
+		</step>		
+		
+		
+		<step no="1.2.3">
+			<desc>
+				mode:copper access, set port2 send pkts(1522)
+			</desc>
+			<log-file>step1.2.3_1522.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-get="${job.user}-${job.sid}-1">
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1} -rxPortList ${rx_port1}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${tx_port1} -oneRxPort ${rx_port1}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+			<log-match>-e "checkEqualTxWithRX ${tx_port1} ${rx_port1} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+		
+
+		<step no="1.3">
+			<desc>
+				mode:copper access, set port2 send pkts(1523)
+			</desc>
+			<log-file>step1.3_1523.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-new="${job.user}-${job.sid}-2">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${rx_port1} -phyList ${sw1.port5.ixia_port.phytype},${sw1.port2.ixia_port.phytype} -tclServerIP ${pub.tclserver1.ip}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${tx_port1}
+				-mac_dst 0000.0000.0015
+				-mac_src 0000.0000.0016
+				-frame_length ${more_default_mtu_ixia}"
+				-v ""
+				-v "traffic_configure_eth2 -portListIn ${rx_port1}
+				-mac_dst 0000.0000.0016
+				-mac_src 0000.0000.0015
+				-frame_length ${more_default_mtu_ixia}"
+				-v ""
+			</ssh>
+		</step>
+		
+		<step no="1.3.1">
+			<desc>
+				check state of interface on switch
+			</desc>
+			<log-file>step1.3.1_InterfaceState.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw1.port2}'
+			</ssh>
+			<log-match>-c -e "Port Name: *${sw1.port2}; *Port Type: *10\/100\/1000BASE-T" -re</log-match>
+			<log-match>-c -e "Link status: *up"</log-match>
+		</step>
+		
+		<step no="1.3.2">
+			<desc>
+				check state of interface on switch
+			</desc>
+			<log-file>step1.3.2_InterfaceState.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show in ${sw1.port5}'
+			</ssh>
+			<log-match>-c -e "Port Name: *${sw1.port5}; *Port Type: *SFP"</log-match>
+			<log-match>-c -e "Link status: *up"</log-match>
+		</step>			
+		
+		<step no="1.3.3">
+			<desc>
+				mode:copper access, set port2 send pkts(1523)
+			</desc>
+			<log-file>step1.3.3_1523.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" session-get="${job.user}-${job.sid}-2">
+				-v ""
+				-v "start_trans_getstats -txPortList ${tx_port1} -rxPortList ${rx_port1}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${tx_port1} -oneRxPort ${rx_port1}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+			<log-match>-e "checkEqualTxWithRX ${tx_port1} ${rx_port1} framesSent userDefinedStat2 result is blocked"</log-match>
+		</step>
+
+	</stage>
+</testcase>

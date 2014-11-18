@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Ckeck the wep key's boundary</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a ssid with static wep,open or share,
+		-try the hex-key's both 10 and 26 lenth,with full 0 or full f
+
+		Test Procedure:
+		-client use these keys to do wep auth
+		-check the traffic,ping gataway for 10 minutes
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn.ssid" value="${ssid.name}" />
+	<property name="conn.proto" value="wep-open" />
+	<property name="conn.keyidx" value="0" />
+	<property name="conn.psk_keytype" value="hex" />
+	
+	<property name="conn1.psk" value="0000000000" />
+	<property name="conn2.psk" value="ffffffffff" />
+	<property name="conn3.psk" value="00000000000000000000000000" />
+	<property name="conn4.psk" value="ffffffffffffffffffffffffff" />
+
+	<stage>
+		<step no="1">
+			<desc>config AP</desc>
+			<telnet target="ap1">
+				-v "security-object autoap"
+				<!---v "security-object autoap default-user-profile-attr 1"-->
+				-v "security-object autoap security protocol-suite ${conn.proto} ${conn.keyidx} ${conn.psk_keytype}-key ${conn1.psk}"
+				-v "ssid ${conn.ssid}"
+				-v "ssid ${conn.ssid} security-object autoap"
+				-v "interface ${ssid_bind_interface} mode access"
+				-v "interface ${ssid_bind_interface} ssid ${conn.ssid}"
+				<!---v "user-profile normal qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"-->
+				<!---v "_debug auth all"-->
+				-v "clear log all"
+				<!---v "show roaming neighbor"-->
+				<!---v "_ff id 1 dst-port 23 bidirectional"-->
+				<!---v "_kde fe basic"-->
+				<!---v "_kde fe detail"-->
+				-v "save config"
+			</telnet>
+		</step>
+		
+		<!--connect ap-->
+		<step no="connect_wifi_1" delay="20">
+			<log-file>connect_wifi_1.log</log-file>
+			<ssh target="sta1" timeout="3600">
+				-v "/usr/local/auto/bin/connect_wifi
+				'{
+				\"target\"      : \"sta1\",
+				\"ifname\"      : \"${sta1.tif.name}\",
+				\"bind\"        : \"${ssid_bind_interface}\",
+				\"ssid\"        : \"${ssid.name}\",
+				\"proto\"       : \"${conn.proto}\",
+				\"keyidx\"      : \"${conn.keyidx}\",
+				\"psk_keytype\" : \"${conn.psk_keytype}\",
+				\"psk\"         : \"${conn1.psk}\"
+				}'"
+			</ssh>
+			<log-match>-e "&gt;&gt;&gt;&gt; Pass &lt;&lt;&lt;&lt;"</log-match>
+		</step>
+		<step no="get_sta_ip_mac_1">
+			<desc>parse station IP and MAC from connect wifi log file</desc>
+			<multi-setvar>
+				grep "^&lt;&lt;&lt;&lt;" ${log.dir}/connect_wifi_1.log | \
+				sed -e 's/^&lt;&lt;&lt;&lt;//g'
+			</multi-setvar>
+		</step>
+		<step no="check_ping_to_sta_1">
+			<desc>ping from AP to station</desc>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip} count 10"
+			</telnet>
+			<log-match>-c -i " from " -i " ttl="</log-match>
+		</step>
+		
+		<!--disconnect ap and change config-->
+		<step no="release_sta_1">
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+				-v "wpa_cli disc"
+				-v "wpa_cli ter"
+			</ssh>
+		</step>
+		<step no="change_ap_config_1">
+			<desc>-change the hex-key's both 10 with full f</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security protocol-suite ${conn.proto} ${conn.keyidx} ${conn.psk_keytype}-key ${conn2.psk}"
+			</telnet>
+		</step>
+		
+		<!--connectap-->
+		<step no="connect_wifi_2" delay="10">
+			<log-file>connect_wifi_2.log</log-file>
+			<ssh target="sta1" timeout="3600">
+				-v "/usr/local/auto/bin/connect_wifi
+				'{
+				\"target\"      : \"sta1\",
+				\"ifname\"      : \"${sta1.tif.name}\",
+				\"bind\"        : \"${ssid_bind_interface}\",
+				\"ssid\"        : \"${ssid.name}\",
+				\"proto\"       : \"${conn.proto}\",
+				\"keyidx\"      : \"${conn.keyidx}\",
+				\"psk_keytype\" : \"${conn.psk_keytype}\",
+				\"psk\"         : \"${conn2.psk}\"
+				}'"
+			</ssh>
+			<log-match>-e "&gt;&gt;&gt;&gt; Pass &lt;&lt;&lt;&lt;"</log-match>
+		</step>
+		<step no="get_sta_ip_mac_2">
+			<desc>parse station IP and MAC from connect wifi log file</desc>
+			<multi-setvar>
+				grep "^&lt;&lt;&lt;&lt;" ${log.dir}/connect_wifi_2.log | \
+				sed -e 's/^&lt;&lt;&lt;&lt;//g'
+			</multi-setvar>
+		</step>
+		<step no="check_ping_to_sta_2">
+			<desc>ping from AP to station</desc>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip} count 10"
+			</telnet>
+			<log-match>-c -i " from " -i " ttl="</log-match>
+		</step>
+		
+		<!--disconnect ap change ap config-->
+		<step no="release_sta_2">
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+				-v "wpa_cli disc"
+				-v "wpa_cli ter"
+			</ssh>
+		</step>
+		<step no="change_ap_config_2">
+			<desc>change the hex-key's both 26 with full 0</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security protocol-suite ${conn.proto} ${conn.keyidx} ${conn.psk_keytype}-key ${conn3.psk}"
+			</telnet>
+		</step>
+		
+		<!--connect ap-->
+		<step no="connect_wifi_3" delay="10">
+			<log-file>connect_wifi_3.log</log-file>
+			<ssh target="sta1" timeout="3600">
+				-v "/usr/local/auto/bin/connect_wifi
+				'{
+				\"target\"      : \"sta1\",
+				\"ifname\"      : \"${sta1.tif.name}\",
+				\"bind\"        : \"${ssid_bind_interface}\",
+				\"ssid\"        : \"${ssid.name}\",
+				\"proto\"       : \"${conn.proto}\",
+				\"keyidx\"      : \"${conn.keyidx}\",
+				\"psk_keytype\" : \"${conn.psk_keytype}\",
+				\"psk\"         : \"${conn3.psk}\"
+				}'"
+			</ssh>
+			<log-match>-e "&gt;&gt;&gt;&gt; Pass &lt;&lt;&lt;&lt;"</log-match>
+		</step>
+		<step no="get_sta_ip_mac_3">
+			<desc>parse station IP and MAC from connect wifi log file</desc>
+			<multi-setvar>
+				grep "^&lt;&lt;&lt;&lt;" ${log.dir}/connect_wifi_3.log | \
+				sed -e 's/^&lt;&lt;&lt;&lt;//g'
+			</multi-setvar>
+		</step>
+		<step no="check_ping_to_sta_3">
+			<desc>ping from AP to station</desc>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip} count 10"
+			</telnet>
+			<log-match>-c -i " from " -i " ttl="</log-match>
+		</step>
+		
+		<!--disconnect ap change ap config-->
+		<step no="release_sta_3">
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+				-v "wpa_cli disc"
+				-v "wpa_cli ter"
+			</ssh>
+		</step>
+		<step no="change_ap_config_3">
+			<desc>change the hex-key's both 26 with full f</desc>
+			<telnet target="ap1">
+				-v "security-object autoap security protocol-suite ${conn.proto} ${conn.keyidx} ${conn.psk_keytype}-key ${conn4.psk}"
+			</telnet>
+		</step>
+		
+		<!--connect ap-->
+		<step no="connect_wifi_4" delay="10">
+			<log-file>connect_wifi_4.log</log-file>
+			<ssh target="sta1" timeout="3600">
+				-v "/usr/local/auto/bin/connect_wifi
+				'{
+				\"target\"      : \"sta1\",
+				\"ifname\"      : \"${sta1.tif.name}\",
+				\"bind\"        : \"${ssid_bind_interface}\",
+				\"ssid\"        : \"${ssid.name}\",
+				\"proto\"       : \"${conn.proto}\",
+				\"keyidx\"      : \"${conn.keyidx}\",
+				\"psk_keytype\" : \"${conn.psk_keytype}\",
+				\"psk\"         : \"${conn4.psk}\"
+				}'"
+			</ssh>
+			<log-match>-e "&gt;&gt;&gt;&gt; Pass &lt;&lt;&lt;&lt;"</log-match>
+		</step>
+		<step no="get_sta_ip_mac_4">
+			<desc>parse station IP and MAC from connect wifi log file</desc>
+			<multi-setvar>
+				grep "^&lt;&lt;&lt;&lt;" ${log.dir}/connect_wifi_4.log | \
+				sed -e 's/^&lt;&lt;&lt;&lt;//g'
+			</multi-setvar>
+		</step>
+		<step no="check_ping_to_sta_4">
+			<desc>ping from AP to station</desc>
+			<telnet target="ap1">
+				-v "ping ${sta1.tif.ip} count 10"
+			</telnet>
+			<log-match>-c -i " from " -i " ttl="</log-match>
+		</step>
+	</stage>
+</testcase>

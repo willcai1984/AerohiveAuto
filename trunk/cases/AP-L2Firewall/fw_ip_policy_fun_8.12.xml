@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Fragments are sent, using different protocol(TCP/UDP)( through MP)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Laptop has been associated with AP1 and assigned an ip address
+		-Laptop uses user-profile "FW"
+
+		Test Procedure:
+		1) Configure a ip-policy on AP1 and MP, and bind it to FW:
+		"ip-policy FW"
+		"ip-policy FW [from/to] &lt;Laptops ip addr&gt; action permit"
+		"user-profile FW security ip-policy [from/to]-access FW"
+		"ssid &lt;ssid_name&gt; default-user-profile-attr [num]"
+		2) Laptop1 sends all the fragment packets to Laptop2 in order/disorder by using
+		hping2 or other tools, and using different protocol.
+		3) Check the the packets on AP1, MP and Laptop2
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="user_id" value="FW" />
+	<property name="hive.passwd" value="12345678" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn2.ssid" value="ap2-${ssid.name}" />
+	<property name="ftp_test_file_local_dir" value="/tmp" />
+	<property name="capture.packet" value="capture.packet.log" />
+
+	<stage>
+		<if>"${ap.wifi1.existed}" == "true"</if>
+		<step no="shutdown.eth1">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0">
+			<desc>
+				-Config ap1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.passwd}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				-Config ap2
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password ${hive.passwd}"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-config ssid and bind to interface
+				-Laptop uses user-profile "FW"
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ${user_id}1 qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>
+				-config ssid and bind to interface
+				-Laptop uses user-profile "FW"
+			</desc>
+			<telnet target="ap2">
+				-v "security-object ap2-${ssid.name}"
+				-v "security-object ap2-${ssid.name} default-user-profile-attr 2"
+				-v "ssid ap2-${ssid.name}"
+				-v "ssid ap2-${ssid.name} security-object ap2-${ssid.name}"
+				-v "interface wifi0 ssid ap2-${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ${user_id}2 qos-policy def-user-qos vlan-id 1 attribute 2"
+				-v "interface wifi1 radio channel 36"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show ap2's interface wifi1 info
+			</desc>
+			<log-file>step3.1_show_ap2_interface_info.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				get ap2's wifi1's mac address
+			</desc>
+			<setvar name="ap2.wifi1.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step3.1_show_ap2_interface_info.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>shutdown interface wifi1 and then up it (it's aimed to clear wifi1's neighbor list)</desc>
+			<telnet target="ap1">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step4_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-shutdown interface eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="5" delay="35" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>step5_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap2" />
+
+		<include prefix="7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="open.debug.ap1">
+			<desc>
+				open debug mode and clear log all
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} dst-ip ${sta2.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="open.debug.ap2">
+			<desc>
+				open debug mode and clear log all
+			</desc>
+			<telnet target="ap2">
+				-v "_ff id 1 src-ip ${sta1.tif.ip} dst-ip ${sta2.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>
+				-Config ip-policy, binding to user-profiles
+			</desc>
+			<console target="ap1">
+				-v "ip-policy ${user_id}1"
+				-v "ip-policy ${user_id}1 id 1 from ${sta1.tif.ip} action permit"
+				-v "ip-policy ${user_id}1 id 2 to ${sta1.tif.ip} action permit"
+				-v "user-profile ${user_id}1 security ip-policy from-access ${user_id}1 to-access ${user_id}1"
+			</console>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				-Config ip-policy, binding to user-profiles
+			</desc>
+			<telnet target="ap2">
+				-v "ip-policy ${user_id}2"
+				-v "ip-policy ${user_id}2 id 1 from ${sta2.tif.ip} action permit"
+				-v "ip-policy ${user_id}2 id 2 to ${sta2.tif.ip} action permit"
+				-v "user-profile ${user_id}2 security ip-policy from-access ${user_id}2 to-access ${user_id}2"
+			</telnet>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				clear local file
+			</desc>
+			<ssh target="sta2">
+				-v "rm -f ${ftp_test_file_local_dir}/${capture.packet}"
+			</ssh>
+		</step>
+
+		<step no="8.3">
+			<desc>
+				-start tshark to capture packet
+			</desc>
+			<log-file>step8.3_capture_packet.log</log-file>
+			<ssh target="sta2">
+				-v "nohup tshark -i ${sta2.tif.name} host ${sta1.tif.ip} &gt; ${ftp_test_file_local_dir}/${capture.packet} 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="9" delay="15">
+			<desc>
+				-Laptop1 sends all the fragment packets to Laptop2 in order/disorder by using hping2,and using different protocol.
+			</desc>
+			<log-file>step9_server_ping.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "hping2 ${sta2.tif.ip} -d 2500 -c 10"
+			</ssh>
+		</step>
+
+		<step no="10" delay="60">
+			<desc>
+				show logging buffered an ap1
+			</desc>
+			<log-file>step10_show_logging_buffered.log</log-file>
+			<console target="ap1" timeout="250">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "(o) *wifi1.1 *${sta1.tif.ip}-&gt;${sta2.tif.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "(i) *wifi0.1 *${sta1.tif.ip}-&gt;${sta2.tif.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "(o) *wifi0.1 *${sta2.tif.ip}-&gt;${sta1.tif.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "(i) *wifi1.1 *${sta2.tif.ip}-&gt;${sta1.tif.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "(r) *wifi0.1 *${sta1.tif.ip}-&gt;${sta2.tif.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "\[fe\]: queue fragment, start 0 end 1479"</log-match>
+			<log-match>-c -i "\[fe\]: queue fragment, start 1480 end 2519"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				show logging buffered an ap2
+			</desc>
+			<log-file>step10.1_show_logging_buffered.log</log-file>
+			<telnet target="ap2" timeout="250">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(o) *wifi0.1 *${sta1.tif.ip}-&gt;${sta2.tif.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "(i) *wifi1.1 *${sta1.tif.ip}-&gt;${sta2.tif.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "(r) *wifi1.1 *${sta1.tif.ip}-&gt;${sta2.tif.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "(o) *wifi1.1 *${sta2.tif.ip}-&gt;${sta1.tif.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "(i) *wifi0.1 *${sta2.tif.ip}-&gt;${sta1.tif.ip}" -i "TCP"</log-match>
+			<log-match>-c -i "\[fe\]: queue fragment, start 0 end 1479"</log-match>
+			<log-match>-c -i "\[fe\]: queue fragment, start 1480 end 2519"</log-match>
+		</step>
+
+		<step no="11">
+			<desc>
+				get pid of "tshark" on sta2
+			</desc>
+			<setvar name="sta2.tshark.pid">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step8.3_capture_packet.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="12" delay="10">
+			<desc>
+				kill process which run in background.
+			</desc>
+			<log-file>step12_kill_process.log</log-file>
+			<ssh target="sta2">
+				-v "kill ${sta2.tshark.pid}"
+			</ssh>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				cat files.
+			</desc>
+			<log-file>step12.1_check_result.log</log-file>
+			<ssh target="sta2" timeout="250">
+				-v "cat ${ftp_test_file_local_dir}/${capture.packet}"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.ip} -&gt; ${sta2.tif.ip} IP Fragmented IP protocol (proto=TCP"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="1">
+				<desc>
+					kill ftp process
+				</desc>
+				<ssh target="sta2">
+					-v "killall -q tshark"
+					-v "rm -f ${ftp_test_file_local_dir}/${capture.packet}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Test classification, Incoming pkt base on oui action permit/log wifi0 interface Test topology Top1 Device Configuration Portal: ssid DeathKnight interface wifi0 ssid DeathKnight qos classifier-profile mac mac ssid DeathKnight qos-classifer mac qos classifier-map mac 000fb5 qos 0 action permit qos classifier-map mac 000fb5 action log notice 000fb5 is STA2's oui</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+
+		portal:
+		- Set "_kdebug qos classifi"on CLI
+		- Set "_ff id 1 src-mac sta2's mac"
+		- Set "_kdebug fe basic"
+		- STA2generates traffic,then send to STA1.
+		Expected output
+		- Sniffering the traffic from STA1 incoming mac
+		- look over kdebug message
+		1970-01-02 08:08:07 debug [fe]: (i) wifi0.1
+		18.18.21.12-&gt;18.18.21.7(41) ttl(64) UDP 1976-&gt;10000 28
+		bytes
+		1970-01-02 08:08:07 debug [fe]: MAC session (id [9])
+		found
+		1970-01-02 08:08:07 debug [qos]: 000f:b59c:8954 -&gt;
+		001d:0f0a:0c28 qos=0 action=5
+		1970-01-02 08:08:07 debug [fe]: QoS: ingress pkt
+		fwd(wifi0.1) profile=0 qos=0
+		1970-01-02 08:08:07 debug [fe]: eth0 Tx 000f:b59c:8954 -&gt;
+		001d:0f0a:0c28 type 0x0800 42 bytes
+		1970-01-02 08:08:07 debug [fe]: (o) eth0
+		18.18.21.12-&gt;18.18.21.7(41) ttl(64) UDP 1976-&gt;10000 42
+		bytes
+		1970-01-02 08:08:07 debug [fe]: QoS: pkt forwarded
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="create.ssid">
+			<desc>
+				create ssid
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<include prefix="pre1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="pre3">
+			<desc>
+				generate serveroui.log
+			</desc>
+			<script>
+				${bin.dir}/getrmtip.pl -d ${tb.server1} -u ${tb.server1.user} -p ${tb.server1.passwd} -i ${tb.server1.tif.name} -m | tr '[A-F]' '[a-f]' &gt; ${log.dir}/serveroui.log
+			</script>
+		</step>
+
+		<step no="pre4">
+			<desc>get server oui</desc>
+			<setvar name="server.oui">
+				${bin.dir}/getbyrexp.py -p "(.*?:.*?:.*?):.*?:.*?:.*?" -f ${log.dir}/serveroui.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre5">
+			<desc>
+				get server mac
+			</desc>
+			<setvar name="server.mac">
+				${bin.dir}/getrmtip.pl -d ${tb.server1} -u ${tb.server1.user} -p ${tb.server1.passwd} -i ${tb.server1.tif.name} -m -width 2 | tr '[A-F]' '[a-f]'
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				config qos
+			</desc>
+			<telnet target="ap1">
+				-v "qos classifier-profile mac mac"
+				-v "ssid ${ssid.name} qos-classifier mac"
+				-v "qos classifier-map oui ${server.oui} qos 2 action permit"
+				-v "qos classifier-map oui ${server.oui} action log"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 src-ip ${sta1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_ping.xml" args="${tb.server1}, ${sta1.tif.ip}, 4" />
+
+		<step no="4" delay="30">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "QoS: pkt forwarded"</log-match>
+			<log-match>-c -i "QoS: pkt queued"</log-match>
+			<log-match>-c -i "${sta1.tif.mac} -&gt; ${server.mac} qos=2 action=5"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${tb.server1}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(eth0\) profile=\d+ qos=2" p "service:icmp protocol=1 port.*qos=2" -e "\(i\) eth0 ${tb.server1}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

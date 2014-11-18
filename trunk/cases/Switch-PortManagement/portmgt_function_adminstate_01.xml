@@ -1,0 +1,260 @@
+<testcase>
+	<brief>(IxPort: C=1) Verify Admin state configured on BASE-T ports;</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<description>
+		Verify Admin state configured on BASE-T ports
+	</description>
+	<comment>
+		sw1.port1=eth1/21;
+		sw1.port1.phytype=copper;
+		sw1.port5=eth1/25;
+		sw1.port1.ixia_port=1/2/1;
+		sw1.port1.ixia_port.phytype=copper;
+		sw1.terminal.port=2016;
+		sw1.conserver.ip=localhost
+		ap1.cons_name=tb1-SR2024-2
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclserver1.ip=10.155.30.164;
+		pub.tclclient1.ip=10.155.40.10;
+		sw1.tclclient.ip=10.155.32.228;
+		sw1.mgmtport=eth1/1;
+		sw1.mgmtvlan=121;
+		sw1.conserver.ip=10.155.32.228;
+		sw1.conserver.user=root;
+		sw1.conserver.passwd=aerohive;
+		sw1.cons_name=tb1-SR2024-2;
+		sw1.user=admin;
+		sw1.passwd=aerohive;
+		sw1.prompt="AH-[a-z0-9A-Z_]*#";
+	</comment>
+	<property name="sw1.user" value="admin" />
+	<property name="sw1.passwd" value="aerohive" />
+	<property name="correct_vlan" value="101" />
+	<property name="incorrect_vlan" value="102" />
+	<property name="tcl_script_server.ip" value="10.155.39.227" />
+	<property name="tcl_script_server.user" value="root" />
+	<property name="tcl_script_server.passwd" value="aerohive" />
+	<property name="tcl_script_server.path" value="/home/python/tcl/v1" />
+	<stage>
+		<step no="1.0.1">
+			<desc>
+				Show interface mgt0 to get ip address
+			</desc>
+			<log-file>step1.0.1_mgt0_ip_info.log</log-file>
+			<console target="sw1">
+				-v 'show interface mgt0'
+			</console>
+		</step>
+
+		<step no="1.0.2">
+			<desc>
+				Get mgt0's ip address
+			</desc>
+			<setvar name="sw1.ip">
+				python ${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/step1.0.1_mgt0_ip_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				mode:copper, sw port up, ixia port up; no shutdown the port.
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port1} shutdown'
+			</ssh>
+		</step>
+		<!--  
+		<step no="1.2">
+			<desc>
+				mode:copper, sw port up, ixia port up; set normal for correspond IXIA port.check if the IXIA port is up
+			</desc>
+			<log-file>step1.2_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${tcl_script_server.ip}" user="${tcl_script_server.user}" password="${tcl_script_server.passwd}" timeout="120">
+				-v "python ${tcl_script_server.path}/ixia_config_status.py -port_list '${sw1.port1.ixia_port}' -username '${job.user}${job.sid}' -op_mode normal -reset -tcl_server '${pub.tclserver1.ip}'"
+			</ssh>
+			<log-match>-i "Port:${sw1.port1.ixia_port}" -i "Link:up"</log-match>
+		</step>
+		-->
+		<step no="1.2">
+			<desc>
+				mode:copper, sw port up, ixia port up; set normal for correspond IXIA port.check if the IXIA port is up
+			</desc>
+			<log-file>step1.2_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.phytype}"
+				-v "after 1000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-i "Port:${sw1.port1.ixia_port}" -i "Link:up"</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>
+				mode:copper, sw port up, ixia port up; show the port's status.check if the sw port admin enable; link up
+			</desc>
+			<log-file>step1.3_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface ${sw1.port1}'
+			</ssh>
+			<log-match>-i "Admin state: enable;" -i "Link status: up;"</log-match>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				mode:copper, sw port down, ixia port up; shutdown the port.
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'interface ${sw1.port1} shutdown'
+			</ssh>
+		</step>
+		<!--
+		<step no="2.2">
+			<desc>
+				mode:copper, sw port down, ixia port up; set normal for correspond IXIA port.check if the IXIA port is down
+			</desc>
+			<log-file>step2.2_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${tcl_script_server.ip}" user="${tcl_script_server.user}" password="${tcl_script_server.passwd}" timeout="120">
+				-v "python ${tcl_script_server.path}/ixia_config_status.py -port_list '${sw1.port1.ixia_port}' -username '${job.user}${job.sid}' -op_mode normal -reset -tcl_server '${pub.tclserver1.ip}'"
+			</ssh>
+			<log-match>-i "Port:${sw1.port1.ixia_port}" -i "Link:down"</log-match>
+		</step>
+		-->
+		<step no="2.2">
+			<desc>
+				mode:copper, sw port down, ixia port up; set normal for correspond IXIA port.check if the IXIA port is down
+			</desc>
+			<log-file>step2.2_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.phytype}"
+				-v "after 1000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-i "Port:${sw1.port1.ixia_port}" -i "Link:down"</log-match>
+		</step>
+		<step no="2.3">
+			<desc>
+				mode:copper, sw port down, ixia port up; show the port's status. check if the sw port admin disable; link down
+			</desc>
+			<log-file>step2.3_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface ${sw1.port1}'
+			</ssh>
+			<log-match>-i "Admin state: disable;" -i "Link status: down;"</log-match>
+		</step>
+
+
+		<step no="3.1">
+			<desc>
+				mode:copper, sw port up, ixia port down; no shutdown the port.
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port1} shutdown'
+			</ssh>
+		</step>
+		<!-- 
+		<step no="3.2">
+			<desc>
+				mode:copper, sw port up, ixia port down; set normal for correspond IXIA port.check if the IXIA port is down
+			</desc>
+			<log-file>step3.2_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${tcl_script_server.ip}" user="${tcl_script_server.user}" password="${tcl_script_server.passwd}" timeout="120">
+				-v "python ${tcl_script_server.path}/ixia_config_status.py -port_list '${sw1.port1.ixia_port}' -username '${job.user}${job.sid}' -op_mode sim_disconnect -reset -tcl_server '${pub.tclserver1.ip}'"
+			</ssh>
+			<log-match>-i "Port:${sw1.port1.ixia_port}" -i "Link:down"</log-match>
+		</step>
+		 -->
+		<step no="3.2">
+			<desc>
+				mode:copper, sw port up, ixia port down; set normal for correspond IXIA port.check if the IXIA port is down
+			</desc>
+			<log-file>step3.2_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.phytype}"
+				-v "ah_port_config -onePort ${sw1.port1.ixia_port} -cable disconnect"
+				-v "after 1000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-i "Port:${sw1.port1.ixia_port}" -i "Link:down"</log-match>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				mode:copper, sw port up, ixia port down; show the port's status.check if the sw port admin enable; link down
+			</desc>
+			<log-file>step3.3_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface ${sw1.port1}'
+			</ssh>
+			<log-match>-i "Admin state: enable;" -i "Link status: down;"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				mode:copper, sw port up, ixia port up;(recover)
+			</desc>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'no interface ${sw1.port1} shutdown'
+			</ssh>
+		</step>
+		<!-- 
+		<step no="4.2">
+			<desc>
+				mode:copper, sw port up, ixia port up; set normal for correspond IXIA port.check if the IXIA port is up(recover)
+			</desc>
+			<log-file>step4.2_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${tcl_script_server.ip}" user="${tcl_script_server.user}" password="${tcl_script_server.passwd}" timeout="120">
+				-v "python ${tcl_script_server.path}/ixia_config_status.py -port_list '${sw1.port1.ixia_port}' -username '${job.user}${job.sid}' -op_mode normal -reset -tcl_server '${pub.tclserver1.ip}'"
+			</ssh>
+			<log-match>-i "Port:${sw1.port1.ixia_port}" -i "Link:up"</log-match>
+		</step>
+		-->
+		<step no="4.2">
+			<desc>
+				mode:copper, sw port up, ixia port up; set normal for correspond IXIA port.check if the IXIA port is up(recover)
+			</desc>
+			<log-file>step4.2_copper_noshutdown_ixia.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.phytype}"
+				-v "after 1000"
+				-v "port_status_get -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-i "Port:${sw1.port1.ixia_port}" -i "Link:up"</log-match>
+		</step>
+		<step no="4.3">
+			<desc>
+				mode:copper, sw port up, ixia port up; show the port's status.check if the sw port admin enable; link up(recover)
+			</desc>
+			<log-file>step4.3_copper_show_interface.log</log-file>
+			<ssh target="${sw1.ip}" user="${sw1.user}" password="${sw1.passwd}">
+				-v 'show interface ${sw1.port1}'
+			</ssh>
+			<log-match>-i "Admin state: enable;" -i "Link status: up;"</log-match>
+		</step>
+
+	</stage>
+
+</testcase>

@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Detect UDP flood attack on ssid side</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-STA1 is an attacker with a linux OS, install hping3 on it
+		-STA2 is a normal user
+		-config a ssid, bind it to wifi interface
+		-STA1 and STA2 are all connected to ssid
+
+		Test Procedure:
+		-enable udp flood detection on ssid,
+		'ssid xxx security screening udp-flood'
+		-check the udp flood status,
+		'sh ssid xxx security screening [detail]' to make sure
+		-STA1 launchs udp flood attack
+		-check the log info on AP
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				-Config a ssid, bind it to wifi interface
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=wifi0"
+			</multi-setvar>
+		</step>
+
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<!-- <step no="2.3"> -->
+		<!-- <multi-setvar> -->
+		<!-- echo "conn2.ssid=${ssid.name}" -->
+		<!-- echo "conn2.proto=open" -->
+		<!-- echo "conn2.pif=wifi0" -->
+		<!-- </multi-setvar> -->
+		<!-- </step> -->
+
+		<!-- <include prefix="2.4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" /> -->
+
+		<!-- <include prefix="2.1" file="subs/wpa_supplicant_start.xml" args="sta1" /> -->
+
+		<!-- <step no="2.2"> -->
+		<!-- <desc> -->
+		<!-- config the laptop to apply the ssid profile,then start to associate -->
+		<!-- </desc> -->
+		<!-- <ssh target="sta1" prompt=">|.*#"> -->
+		<!-- -v "wpa_cli" -->
+		<!-- -v "reconfig" -->
+		<!-- -v "add_network" -->
+		<!-- -v "set_network 0 ssid \"${ssid.name}\"" -->
+		<!-- -v "set_network 0 key_mgmt NONE" -->
+		<!-- -v "enable_network 0" -->
+		<!-- -v "reas" -->
+		<!-- -v "quit" -->
+		<!-- </ssh> -->
+		<!-- </step> -->
+
+		<!-- <include prefix="2.3" file="subs/chk_conn_in_sta.xml" args="sta1" /> -->
+
+		<!-- <step no="2.4" delay="10"> -->
+		<!-- <desc>ifconfig to show the ip add</desc> -->
+		<!-- <log-file>ifconfig.log</log-file> -->
+		<!-- <ssh target="sta1" timeout="80"> -->
+		<!-- -v "ifconfig ${sta1.tif.name}" -->
+		<!-- </ssh> -->
+		<!-- </step> -->
+
+		<!-- <step no="2.5"> -->
+		<!-- <desc>Get laptop1's ip</desc> -->
+		<!-- <setvar name="sta1.tif.ip"> -->
+		<!-- perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -nomask -->
+		<!-- </setvar> -->
+		<!-- </step> -->
+
+		<!-- <step no="2.6"> -->
+		<!-- <desc>Get laptop1's mac</desc> -->
+		<!-- <setvar name="sta1.tif.mac"> -->
+		<!-- perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width -->
+		<!-- </setvar> -->
+		<!-- </step> -->
+
+		<!-- <include prefix="3.1" file="subs/wpa_supplicant_start.xml" args="sta2" /> -->
+
+		<!-- <step no="3.2"> -->
+		<!-- <desc> -->
+		<!-- config the laptop to apply the ssid profile,then start to associate -->
+		<!-- </desc> -->
+		<!-- <ssh target="sta2" prompt=">|.*#"> -->
+		<!-- -v "wpa_cli" -->
+		<!-- -v "reconfig" -->
+		<!-- -v "add_network" -->
+		<!-- -v "set_network 0 ssid \"${ssid.name}\"" -->
+		<!-- -v "set_network 0 key_mgmt NONE" -->
+		<!-- -v "enable_network 0" -->
+		<!-- -v "reas" -->
+		<!-- -v "quit" -->
+		<!-- </ssh> -->
+		<!-- </step> -->
+
+		<!-- <include prefix="3.3" file="subs/chk_conn_in_sta.xml" args="sta2" /> -->
+
+		<step no="4">
+			<desc>
+				-AP clear log
+			</desc>
+			<ssh target="ap1">
+				-v "clear log buffered"
+				-v "_kdebug screen info"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				-enable icmp flood detection on ssid,
+				' ssid xxx security screening udp-flood'
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name} security screening udp-flood threshold 5"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				-check the icmp flood status,
+				'sh ssid xxx security screening [detail]' to make sure
+			</desc>
+			<log-file>show_ssid_security_screening.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} security screening detail"
+			</ssh>
+			<log-match>-e "Threshold:\ \ \ \ \ \ \ \ \ \ 5%\ air\ time"</log-match>
+			<log-match>-e "Action:\ \ \ \ \ \ \ \ \ \ \ \ \ alarm"</log-match>
+			<log-match>-e "Action\ time:\ \ \ \ \ \ \ \ 10\ s"</log-match>
+		</step>
+
+		<step no="5.1" type="loop-check" loop-max-times="6" loop-interval="5">
+			<desc>
+				-check the log info about address sweep
+			</desc>
+			<log-file>step5.1_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-e "wifi0.1 UDP flood protection is found"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				-AP clear log and enable logging
+			</desc>
+			<ssh target="ap1">
+				-v "clear log buffered"
+				-v "logging buffered level alert"
+			</ssh>
+		</step>
+
+		<step no="7">
+			<desc>
+				-STA1 launchs an udp flood attack
+			</desc>
+			<ssh target="sta1">
+				-v "nohup hping3 ${ap1.mgt0.ip} -2 --flood -d 1400 &amp;"
+			</ssh>
+		</step>
+
+		<step no="8" delay="10">
+			<desc>
+				-killall hping3
+			</desc>
+			<ssh target="sta1">
+				-v "killall hping3"
+			</ssh>
+		</step>
+
+		<step no="9">
+			<desc>
+				-check the log info on AP
+			</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)wifi0.1 UDP flood attack from ${sta1.tif.mac}\(${sta1.tif.ip}\) is detected" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+	</stage>
+</testcase>

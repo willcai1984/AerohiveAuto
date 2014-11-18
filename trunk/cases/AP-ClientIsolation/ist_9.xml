@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Proxy-ARP path when laptops connect to different physical interface</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+	<description>
+		Description:
+		Proxy-ARP from laptop1 when exists multi-ssid.
+
+		Pre-condition:
+		-wifi0 and wifi1 both in access mode.
+		-laptop1 connect with ssid1 on wifi0.1;
+		-laptop2 connect with ssid2 on wifi1.1;
+		-both laptops pass authentication;
+		-PC connect with switch;
+		-all laptops and PC are in same vlan;
+		AP has arp-entrance of laptop1, laptop2 and PC
+		-inter-station-traffic is disabled on ssid1.
+		Laptop2(001d:e02a:be91) Laptop1(0014:a5b1:0e9c) PC(0019:e002:2be0)
+
+		Test procedure:
+		-disable IST on AP
+		AH-000120#no ssid ssid1 inter-station-traffic
+		-Bind ssid1 on wifi0 and ssid2 on wifi1
+		-laptop1 sends arp-request, to laptop2. --R1
+		-laptop2 sends arp-request, to laptop1 --R2
+
+		Expect result:
+		The arp-request is dropped.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-1" />
+	<property name="conn2.ssid" value="${job.sid}-2" />
+
+	<stage>
+		<if>"${tb.bridge_support}" == "true" &amp;&amp; "${ap1.eth1.existed}" =="true" &amp;&amp; "${ap.wifi1.existed}" =="true"</if>
+
+		<include prefix="0" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="1">
+			<desc>
+				AP config ssid1
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${conn1.ssid}"
+				-v "security-object ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile ${conn1.ssid} qos-policy def-user-qos vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				AP config ssid2
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${conn2.ssid}"
+				-v "security-object ${conn2.ssid}"
+				-v "ssid ${conn2.ssid} security-object ${conn2.ssid}"
+				-v "security-object ${conn2.ssid} default-user-profile-attr 2"
+				-v "user-profile ${conn2.ssid} qos-policy def-user-qos vlan-id 1 attribute 2"
+				-v "interface wifi1 ssid ${conn2.ssid}"
+				-v "interface wifi1 radio channel 36"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="5">
+			<desc>
+				Inter-station-traffic is disabled on ssid1.
+				- no forwarding-engine proxy-arp enable
+			</desc>
+			<telnet target="ap1">
+				-v "no ssid ${conn1.ssid} inter-station-traffic"
+				-v "clear forwarding-engine mac-sessions"
+				-v "no forwarding-engine proxy-arp enable"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Set the ff and clear log all on AP
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_ff id 2 src-mac ${sta2.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				laptop1 sends arp-request for laptop2
+			</desc>
+			<log-file>step6_sta1_ping_sta2.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${sta2.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${sta2.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="6.1" delay="20">
+			<desc>
+				Check log buffered
+			</desc>
+			<log-file>step6.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match>-n -c -i "proxy-ARP, reinject ARP reply pak back to flow"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="7">
+			<desc>
+				laptop2 sends arp-request for laptop1
+			</desc>
+			<log-file>step7_sta2_ping_sta1.log</log-file>
+			<ssh target="sta2">
+				-v "ping ${sta1.tif.ip} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from ${sta1.tif.ip}" -i "ttl="</log-match>
+		</step>
+
+		<step no="7.1" delay="20">
+			<desc>
+				Check log buffered
+			</desc>
+			<log-file>step7.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match>-n -c -i "proxy-ARP, reinject ARP reply pak back to flow"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

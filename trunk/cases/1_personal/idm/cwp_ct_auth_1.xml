@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>CWP compatibility test with Mac-auth</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Create accounts on amigopod, including username, password and expired time, including mac-auth account
+		-The normal account and mac-auth account are belonged to different user roles
+
+		Test Procedure:
+		1:Configure (internal/passthrough/e-cwp, include auth/reg/both/ecwp),
+		mac-auth on ap
+		2:Configure different user-profile attribute on RADIUS server as follow
+		-Tunnel-Type : GRE
+		-Tunnel-Medium-Type: IP
+		-Tunnel-Private-Group-Id: input the user-profile attribute number here
+		Assume normal account's attribute is 100, mac-auth account' attribute is
+		1000
+		3:Client links to ap successfully, result 1
+		4:Client passes the authentication, and gets web page, result 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="acct1.uid" value="100" />
+	<property name="acct2.uid" value="1000" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<include prefix="start_selenium_server" file="subs/start_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<step no="0">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ipconfig.log</log-file>
+			<staf target="sta1">
+				-v "ipconfig /all"
+			</staf>
+		</step>
+
+		<step no="0.1">
+			<desc>Get sta1's mac with five delimiter</desc>
+			<setvar name="sta1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig.log -i ${sta1.tif.name} -o win -m -dash
+			</setvar>
+		</step>
+
+		<include prefix="1" file="subs/ldap_add.xml" args="${sta1.mac}, ${sta1.mac}" obj-args="acct1" />
+
+		<include prefix="2" file="subs/ldap_add.xml" args="${job.sid}-aerohive, aerohive" obj-args="acct2" />
+
+		<step no="3">
+			<desc>
+				1:Configure e-CWP relative on ap,include mac auth
+				"ssid aaa
+				ssid aaa security aaa radius-server primary 192.168.60.12 shared-secret
+				*** acct-port 1813
+				ssid aaa security additional-auth-method mac-based-auth
+				ssid aaa security additional-auth-method captive-web-portal login-page-
+				method http302
+				ssid aaa security additional-auth-method captive-web-portal external-
+				server primary login-page http://10.155.30.56/weblogin.php/7
+				ssid aaa security additional-auth-method captive-web-portal walled-
+				garden ip-address 10.155.30.56
+				ssid aaa security additional-auth-method captive-web-portal redirect"
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal reg-user-profile-attr 1 auth-user-profile-attr 1 timer-display"
+				-v "security-object ${ssid.name} security additional-auth-method mac-based-auth"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal external-server primary login-page http://${pub.ecwp1.ip}/weblogin.php/7"
+				-v "security-object ${ssid.name} walled-garden ip-address ${pub.ecwp1.ip}"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal timer-display alert 10"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal failure-redirect login-page"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-config the mac format,choose case-sensitivity , delimiter and style
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile normal qos-policy def-user-qos vlan-id 1 attribute 100"
+				-v "user-profile mac qos-policy def-user-qos vlan-id 1 attribute 1000"
+				-v "aaa mac-format case-sensitivity upper-case"
+				-v "aaa mac-format delimiter dash"
+				-v "aaa mac-format style five-delimiter"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				open debug mode
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug auth basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3.3">
+			<desc>
+				show interface wifi0
+			</desc>
+			<log-file>step3.3_show_interface.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="3.4">
+			<desc>Get wifi0 mac</desc>
+			<setvar name="ap1.wifi0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step3.3_show_interface.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="5" delay="5">
+			<desc>
+				show station
+			</desc>
+			<log-file>step5_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -p 12 -i "100" </log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				show logging buffered to check whether auth success or not
+			</desc>
+			<log-file>step5.1_show_logging_buffered.log</log-file>
+			<telnet target="ap1" timeout="500">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "ah_auth: Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.mac} thru SSID ${ssid.name}"</log-match>
+			<log-match>-c -i "ah_auth: authentication OK, username ${sta1.mac}, service (unknown)"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				access public hm through CWP
+			</desc>
+			<log-file>cwp_ct_auth_1_log_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.pre_url=http://${pub.ecwp1.ip}/weblogin.php/7 login.username=${job.sid}-aerohive login.password=aerohive -t ie -f ${log.dir}/${log.file} -l info --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log
+			</setvar>
+		</step>
+
+		<step no="7">
+			<desc>
+				show station
+			</desc>
+			<log-file>step7_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -p 12 -i "1000" </log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				do log out operate
+			</desc>
+			<log-file>cwp_ct_auth_1_log_out.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.pre_url=http://${pub.ecwp1.ip}/weblogin.php/7 login.username=${job.sid}-aerohive login.password=aerohive -t ie -f ${log.dir}/${log.file} -l info --session-id ${session.id}
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_workload}" />
+
+			<include prefix="1" file="subs/ldap_delete.xml" args="${sta1.mac}" />
+
+			<include prefix="2" file="subs/ldap_delete.xml" args="${job.sid}-aerohive" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+
+	<brief>(IxPort: CoF=3) Check vlan capbility on switch (maximum vlan number)</brief>
+	<priority>middle</priority>
+	<automated>yes</automated>>
+	<description>
+Test procedure:	
+1.	Configure DUT as switch mode
+2.	Create 255 vlans, such as from 300-554, using the following CLI:
+Vlan 300
+3.	Repeat step2 untill give warning message” vlan number already reach the maximum(255)”
+4.	Check maximum vlan number             Result1
+5.	Create a new vlan again, check if the vlan can be created        Result2
+Vlan 500
+6.	Check l2 fames forwarding for per vlan  
+7.	Send broadcast pkts in a vlan             Result3
+
+Expect result:	
+Result1:  maximum vlan number switch support is 255
+Result2:  create the vlan failed, because vlan number is already reach to 255
+Result3:   Receive the broadcast frames  in all ports for the specified vlan
+           
+
+	</description>
+	
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+	
+	
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<property name="sw1.port1.ixia_port.mac" value="0000.0000.0015"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.0016"/>
+	<property name="sw1.port3.ixia_port.mac" value="0000.0000.0017"/>
+	<property name="stream1.txport1" value="${sw1.port1.ixia_port}" />
+	<property name="stream1.rxport2" value="${sw1.port2.ixia_port}" />
+	<property name="stream1.rxport3" value="${sw1.port3.ixia_port}" />
+	<property name="stream1.txport1.mac" value="${sw1.port1.ixia_port.mac}" />
+	<property name="stream1.rxport1.mac" value="ffff.ffff.ffff" />
+	<property name="stream1.etype" value="0x0800" />
+	<property name="stream1.UDFoffset" value="38" />
+	<property name="stream1.patternOffset1" value="38" />
+	
+	
+	<stage>
+		<step no="pre_1">
+			<desc>
+				configure switch, port1, port2, port3 are trunk port with different vlans
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "vlan ${tb.vlan3}"
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port1} switchport trunk native vlan ${tb.vlan1}"
+				-v "interface ${sw1.port1} switchport trunk allow vlan all"
+				-v "interface ${sw1.port2} switchport mode trunk"
+				-v "interface ${sw1.port2} switchport trunk native vlan ${tb.vlan2}"
+				-v "interface ${sw1.port2} switchport trunk allow vlan all"
+				-v "interface ${sw1.port3} switchport mode trunk"
+				-v "no interface ${sw1.port3} switchport trunk allow vlan all"
+				-v "interface ${sw1.port3} switchport trunk native vlan ${tb.vlan3}"
+				-v "interface ${sw1.port3} switchport trunk allow vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport trunk allow vlan ${tb.vlan2}"
+				-v "interface ${sw1.port3} switchport trunk allow vlan ${tb.vlan3}"
+				-v "show vlan summary"
+			</telnet>
+		</step>
+	
+	
+		<step no="1">
+			<desc>
+				1. check DUT is Switch mode: display l3 interface
+			</desc>
+			<log-file>dut_l3_interface.log</log-file>
+			<telnet target="sw1">
+				-v "show l3 interface"
+			</telnet>
+			<log-match>-n -c -i "wan"</log-match>
+		</step>
+		
+		<step no="1.1">
+			<desc>
+				get switch existing vlan number
+			</desc>
+			<log-file>step1.1_vlan_number.log</log-file>
+			<telnet target="sw1">
+				-v "show vlan summary"
+			</telnet>
+			<setvar name="vlan_number">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step1.1_vlan_number.log -p 'Number of existing VLANs: (\d+)' -t str
+			</setvar>
+		</step>
+		
+		
+	</stage>
+	
+	<stage loop-values="2000..2249" var-name="vlan_id" loop-failed-break="true">
+		<step no="2">
+			<desc>
+				2.3.create 255 vlans at switch
+			</desc>
+			<log-file>vlan_${step.no}.log</log-file>
+			<telnet target="sw1">
+				-v "vlan ${vlan_id}"
+			</telnet>	
+			<log-match> -n -c -i "VLAN number already reaches the maximum (255)."</log-match>
+			<log-match> -n -c -i "ERROR: Invalid parameter(s)"</log-match>
+		</step>
+	</stage>
+	
+	<stage>
+		<step no="3">
+			<desc> 
+				4.5.Check maximum vlan number, reach to max, can't create vlan successfully
+			</desc>
+			<log-file>vlan_max.log</log-file>
+			<telnet target="sw1">
+				-v "vlan 3001" ; exit 0
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "VLAN number already reach the maximum(255)."</log-match>
+			<log-match>-c -i "ERROR: Invalid parameter(s)"</log-match>
+		</step>
+		
+
+		<step no="4.1">
+			<desc>add udf1 to check vlan</desc>
+			<setvar name="stream1.UDFsignature1">
+				echo "8100`printf %04x ${tb.vlan1}`"
+			</setvar>
+		</step>
+		<step no="4.2">
+			<desc>
+				when reach to max vlans, build stream, txport is port1, rxport are port2 and port3, start transmit and get statistics
+			</desc>
+			<log-file>max_vlan_test_traffic.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -userName ${job.user}${job.sid} -tclServerIP ${pub.tclserver1.ip} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}" 
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${stream1.txport1}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+				<!--insert vlan tag in the stream -->
+				-vlan enable
+				-vlan_id ${tb.vlan1}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-eth2_protocol ${stream1.etype}
+				-udf_offset ${stream1.UDFoffset}
+				-patternOffset2 ${stream1.UDFoffset}
+				-pattern1In 0x${stream1.UDFsignature1}
+				-userDefinedStat2Pattern pattern1AndPattern2"
+				-v ""
+				
+				-v "traffic_configure_eth2 -portListIn ${stream1.rxport2},${stream1.rxport3}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${stream1.txport1.mac}
+				-vlan enable
+				-eth2_protocol ${stream1.etype}
+				-patternOffset2 ${stream1.patternOffset1}
+				-pattern1In 0x${stream1.UDFsignature1}
+				-patternMask1In 0x00000000
+				-patternOffset1 12
+				-userDefinedStat2Pattern pattern1AndPattern2"
+				-v ""			
+				
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${stream1.txport1} -rxPortList ${stream1.rxport2},${stream1.rxport3}"
+				-v ""
+				<!-- check the result -->
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport2}"
+				-v ""
+
+				-v "check_equal_tx_with_rx -oneTxPort ${stream1.txport1} -oneRxPort ${stream1.rxport3}"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="5">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+		</step>
+		<step no="6">
+			<desc>
+				analyse statistics on rxport, port2/port3 received tagged pkts.
+			</desc>
+			<log-file>max_vlan_test_traffic.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport2} framesSent userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${stream1.txport1} ${stream1.rxport3} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+	</stage>
+	
+	
+	
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>	
+
+</testcase>

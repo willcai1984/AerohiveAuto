@@ -1,0 +1,118 @@
+<testcase>
+	<brief> unknown unicast from eth interface</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		Topology to use
+		Switch----laptop2
+		|
+		Laptop1---------Portal
+		Objective
+		unknown unicast from eth interface
+		Pre-condition
+		-laptop1 connects with portal, pass authentication
+		-laptop2 connect with switch
+		-all laptops are in same vlan
+		-laptop 2 and laptop1 get ip address. Etc.laptop1---1.1.1.1
+		Laptop2---1.1.1.2
+		Test procedure
+		-add a static arp on laptop2. etc. 1.1.1.3----00-11-22-33-44-55
+		-laptop2 ping 1.1.1.3
+		-switch will broadcast this packet to all ports in same vlan
+		-so portal will receive this packet
+		Expect result
+		Portal should drop this packet when eth0 receive this pkt.
+		Prompt don't forward pkt, same in/out dev eth0 in FE log.
+		3.1.3. Broadcast/Multicast datapath
+
+	</description>
+
+	<stage>
+		<property name="test.mac" value="00:11:22:33:44:55" />
+		<property name="test.mac2" value="0011:2233:4455" />
+		<step no="1">
+			<desc>Set up interface through sw menu</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name} "
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "save config"
+				-f basic_apsetup.cfg
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>show mgt0's ip of ap1</desc>
+			<log-file>mgt0_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+			<log-match>-i "${tb.vlan1}" -e "192.168"</log-match>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="open" />
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" rargs="conn1, sta1, ap1" />
+
+
+		<step no="4">
+			<desc>show interface of mpc</desc>
+			<log-file>ipconfig.log</log-file>
+			<script>
+				ifconfig > ${log.dir}/ipconfig.log
+			</script>
+			<log-match>-i "${tb.vlan1}" -i "192.168"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>Format laptop's MAC</desc>
+			<setvar name="mpc_mac_bi">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig.log -i ${mpc.tif.name} -m -width 4
+			</setvar>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>add _ff to AP</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${mpc_mac_bi} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buffer"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>add a static arp on mpc</desc>
+			<script>
+				arp -s ${tb.unreach.ip1} ${test.mac}
+			</script>
+		</step>
+
+		<step no="8">
+			<desc>master ping </desc>
+			<script>
+				ping ${tb.unreach.ip1} -W 5 -c 5 ; exit 0
+			</script>
+		</step>
+
+		<step no="9">
+			<desc>show log buffer at AP</desc>
+			<log-file>buffer.log</log-file>
+			<telnet target="ap1" timeout="1000">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-i "(\!) eth0 ${mpc.tif.ip}->${tb.unreach.ip1}"</log-match>
+			<log-match>-i "(i) eth0 ${mpc.tif.ip}->${tb.unreach.ip1}"</log-match>
+			<log-match>-i " dst route lookup 0011:2233:4455: GET_ROUTE dev(eth0)"</log-match>
+			<log-match>-i "no outgoing interface on reverse flow, drop pkt"</log-match>
+			<log-match>-i "don't forward pkt, same in/out dev eth0"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

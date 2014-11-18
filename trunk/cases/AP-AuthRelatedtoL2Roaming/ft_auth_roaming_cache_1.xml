@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Add a new roaming cache to local AP after a successful connection</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		-config a ssid,with any kind of security protocol-suite
+		-active this ssid
+		-use a STA1 connected to it,successfully passed auth, result 1
+		-use a STA2 connected to it,passed auth failure, result 2
+		-STA1 disconnect from AP, result 3
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>windows</tbtype>
+
+	<stage>
+		<step no="SetUpAP1.1">
+			<desc>Set up AP1</desc>
+			<log-file>setup_ap1.log</log-file>
+			<console target="ap1">
+				-v "user-profile datapath qos-policy def-user-qos vlan-id ${tb.nvlan} attribute 1"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite wpa2-tkip-8021x"
+				-v "security-object autoap security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.nvlan}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 11"
+				-v "_de auth info"
+				-v "_de auth basic"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="SetUpAP1.2">
+			<desc>Shutdown Wifi1 AP1</desc>
+			<if>"${ap1.wifi1.existed}"=="true"</if>
+			<log-file>shutdown_wifi1_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="GetAP1.MAC.1" delay="30">
+			<desc>show interface of ap1</desc>
+			<log-file>show_portal_interface.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="GetAP1.MAC.2">
+			<desc>get the eth0 mac address of ap1</desc>
+			<setvar name="ap1.eth0.w4mac">
+				perl ${bin.dir}/getstring.pl -f ${log.dir}/show_portal_interface.log -k eth0 -p 2
+			</setvar>
+		</step>
+
+		<step no="CheckAP1DefaultRoute">
+			<desc>show route of ap1</desc>
+			<log-file>show_portal_route.log</log-file>
+			<telnet target="ap1">
+				-v "show route"
+			</telnet>
+			<log-match>-i "0000:0000:0000\ \ ${ap1.eth0.w4mac}" -i "eth0"</log-match>
+		</step>
+
+		<step no="ClearLogBuffer.1">
+			<desc>clear log buffer of ap1</desc>
+			<log-file>clear_log_buffer_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "clear log buf"
+			</telnet>
+		</step>
+
+		<step no="Getlaptop1Info.1">
+			<desc>Generate wifi_aerohive_test profile</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/wpa2_tkip_8021x.xml -o wifi_aerohive_test_1.xml -s "${ssid.name}" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.2">
+			<desc>Copy to target Windows host machine a wifi windows profile file </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test_1.xml tofile "c:\\staf\\wifi_aerohive_test_1.xml" tomachine ${sta1.mif.ip}
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.3">
+			<desc>Bring down the client Wireless</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.4">
+			<desc>Delete current Wireless profile</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan delete profile ${ssid.name} "
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.5">
+			<desc>Add new profile</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test_1.xml" interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.6" delay="180">
+			<desc>Bring up the client Wireless</desc>
+			<log-file>laptop1_connect_ssid1.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan connect ssid=${ssid.name} name=${ssid.name} interface=\"${sta1.tif.name}\"" -v " netsh wlan show profiles ${ssid.name}" -v "netsh wlan show interfaces" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.7" delay="15">
+			<desc>Dump all interfaces data from remote host</desc>
+			<log-file>ipconfig_${sta1.mif.ip}.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+
+		<step no="Getlaptop1Info.8">
+			<desc>Get laptop's IP</desc>
+			<setvar name="sta1.tif.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -nomask
+			</setvar>
+		</step>
+
+		<step no="Getlaptop1Info.9">
+			<desc>Get laptop's MAC</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta1.mif.ip}.log -i Wireless -o win -m
+			</setvar>
+		</step>
+
+		<step no="Getlaptop1Info.10">
+			<desc>get 4 width station mac</desc>
+			<setvar name="sta1.tif.w4mac">
+				echo ${sta1.tif.mac} | sed 's/://g; s/../&amp;:/g' | awk -F : '{print $1$2":"$3$4":"$5$6}'
+			</setvar>
+		</step>
+
+		<step no="Getlaptop2Info.1" delay="30">
+			<desc>Generate wifi_aerohive_test profile</desc>
+			<script>
+				perl ${bin.dir}/winprof_gen.pl -f ${case.dir}/conf/wpa_tkip_8021x.xml -o wifi_aerohive_test_2.xml -s "${ssid.name}" -l ${log.dir}
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.2">
+			<desc>Copy to target Windows host machine a wifi windows profile file </desc>
+			<script>
+				staf local fs copy file ${log.dir}/wifi_aerohive_test_2.xml tofile "c:\\staf\\wifi_aerohive_test_2.xml" tomachine ${sta2.mif.ip}
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.3">
+			<desc>Bring down the client Wireless</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan disconnect interface=\"${sta2.tif.name}\""
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.4">
+			<desc>Delete current Wireless profile</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan delete profile ${ssid.name} "
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.5">
+			<desc>Add new profile</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan add profile filename="c:\\staf\\wifi_aerohive_test_2.xml" interface=\"${sta2.tif.name}\""
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.6" delay="180">
+			<desc>Bring up the client Wireless</desc>
+			<log-file>laptop2_connect_ssid1.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "netsh wlan connect ssid=${ssid.name} name=${ssid.name} interface=\"${sta2.tif.name}\"; exit 0" -v " netsh wlan show profiles ${ssid.name}" -v "netsh wlan show interfaces" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.7" delay="15">
+			<desc>Dump all interfaces data from remote host</desc>
+			<log-file>ipconfig_${sta2.mif.ip}.log</log-file>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta2.mif.ip} -v "ipconfig /all" -l ${log.dir} -o ${log.file}
+			</script>
+		</step>
+
+		<step no="Getlaptop2Info.9">
+			<desc>Get laptop2's MAC</desc>
+			<setvar name="sta2.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ipconfig_${sta2.mif.ip}.log -i Wireless -o win -m
+			</setvar>
+		</step>
+
+		<step no="Getlaptop2Info.10">
+			<desc>get 4 width station mac</desc>
+			<setvar name="sta2.tif.w4mac">
+				echo ${sta2.tif.mac} | sed 's/://g; s/../&amp;:/g' | awk -F : '{print $1$2":"$3$4":"$5$6}'
+			</setvar>
+		</step>
+
+		<step no="CheckAP1InterfaceWifi0.1">
+			<desc>show interface wifi0.1 of ap1</desc>
+			<log-file>show_interface_wifi0.1_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "SSID=\"${ssid.name}\"" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="CheckAP1RoamingCache1.1" type="loop-check" loop-max-times="50" loop-interval="10">
+			<desc>show roaming cache 1 of ap1</desc>
+			<log-file>show_roaming_cache1_ap1_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-i "${sta1.tif.w4mac}" -c -p 11 -i "0" -p 12 -i "YNNN"</log-match>
+		</step>
+		<step no="CheckAP1LogBuffer">
+			<desc>show log buffer of ap1</desc>
+			<log-file>show_log_buffer_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show log buffer"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "New roaming entry is added" -i "${sta1.tif.w4mac}" -c</log-match>
+			<log-match>-i "New roaming entry is added" -i "${sta2.tif.w4mac}" -c -n</log-match>
+		</step>
+		<step no="laptop1DisconnectSsid1.1">
+			<desc>Laptop1 disconnect from ssid1 of ap1</desc>
+			<script>
+				perl ${bin.dir}/stafcmd.pl -d ${sta1.mif.ip} -v "netsh wlan disconnect interface=\"${sta1.tif.name}\""
+			</script>
+		</step>
+
+		<step no="CheckAP1RoamingCache1.2" type="loop-check" loop-max-times="50" loop-interval="10">
+			<desc>show roaming cache 2 of ap1</desc>
+			<log-file>show_roaming_cache2_ap1_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-i "${sta1.tif.w4mac}" -c -p 11 -i "0" -p 12 -i "NNNN" </log-match>
+		</step>
+
+	</stage>
+</testcase>

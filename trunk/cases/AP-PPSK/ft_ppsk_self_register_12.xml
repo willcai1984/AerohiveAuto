@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Self-register basic scinario check</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		topo:STA----AP1---SW----AP2(PPSK SRV) Pre-Condition: -config one AP as ppsk server -config the ppsk server with a ssid, config a same ssid with ppsk -config ppsk server with a webdir,login page,success page etc. -the login and success page are default -config a ssid with open+ecwp, redirect to ppsk server Test Procedure: -STA connected to open+ecwp ssid -open browser on STA, got the slef-reg page -submit the request, the ppsk server should return a valid ppsk and the ssid name -client connected to the ssid given by ppsk server, connection should be success -another STA uses the ppsk to connect to the ssid, should not success
+	</description>
+	<numofap>2</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="url" value="http://www.google.com.hk" />
+	<property name="selenium_path" value="/root/selenium-server-standalone-2.42.2.jar" />
+    <property name="" value=""/>
+    <stage>
+       <step no="0.1">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "export DISPLAY=:1"
+				-v "nohup java -jar ${selenium_path} 1>logfile.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "printenv"
+			</ssh>
+		</step>
+       <step no="0.3">
+       		<desc>set static ip for ap1</desc>
+       		<console target="ap1" timeout="10">	
+       			-v "interface mgt0 ip ${ap1.forwards.ip} 255.255.255.0"
+       			-v "no interface mgt0 dhcp client"
+       			-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+       		</console>
+       </step>
+	<step no="1">
+		<desc>-config AP2 as ppsk server</desc>
+		<ssh target="ap2">
+			<!-- open + cwp ssid configuration -->
+			-v "security-object autotest" -v "security-object autotest security additional-auth-method captive-web-portal reg-user-profile-attr 4095" -v "security-object autotest default-user-profile-attr 100" -v "security-object autotest security additional-auth-method captive-web-portal external-server primary login-page http://${ap2.forwards.ip}/ppsk/ppsk-auth/ppsk_index.cgi" -v "security-object autotest security additional-auth-method captive-web-portal default-language english" -v "security-object autotest walled-garden ip-address ${ap2.forwards.ip} service protocol 6 port 80" -v "security-object autotest walled-garden ip-address ${ap2.forwards.ip} service protocol 6 port 443" -v "security-object autotest web-server" -v "web-directory ppsk-auth" -v "web-directory ppsk-self-reg ppsk-auth"
+			<!--save web-page for cwp web-directory and ppsk web-directory-->
+			-v "save web-page web-directory ppsk-auth tftp://10.155.81.221:cwp/ppsk-auth.tar.gz" -v "save web-page ppsk-self-reg web-directory ppsk-auth tftp://10.155.81.221:cwp/ppsk-auth.tar.gz" -v "security-object autotest web-directory ppsk-auth" -v "security-object autotest ppsk-web-server web-directory ppsk-auth" -v "security-object autotest ppsk-web-server bind-to-ppsk-ssid ${ssid.name}" -v "security-object autotest ppsk-web-server web-directory ppsk-auth" -v "security-object autotest ppsk-web-server login-page ppsk_index.cgi"
+			<!-- cwp type is authentication -->
+			-v "security-object autotest ppsk-web-server auth-user"
+			<!-- ppsk ssid configuration -->
+			-v "security-object ${ssid.name}" -v "security-object ${ssid.name} security protocol-suite wpa2-aes-psk ascii-key aerohive" -v "security-object ${ssid.name} security private-psk" -v "security-object ${ssid.name} security private-psk default-psk-disabled" -v "security-object ${ssid.name} security private-psk ppsk-server ${ap2.forwards.ip}" -v "security-object ${ssid.name} default-user-profile-attr 100" -v "ssid autotest" -v "ssid autotest security-object autotest" -v "ssid ${ssid.name}" -v "ssid ${ssid.name} security-object ${ssid.name}"
+			<!-- set AP2 radius server -->
+			-v "aaa ppsk-server radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+			<!-- don't forget to set upid for both ssid -->
+			-v "user-profile autotest_for_ppsk vlan-id 1 attribute 4095" -v "user-profile 100 vlan-id 1 attribute 100"
+			<!-- set ip-policy for open+cwp ssid -->
+			-v "ip-policy autotest_for_ppsk" -v "ip-policy autotest_for_ppsk id 1 from 0.0.0.0 0.0.0.0 to ${ap2.forwards.ip} 255.255.255.255 service any action permit" -v "ip-policy autotest_for_ppsk id 2 from 0.0.0.0 0.0.0.0 to 1.1.0.0 255.255.0.0 service any action permit" -v "ip-policy autotest_for_ppsk id 3 from 1.1.0.0 255.255.0.0 to local-subnet service any action permit" -v "ip-policy autotest_for_ppsk id 4 from ${ap2.forwards.ip} 255.255.255.255 to 0.0.0.0 0.0.0.0 service any action permit" -v "user-profile autotest_for_ppsk security ip-policy from-access autotest_for_ppsk to-access autotest_for_ppsk"
+		</ssh>
+	</step>
+	<step no="1.1">
+		<desc>-config user group on AP2</desc>
+		<ssh target="ap2">
+			-v "user-group userGroup" -v "user-group userGroup password-generation-method auto" -v "user-profile ttt vlan-id 1 attribute 1" -v "ssid ${ssid.name} user-group userGroup" -v "ssid ${ssid.name} max-client 32" -v "interface wifi0 radio channel 1" -v "clock date-time 2014-10-28 09:30:00" -v "user-group userGroup start-time 2014-10-28/09:30:00" -v "user-group userGroup expired-time 2014-10-28/09:40:00" -v "user-group userGroup auto-generation index-range 1 3" -v "user-group userGroup auto-generation bulk-number 2 bulk-interval 0 00:08" -v "save config"
+		</ssh>
+	</step>
+	<step no="2">
+		<desc>config ppsk on ap1</desc>
+		<ssh target="ap1">
+		-v "security-object autotest" -v "security-object autotest security additional-auth-method captive-web-portal reg-user-profile-attr 4095" -v "security-object autotest default-user-profile-attr 100" -v "security-object autotest security additional-auth-method captive-web-portal external-server primary login-page http://${ap2.forwards.ip}/ppsk/ppsk-auth/ppsk_index.cgi" -v "security-object autotest security additional-auth-method captive-web-portal default-language english" -v "security-object autotest walled-garden ip-address ${ap2.forwards.ip} service protocol 6 port 80" -v "security-object autotest walled-garden ip-address ${ap2.forwards.ip} service protocol 6 port 443" -v "security-object autotest web-server" -v "web-directory ppsk-auth" -v "web-directory ppsk-self-reg ppsk-auth" -v "save web-page web-directory ppsk-auth tftp://10.155.81.221:cwp/ppsk-auth.tar.gz" -v "save web-page ppsk-self-reg web-directory ppsk-auth tftp://10.155.81.221:cwp/ppsk-auth.tar.gz" -v "security-object autotest web-directory ppsk-auth" -v "security-object autotest ppsk-web-server web-directory ppsk-auth" -v "security-object autotest ppsk-web-server bind-to-ppsk-ssid ${ssid.name}" -v "security-object autotest ppsk-web-server web-directory ppsk-auth" -v "security-object autotest ppsk-web-server login-page ppsk_index.cgi" -v "security-object ${ssid.name}" -v "security-object ${ssid.name} security protocol-suite wpa2-aes-psk ascii-key aerohive" -v "security-object ${ssid.name} security private-psk" -v "security-object ${ssid.name} security private-psk default-psk-disabled" -v "security-object ${ssid.name} security private-psk ppsk-server ${ap2.forwards.ip}" -v "security-object ${ssid.name} default-user-profile-attr 100" -v "ssid autotest" -v "ssid autotest security-object autotest" -v "interface wifi0 ssid autotest" -v "ssid ${ssid.name}" -v "ssid ${ssid.name} security-object ${ssid.name}" -v "user-profile autotest_for_ppsk vlan-id 1 attribute 4095" -v "user-profile 100 vlan-id 1 attribute 100" -v "ip-policy autotest_for_ppsk" -v "ip-policy autotest_for_ppsk id 1 from 0.0.0.0 0.0.0.0 to ${ap2.forwards.ip} 255.255.255.255 service any action permit" -v "ip-policy autotest_for_ppsk id 2 from 0.0.0.0 0.0.0.0 to 1.1.0.0 255.255.0.0 service any action permit" -v "ip-policy autotest_for_ppsk id 3 from 1.1.0.0 255.255.0.0 to local-subnet service any action permit" -v "ip-policy autotest_for_ppsk id 4 from ${ap2.forwards.ip} 255.255.255.255 to 0.0.0.0 0.0.0.0 service any action permit" -v "user-profile autotest_for_ppsk security ip-policy from-access autotest_for_ppsk to-access autotest_for_ppsk"
+		</ssh>
+	</step>
+	<step no="2.1">
+		<desc>-config user group on AP1</desc>
+		<ssh target="ap1">
+		-v "user-group userGroup" -v "user-group userGroup password-generation-method auto" -v "user-profile ttt vlan-id 1 attribute 1" -v "ssid ${ssid.name} user-group userGroup" -v "ssid ${ssid.name} max-client 32" -v "interface wifi0 ssid ${ssid.name}" -v "interface wifi0 radio channel 1" -v "clock date-time 2014-10-28 09:30:00" -v "user-group userGroup start-time 2014-10-28/09:30:00" -v "user-group userGroup expired-time 2014-10-28/09:40:00" -v "user-group userGroup auto-generation index-range 1 3" -v "user-group userGroup auto-generation bulk-number 2 bulk-interval 0 00:08" -v "save config"
+		</ssh>
+	</step>
+	<step no="3">
+		<desc>check users generate</desc>
+		<log-file>step3_show_user.log</log-file>
+		<ssh target="ap2">-v "show user"</ssh>
+		<log-match>-c -i "userGroup0001"</log-match>
+		<log-match>-c -i "userGroup0002"</log-match>
+		<log-match>-c -i "userGroup0003"</log-match>
+	</step>
+	<step no="4">
+		<multi-setvar>
+			echo "conn1.ssid=autotest" 
+			echo "conn1.proto=open" 
+			echo "conn1.pif=wifi0"
+		</multi-setvar>
+	</step>
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1"/>
+	<step no="6">
+		<desc>
+			client request a web page and get login page,input correct username and password
+		</desc>
+		<log-file>ppsk_ft_pass_1_log_in.html</log-file>
+		<script>
+			export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/AerohiveGUI/scripts/cwp/cwp_login.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${url} login.is_ppsk=true login.is_result=false login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -l info -f ${log.dir}/${log.file}
+		</script>
+	</step>
+	<step no="7">
+	<desc>get the ppsk ssid name</desc>
+	<setvar name="ppsk_ssid">
+		python ${bin.dir}/getbyrexp.py -p 'ppsk_ssid_is:"(.*)"' -f ${log.dir}/ppsk_ft_pass_1_log_in.html -t str
+	</setvar>
+	</step>
+	<step no="8">
+		<desc>get the ppsk ssid name</desc>
+		<setvar name="ppsk_pwd">
+			python ${bin.dir}/getbyrexp.py -p 'password_is:"(.*)"' -f ${log.dir}/ppsk_ft_pass_1_log_in.html -t str
+		</setvar>
+	</step>
+	<step no="ex.sta1-mac">
+	<setvar name="sta1.tif.mac">
+			${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -width
+	</setvar>
+	</step>
+	<step no="9">
+		<desc>check mac-binding table</desc>
+		<log-file>step9_mac_binding_table.log</log-file>
+		<ssh target="ap2">-v "_test auth mac-bind show ${ppsk_ssid}"</ssh>
+		<log-match>-c -i "${sta1.tif.mac}" -i "${ppsk_ssid}"</log-match>
+	</step>
+	 <step no="10">
+			<multi-setvar>
+				echo "conn2.ssid=${ppsk_ssid}"
+				echo "conn2.proto=wpa2-aes-psk"
+				echo "conn2.psk.keytype=ascii"
+				echo "conn2.psk=${ppsk_pwd}"
+			</multi-setvar>
+		</step>
+	<include prefix="10.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1"/>
+	<step no="11" type="loop-check" loop-max-times="6" loop-interval="10">
+		<desc>-sh ssid xxx st</desc>
+		<log-file>step11_show_station_${loop_check.idx}.log</log-file>
+		<ssh target="ap1">-v "show ssid ${ppsk_ssid} station"</ssh>
+		<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+	</step>
+	<step no="12">
+		<desc>- sh roa ca</desc>
+		<log-file>step6.1_show_roaming_cache.log</log-file>
+		<ssh target="ap1">-v "show roaming cache"</ssh>
+		<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "100" -i "0 *YNNN"</log-match>
+	</step>
+	<step no="13">
+		<desc>- show auth</desc>
+		<log-file>step13_show_auth.log</log-file>
+		<telnet target="ap1">-v "show auth"</telnet>
+		<log-match>-c -i "${sta1.tif.mac} *100" -i "WPA2/CCMP"</log-match>
+	</step>
+	<step no="ex_debug">
+		<ssh target="ap1">-v "_debug auth all" -v "clear log b"</ssh>
+	</step>
+	<step no="ex.sta2-mac">
+		<setvar name="sta2.tif.mac">
+			${bin.dir}/getrmtip.pl -d ${sta2.mif.ip} -u ${sta2.user} -p ${sta2.passwd} -i ${sta2.tif.name} -m -width
+		</setvar>
+	</step>
+	<step no="14" delay="600">
+		<desc>waiting for key to expire</desc>
+		<ssh target="ap2">-v "show user"</ssh>
+	</step>
+	<step no="15">
+		<desc>transport a ssid profile to client</desc>
+		<ssh target="sta1" timeout="10">
+			-v "echo \"ctrl_interface=/var/run/wpa_supplicant\">/tmp/wpa_supplicant.cfg" -v "ifconfig ${sta1.tif.name} down"
+		</ssh>
+	</step>
+	<step no="15.1">
+		<desc>start the tif on client side</desc>
+		<ssh target="sta1" timeout="10">-v "ifconfig ${sta2.tif.name} up"</ssh>
+	</step>
+	<step no="15.2" delay="5">
+		<desc>start the wpa_supplicant on client side</desc>
+		<ssh target="sta1" timeout="10">
+			-v "killall wpa_supplicant" -v "wpa_supplicant -i ${sta2.tif.name} ${sta2.wpa_flag} -c /tmp/wpa_supplicant.cfg -B"
+		</ssh>
+	</step>
+	<step no="15.3">
+		<desc>config sta1</desc>
+		<ssh target="sta1" prompt=">|.*#">
+			-v "wpa_cli" -v "reconfig" -v "add_network" -v "set_network 0 ssid \"${ppsk_ssid}\"" -v "set_network 0 key_mgmt WPA-PSK" -v "set_network 0 proto RSN" -v "set_network 0 psk \"${ppsk_pwd}\"" -v "set_network 0 pairwise CCMP" -v "set_network 0 group CCMP" -v "set_network 0 priority 5" -v "select_network 0" -v "reas" -v "quit"
+		</ssh>
+	</step>
+	<step no="16">
+		<log-file>step16_show_log_buffer.log</log-file>
+		<ssh target="ap1">-v "show log buffer"</ssh>
+		<log-match>-c -i "invalid MIC in msg 2/4 of 4-Way Handshake"</log-match>
+		<log-match>
+			-c -i "ah_wpa_mic_invalid_notify: get client monitor exception for psk"
+		</log-match>
+		<log-match>-c -i "no valid PMK found for ${sta1.tif.mac}"</log-match>
+	</step>
+	<include prefix="17" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1"/>
+	<step no="17.1">
+		<desc>
+			client request a web page and get login page,input correct username and password
+		</desc>
+		<log-file>ppsk_ft_pass_2_log_in.html</log-file>
+		<script>
+			export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/AerohiveGUI/scripts/cwp/cwp_login.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${url} login.is_ppsk=true login.is_result=false login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -l info -f ${log.dir}/${log.file}
+		</script>
+	</step>
+	<step no="18">
+		<desc>get the ppsk ssid name</desc>
+		<setvar name="ppsk_pwd.1">
+			python ${bin.dir}/getbyrexp.py -p 'password_is:"(.*)"' -f ${log.dir}/ppsk_ft_pass_2_log_in.html -t str
+		</setvar>
+	</step>
+	<step no="19">
+		<desc>check mac-binding table</desc>
+		<log-file>step18_mac_binding_table.log</log-file>
+		<ssh target="ap2">-v "_test auth mac-bind show ${ppsk_ssid}"</ssh>
+		<log-match>-c -i "${sta1.tif.mac}" -i "${ppsk_ssid}"</log-match>
+	</step>
+	<step no="20">
+		<multi-setvar>
+			echo "conn2.ssid=${ppsk_ssid}" 
+			echo "conn2.proto=wpa2-aes-psk" 
+			echo "conn2.psk.keytype=ascii" 
+			echo "conn2.psk=${ppsk_pwd.1}"
+		</multi-setvar>
+	</step>
+	<include prefix="20.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1"/>
+	<step no="21" type="loop-check" loop-max-times="6" loop-interval="10">
+		<desc>-sh ssid xxx st</desc>
+		<log-file>step21_show_station_${loop_check.idx}.log</log-file>
+		<ssh target="ap1">-v "show ssid ${ppsk_ssid} station"</ssh>
+		<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}"</log-match>
+	</step>
+	<step no="22">
+		<desc>The new key is different from the former one</desc>
+		<script>
+			if [ "${ppsk_pwd.1}" == "${ppsk_pwd}" ] ;then 
+				exit 1 
+			fi
+		</script>
+	</step>
+</stage>
+</testcase>

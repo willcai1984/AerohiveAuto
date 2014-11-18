@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>How many times that AP will retry the NTP request when get no response</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		NTP server is accessible but NTP service not be enabled(or NTP server are unreachable)
+		Open _debug ntp all and debug console
+		Set filter in AP, open kdebug fe basic and debug console:
+		_ff id 1 dst-port 123 bidirectional
+		_kdebug fe basic
+		debug console
+
+		Test Procedure:
+		Configure NTP server by CLI
+		Check if NTP server be active
+		Check how many times that AP will retry the NTP request when get no response
+
+		Expect result
+		After command be executed, debug of sync with NTP server be printed out
+		NTP server is not active
+		Try every server 3 times, every time wait 5s
+		Will try continuously and circularly
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="invalid.ntp.server" value="3.3.3.3" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				Clear NTP server configure
+			</desc>
+			<telnet target="ap1">
+				-v "no ntp server ${pub.ntp.ip}"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				open ntp debug switch
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 dst-port 123 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_debug ntp all"
+				-v "clear log buffered"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				Configure NTP server for AP by CLI
+			</desc>
+			<telnet target="ap1">
+				-v "ntp server ${invalid.ntp.server}"
+				-v "save config"
+				-v ""
+			</telnet>
+		</step>
+
+		<step no="3" delay="60">
+			<desc>
+				Check log buffered
+			</desc>
+			<log-file>step3_check_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="600">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="get.time.1">
+			<desc>
+				get time
+			</desc>
+			<setvar name="data_time_1">
+				perl ${case.dir}/bin/get_time.pl ${log.dir}/step3_check_log_buffered.log 0
+			</setvar>
+		</step>
+
+		<step no="get.time.2">
+			<desc>
+				get time
+			</desc>
+			<setvar name="data_time_2">
+				perl ${case.dir}/bin/get_time.pl ${log.dir}/step3_check_log_buffered.log -5
+			</setvar>
+		</step>
+
+		<step no="get.time.3">
+			<desc>
+				get time
+			</desc>
+			<setvar name="data_time_3">
+				perl ${case.dir}/bin/get_time.pl ${log.dir}/step3_check_log_buffered.log -10
+			</setvar>
+		</step>
+
+		<step no="3.1" delay="30">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step3_check_log_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${data_time_1}.*ntpclient: \[nc_basic\]: trying 3 times on ${invalid.ntp.server}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${data_time_2}.*ntpclient: \[nc_basic\]: trying 2 times on ${invalid.ntp.server}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${data_time_3}.*ntpclient: \[nc_basic\]: trying 1 times on ${invalid.ntp.server}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Check NTP server
+			</desc>
+			<log-file>step4_show_ntp_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show ntp"
+			</telnet>
+			<log-match>-c -i "State: *Enable"</log-match>
+			<log-match>-c -i "First *${invalid.ntp.server}"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				Check date time of NTP server
+			</desc>
+			<log-file>step5_check_time.log</log-file>
+			<ssh host="${pub.ntp.ip}">
+				-v "clock"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				Check by CLI show clock in AP
+			</desc>
+			<log-file>step5.1_check_time.log</log-file>
+			<telnet target="ap1">
+				-v "show clock"
+			</telnet>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				check time sync
+			</desc>
+			<log-file>step5.2_check_time_sync.log</log-file>
+			<script>
+				perl ${case.dir}/bin/Clock_compare.pl ${log.dir}/step5.1_check_time.log ${log.dir}/step5_check_time.log 0 30 > ${log.dir}/${log.file}
+			</script>
+		</step>
+	</stage>
+</testcase>

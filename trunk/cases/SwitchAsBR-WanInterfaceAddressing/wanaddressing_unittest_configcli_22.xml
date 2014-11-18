@@ -1,0 +1,235 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unit Test 0602: Verify that when NAT is enabled, clients with non-routable IP address could reach the internet with NAT functionality.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		After WANAddressing_UnitTest_ConfigCLI_21
+
+		Test Procedure:
+		enable NAT on eth0
+		CLI commands:
+		interface eth0 wan nat enable
+		show running-config
+		save config
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<include prefix="1" file="subs/br_close_fw.xml" obj-args="br1" />
+
+		<step no="pre_1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<console target="br1.br">
+				-v "no interface ${br1.br.wan.int1} dhcp client"
+				-v "interface ${br1.br.wan.int1} dhcp client"
+				-v "exec bypass-wan-hardening"
+			</console>
+		</step>
+
+		<step no="pre_1.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>show eth0 dhcp</desc>
+			<log-file>step1.1_show_br1_eth0_${loop_check.idx}.log</log-file>
+			<console target="br1.br">
+				-v "show interface ${br1.br.wan.int1} dhcp client"
+			</console>
+			<log-match>-c -i "Get IP address 0.0.0.0" -n</log-match>
+		</step>
+
+		<step no="pre_2">
+			<desc>
+				show br wan
+			</desc>
+			<log-file>show_int_eth0_2.log</log-file>
+			<console target="br1.br" slow="yes">
+				-v "show l3 interface ${br1.br.wan.int1}"
+			</console>
+		</step>
+
+		<step no="pre_3">
+			<desc>get ip address of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=([\d.]+)" -f ${log.dir}/show_int_eth0_2.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre_4">
+			<desc>
+				Login into AP, it can ping domain name
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "ping ${pub.dns1.domain1}"
+			</telnet>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+
+		<step no="2">
+			<desc>
+				AP config user-profile
+			</desc>
+			<console target="br1.br">
+				-v "vlan ${br1.vlan1}"
+				-v "interface mgt0 vlan ${br1.vlan1}"
+				-v "user-profile fw11 qos-policy def-user-qos vlan-id ${br1.vlan1} attribute 1"
+				-v "no interface ${br1.br.wan.int1} mode wan nat"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vlan1}"
+			</console>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				get ip address
+			</desc>
+			<console target="br1.br">
+				-v "no interface ${br1.br.wan.int1} dhcp client"
+				-v ""
+				-v "interface ${br1.br.wan.int1} dhcp client"
+				-v ""
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>
+				br1.vpc1 show ip address got from mgt0 dhcp client
+			</desc>
+			<log-file>step3_ifconfig_br1_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				it should NOT be able to access domain name.
+			</desc>
+			<log-file>step4_ping_domain.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.domain1} -c 5"
+			</ssh>
+			<log-match>-n -c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				show running-config include a CLI to disable NAT on eth0
+			</desc>
+			<console target="br1.br">
+				-v "show running-config"
+			</console>
+			<log-match>-c -i "no interface ${br1.br.wan.int1} mode wan nat"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show interface eth0 indicates NAT is disabled
+			</desc>
+			<console target="br1.br">
+				-v "show l3 interface ${br1.br.wan.int1}"
+			</console>
+			<log-match>-c -i "NAT support=disable;"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				Login into busybox by _shell, command "iptables -t nat -nvL"
+				should NOT include a NAT rule for eth0
+			</desc>
+			<log-file>step7_login_shell_check_nat_eth0.log</log-file>
+			<console target="br1.br" prompt="\$|AH.*#">
+				-b -sp "${br1.br.shellpwd}"
+				-v "_shell"
+				-v "iptables -t nat -nvL"
+				-v "exit 0"
+				-v ""
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)MASQUERADE.*${br1.br.wan.kport1}\s+0.0.0.0/0\s+0.0.0.0/0" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				enable NAT on eth0
+			</desc>
+			<console target="br1.br">
+				-v "interface ${br1.br.wan.int1} mode wan nat"
+			</console>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				br1.vpc1 show ip address got from mgt0 dhcp client
+			</desc>
+			<log-file>step8.1_ifconfig_br1_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name} -r"
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				it should be able to access domain name.
+			</desc>
+			<log-file>step8.2_ping_domain.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.domain1} -c 5"
+			</ssh>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				show running-config include a CLI to disable NAT on eth0
+			</desc>
+			<console target="br1.br">
+				-v "show running-config"
+			</console>
+			<log-match>-n -c -i "no interface ${br1.br.wan.int1} mode wan nat"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				show interface eth0 indicates NAT is enable
+			</desc>
+			<console target="br1.br">
+				-v "show l3 interface ${br1.br.wan.int1}"
+			</console>
+			<log-match>-c -i "NAT support=enable;"</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				Login into busybox by _shell, command
+				"iptables -t nat -nvL" should include a NAT rule for eth0
+			</desc>
+			<log-file>step10_login_shell_check_nat_eth0.log</log-file>
+			<console target="br1.br" prompt="\$|AH.*#">
+				-b -sp "${br1.br.shellpwd}"
+				-v "_shell"
+				-v "iptables -t nat -nvL"
+				-v "exit 0"
+				-v ""
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)MASQUERADE.*${br1.br.wan.kport1}\s+0.0.0.0/0\s+0.0.0.0/0" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="1" file="subs/br_open_fw.xml" obj-args="br1" />
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+
+</testcase>

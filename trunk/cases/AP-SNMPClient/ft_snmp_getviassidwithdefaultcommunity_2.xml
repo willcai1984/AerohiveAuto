@@ -1,0 +1,588 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>With default community, verify if can get some messages of AP from MIB Browser via SSID Precondition Create a SSID xxx and bind it to interface wifi0 in AP Enable snmp by ssid xxx manage snmp in AP Set host to ip address of AP in MIB Browser Set community to hivecommunity in MIB Browser Set SNMP version to v2c in MIB Browser Import mib files to MIB Browser in laptop</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		Select node to check if can get some messages, and verify if result is
+		correct
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				reset config
+			</desc>
+			<console target="ap1">
+				-v "reset config"
+			</console>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				shutdown eth1 when ap is not ap120.and config eth1 ,agg0,red0'mode
+			</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<console target="ap1">
+				-v "interface eth1 shutdown"
+				-v "interface eth1 mode backhaul"
+				-v "interface Agg0 mode backhaul"
+				-v "interface Red0 mode backhaul"
+			</console>
+		</step>
+
+		<step no="1">
+			<desc>
+				config ap1,make eth0 manage snmp and telnet.
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 manage snmp"
+				-v "interface eth0 manage telnet"
+				-v "hostname AH-hello-world"
+				-v "interface wifi0 mode access"
+				-v "interface wifi1 mode backhaul"
+				-v "interface eth0 mode backhaul"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "ssid ${ssid.name} manage snmp"
+			</console>
+		</step>
+		<step no="1.1">
+			<desc>retrieve mgt0 ip</desc>
+			<log-file>show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+		<step no="1.2">
+			<desc>retrieve mgt0 ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+		
+		<step no="2">
+			<desc>
+				show interface eth0 info
+			</desc>
+			<log-file>show_interface_eth0_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface eth0"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				show interface eth1 info
+			</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<log-file>show_interface_eth1_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface eth1"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>show_interface_wifi0_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				show interface wifi1 info
+			</desc>
+			<log-file>show_interface_wifi1_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>show_interface_mgt0_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface mgt0"
+			</telnet>
+		</step>
+		
+        <step no="2.5">
+			<desc>
+				show interface wifi0.1 info
+			</desc>
+			<log-file>show_interface_wifi0.1_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0.1"
+			</telnet>
+		</step>
+		
+		<step no="2.6">
+			<desc>
+				show interface wifi1.1 info
+			</desc>
+			<log-file>show_interface_wifi1.1_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+			</telnet>
+		</step>
+
+		<step no="2.7">
+			<desc>
+				show version
+			</desc>
+			<log-file>show_version_info.log</log-file>
+			<telnet target="ap1">
+				-v "show version"
+			</telnet>
+		</step>
+		
+		<include prefix="3" file="subs/wpa_supplicant_start.xml" args="sta1" />
+
+		<step no="4">
+			<desc>
+				pc connect ap
+			</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "reconfig"
+				-v "add_network"
+				-v "set_network 0 ssid \"${ssid.name}\""
+				-v "set_network 0 key_mgmt NONE"
+				-v "enable_network 0"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<include prefix="5" file="subs/chk_conn_in_sta.xml" args="sta1" />
+
+		<step no="6">
+			<desc>
+				start service snmpd
+			</desc>
+			<ssh host="${mpc.mif.ip}" timeout="300">
+				-v "service snmpd start"
+			</ssh>
+		</step>
+
+		<step no="snmp.all.interface.0">
+			<desc>
+				snmpwalk all the interface (include agg0 and red0).
+			</desc>
+			<log-file>snmp.all.interface.0_snmp_ap1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.4.1.26928.1.1.1.2.1.1.1.1"
+			</ssh>
+			<log-match>-e "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1." -i "= STRING: \\\"eth0\\\""</log-match>
+			<log-match>-e "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1." -i "= STRING: \\\"wifi0\\\""</log-match>
+			<log-match>-e "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1." -i "= STRING: \\\"wifi1\\\""</log-match>
+			<log-match>-e "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1." -i "= STRING: \\\"mgt0\\\""</log-match>
+			<log-match>-e "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1." -i "= STRING: \\\"wifi0.1\\\""</log-match>
+			<log-match>-e "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1." -i "= STRING: \\\"wifi1.1\\\""</log-match>
+		</step>
+		
+		<step no="snmp.all.interface.0.1">
+			<desc>
+				snmpwalk all the interface (include agg0 and red0).
+			</desc>
+			<if>"${ap.wifi1.existed}" == "true"</if>
+			<log-file>snmp.all.interface.0_snmp_ap1.log</log-file>
+			<log-match>-e "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1." -i "= STRING: \\\"wifi1.1\\\""</log-match>
+		</step>
+		<step no="snmp.all.interface.1">
+			<desc>
+				check the result of snmpwalk all the interface (eth1,agg0 and red0) when ap's type is not ap120.
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<log-file>snmp.all.interface.0_snmp_ap1.log</log-file>
+			<log-match>-e "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1." -i "= STRING: \\\"eth1\\\""</log-match>
+			<log-match>-e "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1." -i "= STRING: \\\"red0\\\""</log-match>
+			<log-match>-e "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1." -i "= STRING: \\\"agg0\\\""</log-match>
+		</step>
+
+		<step no="get.interface.index.number.0">
+			<desc>
+				get eth0's index number
+			</desc>
+			<setvar name="ap1.eth0.index.number">
+				${bin.dir}/getbyrexp.py -p "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1.(\d+) = STRING: \"eth0\"" -f ${log.dir}/snmp.all.interface.0_snmp_ap1.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.index.number.1">
+			<desc>
+				get eth1's index number
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<setvar name="ap1.eth1.index.number">
+				${bin.dir}/getbyrexp.py -p "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1.(\d+) = STRING: \"eth1\"" -f ${log.dir}/snmp.all.interface.0_snmp_ap1.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.index.number.2">
+			<desc>
+				get wifi0's index number
+			</desc>
+			<setvar name="ap1.wifi0.index.number">
+				${bin.dir}/getbyrexp.py -p "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1.(\d+) = STRING: \"wifi0\"" -f ${log.dir}/snmp.all.interface.0_snmp_ap1.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.index.number.3">
+			<desc>
+				get wifi1's index number
+			</desc>
+			<setvar name="ap1.wifi1.index.number">
+				${bin.dir}/getbyrexp.py -p "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1.(\d+) = STRING: \"wifi1\"" -f ${log.dir}/snmp.all.interface.0_snmp_ap1.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.index.number.4">
+			<desc>
+				get wifi0.1's index number
+			</desc>
+			<setvar name="ap1.wifi0.1.index.number">
+				${bin.dir}/getbyrexp.py -p "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1.(\d+) = STRING: \"wifi0.1\"" -f ${log.dir}/snmp.all.interface.0_snmp_ap1.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.index.number.5">
+			<desc>
+				get wifi1.1's index number
+			</desc>
+			<setvar name="ap1.wifi1.1.index.number">
+				${bin.dir}/getbyrexp.py -p "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1.(\d+) = STRING: \"wifi1.1\"" -f ${log.dir}/snmp.all.interface.0_snmp_ap1.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.index.number.6">
+			<desc>
+				get mgt0's index number
+			</desc>
+			<setvar name="ap1.mgt0.index.number">
+				${bin.dir}/getbyrexp.py -p "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1.(\d+) = STRING: \"mgt0\"" -f ${log.dir}/snmp.all.interface.0_snmp_ap1.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.index.number.7">
+			<desc>
+				get Agg0's index number
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<setvar name="ap1.agg0.index.number">
+				${bin.dir}/getbyrexp.py -p "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1.(\d+) = STRING: \"agg0\"" -f ${log.dir}/snmp.all.interface.0_snmp_ap1.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.index.number.8">
+			<desc>
+				get Red0's index number
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<setvar name="ap1.red0.index.number">
+				${bin.dir}/getbyrexp.py -p "SNMPv2-SMI::enterprises.26928.1.1.1.2.1.1.1.1.(\d+) = STRING: \"red0\"" -f ${log.dir}/snmp.all.interface.0_snmp_ap1.log
+			</setvar>
+		</step>
+
+		<step no="snmp.interface.index.0">
+			<desc>
+				snmpwalk the interface's index
+			</desc>
+			<log-file>snmp.interface.index.0_snmp_ap1.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.2.2.1.1"
+			</ssh>
+			<log-match>-e "1 = INTEGER:"</log-match>
+			<log-match>-e "${ap1.eth0.index.number} = INTEGER:"</log-match>
+			<log-match>-e "${ap1.wifi0.index.number} = INTEGER:"</log-match>
+			<log-match>-e "${ap1.wifi1.index.number} = INTEGER:"</log-match>
+			<log-match>-e "${ap1.mgt0.index.number} = INTEGER:"</log-match>
+			<log-match>-e "${ap1.wifi0.1.index.number} = INTEGER:"</log-match>
+			<log-match>-e "${ap1.wifi1.1.index.number} = INTEGER:"</log-match>
+		</step>
+
+		<step no="snmp.interface.index.1">
+			<desc>
+				check the result of snmpwalk the interface's index (eth1) when ap's type is not ap120.
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<log-file>snmp.interface.index.0_snmp_ap1.log</log-file>
+			<log-match>-e "${ap1.eth1.index.number} = INTEGER:"</log-match>
+		</step>
+
+
+		<step no="snmp.interface.0">
+			<desc>
+				snmpwalk the interface
+			</desc>
+			<log-file>snmp.interface.0_snmp_ap1.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.2.2.1.2"
+			</ssh>
+			<log-match>-e "1 = STRING:.*lo"</log-match>
+			<log-match>-e "${ap1.eth0.index.number} = STRING:.*eth0"</log-match>
+			<log-match>-e "${ap1.wifi0.index.number} = STRING:.*wifi0"</log-match>
+			<log-match>-e "${ap1.wifi1.index.number} = STRING:.*wifi1"</log-match>
+			<log-match>-e "${ap1.mgt0.index.number} = STRING:.*mgt0"</log-match>
+			<log-match>-e "${ap1.wifi0.1.index.number} = STRING: .*wifi0.1"</log-match>
+			<log-match>-e "${ap1.wifi1.1.index.number} = STRING: .*wifi1.1"</log-match>
+		</step>
+
+		<step no="snmp.interface.1">
+			<desc>
+				check the result of snmpwalk the interface (eth1) when ap's type is not ap120.
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<log-file>snmp.interface.0_snmp_ap1.log</log-file>
+			<log-match>-e "${ap1.eth1.index.number} = STRING: .*eth1"</log-match>
+		</step>
+
+		<step no="snmp.interface.type.0">
+			<desc>
+				snmpwalk the interface's type
+			</desc>
+			<log-file>snmp.interface.type.0_snmp_ap1.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.2.2.1.3"
+			</ssh>
+			<log-match>-e "1 = INTEGER: 24"</log-match>
+			<log-match>-e "${ap1.eth0.index.number} = INTEGER: 6"</log-match>
+			<log-match>-e "${ap1.wifi0.index.number} = INTEGER: 6"</log-match>
+			<log-match>-e "${ap1.wifi1.index.number} = INTEGER: 6"</log-match>
+			<log-match>-e "${ap1.mgt0.index.number} = INTEGER: 6"</log-match>
+			<log-match>-e "${ap1.wifi0.1.index.number} = INTEGER: 6"</log-match>
+			<log-match>-e "${ap1.wifi1.1.index.number} = INTEGER: 6"</log-match>
+		</step>
+
+		<step no="snmp.interface.type.1">
+			<desc>
+				check the result of snmpwalk the interface's type (eth1) when ap's type is not ap120.
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<log-file>snmp.interface.type.0_snmp_ap1.log</log-file>
+			<log-match>-e "${ap1.eth1.index.number} = INTEGER: 6"</log-match>
+		</step>
+
+		<step no="get.interface.mtu.0">
+			<desc>
+				get eth0's MTU
+			</desc>
+			<setvar name="ap1.eth0.mtu">
+				${bin.dir}/getbyrexp.py -p "MTU=(\d+)" -f ${log.dir}/show_interface_eth0_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="get.interface.mtu.1">
+			<desc>
+				get eth1's MTU
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<setvar name="ap1.eth1.mtu">
+				${bin.dir}/getbyrexp.py -p "MTU=(\d+)" -f ${log.dir}/show_interface_eth1_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="get.interface.mtu.2">
+			<desc>
+				get wifi0's MTU
+			</desc>
+			<setvar name="ap1.wifi0.mtu">
+				${bin.dir}/getbyrexp.py -p "MTU=(\d+)" -f ${log.dir}/show_interface_wifi0_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="get.interface.mtu.3">
+			<desc>
+				get wifi1's MTU
+			</desc>
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<setvar name="ap1.wifi1.mtu">
+				${bin.dir}/getbyrexp.py -p "MTU=(\d+)" -f ${log.dir}/show_interface_wifi1_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="get.interface.mtu.4">
+			<desc>
+				get mgt0's MTU
+			</desc>
+			<setvar name="ap1.mgt0.mtu">
+				${bin.dir}/getbyrexp.py -p "MTU=(\d+)" -f ${log.dir}/show_interface_mgt0_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="get.interface.mtu.5">
+			<desc>
+				get wifi0.1's MTU
+			</desc>
+			<setvar name="ap1.wifi0.1.mtu">
+				${bin.dir}/getbyrexp.py -p "MTU=(\d+)" -f ${log.dir}/show_interface_wifi0.1_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="get.interface.mtu.6">
+			<desc>
+				get wifi1.1's MTU
+			</desc>
+			<if>"${ap1.wifi1.existed}" == "true"</if>
+			<setvar name="ap1.wifi1.1.mtu">
+				${bin.dir}/getbyrexp.py -p "MTU=(\d+)" -f ${log.dir}/show_interface_wifi1.1_info.log -t str
+			</setvar>
+		</step>
+
+		<step no="snmp.interface.MTU.0">
+			<desc>
+				snmpwalk the interface's MTU
+			</desc>
+			<log-file>snmp.interface.MTU.0_snmp_ap1.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.2.2.1.4"
+			</ssh>
+			<log-match>-e "1 = INTEGER: 16436"</log-match>
+			<log-match>-e "${ap1.eth0.index.number} = INTEGER: ${ap1.eth0.mtu}"</log-match>
+			<log-match>-e "${ap1.wifi0.index.number} = INTEGER: ${ap1.wifi0.mtu}"</log-match>
+			<log-match>-e "${ap1.mgt0.index.number} = INTEGER: ${ap1.mgt0.mtu}"</log-match>
+			<log-match>-e "${ap1.wifi0.1.index.number} = INTEGER: ${ap1.wifi0.1.mtu}"</log-match>
+		</step>
+
+		<step no="snmp.interface.MTU.1">
+			<desc>
+				check the result of snmpwalk the interface's mtu (eth1) when ap's type is not ap120.
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<log-file>snmp.interface.MTU.0_snmp_ap1.log</log-file>
+			<log-match>-e "${ap1.eth1.index.number} = INTEGER: ${ap1.eth1.mtu}"</log-match>
+		</step>
+		
+		<step no="snmp.interface.MTU.2">
+			<desc>
+				check the result of snmpwalk the interface's mtu (eth1) when ap's type is not ap120.
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<log-file>snmp.interface.MTU.0_snmp_ap1.log</log-file>
+			<log-match>-e "${ap1.wifi1.1.index.number} = INTEGER: ${ap1.wifi1.1.mtu}"</log-match>
+			<log-match>-e "${ap1.wifi1.index.number} = INTEGER: ${ap1.wifi1.mtu}"</log-match>
+		</step>
+		
+		<step no="get.interface.speed">
+			<desc>
+				get ap's Version info from show version
+			</desc>
+			<setvar name="ap1.eth0.speed">
+				${bin.dir}/getbyrexp.py -p "Speed=(\d+)Mbps" --script "m.group(1)+'000000'" -f ${log.dir}/show_interface_eth0_info.log
+			</setvar>
+		</step>
+
+		<step no="snmp.interface.speed">
+			<desc>
+				snmpwalk the interface's speed
+			</desc>
+			<log-file>snmp.interface.speed.1_snmp_ap1.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.2.2.1.5"
+			</ssh>
+			<log-match>-e "${ap1.eth0.index.number} = Gauge32: ${ap1.eth0.speed}"</log-match>
+		</step>
+
+		<step no="get.interface.mac.0">
+			<desc>
+				show interface info
+			</desc>
+			<log-file>snmp.interface.mac.0_show_interface_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="get.interface.mac.1">
+			<desc>
+				get mgt0's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0\s+(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" --script "' '.join(m.groups())" -f ${log.dir}/snmp.interface.mac.0_show_interface_info.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.mac.2">
+			<desc>
+				get eth0's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap1.eth0.mac">
+				${bin.dir}/getbyrexp.py -p "Eth0\s+(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" --script "' '.join(m.groups())" -f ${log.dir}/snmp.interface.mac.0_show_interface_info.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.mac.3">
+			<desc>
+				get eth1's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<setvar name="ap1.eth1.mac">
+				${bin.dir}/getbyrexp.py -p "Eth1\s+(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" --script "' '.join(m.groups())" -f ${log.dir}/snmp.interface.mac.0_show_interface_info.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.mac.4">
+			<desc>
+				get wifi0's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<setvar name="ap1.wifi01.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi0.1\s+(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" --script "' '.join(m.groups())" -f ${log.dir}/snmp.interface.mac.0_show_interface_info.log
+			</setvar>
+		</step>
+
+		<step no="get.interface.mac.5">
+			<desc>
+				get eth1's mac address (format:xx xx xx xx xx xx)
+			</desc>
+			<if>"${ap.wifi1.existed}" == "true"</if>
+			<setvar name="ap1.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1\s+(\S{2})(\S{2}):(\S{2})(\S{2}):(\S{2})(\S{2})" --script "' '.join(m.groups())" -f ${log.dir}/snmp.interface.mac.0_show_interface_info.log
+			</setvar>
+		</step>
+
+		<step no="snmp.interface.mac.0">
+			<desc>
+				snmpwalk the interface's mac
+			</desc>
+			<log-file>snmp.interface.mac.0_snmp_ap1.log</log-file>
+			<ssh target="sta1" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -Ih -c hivecommunity .1.3.6.1.2.1.2.2.1.6"
+			</ssh>
+			<log-match>-c -e "1 = """</log-match>
+			<log-match>-c -e "${ap1.eth0.index.number} = Hex-STRING: ${ap1.eth0.mac}"</log-match>
+			<log-match>-c -e "${ap1.wifi0.index.number} = Hex-STRING: ${ap1.wifi01.mac}"</log-match>			
+			<log-match>-c -e "${ap1.mgt0.index.number} = Hex-STRING: ${ap1.mgt0.mac}"</log-match>
+			<log-match>-c -e "${ap1.wifi0.1.index.number} = Hex-STRING: ${ap1.wifi01.mac}"</log-match>			
+		</step>
+
+		<step no="snmp.interface.mac.1">
+			<desc>
+				check the result of snmpwalk the interface's mac (eth1) when ap's type is not ap120.
+			</desc>
+			<if>"${ap.eth1.existed}" == "true"</if>
+			<log-file>snmp.interface.mac.0_snmp_ap1.log</log-file>
+			<log-match>-c -e "${ap1.eth1.index.number} = Hex-STRING: ${ap1.eth1.mac}"</log-match>
+		</step>
+		
+		<step no="snmp.interface.mac.2">
+			<desc>
+				check the result of snmpwalk the interface's mac (eth1) when ap's type is not ap120.
+			</desc>
+			<if>"${ap.wifi1.existed}" == "true"</if>
+			<log-file>snmp.interface.mac.0_snmp_ap1.log</log-file>
+			<log-match>-c -e "${ap1.wifi1.1.index.number} = Hex-STRING: ${ap1.wifi1.mac}"</log-match>
+			<log-match>-c -e "${ap1.wifi1.index.number} = Hex-STRING: ${ap1.wifi1.mac}"</log-match>
+		</step>
+	</stage>
+</testcase>

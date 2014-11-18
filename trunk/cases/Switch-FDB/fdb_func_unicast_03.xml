@@ -1,0 +1,186 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>(IxPort: CoF=2) Self-learning check: mac-learning for trunk port</brief>
+	<priority>high</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	
+
+		IXIA port1+++++(trunk)switch(trunk)++++++IXIA port2
+
+		Description	Self-learning check: mac-learning for trunk port
+		Platform Dependence	Chesapeake
+		Pre-condition	?	FDB table size doesn’t exceed
+		?	IXIA port1 connect to switch trunk port1, pvid 10, allow all
+		?	IXIA port2 connect to switch trunk port2, pvid 20, allow 10,20
+		?	Switch trunk ports are with learning/forwarding state
+		Test procedure	1.	Create 255 vlans
+		2.	Set mac learning enabled all vlan
+		CLI: mac-address-table  learning  vlan  all
+
+		3.	IXIA port1 send frames of different source mac with vlan 1-4094       Result1
+
+		4.	IXIA port2 send frames of different source mac with vlan 1-4094       Result2
+		Expect result	Result1:   switch can learn all the source mac for 255 vlans of port1
+
+		Result2:   switch only learn source mac with vlan 10, 20 at port 2, because the  macs in other vlans are discard because of ingress rules
+		Test Result	
+		Fail
+		Result2:
+		1.permit all,all the mac can be learned
+		2.no permit all vlan,the  learned mac can’t be delete ?is it right?
+		1.	no permit all vlan,only permit vlan1,all the mac can be learned on other all vlan   
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+	</pre-process>
+	<property name="sw1.port1.ixia_port.mac" value="0000.0011.0011"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0022.0012"/>
+	<stage>
+
+		<step no="1.1">
+			<desc>set vlan range</desc>
+			<setvar name="vlan_range">
+				echo "${tb.vlan2}-`expr ${tb.vlan2} + 252`"
+			</setvar>
+		</step>
+		<step no="1.2">
+			<desc>generate 251 vlans</desc>
+			<log-file>create_vlan.log</log-file>
+			<script>
+				python ${bin.dir}/ssh_execute_cli.py -cli 'vlan (l1)' -list '${vlan_range}' -d ${sw1.mgt0.ip} -debug -l ${log.dir} -z ${log.file}
+			</script>
+		</step>
+		<step no="2">
+			<desc>
+				configure two access ports in same vlans
+			</desc>
+			<telnet target="sw1">
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port2} switchport mode trunk"
+				-v "no interface ${sw1.port2} switchport trunk allow vlan all"
+				-v "interface ${sw1.port2} switchport trunk native vlan ${tb.vlan2}"
+				-v "interface ${sw1.port2} switchport trunk allow vlan ${tb.vlan2}"
+				-v "interface ${sw1.port2} switchport trunk allow vlan ${tb.vlan3}"
+				-v "show vlan brief"
+				-v "show vlan summary"
+				-v "show vlan id ${tb.vlan2}"
+				-v "show vlan id ${tb.vlan3}"
+				-v "show mac-address-table all"
+				-v "show interface"
+			</telnet>
+			<log-match>-e "Number of existing VLANs: 255"</log-match>
+		</step>
+		<step no="3.1">
+			<desc>
+				port1 send frames of different source mac with vlan 1-4094
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port1.ixia_port.mac}
+				-mac_src_count 10
+				-vlan enable
+				-vlan_id ${tb.vlan2}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-vlan_repeatCount 300
+				-eth2_protocol 0x0800
+				-udf_offset 38
+				-patternOffset2 38"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port1.ixia_port} -rxPortList ${sw1.port1.ixia_port} -duration 35"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="3.2">
+			<desc>check FDB</desc>
+			<log-file>FDB_check1.log</log-file>
+			<telnet target="sw1">
+				-v "show mac-address-table interface ${sw1.port1}"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sw1.port1}\s*no" -c 253 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+
+		<step no="4.1">
+			<desc>
+				port2 send frames of different source mac with vlan 1-4094 
+			</desc>
+			<log-file>eth2test2.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port1.phytype},${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v ""
+				-v "stream_maintance -onePort ${sw1.port1.ixia_port} -streamId all -maintanceOp disable"
+				-v "stream_maintance -onePort ${sw1.port2.ixia_port} -streamId all -maintanceOp disable"
+				<!--configure the first stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port2.ixia_port}
+				-mac_dst ffff.ffff.ffff
+				-mac_src ${sw1.port2.ixia_port.mac}
+				-mac_src_count 10
+				-vlan enable
+				-vlan_id ${tb.vlan1}
+				-vlan_dot1p 0
+				-vlan_cfi 0
+				-vlan_repeatCount 300
+				-eth2_protocol 0x0800
+				-udf_offset 38
+				-patternOffset2 38"
+				-v ""
+
+				<!-- start transmit -->
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port2.ixia_port} -duration 20"
+				-v ""
+				-v "ctrl-c"
+			</ssh>
+		</step>
+		<step no="4.2">
+			<desc>check FDB</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table interface ${sw1.port2}"
+			</telnet>
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			<step no="1.1">
+				<desc>set vlan range</desc>
+				<setvar name="vlan_range">
+					echo "${tb.vlan2}-`expr ${tb.vlan2} + 251`"
+				</setvar>
+			</step>
+			<step no="1.2">
+				<desc>remove the 255 vlans</desc>
+				<log-file>remove_vlan.log</log-file>
+				<script>
+					python ${bin.dir}/ssh_execute_cli.py -cli 'no vlan (l1)' -list '${vlan_range}' -d ${sw1.mgt0.ip} -debug -l ${log.dir} -z ${log.file}
+				</script>
+			</step>
+		</stage> 
+		<include file="include/sw_default_post_process.xml" />
+	</post-process> 
+</testcase>

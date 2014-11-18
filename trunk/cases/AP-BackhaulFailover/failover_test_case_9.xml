@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>When failover disable, not trigger failover</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		-AP1 wifi0 is dual mode, wifi1 is dual mode
+		-AP2 wifi0 is dual/backhaul mode, wifi1 is dual/backhaul mode
+
+		Test Procedure:
+
+		1, AP1 wifi0 disable failover,CLI:
+		radio profile failover
+		radio profile failover phymode 11ng
+		no radio profile failover backhaul failover
+		interface wifi0 radio profile failover
+		2, check wifi0 failover disable, CLI:
+		Show interface wifi0 | in failover
+		3,open debug: _debug dcd chnl
+		4,shutdown AP1 ethernet: interface eth0 shutdown
+	</description>
+	<numofap>2</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="0">
+			<desc>
+				shutdown interface eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="1">
+			<desc>
+				-AP1 wifi0 is dual mode, wifi1 is dual mode
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface wifi0 mode dual"
+				-v "interface wifi0 radio channel 3"
+				-v "interface wifi1 mode dual"
+				-v "interface wifi1 radio channel 36"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				set readio profile to wifi1
+			</desc>
+			<telnet target="ap1">
+				-v "radio profile failover_na"
+				-v "radio profile failover_na phymode 11na"
+				-v "radio profile failover_na backhaul failover"
+				-v "interface wifi1 radio profile failover_na"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-AP2 wifi0 is dual/backhaul mode, wifi1 is dual/backhaul mode
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface wifi0 mode backhaul"
+				-v "interface wifi0 radio channel 5"
+				-v "interface wifi1 mode backhaul"
+				-v "interface wifi1 radio channel 40"
+				-v "interface mgt0 hive ${hive.name}"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				1, AP1 wifi0 disable failover,CLI:
+				radio profile failover
+				radio profile failover phymode 11ng
+				no radio profile failover backhaul failover
+				interface wifi0 radio profile failover
+			</desc>
+			<telnet target="ap1">
+				-v "radio profile failover_ng"
+				-v "radio profile failover_ng phymode 11ng"
+				-v "no radio profile failover_ng backhaul failover"
+				-v "interface wifi0 radio profile failover_ng"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				2, check wifi0 failover disable, CLI:
+				Show interface wifi0 | in failover
+			</desc>
+			<log-file>show_interface_wifi0_failover_backhaul.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0 | include failover"
+			</telnet>
+			<log-match>-e "failover=disable"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				3,open debug: _debug dcd chnl
+				4,shutdown AP1 ethernet:
+				interface eth0 shutdown
+			</desc>
+			<console target="ap1">
+				-v "_debug dcd chnl"
+				-v "logging debug"
+				-v "clear log"
+			</console>
+		</step>
+
+		<step no="2.4" type="loop-check" loop-max-times="3" loop-interval="10">
+			<desc>check the wifi1 status</desc>
+			<log-file>ap1_wifi1_status_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show acsp"
+			</console>
+			<log-match>-e "Wifi1 *Disable(User disable)"</log-match>
+		</step>
+		<step no="2.5">
+			<desc>interface eth0 shutdown</desc>
+			<console target="ap1">
+				-v "debug console"
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="3" delay="60">
+			<desc>stop debug console</desc>
+			<console target="ap1">
+				-v "no debug console"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show log debug
+			</desc>
+			<log-file>show_log_debug_dual_failover.log</log-file>
+			<console target="ap1" timeout="200">
+				-v "show logging debug"
+			</console>
+			<!--<log-match>-e "dcd_chnl" -i "wifi1" -i "start failover trigger timer"</log-match> -->
+			<log-match>-i "ACSP failover trigger timer" -e "dcd_chnl.*wifi1"</log-match>
+			<log-match>-e "wifi1" -i "start do failover because of portal unreachable"</log-match>
+			<log-match>-n -e "wifi0" -i "start failover trigger timer"</log-match>
+			<log-match>-n -e "ACSP failover trigger timer" -i "wifi0"</log-match>
+			<log-match>-n -e "wifi0" -i "start do failover"</log-match>
+		</step>
+	</stage>
+</testcase>

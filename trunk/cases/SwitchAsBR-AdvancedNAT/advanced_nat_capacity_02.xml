@@ -1,0 +1,160 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>The nat-policy capacity on one tunnel interface is 16 Platform Dependence BR100,BR200,BRAP330,BRAP350</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		1. establish vpn tunnel between ${br1.br.wan.int1} of BR and CVG1
+		2. establish vpn tunnel between ${br1.br.wan.int1} of BR and CVG2
+
+		Test Procedure:
+		1. Configure 17 non-routable subnet on br
+		2. Configure 17 routable subnet on br
+		3. Configure 17 1:1 NAT nat-policy on br,
+		4. apply 16 1:1 nat policy on tunnel0 over ${br1.br.wan.int1},check result 1
+		5. apply another 1:1 nat policy on tunnel0 over ${br1.br.wan.int1},check result2
+		6. delete one of the 1:1 NAT nat-policy on tunnel0 interface,check result
+		3
+		7. add another 1:1 NAT nat-policy on tunnel0 over ${br1.br.wan.int1},check result 4
+		8. add another 1:1 NAT nat-policy on tunnel1 over ${br1.br.wan.int1},check result 4
+		9. save configuration and reboot the br, check the nat-policy, result 5
+		10. from every subnet rconnect to vpn network,check the result 6
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>2</numofcvg>
+	<cvg-opt-same-backnet>no</cvg-opt-same-backnet>
+	<tbtype>winlin</tbtype>
+
+	<property name="inside.test.subnet" value="1.1.1.0" />
+	<property name="outside.test.subnet" value="2.2.2.0" />
+
+	<stage>
+
+		<include prefix="0" file="subs/vpn_setup_two_sw.xml" obj-args="cvg1, cvg2, br1" />
+
+	</stage>
+
+	<stage loop-values="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17" var-name="br_policy_no">
+		<step no="1.1">
+			<desc>
+				Configure 17 1:1 NAT nat-policy on br
+			</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300" prompt="AH-[a-z0-9A-Z_]*#">
+				-v "ip nat-policy n_${loop.v} type match-net inside ${inside.test.subnet}/${br.lan.netmask} outside ${outside.test.subnet}/${br.lan.netmask}"
+			</telnet>
+		</step>
+	</stage>
+
+	<stage loop-values="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16" var-name="eth0_policy_no">
+		<step no="2.1">
+			<desc>
+				apply 16 1:1 nat policy on tunnel0 over ${br1.br.wan.int1},configuration is successful
+			</desc>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "vpn ipsec-tunnel ${br1.tunnel.name} nat-policy n_${loop.v}"
+			</telnet>
+		</step>
+	</stage>
+
+	<stage>
+		<step no="3">
+			<desc>
+				show running config
+			</desc>
+			<log-file>step3_show_config.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show running-config"
+			</telnet>
+			<log-match loop-values="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17">-c -i "ip nat-policy n_${loop.v}"</log-match>
+			<log-match loop-values="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16">-c -i "vpn ipsec-tunnel ${br1.tunnel.name} nat-policy n_${loop.v}"</log-match>
+		</step>
+	</stage>
+
+	<stage>
+		<step no="4">
+			<desc>
+				apply another 1:1 nat policy on tunnel0 over ${br1.br.wan.int1},configuration is failed
+			</desc>
+			<log-file>step4_apply_another_port.log</log-file>
+			<telnet target="${br1.br.wan.ip}" prompt="AH-[a-z0-9A-Z_]*#">
+				-v "vpn ipsec-tunnel ${br1.tunnel.name} nat-policy n_17"
+			</telnet>
+			<log-match>-c -i "Maximum number (16) of nat policies has been configured on ipsec-tunnel ${br1.tunnel.name}"</log-match>
+			<log-match>-c -i "ERROR: Invalid parameter(s)"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="5">
+			<desc>
+				delete one of the 1:1 NAT nat-policy on tunnel0 interface
+			</desc>
+			<log-file>step5_delete_port.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no vpn ipsec-tunnel ${br1.tunnel.name} nat-policy n_16"
+				-v "vpn client-ipsec-tunnel ${br1.tunnel2.name} vpn-mode layer-3"
+			</telnet>
+		</step>
+
+		<step no="6">
+			<desc>
+				add another 1:1 NAT nat-policy on tunnel0 over ${br1.br.wan.int1}
+				add another 1:1 NAT nat-policy on tunnel1 over ${br1.br.wan.int1}
+				configuration is successful
+				
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vpn ipsec-tunnel ${br1.tunnel.name} nat-policy n_17"
+				-v "vpn ipsec-tunnel ${br1.tunnel2.name} nat-policy n_16"
+			</telnet>
+		</step>
+
+		<step no="7">
+			<desc>
+				show runing config
+			</desc>
+			<log-file>step7_check_config.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show running-config"
+				-v ""
+				-v "save config"
+			</telnet>
+			<log-match>-n -c -i "vpn ipsec-tunnel ${br1.tunnel.name} nat-policy n_16"</log-match>
+			<log-match>-c -i "vpn ipsec-tunnel ${br1.tunnel.name} nat-policy n_17"</log-match>
+			<log-match>-c -i "vpn ipsec-tunnel ${br1.tunnel2.name} nat-policy n_16"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				reboot BR
+			</desc>
+			<console target="br1.br">
+				-v "reboot"
+			</console>
+			<no-error-check />
+		</step>
+	</stage>
+
+	<stage>
+		<step no="9">
+			<desc>
+				show running config
+			</desc>
+			<log-file>step9_check_config.log</log-file>
+			<console target="br1.br" timeout="300">
+				-v "show running-config"
+			</console>
+			<log-match loop-values="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17">-c -i "ip nat-policy n_${loop.v}"</log-match>
+			<log-match loop-values="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,17">-c -i "vpn ipsec-tunnel ${br1.tunnel.name} nat-policy n_${loop.v}"</log-match>
+			<log-match>-c -i "vpn ipsec-tunnel ${br1.tunnel2.name} nat-policy n_16"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/br_default_post_process.xml" />
+	</post-process>
+
+</testcase>

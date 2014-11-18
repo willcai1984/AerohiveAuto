@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>ARP delete on ap interface (two laptops, link to the same wifi and ssid)</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-laptops connect with ap, pass authentication
+		-laptops are in same vlan
+
+		Test Procedure:
+
+		- clear arp table on ap , laptop1, laptop2
+		- laptop1 laptop2 send ARP request to a unknown host result 1
+		- unbind ssid, result 2
+		- ap learns arp entries of laptop1 laptop2 again result 1
+		- shutdown wifi port, result 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}_1" />
+
+	<stage>
+		<step no="pre1.1">
+			<desc>
+				-configure AP1 as MP1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+			</telnet>
+		</step>
+
+		<include prefix="pre2.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="pre2.2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta2, ap1" />
+
+		<step no="1.1">
+			<desc>
+				- clear arp table on laptop1
+			</desc>
+			<ssh target="sta1">
+				-v "ip neigh flush dev ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="1.1b">
+			<desc>
+				- clear arp table on laptop2
+			</desc>
+			<ssh target="sta2">
+				-v "ip neigh flush dev ${sta2.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				- clear arp table on MP
+			</desc>
+			<log-file>step1.2_arp_clear.log</log-file>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "_kdebug fe_arp basic"
+				-v "clear log all"
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+			<log-match>-n -c -i "${sta2.tif.mac}" -i "${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="2a">
+			<desc>
+				- laptop1 sends ARP request to a unknown host result 1
+			</desc>
+			<ssh target="sta1">
+				-v "ping ${tb.unreach.ip1} -c 4"
+			</ssh>
+		</step>
+
+		<step no="2b">
+			<desc>
+				- laptop2 sends ARP request to a unknown host result 1
+			</desc>
+			<ssh target="sta2">
+				-v "ping ${tb.unreach.ip1} -c 4"
+			</ssh>
+		</step>
+
+		<step no="2.1" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				show arp cache on MP, sta1.tif.mac and sta2.tif.mac are added into arp table
+			</desc>
+			<log-file>step2.1_show_arp_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "AP" -i "${sta1.tif.ip}"</log-match>
+			<log-match>-c -i "${sta2.tif.mac}" -i "AP" -i "${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				check log info on MP1
+			</desc>
+			<log-file>step2.2_show_log_buff.log</log-file>
+			<telnet target="ap1">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ARP entry inserted: IP=${sta1.tif.ip}\(0,wifi0.\d+\) mac=${sta1.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "ARP entry inserted: IP=${sta2.tif.ip}\(0,wifi0.\d+\) mac=${sta2.tif.mac}" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				make disconnect between ap and laptop1 (shutdown wifi, unbind ssid, roamed away and etc), result 2
+			</desc>
+			<log-file>step3_log.log</log-file>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${conn1.ssid} shutdown"
+			</telnet>
+		</step>
+
+		<step no="3.1" type="loop-check" loop-max-times="30" loop-interval="10">
+			<desc>
+				show arp cache on MP, sta1.tif.mac and sta2.tif.mac are aged out
+			</desc>
+			<log-file>step3.1_show_arp_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+			<log-match>-n -c -i "${sta2.tif.mac}" -i "${sta2.tif.ip}"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				check log info on MP1
+			</desc>
+			<log-file>step3.2_show_log_buff.log</log-file>
+			<telnet target="ap1">
+				-v "show log buff"
+				-v ""
+				-v ""
+				-v "clear log all"
+			</telnet>
+			<no-error-check />
+		</step>
+
+	</stage>
+
+</testcase>

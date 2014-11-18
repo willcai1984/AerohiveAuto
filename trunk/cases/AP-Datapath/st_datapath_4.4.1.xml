@@ -1,0 +1,314 @@
+<testcase>
+	<brief>Bridge-access configuration management</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition:
+		-construct this topology
+		-all pc and laptop are in same VLAN
+		-eth0 of mp is access mode
+		-enable mac-learning on eth0 of mp
+
+		Test procedure:
+		-pc1,pc2 and laptop4 ping a un-existed pc, then will send a arp broadcast to mp
+		-check the datapath----result 1
+
+		Expect result:
+		Result 1: mp flood this pkt to eth0(access mode),ap interface,mesh interface.
+		“_kdebug fe basic”, then can see
+		ap2 act as PC2 no PC3
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<if>"${ap1.eth1.existed}" == "true" &amp;&amp; "${ap.wifi1.existed}" == "true"</if>
+
+		<include prefix="pre.1" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				-Config ap2's vlan and native-vlan
+			</desc>
+			<console target="ap2">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.4" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.4_show_interface_mgt0_info.log</log-file>
+			<console target="ap2">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.5">
+			<desc>Get ap2's ip</desc>
+			<setvar name="ap2.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.4_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>config ap1</desc>
+			<telnet target="ap1">
+				-v "user-profile datapath vlan ${tb.vlan1} attribute 2"
+				-v "interface eth1 mode bridge-access user-profile-attribute 2"
+				-v "interface eth1 mac-learning enable"
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "interface wifi1 radio channel 153"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>show wifi1.1's mac of portal</desc>
+			<log-file>wifi_mac_portal.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi1.1"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>get wifi1.1' mac of portal</desc>
+			<setvar name="ap1.wif1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/wifi_mac_portal.log -i wifi1.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>config ap2</desc>
+			<telnet target="ap2">
+				-v "user-profile datapath vlan ${tb.vlan1} attribute 2"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 2"
+				-v "hive ${hive.name}"
+				-v "hive ${hive.name} password aerohive"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 mac-learning enable"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>shutdown interface wifi1 and then up it (it's aimed to clear wifi1's neighbor list)</desc>
+			<telnet target="ap2">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface wifi1 radio channel 153"
+			</telnet>
+		</step>
+
+		<step no="3" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>step3_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap2" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.wifi1.mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-shutdown interface eth0
+			</desc>
+			<console target="ap2">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>show mesh network</desc>
+			<log-file>step4_amrp_nei_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show amrp neighbor"
+			</console>
+			<log-match>-c -i "${ap1.wifi1.mac}" -i "TWO-WAY"</log-match>
+		</step>
+
+		<include prefix="5" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<include prefix="6" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="7">
+			<desc>show Master pc's mac</desc>
+			<log-file>master_info.log</log-file>
+			<script>
+				ifconfig ${mpc.tif.name} &gt; ${log.dir}/master_info.log
+			</script>
+		</step>
+
+		<step no="7.1">
+			<desc>get Master pc's mac</desc>
+			<setvar name="mpc.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/master_info.log -i ${mpc.tif.name} -m -width
+			</setvar>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>Open debug cli</desc>
+			<console target="ap2">
+				-v "_ff src-mac ${mpc.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe_arp basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="8.1" delay="5">
+			<desc>Ping from Master pc to ${tb.unreach.ip1}</desc>
+			<log-file>step8.1_ping.log</log-file>
+			<script>
+				ping ${tb.unreach.ip1} -c 5 &gt; ${log.dir}/${log.file} ;exit 0
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="9">
+			<desc>show log buffer on mp</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "(o) eth1 ${mpc.tif.mac}-&gt;ffff:ffff:ffff arp ${mpc.tif.ip}(${mpc.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${mpc.tif.mac}-&gt;ffff:ffff:ffff arp ${mpc.tif.ip}(${mpc.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${mpc.tif.mac}-&gt;ffff:ffff:ffff arp ${mpc.tif.ip}(${mpc.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) wifi1.1 ${mpc.tif.mac}-&gt;ffff:ffff:ffff arp ${mpc.tif.ip}(${mpc.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>Open debug cli</desc>
+			<console target="ap2">
+				-v "no _ff id 1"
+				-v "_ff src-mac ${bpc1.tif.mac} bidirectional"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="10">
+			<desc>
+				-clear arp on windows laptop1
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step10_ping.log</log-file>
+			<staf target="bpc1" timeout="180">
+				-v "ping ${tb.unreach.ip1} -n 5"
+			</staf>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				-clear arp on linux laptop1
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step10.1_ping.log</log-file>
+			<ssh target="bpc1" timeout="180">
+				-v "ping ${tb.unreach.ip1} -c 5"
+			</ssh>
+		</step>
+
+		<step no="11" delay="10">
+			<desc>show log buffer on mp</desc>
+			<log-file>step11_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "(o) eth1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp ${bpc1.tif.ip}(${bpc1.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp ${bpc1.tif.ip}(${bpc1.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp ${bpc1.tif.ip}(${bpc1.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) wifi1.1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp ${bpc1.tif.ip}(${bpc1.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+		</step>
+
+		<step no="12">
+			<desc>Open debug cli</desc>
+			<console target="ap2">
+				-v "no _ff id 1"
+				-v "_ff src-mac ${sta1.tif.mac} bidirectional"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="13">
+			<desc>
+				-clear arp on windows laptop1
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step13_ping.log</log-file>
+			<staf target="sta1" timeout="180">
+				-v "ping ${tb.unreach.ip1} -n 5"
+			</staf>
+		</step>
+
+		<step no="13.1">
+			<desc>
+				-clear arp on linux laptop1
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step13.1_ping.log</log-file>
+			<ssh target="sta1" timeout="180">
+				-v "ping ${tb.unreach.ip1} -c 5"
+			</ssh>
+		</step>
+
+		<step no="14" delay="10">
+			<desc>show log buffer on mp</desc>
+			<log-file>step14_show_logging_buffered.log</log-file>
+			<console target="ap2" timeout="300">
+				-v "show logging buffered"
+			</console>
+			<no-error-check />
+			<log-match>-c -i "(o) eth1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) wifi1.1 ${sta1.tif.mac}-&gt;ffff:ffff:ffff arp ${sta1.tif.ip}(${sta1.tif.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+		</step>
+	</stage>
+</testcase>

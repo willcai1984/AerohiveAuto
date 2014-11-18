@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Set the NAS Identifier of max char or beyond max char in AP and
+		it is marked in Access-Request and Accounting Request.
+	</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Test procedure:
+		1. Set one ssid as with
+		radius-server
+		2. Bind the ssid to wifi
+		3. Set the aaa attribute NAS
+		Identifier of max char included special
+		char such as -/%;\ etc
+		4.Connect one laptop to the ssid.
+		5. AP send Access-request to radius-server, result 1.
+		6. AP send Accounting request to radius-server, result 1.
+		7. Set the aaa attribute NAS Identifier of beyond max char included special char such as -/%;\ etc, result 2
+
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa2-aes-8021x" />
+	<property name="conn1.username" value="${pub.radius1.username}" />
+	<property name="conn1.passwd" value="${pub.radius1.passwd}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				-config a ssid with 802.1x auth on AP1
+				'security-object xxx
+				security protocol-suite wpa2-aes-8021x'
+			</desc>
+			<ssh target="ap1">
+				-v "int mgt0 vlan 1"
+				-v "security-object autoap"
+				-v "security-object autoap default-user-profile-attr 1"
+				-v "security-object autoap security protocol-suite wpa2-aes-8021x"
+				-v "security-object autoap security aaa radius-server primary ${pub.radius1.ip} shared-secret
+				${pub.radius1.sharesecret}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object autoap"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile normal"
+				-v "user-profile normal vlan-id 1 attribute 1"
+				-v "interface wif0 radio channel 1"
+				-v "aaa attribute NAS-Identifier AP-ltwu-111000000011111111111111aaaaaaaaaaaaaaaaaaaaaaaabbbccccc"
+				-v "_debug auth dump"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				show interface wifi0 info
+			</desc>
+			<log-file>step1.1_show_interface_wifi0_info.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show interface wifi0"
+			</console>
+		</step>
+
+		<step no="1.2">
+			<desc>Get ap1's wifi0‘s mac</desc>
+			<setvar name="ap1.wifi0.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step1.1_show_interface_wifi0_info.log -i wifi0 -o aero -m -uppercase -dash
+			</setvar>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml"
+			obj-args="conn1, sta1, ap1" />
+
+		<step no="2.1">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.mac">
+				${bin.dir}/getrmtip.pl -d ${sta1.mif.ip} -u ${sta1.user} -p ${sta1.passwd} -i ${sta1.tif.name} -m -uppercase -dash
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>show_logging_buffered.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "Value: \'${pub.radius1.username}\'" -i 1 -l "Attribute \d+ \(User-Name\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "Value: ${ap1.forwards.ip}" -l "Attribute \d+ \(NAS-IP-Address\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "Value: \'AP-ltwu-111000000011111111111111aaaaaaaaaaaaaaaaaaaaaaaabbbccccc\'" -i 1 -l "Attribute \d+ \(NAS-Identifier\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "Value: \'${ap1.wifi0.mac}:${ssid.name}\'" -i 1 -l "Attribute \d+ \(Called-Station-Id\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "Value: \'${sta1.mac}\'" -i 1 -l "Attribute \d+ \(Calling-Station-Id\)" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value: \d+" -ps p1 "Value: 19" p1 "Attribute \d+ \(NAS-Port-Type\)" -e"Attribute \d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value:" -ps p "Value: \'${pub.radius1.username}\'" p "Attribute \d+ \(User-Name\)" p "Value: ${ap1.forwards.ip}" p "Attribute \d+ \(NAS-IP-Address\)" p "Value: \'AP-ltwu-111000000011111111111111aaaaaaaaaaaaaaaaaaaaaaaabbbccccc\'" p "Attribute \d+ \(NAS-Identifier\)" p "Value: \'${ap1.wifi0.mac}:${ssid.name}\'" p "Attribute \d+ \(Called-Station-Id\)" p "Value: \'${sta1.mac}\'" p "Attribute \d+ \(Calling-Station-Id\)" p "Value: 19" p "Attribute \d+ \(NAS-Port-Type\)" p "RADIUS message: code=\d+ \(Access-Request\)" -e "RADIUS message: code=" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

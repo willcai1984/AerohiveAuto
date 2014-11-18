@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>The FTP control/data session and ALG(FTP Port mode)</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+		-Laptop has been associated with AP and assigned an ip address
+		- Configure ip-policy and bind it to the user-profile of the laptop on AP
+		"ip-policy fw"
+		"ip-policy fw from &lt;LaptopIPaddr&gt; service ftp action permit"
+		"ip-policy fw service dhcp-server action permit"
+		"ip-policy fw service dhcp-client action permit"
+		"user-profile &lt;AP-profile&gt; security ip-policy from-acces fw to-access fw"
+
+		Test Procedure:
+
+		1.Laptop use tools such as cuteftp connect to FTP server and download files(Port
+		mode);
+		2.Look up IP-sessions;
+		3.Clear sessions and enable ALG-FTP;
+		4.Laptop use tools such as cuteftp connect to FTP server and download files;
+		5.Look up IP-sessions;
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="ftp_test_file_local_dir" value="/tmp" />
+	<stage>
+		<step no="1.1">
+			<desc>
+				-Configure AP1 via console
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} security protocol-suite open"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "user-profile fw qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "ip-policy fw"
+				-v "ip-policy fw service ftp action permit"
+				-v "ip-policy fw service dhcp-server action permit"
+				-v "ip-policy fw service dhcp-client action permit"
+				-v "user-profile fw security ip-policy from-acces fw to-access fw"
+				-v "alg ftp enable"
+				-v "save config"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+
+		<include prefix="1.3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+
+		<step no="1.4">
+			<desc>
+				-Configure AP1 via console
+			</desc>
+			<ssh target="ap1">
+				-v "alg ftp max-duration 1"
+			</ssh>
+		</step>
+
+		<step no="1.5">
+			<desc>
+				-Configure AP1 via console
+			</desc>
+			<ssh target="ap1">
+				-v "_debug fed alg_ftp_gate"
+				-v "clear log buf"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				-Get file from ftp server
+			</desc>
+			<log-file>2.2_curl_pid.log</log-file>
+			<ssh target="sta1">
+				-v "nohup curl -u ${tb.ftp.user}:${tb.ftp.passwd} ftp://${tb.ftp}/${tb.ftp.file3_small} -o ${ftp_test_file_local_dir}/${tb.ftp.file3_small} --limit-rate 50k --connect-timeout 20 --disable-eprt > ${ftp_test_file_local_dir}/2.2_stdout.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="2.3" type="loop-check" loop-max-times="5" loop-interval="5">
+			<desc>
+				-Check "curl get" alive
+			</desc>
+			<log-file>2.3_curl_pid_chk_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep curl"
+			</ssh>
+			<log-match>-e "ftp"</log-match>
+		</step>
+
+		<step no="3" delay="60">
+			<desc>
+				-Configure AP1 via console
+			</desc>
+			<ssh target="ap1">
+				-v "show log buf | in fed"
+			</ssh>
+		</step>
+
+	</stage>
+
+</testcase>

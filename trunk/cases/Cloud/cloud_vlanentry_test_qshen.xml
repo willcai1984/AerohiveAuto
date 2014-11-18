@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>feature test cases</brief>
+	<priority>low</priority>
+	<automated>yes</automated>
+	<description>
+		Verifiy the Vlan
+	</description>
+	<numofap>0</numofap>
+	<tbtype>winlin</tbtype>
+	<pre-process ></pre-process>
+	<!--Get the devcie info from actual AP after Cloud 3.0 can push configuration to device  -->
+	<desc>
+		ip-policy UserProfile10 
+		user-profile UserProfile10 qos-policy def-user-qos vlan-id 10 attribute 10
+	</desc>
+	
+	<property name="tb.fileserver" value="10.155.40.181" />
+	<property name="owner.id" value="10" />
+	<property name="vlan.id" value="10" />
+	<property name="userprofile.id" value="10" />
+	
+	<declaration>
+			<step name="create.user.profile" description="">
+			<restapi name = "createUserProfile">
+				{
+				"jsonType" : "user-profile",
+				"ownerId" : ${owner.id},
+				"name" : "UserProfile10",
+				"predefined" : false,
+				"vlan" : {
+				"jsonType" : "vlan",
+				"ownerId" : ${owner.id},
+				"name" : "Aerohive_VlanProfile",
+				"description" : "Vlan Profile for Demo",
+				"predefined" : false,
+				"entries" : [ {
+				"ownerId" : ${owner.id},
+				"tags" : [ ],
+				"vlanNumber" : ${vlan.id}
+				} ]
+				},
+				"radiusAttributeNumber" : ${userprofile.id},
+				"enableFirewall" : false, 			
+				"enableSchedule" : false,
+				"schedules" : [ ],
+				"enableTrafficTunneling" : false,
+				"enableClientSla" : false,
+				"enableQos" : false,
+				"restriction" : "DENY_CAR"
+				}
+			</restapi>
+	</step>
+			<step name="create.ssid.profile" description="">
+			<restapi name = "createSsidProfile">
+				{
+				"jsonType" : "ssid-profile",
+				"ownerId" : ${owner.id},
+				"name" : "ssid profile 1",
+				"ssid" : "ssid profile 1",
+				"description" : "a ssid profile for integration test",
+				"radioBand" : "DUAL",
+				"ssidUsageIndustry" : "ENTERPRISE",
+				"ssidUsageUserGroup" : "STAFF_AND_TEACHERS",
+				"accessSecurity": {
+				"jsonType": "802DOT1X",
+				"ownerId": ${owner.id},
+				"keyManagement": "WEP_8021X",
+				"encryptionMethod": "CCMP",
+				"keyType": "HEX",
+				"keyValue": "gzCoghUgcL115BMiddQxCWAdn7xk0fqy6S7ExRNP3pKC46ID5p63N2IUpgQ1wPQB"
+				},
+				"defaultUserProfile" : refObjectInTestStep = "create.user.profile"
+				}
+			</restapi>
+		</step>	
+		<step name="create.network.policy" description="">
+			<restapi name = "createNetworkPolicy">
+				{
+				"ownerId" : ${owner.id},
+				"name" : "Aerohive_UserProfile10",
+				"type" : "NetworkAccessAndSwitching"
+				}
+			</restapi>
+		</step>
+		<!--This step should be removed after Could 3.0 can push configuration to device-->
+		<step name="create.device.1.ap330.v6101.as.ap">
+			<restapi name = "createDevice">
+				{
+				"ownerId":${owner.id},
+				"ipAddress": "10.155.21.21",
+				"macAddress":"000011112222",
+				"hostname":"virtual device for test",
+				"serialNumber":"1111222233334444",
+				"productType":"AP_330",
+				"softwareVersion": "6.1.0.1",
+				"role":19050,
+				"function":"Ap",
+				"adminState":"UNMANAGED",
+				"isConnected":true
+				}
+			</restapi>
+		</step>
+		<step name="add.ssid.profile.into.network.policy" description="">
+			<restapi name = "createAssignFeature">
+				{
+				"jsonType" : "network_policy",
+				"networkPolicyId" : refIdInTestStep = "create.network.policy",
+				"featureId" : refIdInTestStep = "create.ssid.profile"
+				}
+			</restapi>
+		</step>
+		<step name="assign.network.policy.to.device" description="">
+			<restapi name = "createAssignNetworkPolicy">
+				{
+				"device" : refObjectInTestStep = "create.device.1.ap330.v6101.as.ap",
+				"networkPolicy" : refObjectInTestStep = "create.network.policy"
+				}
+			</restapi>
+		</step>
+
+		<step name="download.cli.to.device" description="">
+			<restapi name = "createDownloadCli">
+				{
+				"networkPolicyId" : refIdInTestStep = "create.network.policy",
+				"deviceIds" : [ refIdInTestStep = "create.device.1.ap330.v6101.as.ap"],
+				"configDownloadTypes" : [ "deviceFull"]
+				}
+			</restapi>
+		</step>
+	</declaration>
+
+	<stage>
+		<step no="1">
+			<call step="create.user.profile" />
+			<failed>next</failed>
+		</step>
+		<step no="2">
+			<call step="create.ssid.profile" />
+			<failed>next</failed>
+		</step>
+		<step no="3">
+			<call step="create.network.policy" />
+			<failed>next</failed>
+		</step>
+		<step no="4">
+			<call step="create.device.1.ap330.v6101.as.ap" />
+			<failed>next</failed>
+		</step>
+		<step no="5">
+			<call step="assign.network.policy.to.device" />
+			<failed>next</failed>
+		</step>
+		<step no="6">
+			<call step="download.cli.to.device" />
+			<failed>next</failed>
+		</step>
+		<step no="7">
+			<ssh target="${tb.fileserver}" user="root">
+				-v "cat /var/data/fileserver/configuration/${owner.id}/${ap.mac}-deviceFull.config"
+			</ssh>
+			<desc> Verify the vlan can be correctly create, and it can be bind to user pofile.</desc>
+            <log-match>-i "user-profile UserProfile10 qos-policy def-user-qos vlan-id 10 attribute 10"</log-match>			
+		
+		</step>
+	</stage>
+	<failed-process />
+	<post-process />
+</testcase>

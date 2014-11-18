@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>In certain time ,will record byte counters and session counters by DNS protocol with UPD port 53</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Enable data collection
+		Data-collection collect interval 5 min
+		Set filter on AP "_ff id 1 src-mac xxxx:yyyy:zzzz dst-port 53 bi"(xxxx:yyyy:zzzz
+		is client's mac)
+		_kdebug fe basic
+		_kdebug fe detail
+		Exec data-collection clear
+		Clear log all
+		Use Wireshark to capture dns packet on DNS server
+
+		Test Procedure:
+		1. From client ping a hostname, check byte counters of captured packet and check
+		by show logging buffered | in update
+		2. Check byte counter by show data-collection pro
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0.1">
+			<desc>
+				To capture bootp packet on DNS server in background
+			</desc>
+			<log-file>step0.1_capture_packet.log</log-file>
+			<ssh host="${pub.dns1.ip}">
+				-v "nohup tshark -i ${pub.dns1.tif.name} -f \&quot;ip src ${ap1.mgt0.ip} and dst port 53\&quot; -z \&quot;io,phs\&quot; &gt; /tmp/${job.id}packet.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				get capture packet's id
+			</desc>
+			<setvar name="dns.packet.id">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step0.1_capture_packet.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				Enable data collection
+				Data-collection collect interval 5 min
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface mgt0 dns-server enable"
+				-v "data-collection enable"
+				-v "data-collection collect interval 5 minutes"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>ifconfig to show the sta1's mac</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name} up"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>Get laptop1's mac</desc>
+			<setvar name="sta1.tif.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -width
+			</setvar>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				Set filter on AP "_ff id 1 src-mac xxxx:yyyy:zzzz dst-port 53 bi"(xxxx:yyyy:zzzz
+				is client's mac)
+				_kdebug fe all
+				Exec data-collection clear
+				Clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac} dst-port 53 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "exec data-collection clear"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4.1" delay="300">
+			<desc>realse</desc>
+			<ssh target="sta1">
+				-v "dhclient -r ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>terminate wpa_supplicant on sta1</desc>
+			<ssh target="sta1" prompt=">|.*#">
+				-v "wpa_cli"
+				-v "disc"
+				-v ""
+				-v "ter"
+				-v "quit"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				kill capture bootp packet on dns server
+			</desc>
+			<ssh host="${pub.dns1.ip}">
+				-v "kill ${dns.packet.id}"
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>show logging buffered | in update</desc>
+			<log-file>show_logbuf_update.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+		</step>
+
+		<step no="6.2">
+			<desc>show forwarding-engine counters _data-collection | in udp</desc>
+			<log-file>show_forward_dns.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine counters _data-collection"
+			</telnet>
+		</step>
+
+		<step no="6.3">
+			<desc>show data-collection protocol | in udp</desc>
+			<log-file>show_dns_udp.log</log-file>
+			<telnet target="ap1">
+				-v "show data-collection protocol"
+			</telnet>
+		</step>
+
+		<step no="6.4">
+			<desc>get from-access counters</desc>
+			<setvar name="dns_udp_from_access">
+				perl ${bin.dir}/getbyrexp.py -f ${log.dir}/show_dns_udp.log -p "dns *: 0 *(\d+) *0 *\d+" -t int
+			</setvar>
+		</step>
+
+		<step no="6.5">
+			<desc>get to-access counters</desc>
+			<setvar name="dns_udp_to_access">
+				perl ${bin.dir}/getbyrexp.py -f ${log.dir}/show_dns_udp.log -p "dns *: 0 *\d+ *0 *(\d+)" -t int
+			</setvar>
+		</step>
+
+		<step no="7.1">
+			<desc>get to-access sum</desc>
+			<setvar name="to_access_sum">
+				perl ${case.dir}/bin/get_access_counter.pl ${log.dir}/show_dns_udp.log ${log.dir}/show_logbuf_update.log to-access 5
+			</setvar>
+		</step>
+
+		<step no="7.2">
+			<desc>get from-access sum</desc>
+			<setvar name="from_access_sum">
+				perl ${case.dir}/bin/get_access_counter.pl ${log.dir}/show_dns_udp.log ${log.dir}/show_logbuf_update.log from-access 5
+			</setvar>
+		</step>
+
+		<step no="7.3">
+			<desc>compare dns_udp_to_access with to_access_sum</desc>
+			<script>
+				if [ "${dns_udp_to_access}" = "${to_access_sum}" ]
+				then
+				echo "the sum data of to-access from station is equal"
+				else
+				exit 1
+				echo "Failed, Not equal"
+				fi
+			</script>
+		</step>
+
+		<step no="7.4">
+			<desc>compare dns_udp_from_access with from_access_sum</desc>
+			<script>
+				if [ "${dns_udp_from_access}" = "${from_access_sum}" ]
+				then
+				echo "the sum data of from-access from station is equal"
+				else
+				exit 1
+				echo "Failed, Not equal"
+				fi
+			</script>
+		</step>
+
+		<step no="8">
+			<desc>
+				check capture bootp packet on DNS server
+			</desc>
+			<log-file>step8_check_capture_packet_result.log</log-file>
+			<ssh host="${pub.dns1.ip}">
+				-v "tail /tmp/${job.id}packet.log"
+			</ssh>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="9">
+				<desc>
+					kill capture bootp packet on dns server
+				</desc>
+				<ssh host="${pub.dns1.ip}">
+					-v "kill ${dns.packet.id}"
+				</ssh>
+			</step>
+
+			<step no="10">
+				<desc>
+					delete tmp file on server
+				</desc>
+				<ssh host="${pub.dns1.ip}">
+					-v "rm -f /tmp/${job.id}packet.log"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

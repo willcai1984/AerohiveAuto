@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>In certain time ,will record byte counters and session counters for RFC1918/non- RFC1918 destination address split</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Enable data collection
+		Data-collection collect interval 5 min
+		Open _debug dcm all
+
+		Test Procedure:
+		Check local and internet
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Enable data collection
+				Data-collection collect interval 5 min
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "data-collection enable"
+				-v "data-collection collect interval 5 minutes"
+				-v "_debug dcm all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				Set filter on AP "_ff id 1 src-mac xxxx:yyyy:zzzz "(xxxx:yyyy:zzzz
+				is client's mac)
+				_kdebug fe all
+			</desc>
+			<telnet target="ap1">
+				-v "_ff id 1 src-mac ${sta1.tif.mac}"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+			</telnet>
+		</step>
+
+		<step no="4" delay="300">
+			<desc>
+				If station with the three subnet belong to local:
+				If station with other subnet belong to internet:
+			</desc>
+			<log-file>step4_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station "
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac}[\t ]+${sta1.tif.ip}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>get A classs subnet</desc>
+			<setvar name="net.A">
+				echo "$(echo ${sta1.tif.ip} | cut -d. -f1).0.0.0"
+			</setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>get BC classs subnet</desc>
+			<setvar name="net.BC">
+				echo "$(echo ${sta1.tif.ip} | cut -d. -f1,2).0.0"
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>check local</desc>
+			<log-file>step5_show_data_collection.log</log-file>
+			<telnet target="ap1">
+				-v "show data-collection protocol"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>get local from-access counters</desc>
+			<setvar name="local_from_access">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_show_data_collection.log -p "Local *: \d+ *(\d+) *\d+ *\d+" -t int
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>get local to-access counters</desc>
+			<setvar name="local_to_access">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_show_data_collection.log -p "Local *: \d+ *\d+ *\d+ *(\d+)" -t int
+			</setvar>
+		</step>
+
+		<step no="5.3">
+			<desc>get internet from-access counters</desc>
+			<setvar name="internet_from_access">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_show_data_collection.log -p "Internet *: \d+ *(\d+) *\d+ *\d+" -t int
+			</setvar>
+		</step>
+
+		<step no="5.4">
+			<desc>get internet to-access counters</desc>
+			<setvar name="internet_to_access">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_show_data_collection.log -p "Internet *: \d+ *\d+ *\d+ *(\d+)" -t int
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>show logging buffered | in update</desc>
+			<log-file>show_logbuf_update.log</log-file>
+			<telnet target="ap1" timeout="120">
+				-v "show logging buffered | in update"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="6.1">
+			<desc>get to-access sum</desc>
+			<setvar name="to_access_sum">
+				perl ${case.dir}/bin/get_access_counter.pl ${log.dir}/step5_show_data_collection.log ${log.dir}/show_logbuf_update.log to-access 5
+			</setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>get from-access sum</desc>
+			<setvar name="from_access_sum">
+				perl ${case.dir}/bin/get_access_counter.pl ${log.dir}/step5_show_data_collection.log ${log.dir}/show_logbuf_update.log from-access 5
+			</setvar>
+		</step>
+
+		<step no="6.4">
+			<desc>the to_access_sum based on captured log is not zero</desc>
+			<script>
+				if [ "${to_access_sum} -gt 0" ]
+				then
+				echo "the sum data of to-access from station is greater 0"
+				else
+				echo "Failed"
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.5">
+			<desc>the from_access_sum based on captured log is not zero</desc>
+			<script>
+				if [ "${from_access_sum} -gt 0" ]
+				then
+				echo "the sum data of from-access from station is greater 0"
+				else
+				echo "Failed"
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="7.1">
+			<if> "${net.A}" == "10.0.0.0" || "${net.BC}" == "172.16.0.0" || "${net.BC}" == "192.168.0.0" </if>
+			<desc>station ip address belong to local subnet, and the local counter is recorded</desc>
+			<script>
+				if [ "${local_from_access} -gt 0" ]
+				then
+				echo "the local from counter is recorded"
+				else
+				echo "Failed"
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="7.2">
+			<if> "${net.A}" == "10.0.0.0" || "${net.BC}" == "172.16.0.0" || "${net.BC}" == "192.168.0.0" </if>
+			<desc>station ip address belong to local subnet, and the local counter is recorded</desc>
+			<script>
+				if [ "${local_to_access} -gt 0" ]
+				then
+				echo "the local to counter is recorded"
+				else
+				echo "Failed"
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="8.1">
+			<if> "${net.A}" != "10.0.0.0" &amp;&amp; "${net.BC}" != "172.16.0.0" &amp;&amp; "${net.BC}" != "192.168.0.0" </if>
+			<desc>station ip address belong to public network subnet, and the internet counter is recorded</desc>
+			<script>
+				if [ "${internet_from_access} -gt 0" ]
+				then
+				echo "the local from counter is recorded"
+				else
+				echo "Failed"
+				exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="8.2">
+			<if> "${net.A}" != "10.0.0.0" &amp;&amp; "${net.BC}" != "172.16.0.0" &amp;&amp; "${net.BC}" != "192.168.0.0" </if>
+			<desc>station ip address belong to pub network subnet, and the internet counter is recorded</desc>
+			<script>
+				if [ "${internet_to_access} -gt 0" ]
+				then
+				echo "the internet to counter is recorded"
+				else
+				echo "Failed"
+				exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+
+</testcase>

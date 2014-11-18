@@ -1,0 +1,429 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>
+		FDB work with 802.1x auth
+	</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+
+	<description>
+		Topology to use	:        
+		PC1+++++Switch+++++pc2
+                 	 +
+                  	 +
+                  	PC3
+		Description: FDB work with 802.1x auth
+		Platform Dependence:	Chesapeake
+		Pre-condition:
+		•PC1 connect Switch port1, vlan 10
+		•PC2 connect to switch port2, vlan 10
+		•PC3 connect to switch port3, vlan 10
+		•Port1 enable 802.1x auth
+		Test procedure:
+		1.PC1 connect to switch port1,PC1 send  packet to swtich
+		2.Before 802.1x auth, check fdb table        Result1
+		3.Set PC1,PC3 to capture frames
+		4.PC2 send a unicast to PC1,the destination mac of packet is PC1 mac         Result2
+		5.PC1 pass 802.1x auth, check fdb table           Result3
+		6.PC2 send a unicast to PC1, the destination mac of packet is PC1 mac        Result4
+		Expect result:
+		Result1:  not add a mac entry for PC1 in fdb table---pass
+		Result2:  PC1 can’t receive the frames sent by PC2—fail,can receive the packet 20290
+               		  PC3 should receive all the frames sent by PC2
+		Result3:  add a mac entry for PC1 in fdb table
+		Result4:  PC1 should receive the frames sent by PC2 
+               	          PC3 can’t receive the frames sent by PC2
+
+	</description>
+
+	<numofsw>1</numofsw>
+	<tbtype>winlin</tbtype>
+
+	<property name="sw1.port1.ixia_port.mac1" value="0000.0000.0011"/>
+	<property name="sw1.port1.ixia_port.mac2" value="0000.0000.0012"/>
+	<property name="sw1.port2.ixia_port.mac" value="0000.0000.2012"/>
+	<property name="user1" value="auto${job.sid}-1"/>
+	<property name="user2" value="auto${job.sid}-2"/>
+	<property name="passwd" value="aerohive"/>
+	<stage>
+		<step no="1.1">
+			<desc>
+				configure switch to 802.1x auth on ${sw1.port1}, port-based 
+			</desc>
+			<telnet target="sw1">
+				-v "vlan ${tb.vlan1}"
+				-v "vlan ${tb.vlan2}"
+				-v "vlan ${tb.vlan3}"
+				-v "interface vlan ${tb.vlan1}"
+				-v "interface vlan ${tb.vlan2}"
+				-v "interface vlan${tb.vlan1} ip ${tb.vlan1.ip}/${tb.subnet_prefix}"
+				-v "interface vlan${tb.vlan2} ip ${tb.vlan2.ip}/${tb.subnet_prefix}"
+				-v "user-profile vlan${tb.vlan1} vlan-id ${tb.vlan1} attribute ${tb.vlan1}"
+				-v "user-profile vlan${tb.vlan2} vlan-id ${tb.vlan2} attribute ${tb.vlan2}"
+				-v "security-object autoap"
+				-v "security-object autoap security protocol-suite 802.1x"
+				-v "interface ${sw1.port1} switchport mode trunk"
+				-v "interface ${sw1.port1} switchport trunk native vlan ${tb.vlan1}"
+				-v "interface ${sw1.port2} switchport access  vlan ${tb.vlan1}"
+				-v "interface ${sw1.port3} switchport access  vlan ${tb.vlan1}"
+				-v "security-object autoap security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "security-object autoap security auth-mode host-based multiple-domain"
+				-v "interface ${sw1.port1} security-object autoap"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<multi-setvar>
+				echo sw1.port1.ixia_port.mac1_1=$(echo "${sw1.port1.ixia_port.mac1}" | sed 's/\./:/g')
+				echo sw1.port1.ixia_port.mac2_1=$(echo "${sw1.port1.ixia_port.mac2}" | sed 's/\./:/g')
+				echo tb.sub_netmask=$(ipcalc -4 -m ${tb.vlan1.ip}/${tb.subnet_prefix}|cut -d= -f2)
+				echo tb.vlan1.ip_end=$(echo `echo ${tb.vlan1.ip_start} |cut -d\. -f1,2,3`\.$(expr `echo ${tb.vlan1.ip_start} | cut -d\. -f4` + 5))
+				echo tb.vlan2.ip_end=$(echo `echo ${tb.vlan2.ip_start} |cut -d\. -f1,2,3`\.$(expr `echo ${tb.vlan2.ip_start} | cut -d\. -f4` + 5))
+			</multi-setvar>
+		</step>
+		<step no="1.3">
+			<desc>
+				configure switch to enable dhcp server 
+			</desc>
+			<telnet target="sw1">
+				-v "interface vlan${tb.vlan1} dhcp-server ip-pool ${tb.vlan1.ip_start} ${tb.vlan1.ip_end}"
+				-v "interface vlan${tb.vlan2} dhcp-server ip-pool ${tb.vlan2.ip_start} ${tb.vlan2.ip_end}"
+				-v "interface vlan${tb.vlan1} dhcp-server options default-gateway ${tb.vlan1.ip}"
+				-v "interface vlan${tb.vlan2} dhcp-server options default-gateway ${tb.vlan2.ip}"
+				-v "interface vlan${tb.vlan1} dhcp-server options netmask ${tb.sub_netmask}"
+				-v "interface vlan${tb.vlan2} dhcp-server options netmask ${tb.sub_netmask}"
+				-v "interface vlan${tb.vlan1} dhcp-server enable"
+				-v "interface vlan${tb.vlan2} dhcp-server enable"
+			</telnet>
+		</step>
+		
+		<step no="1.4">
+			<desc>check auth status</desc>
+			<telnet target="sw1">
+				-v "show aaa"
+				-v "show auth interface ${sw1.port1}"
+				-v "_debug auth all"
+			</telnet>
+		</step>
+		<property name="acct1.uid" value="${tb.vlan1}" />
+		<include prefix="add_account1" file="subs/ldap_add.xml" args="${user1}, ${passwd}" obj-args="acct1" />
+
+		<property name="acct2.uid" value="${tb.vlan2}" />
+		<property name="acct2.voice" value="1" />
+		<include prefix="add_account2" file="subs/ldap_add.xml" args="${user2}, ${passwd}" obj-args="acct2" />
+
+		<step no="3">
+			<desc>
+				config eap protocol, start eap auth with the wrong username	
+			</desc>
+			<log-file>ixia_config1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-new="${job.user}-${job.sid}-1">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixn_connect  -chassisIP ${pub.chassis1.ip} -ixn_tcl_server ${pub.tclserver1.ip} -userName ${job.user} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.phytype}"
+				-v ""
+
+				-v "ixn_emulation_8021x_config -portList ${sw1.port1.ixia_port} \
+				-mac_address ${sw1.port1.ixia_port.mac1} 
+				-mac_addr_increment 0.0.0.0.0.1 \
+				-mac_addr_count 1 \
+				-protocol MD5 \
+				-username aerohive \
+				-password ${passwd} \
+				-ca_path ${ixn.cert_dir} \
+				-key_path ${ixn.cert_dir}"
+
+				-v "ixn_emulation_8021x_config -portList ${sw1.port1.ixia_port} \
+				-mac_address ${sw1.port1.ixia_port.mac2} \
+				-mac_addr_increment 0.0.0.0.0.1 \
+				-mac_addr_count 1 \
+				-mac_protocol MD5 \
+				-username aerohive \
+				-password ${passwd} \
+				-ca_path ${ixn.cert_dir} \
+				-key_path ${ixn.cert_dir}"
+				-v "ixn_allprotocols_control -action start"
+				
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="3.1" type="loop-check" loop-max-times="5" loop-interval="3">
+			<desc>
+				config eap protocol and start
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "sleep 3"
+				-v "ixn_emulation_8021x_stats -protocol md5"
+			</ssh>
+			<log-match>-re -i "{MD5 Success}"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="4.1">
+			<desc>
+				create protocol interface, get dhcp and ping
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_create -portList ${sw1.port1.ixia_port} -mac_src ${sw1.port1.ixia_port.mac1}"
+				-v "ixn_interface_create \
+				-portList ${sw1.port1.ixia_port} \
+				-vlan 1\
+				-vlan_id ${tb.vlan2}\
+				-mac_src ${sw1.port1.ixia_port.mac2}"
+				-v "ixn_interface_dhcp_config -portList ${sw1.port1.ixia_port} -enable true"
+			</ssh>
+			<no-error-check />
+		</step>
+		
+		<step no="4.2">
+			<desc>show log buf</desc>
+			<log-file>check_macauth1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="5">
+			<desc>check auth entries,auth is failed </desc>
+			<telnet target="sw1">
+				-v "show auth interface ${sw1.port1}"
+			</telnet>
+			<log-match>-re -n -i "${sw1.port1.ixia_port.mac1_1}[ \t]+${tb.vlan1}[ \t]+-1[ \t]+done[ \t]+data[ \t]+${user1}[ \t]+000b"</log-match>
+			<log-match>-re -n -i "${sw1.port1.ixia_port.mac2_1}[ \t]+${tb.vlan2}[ \t]+-1[ \t]+done[ \t]+voice[ \t]+${user2}[ \t]+002b"</log-match>
+			<log-match>-re -i "${sw1.port1.ixia_port.mac1_1}[ \t]+0[ \t]+-1[ \t]+authenticating[ \t]+n/a[ \t]+000"</log-match>
+			<log-match>-re -i "${sw1.port1.ixia_port.mac2_1}[ \t]+0[ \t]+-1[ \t]+authenticating[ \t]+n/a[ \t]+000"</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="6">
+			<desc>check FDB,no the ${sw1.port1.ixia_port.mac1}  and ${sw1.port1.ixia_port.mac2} on ${sw1.port1}</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-re -n -i "${tb.vlan1}[ \t]+${sw1.port1.ixia_port.mac1_1}[ \t]+${sw1.port1}"</log-match>
+			<log-match>-re -n -i "${tb.vlan2}[ \t]+${sw1.port1.ixia_port.mac2_1}[ \t]+${sw1.port1}"</log-match>
+			<failed>next</failed>
+		</step>
+		
+		<step no="6.1">
+			<desc>
+				build stream, port1 sends pkt with src-mac ${sw1.port2.ixia_port.mac} to dst-mac ${sw1.port1.ixia_port.mac}
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.phytype} -def disable"
+				-v ""
+				
+				<!-- configure the sencond stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port}
+				-mac_dst ${sw1.port1.ixia_port.mac1}
+				-mac_src ${sw1.port2.ixia_port.mac}
+				-eth2_protocol 0x0800"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port},${sw1.port3.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port1.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port3.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="6.2">
+			<desc>check FDB,make sure the mac entries aren't changed</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet> 
+		</step>
+		<step no="6.3">
+			<desc>
+				analyse statistics on rxport, port1 can't receive packets,only port3 received pkts 
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port1.ixia_port} framesSent userDefinedStat2 result is blocked"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port3.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+		</step>
+		
+		<step no="7">
+			<desc>
+				config eap protocol, start eap auth with the correct username and password	
+			</desc>
+			<log-file>ixia_config1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixn_connect -def enable -chassisIP ${pub.chassis1.ip} -ixn_tcl_server ${sw1.ixn_tcl_server} -userName ${job.user} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.phytype}"
+				-v ""
+
+				-v "ixn_emulation_8021x_config -portList ${sw1.port1.ixia_port} \
+				-mac_address ${sw1.port1.ixia_port.mac1} \
+				-mac_addr_increment 0.0.0.0.0.1 \
+				-mac_addr_count 1 \
+				-protocol MD5 \
+				-username ${user1} \
+				-password ${passwd} \
+				-ca_path ${ixn.cert_dir} \
+				-key_path ${ixn.cert_dir}"
+
+				-v "ixn_emulation_8021x_config -portList ${sw1.port1.ixia_port} \
+				-mac_address ${sw1.port1.ixia_port.mac2} \
+				-mac_addr_increment 0.0.0.0.0.1 \
+				-mac_addr_count 1 \
+				-mac_protocol MD5 \
+				-username ${user2} \
+				-password ${passwd} \
+				-ca_path ${ixn.cert_dir} \
+				-key_path ${ixn.cert_dir}"
+				-v "ixn_allprotocols_control -action start"
+				
+			</ssh>
+			<no-error-check />
+		</step>
+		<step no="7.1" type="loop-check" loop-max-times="5" loop-interval="3">
+			<desc>
+				config eap protocol and start
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "sleep 3"
+				-v "ixn_emulation_8021x_stats -protocol md5"
+			</ssh>
+			<log-match>-re -i "{MD5 Success}"</log-match>
+			<no-error-check />
+		</step>
+		
+		<step no="8">
+			<desc>
+				create protocol interface, get dhcp and ping
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_create -portList ${sw1.port1.ixia_port} -mac_src ${sw1.port1.ixia_port.mac1}"
+				-v "ixn_interface_create \
+				-portList ${sw1.port1.ixia_port} \
+				-vlan 1\
+				-vlan_id ${tb.vlan2}\
+				-mac_src ${sw1.port1.ixia_port.mac2}"
+				-v "ixn_interface_dhcp_config -portList ${sw1.port1.ixia_port} -enable true"
+				
+			</ssh>
+			<no-error-check />
+		</step>
+		
+		<step no="8.1" type="loop-check" loop-max-times="5" loop-interval="3">
+			<desc>
+				check ${sw1.port1.ixia_port} gets ip addr
+			</desc>
+			<log-file>dhcp_check${loop_check.idx}.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_dhcp_info -portList ${sw1.port1.ixia_port}"
+				-v ""
+			</ssh>
+			<log-match>-re -i "${sw1.port1.ixia_port}\.${sw1.port1.ixia_port.mac1}.ip=([0-9]{1,3}+\.)[0-9]{1,3}"</log-match>
+			<log-match>-re -i "${sw1.port1.ixia_port}\.${sw1.port1.ixia_port.mac2}.ip=([0-9]{1,3}+\.)[0-9]{1,3}"</log-match>
+			<no-error-check />
+		</step>
+		<step no="8.2">
+			<desc>
+				check ping to gateway
+			</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200" session-get="${job.user}-${job.sid}-1">
+				-v "ixn_interface_ping_control -intf_handleList [keylget allIntfH port.${sw1.port1.ixia_port}.interface_handle.${sw1.port1.ixia_port.mac1}] -destination_ip ${tb.vlan1.ip} -count 4"
+				-v "ixn_interface_ping_control -intf_handleList [keylget allIntfH port.${sw1.port1.ixia_port}.interface_handle.${sw1.port1.ixia_port.mac2}] -destination_ip ${tb.vlan2.ip} -count 4"
+				-v ""
+			</ssh>
+			<log-match>-re -i "Response received from ${tb.vlan1.ip}\. Sequence Number [0-9]+"</log-match>
+			<log-match>-re -i "Response received from ${tb.vlan2.ip}\. Sequence Number [0-9]+"</log-match>
+			<no-error-check />
+		</step>
+		<step no="9">
+			<desc>show log buf</desc>
+			<log-file>check_macauth1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+		<step no="10">
+			<desc>check auth entries,auth is done on ${sw1.port1} </desc>
+			<telnet target="sw1">
+				-v "show auth interface ${sw1.port1}"
+			</telnet>
+			<log-match>-re -i "${sw1.port1.ixia_port.mac1_1}[ \t]+${tb.vlan1}[ \t]+-1[ \t]+done[ \t]+data[ \t]+${user1}[ \t]+000b"</log-match>
+			<log-match>-re -i "${sw1.port1.ixia_port.mac2_1}[ \t]+${tb.vlan2}[ \t]+-1[ \t]+done[ \t]+voice[ \t]+${user2}[ \t]+002b"</log-match>
+			<failed>next</failed>
+		</step>
+		<step no="11">
+			<desc>check FDB,there are the ${sw1.port1.ixia_port.mac1}  and ${sw1.port1.ixia_port.mac2} on ${sw1.port1}</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet>
+			<log-match>-re  -i "${tb.vlan1}[ \t]+${sw1.port1.ixia_port.mac1_1}[ \t]+${sw1.port1}"</log-match>
+			<log-match>-re  -i "${tb.vlan2}[ \t]+${sw1.port1.ixia_port.mac2_1}[ \t]+${sw1.port1}"</log-match>
+			<failed>next</failed>
+		</step>
+		
+		<step no="12">
+			<desc>
+				build stream, port2 sends pkt with src-mac ${sw1.port2.ixia_port.mac} to dst-mac ${sw1.port1.ixia_port.mac}
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="200">
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port2.ixia_port},${sw1.port3.ixia_port},${sw1.port4.ixia_port} -phyList ${sw1.port2.phytype},${sw1.port3.phytype},${sw1.port4.phytype}"
+				-v "ah_ixia_connect -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${sw1.port1.ixia_port} -phyList ${sw1.port1.phytype} -def disable"
+				-v ""
+				
+				<!-- configure the sencond stream -->
+				-v "traffic_configure_eth2 -portListIn ${sw1.port1.ixia_port},${sw1.port2.ixia_port},${sw1.port3.ixia_port}
+				-mac_dst ${sw1.port1.ixia_port.mac1}
+				-mac_src ${sw1.port2.ixia_port.mac}
+				-eth2_protocol 0x0800"
+				-v ""
+
+				-v "start_trans_getstats -txPortList ${sw1.port2.ixia_port} -rxPortList ${sw1.port1.ixia_port},${sw1.port3.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port1.ixia_port}"
+				-v ""
+				-v "check_equal_tx_with_rx -oneTxPort ${sw1.port2.ixia_port} -oneRxPort ${sw1.port3.ixia_port}"
+				-v ""
+			</ssh>
+		</step>
+		<step no="12.1">
+			<desc>check FDB,make sure the mac entries aren't changed</desc>
+			<telnet target="sw1">
+				-v "show mac-address-table all"
+			</telnet> 
+		</step>
+		<step no="12.2">
+			<desc>
+				analyse statistics on rxport, only port1 received pkts ,port3 can't receive the packets
+			</desc>
+			<log-file>eth2test1.log</log-file>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port1.ixia_port} framesSent userDefinedStat2 result is equal"</log-match>
+			<log-match>-e "checkEqualTxWithRX ${sw1.port2.ixia_port} ${sw1.port3.ixia_port} framesSent userDefinedStat2 result is blocked"</log-match>
+		</step>
+		
+	</stage>
+	<post-process>
+		<stage>
+			<include prefix="delete.mac.account1" file="subs/ldap_delete.xml" args="${user1}" />
+			<include prefix="delete.mac.account2" file="subs/ldap_delete.xml" args="${user2}" />
+			<step no="post1">
+				<ssh timeout="180" host="${pub.tclclient1.ip}" prompt="%.*|root@.*#" session-close="${job.user}-${job.sid}-1">
+					-v ""
+					-v "ixn_allprotocols_control -action stop"
+				</ssh>
+			</step>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

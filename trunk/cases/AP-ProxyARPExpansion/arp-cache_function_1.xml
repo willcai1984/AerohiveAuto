@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Maximum of ARP-cache is 8K</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		-Configure AP
+		" interface mgt0.1 vlan 80"
+		" interface mgt0.1 ip 192.80.1.1/18"
+		" interface mgt0.1 dhcp-server ip-pool 192.80.1.2 192.80.1.5"
+		" interface mgt0.1 dhcp-server enable"
+		" user-profile upid10 qos-policy def-user-qos vlan-id 80 attribute 1"
+		-Laptop1 gets IP1 and Laptop2 gets IP2
+
+		Test Procedure:
+
+		1.Laptop1 send increased Mac and IP(from 192.80.1.6to192.168.63.254) ARP
+		request packets to the AP
+		2.After a long time, look up the the number of ARP entries on the AP
+		"show arp-cache"
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+	<property name="ssid.pwd" value="aerohive" />
+	<!-- <property name="tb.tftp.folder" value="/var/lib/tftpboot/" /> -->
+
+	<property name="send_count" value="12000" />
+
+
+	<stage>
+		<!-- client send APR request which src-mac and src-ip(192.80.1.6to192.168.63.254) is increased -->
+		<step no="1">
+			<desc>transfer shell script to ${tb.server1}</desc>
+			<log-file>tftp_sh.log</log-file>
+			<script>
+				curl --connect-timeout 50 -T ${case.dir}/bin/send_arp_increased_src.py tftp://${tb.tftp}/send_arp_increased_src.py
+			</script>
+			<no-error-check />
+		</step>
+
+		<step no="2">
+			<desc>send APR request</desc>
+			<log-file>send_arp_pkt.log</log-file>
+			<ssh host="${tb.server1}" timeout="600">
+				-v "chmod 777 ${tb.tftp.folder}/send_arp_increased_src.py"
+				-v "cd ${tb.tftp.folder}"
+				-v "nohup ./send_arp_increased_src.py ${ap1.mgt0.ip} ${send_count} &amp; > /tmp/pkt.log"
+			</ssh>
+		</step>
+
+		<step no="3" delay="10">
+			<desc>Just for delay</desc>
+		</step>
+
+		<step no="4" type="loop-check" loop-max-times="15" loop-interval="3">
+			<desc>Check arp cache</desc>
+			<log-file>arp_cache_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show arp-cache | in entries"
+			</ssh>
+			<log-match>-e "8193"</log-match>
+		</step>
+
+	</stage>
+
+
+</testcase>

@@ -1,0 +1,119 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Unit Test 0102: Wireless clients connected to wifi0/wifi1 should be able to access Internet via AP.</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		After WANAddressing_UnitTest_ConfigCLI_1
+
+		Test Procedure:
+		config Wifi SSID on AP.
+		CLI commands:
+		ssid test
+		interface wifi1 ssid test
+		save config
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-1" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0 vlan ${br1.vlan1}"
+				-v "ssid ${conn1.ssid}"
+				-v "security-object ${conn1.ssid}"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "user-profile fw11 qos-policy def-user-qos vlan-id ${br1.vlan1} attribute 1"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "dns server-ip ${pub.dns1.ip}"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				check eth0 with wan mode
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0"
+			</telnet>
+			<log-match>-c -i "Mode=wan"</log-match>
+		</step>
+
+		<step no="3">
+			<desc>
+				show interface eth0 dhcp client
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0 dhcp client"
+			</telnet>
+			<log-match>-c -i "Get IP address ${br1.br.wan.ip}"</log-match>
+			<log-match>-c -i "Router" -i "${br1.br.fw_lan.gw}"</log-match>
+			<log-match>-c -i "DNS server" -i "${pub.dns1.ip}"</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				show ip route
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-c -p 2 -i "${br1.br.fw_lan.gw}" -p 4 -i "UG" -p 8 -i "eth0"</log-match>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, br1.sta1, br1.br" />
+
+		<step no="6">
+			<desc>
+				show interface m0 dhcp-server detail
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface m0 dhcp-server detail"
+			</telnet>
+			<log-match>-c -i "${br1.sta1.tif.mac}" -i "${br1.sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff dst-ip ${pub.dns1.ip} protocol 1 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="8">
+			<desc>
+				Wired Ping domain name
+			</desc>
+			<log-file>step8_ping_domain_name.log</log-file>
+			<ssh target="br1.sta1" timeout="120">
+				-v "ping ${pub.dns1.domain1} -c 5"
+			</ssh>
+			<log-match>-c -i "from " -i "ttl="</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "(?i)\(o\) wifi0.1 ${pub.dns1.ip}->${br1.sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-reply" -ps p "(?i)\(i\) mgt0 ${pub.dns1.ip}->${br1.sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-reply" p "(?i)\(i\) eth0 ${pub.dns1.ip}->${br1.br.wan.ip}\(\d+\) ttl\(\d+\) icmp-echo-reply" p "(?i)\(o\) eth0 ${br1.br.wan.ip}->${pub.dns1.ip}\(\d+\) ttl\(\d+\) mtu\(1500\) icmp-echo-req" p "(?i)\(u\) mgt0 ${br1.sta1.tif.ip}->${pub.dns1.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" p "(?i)ip forward: ip pkt with dst-ip ${pub.dns1.ip} received on wifi0.1" -e "\(i\) wifi0.1 ${br1.sta1.tif.ip}->${pub.dns1.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

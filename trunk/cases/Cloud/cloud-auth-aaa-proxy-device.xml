@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Cloud authentication radius proxy basic case for device</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		1. Verifiy the aerohive device as Radius proxy server
+		2. The configuration can be correctly push to real device
+	</description>
+	<numofap>1</numofap>
+	<tbtype>winlin</tbtype>
+	<pre-process />
+	<!--Get the devcie info from actual AP after Cloud 3.0 can push configuration to device  -->
+	<desc>
+		security-object SSID-8021X
+		security-object SSID-8021X security aaa radius-server primary 10.155.33.225 shared-secret *** 
+		security-object SSID-8021X security aaa radius-server accounting primary 10.155.33.225 shared-secret *** 
+		security-object SSID-8021X security protocol-suite wpa2-aes-8021x
+		
+		aaa radius-server name 192.168.10.253_primary server 192.168.10.253 shared-secret aerohive
+		aaa radius-server proxy realm DEFAULT primary 192.168.10.253_primary
+		aaa radius-server proxy realm NULL primary 192.168.10.253_primary
+		aaa radius-server proxy realm NULL no-strip
+		aaa radius-server proxy realm autoad1.aerohive.com primary 192.168.10.253_primary
+		aaa radius-server local nas 192.168.0.0/16 shared-key aerohive
+		aaa radius-server local enable
+	</desc>
+	<property name="pub.radius1.ip" value="192.168.10.203" />
+	<property name="pub.radius1.sharesecret" value="aerohive" />
+	<property name="pub.ad1.realm" value="autoad1.aerohive.com" />
+	<property name="pub.ad1.ip" value="192.168.10.203" />
+	<property name="nas.ip" value="192.168.0.0" />
+	<property name="nas.mask" value="255.255.0.0" />
+	<property name="ap.mac" value="000011112222" />
+	<property name="owner.id" value="10" />
+	<property name="vlan.id" value="10" />
+	<property name="userprofile.id" value="10" />
+
+	
+	<declaration>
+		<step name="create.external.radius.server" description="" >
+			<restapi name = "createExternalRadiusServer">
+				{
+				ownerId" : ${owner.id}, 
+				predefined" : false, 
+				jsonType" : "ext-radius-server-entry", 
+				name" : "ExternalRadiusServer", 
+				description" : "ExternalRadiusServer", 
+				serverType" : "BOTH", 
+				sharedSecret" : "aerohive", 
+				authenticationPort" : 1812, 
+				accountingPort" : 1813, 
+				serverIp" : 
+					{
+				  	"ownerId" : ${owner.id}, 
+				  	"predefined" : false, 
+				  	"jsonType": "ip-object", 
+				  	"name" : "external radius server ip", 
+				  	"description" : "external radius server ip", 
+				  	"addressType" : "IP_ADDRESS", 
+				  	"entries" : 
+				   	[{
+				   	"ownerId" : ${owner.id}, 
+				   	"predefined" : false, 
+				   	"description" : "ip address", 
+				   	"addressInfo1" : ${pub.radius1.ip} 
+				   	}]
+				  }	
+		</restapi>
+		</step>
+		
+		<step name="create.external.radius.profile" description="">
+			<restapi name = "createExternalRadiusProfile">
+				{
+				"ownerId" : ${owner.id}, 
+				"predefined" : false, 
+				"jsonType" : "external-radius-profile", 
+				"name" : "AAARadiusClient", 
+				"description" : "ExternalRadiusProfile", 
+				"externalRadiusServerOption" : "DESIGNATION", 
+				"entries" :
+					[{
+					"ownerId" : ${owner.id}, 
+					"predefined" : false, 
+					"serverRole" : "PRIMARY",  
+					"defaultServerId" : refIdInTestStep = "create.external.radius.server"
+					}]
+				}
+			</restapi>
+		</step>
+
+		<step name="create.radius.client.profile" description="" >
+			<restapi name = "createRadiusClient"> 
+				{
+				"ownerId" : ${owner.id}, 
+				"predefined" : false, 
+				"sharedSecret" : "aerohive", 
+				"description" : "NAS for proxy", 
+				"clientIp" : 
+					{
+					"ownerId" : "${owner.id}",
+					"predefined" : false,
+					"jsonType" : "network",
+					"name" : "NasIpNetwork",
+					"description" : "Network ip object",
+					"networkAddress": "${nas.ip}",
+					"networkMask" : "${nas.mask}"
+					}
+				}
+			</restapi>			
+		</step>		
+		<step name="create.radius.proxy.realm.profile" description="" >
+			<restapi name = "createRadiusProxyRealm"> 
+				{
+				"ownerId" : ${owner}, 
+				"predefined" : false, 
+				"realmName" : "autoad1.aerohive.com", 
+				"stripRealmName" : true, 
+				"radiusServerId" : refIdInTestStep = "create.external.radius.profile"
+				}
+			</restapi>			
+		</step>
+		<step name="create.radius.proxy.profile" description="" >
+			<restapi name = "createRadiusProxy"> 
+				{
+				"ownerId" : ${owner.id}, 
+				"predefined" : false, 
+				"jsonType" : "radius-proxy", 
+				"name" : "RadiusProxy", 
+				"description" : "device as radius proxy", 
+				"enableAcceptOtherDevsAuthReqs" : true, 
+				"approvedRadiusClientIds" : [refIdInTestStep = "create.radius.client.profile"], 
+				"realmNameFormat" : "NETWORK_ACCESS_IDENTIFIER", 
+				"retryDelay" : 5, 
+				"retryCount" : 3, 
+				"deadTime" : 300, 
+				"injectOperatorNameAttribute" : false, 
+				"realmIds" : [refIdInTestStep = "create.radius.proxy.realm.profile"]
+				}
+			</restapi>			
+		</step>
+		<step name="create.user.profile" description="">
+			<restapi name = "createUserProfile">
+				{
+				"jsonType" : "user-profile",
+				"ownerId" : ${owner.id},
+				"name" : "UserProfile10",
+				"predefined" : false,
+				"vlan" : {
+				"jsonType" : "vlan",
+				"ownerId" : ${owner.id},
+				"name" : "Aerohive_VlanProfile",
+				"description" : "Vlan Profile for Demo",
+				"predefined" : false,
+				"entries" : [ {
+				"ownerId" : ${owner.id},
+				"tags" : [ ],
+				"vlanNumber" : ${vlan.id}
+				} ]
+				},
+				"radiusAttributeNumber" : ${userprofile.id},
+				"enableFirewall" : false,		
+				"enableSchedule" : false,
+				"enableTrafficTunneling" : false,
+				"enableClientSla" : false,
+				"enableQos" : false,
+				"restriction" : "DENY_CAR"
+				}
+			</restapi>
+		</step>	
+		<step name="create.ssid.profile" description="">
+			<restapi name = "createSsidProfile">
+				{
+				"jsonType" : "ssid-profile",
+				"ownerId" : ${owner.id},
+				"name" : "SSID-8021X",
+				"ssid" : "SSID-8021X",
+				"description" : "a ssid profile for integration test",
+				"radioBand" : "DUAL",
+				"industry" : "CUSTOM",
+				"wirelessNetworkUsage" : "CUSTOM",
+				"accessSecurity": {
+				"jsonType": "802DOT1X",
+				"ownerId": ${owner.id},
+				"keyManagement": "WPA2_8021X",
+				"encryptionMethod": "CCMP",
+			<!--   **"keyType": "HEX",**  -->
+			<!--   **"keyValue": "gzCoghUgcL115BMiddQxCWAdn7xk0fqy6S7ExRNP3pKC46ID5p63N2IUpgQ1wPQB"**  -->	
+				},
+				"enableSchedule" : true,
+				"scheduleEntryIds" : [refIdInTestStep = "create.schedule.profile"],
+				"defaultUserProfile" : refObjectInTestStep = "create.user.profile"
+				"externalRadiusProfileId" : refIdInTestStep = "create.external.radius.profile"
+				}
+			</restapi>
+		</step>	
+		<step name="create.network.policy" description="">
+			<restapi name = "createNetworkPolicy">
+				{
+				"ownerId" : ${owner.id},
+				"name" : "Aerohive_UserProfile10",
+				"type" : "NetworkAccessAndSwitching"
+				}
+			</restapi>
+		</step>
+		<!--This step should be removed after Could 3.0 can push configuration to device-->
+		<step name="create.device.1.ap330.v6101.as.ap">
+			<restapi name = "createDevice">
+				{
+				"ownerId":${owner.id},
+				"ipAddress": "10.155.21.21",
+				"macAddress":"000011112222",
+				"hostname":"virtual device for test",
+				"serialNumber":"1111222233334444",
+				"productType":"AP_330",
+				"softwareVersion": "6.1.0.1",
+				"role":19050,
+				"function":"Ap",
+				"adminState":"UNMANAGED",
+				"isConnected":true
+				}
+			</restapi>
+		</step>
+		<step name="add.ssid.profile.into.network.policy" description="">
+			<restapi name = "createAssignFeature">
+				{
+				"jsonType" : "network_policy",
+				"networkPolicyId" : refIdInTestStep = "create.network.policy",
+				"featureId" : refIdInTestStep = "create.ssid.profile"
+				}
+			</restapi>
+		</step>
+		<step name="assign.network.policy.to.device" description="">
+			<restapi name = "createAssignNetworkPolicy">
+				{
+				"device" : refObjectInTestStep = "create.device.1.ap330.v6101.as.ap",
+				"networkPolicy" : refObjectInTestStep = "create.network.policy"
+				}
+			</restapi>
+		</step>
+
+		<step name="download.cli.to.device" description="">
+			<restapi name = "createDownloadCli">
+				{
+				"networkPolicyId" : refIdInTestStep = "create.network.policy",
+				"deviceIds" : [ refIdInTestStep = "create.device.1.ap330.v6101.as.ap"],
+				"configDownloadTypes" : [ "deviceFull"]
+				}
+			</restapi>
+		</step>
+	</declaration>
+
+	<stage>
+		<step no="1">
+			<call step="create.radius.proxy.profile" />
+			<failed>next</failed>
+		</step>
+		<step no="2">
+			<call step="create.user.profile" />
+			<failed>next</failed>
+		</step>
+		<step no="3">
+			<call step="create.ssid.profile" />
+			<failed>next</failed>
+		</step>
+		<step no="4">
+			<call step="create.network.policy" />
+			<failed>next</failed>
+		</step>
+		<step no="5">
+			<call step="create.device.1.ap330.v6101.as.ap" />
+			<failed>next</failed>
+		</step>
+		<step no="6">
+			<call step="assign.network.policy.to.device" />
+			<failed>next</failed>
+		</step>
+		<step no="7">
+			<call step="download.cli.to.device" />
+			<failed>next</failed>
+		</step>
+		<step no="8">
+			<ssh target="${tb.fileserver}" user="root">
+				-v "cat /var/data/fileserver/configuration/${owner.id}/${ap.mac}-deviceFull.config"
+			</ssh>
+			<desc>  Verify the radius client can be correctly create, and it can be bind to a SSID</desc>
+			
+			<log-match>-i "aaa radius-server proxy realm DEFAULT primary"</log-match>
+            <log-match>-i "aaa radius-server proxy realm NULL primary"</log-match>			
+			<log-match>-i "aaa radius-server proxy realm NULL no-strip"</log-match>	
+			<log-match>-i "aaa radius-server proxy realm ${pub.ad1.realm} primary"</log-match>
+			<log-match>-i "aaa radius-server local nas ${nas.ip}/${nas.mask} shared-key ${pub.radius1.sharesecret}"</log-match>
+			<log-match>-i "aaa radius-server local enable"</log-match>
+			
+		</step>
+	</stage>
+	<failed-process />
+	<post-process />
+</testcase>

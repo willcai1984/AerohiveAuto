@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the re-auth interval works</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+
+		Test Procedure:
+		-configure a user group
+		-config a re-auth interval value
+		-create a user, bind it to this group
+		-bind the group to a PPSK ssid
+		-bind the ssid to wifi0
+		-enable radius-auth on this ssid
+		-config the same username and password on RADIUS server
+		-check result 1, 2
+		-client connect to AP using PPSK
+		-check 3
+		-client connect to AP using default PSK
+		-check result 4
+		-check result 5
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="reauth.time" value="600" />
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-tkip-psk" />
+	<property name="conn1.psk" value="group1user" />
+	<property name="conn2.ssid" value="${ssid.name}" />
+	<property name="conn2.proto" value="wpa-tkip-psk" />
+	<property name="conn2.psk" value="aerohive" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-configure a user group
+				-config a re-auth interval value
+				-create a user, bind it to this group
+			</desc>
+			<ssh target="ap1">
+				-v "user-group userGroup1"
+				-v "user-group userGroup1 user-attribute 100"
+				-v "user-group userGroup1 reauth-interval ${reauth.time}"
+				-v "user-group userGroup1 vlan-id ${tb.vlan1}"
+				-v "user group1_user${job.sid}"
+				-v "user group1_user${job.sid} password group1user"
+				-v "user group1_user${job.sid} group userGroup1"
+			</ssh>
+		</step>
+
+		<step no="2">
+			<desc>
+				-bind the group to a PPSK ssid
+				-bind the ssid to wifi0
+				-enable radius-auth on this ssid
+			</desc>
+			<ssh target="ap1">
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key aerohive"
+				-v "security-object ppsk security private-psk"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "user-profile sss vlan-id ${tb.vlan1} attribute 100"
+				-v "user-profile ttt vlan-id ${tb.vlan2} attribute 1"
+				-v "security-object ppsk security private-psk radius-auth ms-chap-v2"
+				-v "security-object ppsk security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret}"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup1"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+			</ssh>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				show ap1's interface wifi0.1 info
+			</desc>
+			<log-file>show_ap1_interface_info.log</log-file>
+			<ssh target="ap1">
+				-v "show interface wifi0.1"
+			</ssh>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				get ap1's wifi0.1's mac address
+			</desc>
+			<setvar name="ap1.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_interface_info.log -i wifi0.1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<include prefix="3" file="subs/ldap_add.xml" args="group1_user${job.sid}, group1user" />
+
+		<step no="4">
+			<desc>
+				show user
+			</desc>
+			<log-file>step4_show_user.log</log-file>
+			<ssh target="ap1">
+				-v "show user"
+			</ssh>
+			<log-match>-c -i "group1_user${job.sid} *manual" -i "Yes *userGroup1"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step4.1_show_user_group.log</log-file>
+			<ssh target="ap1">
+				-v "show user-group"
+			</ssh>
+			<log-match>-c -i "userGroup1 *100 *${tb.vlan1} *${reauth.time}"</log-match>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				- open debug mode and clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "_debug auth all"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<include prefix="5" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="6">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step6_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *${sta1.tif.ip}" -i "${tb.vlan1} *Yes *100"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-sh roa ca
+			</desc>
+			<log-file>step6.1_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache mac ${sta1.tif.mac}"
+			</ssh>
+			<log-match>-c -i "User Profile ID: 100"</log-match>
+			<log-match>-c -i "VLAN ID: ${tb.vlan1}"</log-match>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				-show auth
+			</desc>
+			<log-file>step6.2_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *100" -i "done *${reauth.time}" -i "WPA/TKIP" -i "group1_user${job.sid}"</log-match>
+		</step>
+
+		<step no="6.3">
+			<desc>
+				-check the logging result
+			</desc>
+			<log-file>step6.3_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "Station ${sta1.tif.mac} is authenticated to ${ap1.wifi0.mac} thru SSID ${ssid.name}"</log-match>
+			<log-match>-c -i "STA(${sta1.tif.mac}) login to SSID(wifi0.1) by user_name=group1_user${job.sid}"</log-match>
+			<log-match>-c -i "will do reauth after ${reauth.time} seconds"</log-match>
+			<log-match>-c -i "RADIUS auth for private-psk is enabled, Send request (user group1_user${job.sid}) to RADIUS server"</log-match>
+		</step>
+
+		<include prefix="7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="8">
+			<desc>
+				-sh ssid xxx st
+			</desc>
+			<log-file>step8_show_station.log</log-file>
+			<ssh target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</ssh>
+			<log-match>-c -i "${sta2.tif.mac} *${sta2.tif.ip}" -i "${tb.vlan2} *Yes *1 "</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				-sh roa ca
+			</desc>
+			<log-file>step8.1_show_roaming_cache.log</log-file>
+			<ssh target="ap1">
+				-v "show roaming cache mac ${sta2.tif.mac}"
+			</ssh>
+			<log-match>-c -i "User Profile ID: *1"</log-match>
+			<log-match>-n -c -i "User Profile ID: *100"</log-match>
+			<log-match>-c -i "VLAN ID: ${tb.vlan2}"</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				-show auth
+			</desc>
+			<log-file>step8.2_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta2.tif.mac} *1 " -i "WPA/TKIP" -i "done *0"</log-match>
+		</step>
+
+		<step no="8.3">
+			<desc>
+				-clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "_debug auth all"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="9" delay="380" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				-check the logging result
+			</desc>
+			<log-file>step9_show_logging_buffered_${loop_check.idx}.log</log-file>
+			<ssh target="ap1">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-n -c -i "will re-auth private-psk after ${reauth.time} seconds for sta (${sta2.tif.mac})"</log-match>
+			<log-match>-c -i "will re-auth private-psk after ${reauth.time} seconds for sta (${sta1.tif.mac})"</log-match>
+			<log-match>-c -i "Radius server returned attribute isn't changed for private-psk user group1_user${job.sid} station (${sta1.tif.mac})"</log-match>
+			<log-match>-c -i "authentication OK, username group1_user${job.sid}, service (unknown)"</log-match>
+			<log-match>-c -i "Pass RAIUS auth, return vlaue from server: upid(-1), vlan(-1), sess_timeout(0)"</log-match>
+			<log-match>-c -i "Re-check RADIUS attribute for private-psk, Send request (user group1_user${job.sid})"</log-match>
+		</step>
+
+		<include prefix="10" file="subs/sta_ping.xml" args="sta1, ${tb.vlan1.gw}, 5" />
+
+		<include prefix="11" file="subs/sta_ping.xml" args="sta2, ${tb.vlan2.gw}, 5" />
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="1" file="subs/ldap_delete.xml" args="group1_user${job.sid}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>pap/chap/mschapv2 auth methoeds with userPassword</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configed first
+		-setup a ssid using cwp or mac-based auth,radius server is local
+
+		Test Procedure:
+		-config the name of the ldap server,either ip or url
+		-config the basedn,like ou=radius,dc=qa,dc=aerohive,dc=com
+		-config a binddn,like cn=admin,dc=qa,dc=aerohive,dc=com
+		-config the attribule of password on ldap-server
+		-client connect to ssid using pap
+		-client connect to ssid using chap
+		-client connect to ssid using mschapv2		
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn1.proto" value="wpa-aes-psk" />
+	<property name="conn1.psk" value="aerohive" />
+
+	<stage>
+		<step no="0">
+			<desc>ifconfig to show the ip add</desc>
+			<log-file>ifconfig.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig ${sta1.tif.name} up"
+				-v "ifconfig ${sta1.tif.name}"
+			</ssh>
+		</step>
+
+		<step no="0.1">
+			<desc>Get sta1's mac with five delimiter</desc>
+			<setvar name="sta1.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/ifconfig.log -i ${sta1.tif.name} -m -dash -uppercase
+			</setvar>
+		</step>
+
+		<include prefix="0.2" file="subs/ldap_add.xml" args="${sta1.mac}, ${sta1.mac}" />
+
+		<step no="0.3">
+			<desc>set vlan for mgt0</desc>
+			<console target="ap1" timeout="10">	
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+		<step no="0.3">
+			<desc>show mgt0's ip of AP1</desc>
+			<log-file>AP1_int_info.log</log-file>
+			<console target="ap1">
+				-v "show interface ${ap1.forward.int}"
+			</console>
+		</step>
+		<step no="0.4">
+			 <desc>get IP of mgt0 on AP1</desc>
+       <setvar name="ap1.forward.ip">
+				 ${bin.dir}/getrmtip.pl -f ${log.dir}/AP1_int_info.log -i ${ap1.forward.int} -o aero -nomask
+       </setvar>
+		</step>
+		
+		<step no="1">
+			<desc>
+				-setup local radius server ,and config mac auth (pap)
+			</desc>
+			<ssh target="ap1">		
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius primary ${ap1.forward.ip}"
+				-v "security-object ${ssid.name} security additional-auth-method mac-based-auth auth-method pap"
+				-v "security-object ${ssid.name} security protocol-suite wpa-aes-psk ascii-key aerohive"
+				-v "aaa radius-server local db-type ldap-server primary server ${pub.ldap1.ip}"
+				-v "aaa radius-server local db-type ldap-server primary basedn ${pub.ldap1.basedn}"
+				-v "aaa radius-server local db-type ldap-server primary binddn ${pub.ldap1.binddn} pass ${pub.ldap1.bindpwd}"
+				-v "aaa radius-server local en"
+				-v "aaa mac-format case-sensitivity upper-case"
+				-v "aaa mac-format delimiter dash"
+				-v "aaa mac-format style five-delimiter"
+			</ssh>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-config ssid and bind it to interface
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile normal qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</ssh>
+		</step>
+
+		<step no="1.2">
+			<desc>show status of radius server</desc>
+			<log-file>show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-p 3 -i "Enabled" -i "Local RADIUS" -c</log-match>
+		</step>
+
+		<step no="1.3">
+			<desc>show running config</desc>
+			<log-file>show_running_config.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="3" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step3_show_logging_buffered.log" />
+
+		<include prefix="4" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa-aes-psk, WPA/CCMP, wpa-psk, aes" />
+
+		<step no="5">
+			<desc>
+				change auth method pap to chap
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name} security additional-auth-method mac-based-auth auth-method chap"
+			</telnet>
+		</step>
+
+		<include prefix="6" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="7">
+			<desc>clear log all and clear auth roaming cache</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "clear auth roaming-cache"
+			</telnet>
+		</step>
+
+		<include prefix="8" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="9" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step9_show_logging_buffered.log" />
+
+		<include prefix="10" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa-aes-psk, WPA/CCMP, wpa-psk, aes" />
+
+		<step no="11">
+			<desc>
+				change auth method chap to mschapv2
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name} security additional-auth-method mac-based-auth auth-method ms-chap-v2"
+			</telnet>
+		</step>
+
+		<include prefix="12" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="13">
+			<desc>clear log all and clear auth roaming cache</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+				-v "clear auth roaming-cache"
+			</telnet>
+		</step>
+
+		<include prefix="14" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="15" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step15_show_logging_buffered.log" />
+
+		<include prefix="16" file="subs/chk_sta_conn_in_ap.xml" args="ap1, sta1, wpa-aes-psk, WPA/CCMP, wpa-psk, aes" />
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="0" file="subs/ldap_delete.xml" args="${sta1.mac}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

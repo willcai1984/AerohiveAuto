@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+
+	<brief>(IxPort: CoF=3) LLDP packets’ system capability should be correct.</brief>
+	<priority>low</priority>
+	<automated>yes</automated>
+	<description>
+		Test Produce:
+		L3SW is H3C router
+		-Configure on AP1
+		“lldp”
+		-Configure on AP2
+		“lldp”
+		AP1 and AP2 is in the same vlan
+		1.Open LLDP debug switch on AP1
+		“_debug dcd LLDP_packet”
+		“debug console”
+		2.Capture the LLDP packets on AP1
+		3.Enable ssid on AP2
+		4.Capture the LLDP packets on AP1
+
+
+	</description>
+
+	<numofsw>1</numofsw>
+
+	<tbtype>winlin</tbtype>
+
+	<pre-process>
+
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include file="include/sw_default_pre_process.xml" />
+
+	</pre-process>
+
+
+	<property name="tx_port1" value="${sw1.port1.ixia_port}" />
+	<property name="tx_port1.phytype" value="${sw1.port1.ixia_port.phytype}" />
+	<property name="tx_port2" value="${sw1.port2.ixia_port}" />
+	<property name="tx_port2.phytype" value="${sw1.port2.ixia_port.phytype}" />
+	<property name="tx_port3" value="${sw1.port3.ixia_port}" />
+	<property name="tx_port3.phytype" value="${sw1.port3.ixia_port.phytype}" />
+	<property name="correct_vlan" value="101" />
+
+	<property name="min" value="5" />
+	<property name="mid" value="200" />
+	<property name="max" value="65534" />
+	<property name="def" value="30" />
+
+	<property name="name1" value="systemname1" />
+	<property name="name2" value="systemname2" />
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				Enable LLDP on swith
+			</desc>
+			<log-file>1.1.log</log-file>
+			<telnet target="sw1" prompt="AH.*#|systemname#">
+				-v "lldp enable"
+				-v "lldp timer 5"
+				-v "show running-config"
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="1.2">
+			<desc>Check LLDP is enable </desc>
+			<log-file>1.2.log</log-file>
+			<telnet target="sw1">
+				-v "show lldp"
+			</telnet>
+			<no-error-check />
+			<log-match>-e "Enabled: yes"</log-match>
+		</step>
+
+
+
+		<step no="2.1">
+			<desc>
+				Enable lldp packet log
+			</desc>
+			<log-file>2.1.log</log-file>
+			<telnet target="sw1">
+				-v "clear log buffered"
+				-v "_debug dcd lldp_adjacency"
+				-v "_debug dcd lldp_error"
+				-v "_debug dcd lldp_packet"
+				-v "_debug dcd info"
+				-v "debug consol"
+			</telnet>
+		</step>
+
+
+
+		<step no="3.1">
+			<desc>
+				Connect to ixia, capture packets
+			</desc>
+			<log-file>step_ixia_capture_packets.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|.*root@.*#" timeout="900">
+				<!-- ixia initialize -->
+				-v "tclsh8.5"
+				-v "package req ixia"
+				-v ""
+				-v "ah_ixia_connect -def disable -chassisIP ${pub.chassis1.ip} -tclServerIP ${pub.tclserver1.ip} -userName ${job.user}${job.sid} -portList ${tx_port1},${tx_port2},${tx_port3} -phyList ${tx_port1.phytype},${tx_port2.phytype},${tx_port3.phytype}"
+				-v ""
+				-v ""
+				<!-- start transmit -->
+
+				<!-- stop transmit -->
+
+
+				<!-- port1 start capture -->
+				-v "start_capture -portList ${tx_port1}"
+				-v "start_capture -portList ${tx_port2}"
+				-v "start_capture -portList ${tx_port3}"
+				-v ""
+				-v "wait_time -second 30"
+				-v ""
+				<!-- stop port1 capture -->
+				-v "stop_capture -portList ${tx_port1}"
+				-v "stop_capture -portList ${tx_port2}"
+				-v "stop_capture -portList ${tx_port3}"
+				-v ""
+				<!-- save port1 capture -->
+				-v "save_capture -onePort ${tx_port1} -fileName ${job.id}_packet1.enc"
+				-v "save_capture -onePort ${tx_port2} -fileName ${job.id}_packet2.enc"
+				-v "save_capture -onePort ${tx_port3} -fileName ${job.id}_packet3.enc"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="3.2">
+			<desc>Tftp the capture file to MPC</desc>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|.*root@.*#" timeout="900">
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_packet1.enc"
+				-v "rm -f ${job.id}_packet1.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_packet2.enc"
+				-v "rm -f ${job.id}_packet2.enc"
+				-v "tftp -4 ${mpc.mif.ip} -c put ${job.id}_packet3.enc"
+				-v "rm -f ${job.id}_packet3.enc"
+			</ssh>
+		</step>
+		<step no="3.3">
+			<desc>Move the capture file to log dir</desc>
+			<script>
+				mv /tftpboot/${job.id}_packet1.enc ${log.dir}
+				mv /tftpboot/${job.id}_packet2.enc ${log.dir}
+				mv /tftpboot/${job.id}_packet3.enc ${log.dir}
+			</script>
+		</step>
+		<step no="3.4">
+			<desc>Format the captured packets </desc>
+			<!-- 1 fail;0 pass -->
+			<script>
+				tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -R '(lldp )' -w ${log.dir}/${job.id}_packet1.enc
+				tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -R '(frame.number == 1)' -w ${log.dir}/${job.id}_packet1.enc
+				tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -V| grep 'Port Subtype'|awk '{print $7}'
+
+				tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -R '(lldp )' -w ${log.dir}/${job.id}_packet2.enc
+				tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -R '(frame.number == 1)' -w ${log.dir}/${job.id}_packet2.enc
+				tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -V| grep 'Port Subtype'|awk '{print $7}'
+
+				tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -R '(lldp )' -w ${log.dir}/${job.id}_packet3.enc
+				tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -R '(frame.number == 1)' -w ${log.dir}/${job.id}_packet3.enc
+				tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -V| grep 'Port Subtype'|awk '{print $7}'
+			</script>
+		</step>
+
+		<step no="4.1">
+			<desc>Get LLDP packet of interface port1 for system Capabilities. </desc>
+			<multi-setvar>
+				echo "p1=$(tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '2,4d')"
+				echo "p2=$(tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '1d'|sed '2,3d')"
+				echo "p3=$(tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '1,2d'|sed '2d')"
+				echo "p4=$(tshark -r ${log.dir}/${job.id}_packet1.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '1,3d')"
+
+			</multi-setvar>
+		</step>
+
+		<step no="4.2">
+			<desc>Check the LLDP packet port1 for system Capabilities is correct.</desc>
+			<!-- 1 fail;0 pass -->
+			<script>
+				if [ "Bridge" != "${p1}" ]; then exit 1
+				elif [ "Router" != "${p2}" ]; then exit 1
+				elif [ "Bridge" != "${p3}" ]; then exit 1
+				elif [ "" != "${p4}" ]; then exit 1
+				fi
+			</script>
+		</step>
+
+
+		<step no="5.1">
+			<desc>Get LLDP packet of interface port2 for system Capabilities. </desc>
+			<multi-setvar>
+				echo "q1=$(tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '2,4d')"
+				echo "q2=$(tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '1d'|sed '2,3d')"
+				echo "q3=$(tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '1,2d'|sed '2d')"
+				echo "q4=$(tshark -r ${log.dir}/${job.id}_packet2.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '1,3d')"
+
+			</multi-setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>Check the LLDP packet port2 for system Capabilities is correct.</desc>
+			<!-- 1 fail;0 pass -->
+			<script>
+				if [ "Bridge" != "${q1}" ]; then exit 1
+				elif [ "Router" != "${q2}" ]; then exit 1
+				elif [ "Bridge" != "${q3}" ]; then exit 1
+				elif [ "" != "${q4}" ]; then exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.1">
+			<desc>Get LLDP packet of interface port3 for system Capabilities. </desc>
+			<multi-setvar>
+				echo "r1=$(tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '2,4d')"
+				echo "r2=$(tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '1d'|sed '2,3d')"
+				echo "r3=$(tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '1,2d'|sed '2d')"
+				echo "r4=$(tshark -r ${log.dir}/${job.id}_packet3.enc 2>/dev/null -V|grep -A2 Capabilities |sed '1,4d'|grep = |cut -d '=' -f2|sed 's/\s//g'|sed '1,3d')"
+
+			</multi-setvar>
+		</step>
+
+		<step no="6.2">
+			<desc>Check the LLDP packet port3 for system Capabilities is correct.</desc>
+			<!-- 1 fail;0 pass -->
+			<script>
+				if [ "Bridge" != "${r1}" ]; then exit 1
+				elif [ "Router" != "${r2}" ]; then exit 1
+				elif [ "Bridge" != "${r3}" ]; then exit 1
+				elif [ "" != "${r4}" ]; then exit 1
+				fi
+			</script>
+		</step>
+
+
+
+		<step no="7.1">
+			<desc>Check LLDP packet send log</desc>
+			<log-file>4.1.log</log-file>
+			<telnet target="sw1">
+				-v "show log buffered"
+				-v "clear log buffered"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="7.2">
+			<desc>Check LLDP packet send log</desc>
+			<log-file>4.1.log</log-file>
+			<telnet target="sw1">
+				-v "no hostname"
+				-v ""
+			</telnet>
+			<no-error-check />
+		</step>
+
+
+	</stage>
+
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

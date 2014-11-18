@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>When shutdown interface eth0 or eth1 (AP340) in HM and upload delta config or complete config, will generate rollback command automatically</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		AP connect with HM
+		AP with default setting in HM
+		Create a WLAN Policy in HM and with default setting
+		Execute the following command in AP:
+		capwap client server name 192.168.20.200
+		capwap client dtls hm-defined-passphrase *** key-id 1
+		capwap client vhm-name home
+		no capwap client dtls negotiation enable
+
+		Test Procedure:
+
+		1. Shutdown interface eth0 or eth1 in HM, then select AP and
+		upload delta config or complete config, verify if rollback
+		command be generated
+		2. After some time, if AP can't connect to HM, verify if AP will
+		rollback to previous config
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<include prefix="start_selenium_server" file="subs/start_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<step no="1">
+			<desc>
+				AP connect with HM
+				AP with default setting in HM
+				Create a WLAN Policy in HM and with default setting
+				Execute the following command in AP:
+				capwap client server name 192.168.20.200
+				capwap client dtls hm-defined-passphrase *** key-id 1
+				capwap client vhm-name home
+				no capwap client dtls negotiation enable
+			</desc>
+			<telnet target="ap1">
+				-v "capwap client enable"
+				-v "capwap client server name ${pub.hm1.ip}"
+				-v "capwap client vhm-name home"
+				-v "no capwap client dtls negotiation enable"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>config ap2</desc>
+			<telnet target="ap2">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<step no="1.2" delay="120">
+			<desc>
+				check the capwap client state
+			</desc>
+			<log-file>configurationRollbackviaHM_Function_7_check_capwap.log</log-file>
+			<telnet target="ap1">
+				-v "show capwap client"
+			</telnet>
+			<log-match>-c -i "RUN state: Connected securely to the CAPWAP server"</log-match>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap2" />
+
+		<step no="2">
+			<desc>
+				upload complete config
+			</desc>
+			<log-file>upload_complete_config.log</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/upload_config_new.py -r http://${sta1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l debug --parameters upload.policy=Rollback-default upload.type=complete ap.mgt0_ip=${ap1.mgt0.ip}
+			</script>
+		</step>
+
+		<step no="2.1" delay="120">
+			<desc>
+				1. Shutdown interface eth0 or eth1 in HM, then select AP and
+				upload delta config or complete config, verify if rollback
+				command be generated
+			</desc>
+			<log-file>Shutdown_interface_eth0.log</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/modify.py -r http://${sta1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l debug --parameters modify.name=eth_state modify.mgt0_ip=${ap1.mgt0.ip} eth_state.eth_name=eth0 eth_state.state=1
+			</script>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				upload delta config or complete config, verify if rollback
+				command be generated
+			</desc>
+			<log-file>upload_delta_config.log</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/upload_config.py -r http://${sta1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l debug --parameters upload.type=compare_running_ap_config ap.mgt0_ip=${ap1.mgt0.ip}
+			</script>
+		</step>
+
+		<step no="2.3">
+			<desc>
+				cheak running-config
+			</desc>
+			<log-file>check_running_config.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+			<log-match>-c -i "interface eth0 shutdown"</log-match>
+			<log-match>-c -i "config rollback enable"</log-match>
+		</step>
+
+		<step no="2.4">
+			<desc>
+				config capwap dis-connect
+			</desc>
+			<console target="ap1">
+				-v "config rollback capwap-disconnect"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>
+				2. After some time, if AP can't connect to HM, verify if AP will
+				rollback to previous config
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+				-v "interface eth1 shutdown"
+				-v "no capwap client enable"
+				-v "capwap client enable"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show capwap client
+			</desc>
+			<log-file>configurationRollbackviaHM_Function_17_check_capwap2.log</log-file>
+			<console target="ap1">
+				-v "show capwap client"
+			</console>
+		</step>
+
+		<step no="4">
+			<desc>
+				show config rollback _detail to check
+			</desc>
+			<log-file>configurationRollback_17_config_rollback.log</log-file>
+			<console target="ap1">
+				-v "show config rollback _detail"
+			</console>
+		</step>
+
+		<step no="5">
+			<desc>
+				show running-config
+			</desc>
+			<log-file>configurationRollbackviaHM_Function_17_check_running-config.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+		</step>
+
+		<step no="6" delay="720">
+			<desc>
+				show capwap client
+			</desc>
+			<log-file>configurationRollbackviaHM_Function_17_check_running-config1.log</log-file>
+			<console target="ap1">
+				-v "show running-config"
+			</console>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				recovery eth0
+			</desc>
+			<log-file>recovery_interface_eth0.log</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/hm/modify.py -r http://${sta1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l debug --parameters modify.name=eth_state modify.mgt0_ip=${ap1.mgt0.ip} eth_state.eth_name=eth0 eth_state.state=0
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_workload}" />
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

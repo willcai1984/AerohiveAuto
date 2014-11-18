@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Primary not set, DHCP enabled, can not obtain a ip address, no ip address be configured, after timeout, verify default ip address will be used, DHCP keep trying</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Exist useable DHCP server
+
+		Test Procedure:
+		1. Login HiveAP
+		2. Set timeout 120 or with default timeout 20
+		3. Config a incorrect vlan to interface mgt0
+		4. Run interface mgt0 dhcp client
+		5. Check if can obtain a ip address from dhcp server
+		6. After timeout, check default ip address if be used
+		7. Set a filter _ff id 1 dst-port 67 bidirectional and open _kdebug
+		fe basic
+		8. Open debug console, check if dhcp keep trying
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<step no="1">
+			<desc>
+				1. Set timeout 120 or with default timeout 20
+			</desc>
+			<telnet target="ap1">
+				-v "interface mgt0 dhcp client timeout 120"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				2. Config a incorrect vlan to interface mgt0
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan4}"
+			</console>
+		</step>
+
+		<step no="3">
+			<desc>
+				3. Run interface mgt0 dhcp client
+			</desc>
+			<console target="ap1">
+				-v "no interface mgt0 dhcp client"
+				-v "interface mgt0 dhcp client"
+			</console>
+		</step>
+
+		<step no="4">
+			<desc>
+				4. Check if can obtain a ip address from dhcp server
+			</desc>
+			<log-file>step4_show_interface_mgt0_dhcp_client.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0 dhcp client"
+			</console>
+			<log-match>-e "Get IP address 0.0.0.0 from the server"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				4.1. show interface
+			</desc>
+			<log-file>step4.1_show_interface.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				4.2 get ap1's mgt0's ip address
+			</desc>
+			<setvar name="ap1.mgt0.mactoip">
+				perl ${case.dir}/bin/getmactoip.pl ${log.dir}/step4.1_show_interface.log mgt0
+			</setvar>
+		</step>
+
+		<step no="5" delay="120">
+			<desc>
+				5. After timeout, check default ip address if be used
+			</desc>
+			<log-file>step5_show_interface_mgt0.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-e "IP addr=192.168.1.1" -e "IP addr=${ap1.mgt0.mactoip}"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				6. Set a filter _ff id 1 dst-port 67 bidirectional and open _kdebug
+				fe basic(or _kdebug dhcpc)
+			</desc>
+			<console target="ap1">
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_ff id 1 dst-port 67 bidirectional"
+				-v "clear log buffered"
+			</console>
+		</step>
+
+		<step no="7" delay="30">
+			<desc>
+				7. Open debug console, check if dhcp keep trying
+			</desc>
+			<log-file>step7_show_logging_buffered.log</log-file>
+			<console target="ap1">
+				-v "show logging buffered" ;exit 0
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(i\) mgt0 0.0.0.0-&gt;255.255.255.255\(\d+\) ttl\(\d+\) UDP \d+-&gt;\d+ DHCP Discover" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(o\) eth0 0.0.0.0-&gt;255.255.255.255\(\d+\) ttl\(\d+\) UDP \d+-&gt;\d+ DHCP Discover" -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+</testcase>

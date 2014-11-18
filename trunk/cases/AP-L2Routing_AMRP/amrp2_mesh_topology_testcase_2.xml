@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Plug out/in cable of Portal1,check route recover(don't check the time of route recovcer)</brief>
+	<priority>accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition	
+			-configure two APs in the same subnet and same hive
+			- MP1 act as mesh point 
+			-Client associated MP1, pass authentication
+		Test procedure	
+			1.	When client associated to MP1,check route table of MP1 and Portal 1
+			2.	Plug out cable of Portal1,check route table Portal1,
+			3.	Check route table of MP1
+			4.	Plug in cable of Portal1,check route table of Portal1
+			5.	Check route table of MP1
+			6.	Client ping  Portal ,ping MP,gateway.
+				Portal ping client
+				MP ping client 
+		Expect result	
+			1.	Route table should include client’s route,MP1’s default route is wifi1.1 Portal1’s  default route is eth0
+			2.	No default route, client’s route should still exist.
+			3.	Default route still wifi1.1 client route still exist. 
+			4.	Default route will be eth0 again,(how long route will recover)
+			5.	Default route still wifi1.1 client route still exist.
+			6.	Ping should successfully (how long traffic can recover)
+	</description>
+	
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+
+		<step no="0.1_1">
+			<desc>
+				-Check eth1 status on ap1 and shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.1_2">
+			<desc>
+				-Check eth1 status on ap2 and shutdown eth1
+			</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap2">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="0.2_1">
+			<desc>
+				-Configure AP1
+			</desc>
+			<console target="ap1" timeout="50">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+		<step no="0.2_2">
+			<desc>
+				-Configure AP2
+			</desc>
+			<console target="ap2" timeout="50">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+		<include prefix="0.3_1" file="subs/get_ap_ip_mac.xml" rargs="ap1" />
+
+		<include prefix="0.3_2" file="subs/get_ap_ip_mac.xml" rargs="ap2" />
+
+		<include prefix="0.4_1" file="subs/ap_mesh_set.xml" obj-args="ap1, ap2" />
+
+		<step no="0.4_2">
+			<desc>
+				-Configure AP2
+			</desc>
+			<console target="ap2" timeout="50">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+		
+		<step no="0.5">
+			<desc>
+				-Configure AP2, create ssid
+			</desc>
+			<console target="ap2" timeout="50">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile ${ssid.name} qos-policy def-user-qos vlan-id ${tb.vlan1} attribute 1"
+				-v "no forwarding-engine proxy-arp enable"
+			</console>
+		</step>
+
+<!--sta1 connect to ssid created on MP1(ap2)-->	
+		<step no="1.0_1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="1.0_2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="1.1">
+			<desc>
+				1.	When client associated to MP1,check route table of portal(AP1)
+			</desc>
+			<log-file>step1.1_show_route_portal.log</log-file>
+			<console target="ap1" timeout="50">
+				-v "show route"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000 .* eth0" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				1.	When client associated to MP1,check route table of MP1(AP2)
+			</desc>
+			<log-file>step1.2_show_route_mp1.log</log-file>
+			<console target="ap2" timeout="50">
+				-v "show route"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000 .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac} .* wifi0.1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="2.0">
+			<desc>
+				2. plug out cable of Portal1(AP1)
+			</desc>
+			<console target="ap1" timeout="50">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+		
+		<step no="2.1">
+			<desc>
+				2. check route table of Portal1(AP1), no default route on eth0
+			</desc>
+			<log-file>step2.1_show_route_portal.log</log-file>
+			<console target="ap1" timeout="50">
+				-v "show route"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000 .* eth0" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+		</step>		
+		
+		<step no="3.0" delay="60">
+			<desc>
+				3. check route table of MP1(AP2), no default route on ap2, and the station will be deassociated
+			</desc>
+			<log-file>step3.0_show_route_mp1.log</log-file>
+			<console target="ap2" timeout="50">
+				-v "show route"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000 .* ${meshpoint}.1" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac} .* wifi0.1" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>	
+
+		<step no="4.0">
+			<desc>
+				4. plug in cable of Portal1(AP1)
+			</desc>
+			<console target="ap1" sleep="60">
+				-v "no interface eth0 shutdown"
+			</console>
+		</step>		
+
+<!--sta1 re-connect to ssid created on MP1(ap2)	-->	
+		<include prefix="4.1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+		
+		<step no="4.2" delay="10">
+			<desc>
+				4.	check route table of portal(AP1)
+			</desc>
+			<log-file>step4.2_show_route_portal.log</log-file>
+			<console target="ap1" timeout="50">
+				-v "show route"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000 .* eth0" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5.0">
+			<desc>
+				5.	check route table of MP1(AP2)
+			</desc>
+			<log-file>step5.0_show_route_mp1.log</log-file>
+			<console target="ap2" timeout="50">
+				-v "show route"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "0000:0000:0000 .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap1.mgt0.mac} .* ${meshpoint}.1" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.mac} .* wifi0.1" -f ${log.dir}/${log.file}</log-match>
+		</step>		
+		
+		<step no="6.0">
+			<desc>
+				6. client(sta1) ping portal
+			</desc>
+			<log-file>step6.0_sta_ping_portal.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${ap1.mgt0.ip} -c 5"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${ap1.mgt0.ip}: icmp_req=\d+ ttl=\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+		
+		<step no="6.1">
+			<desc>
+				6. client ping mp
+			</desc>
+			<log-file>step6.1_sta_ping_mp.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${ap2.mgt0.ip} -c 5"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${ap2.mgt0.ip}: icmp_req=\d+ ttl=\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>		
+		
+		<step no="6.2">
+			<desc>
+				6. client ping gateway.
+			</desc>
+			<log-file>step6.2_sta_ping_gw.log</log-file>
+			<ssh target="sta1">
+				-v "ping ${tb.vlan1.gw} -c 5"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${tb.vlan1.gw}: icmp_req=\d+ ttl=\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>	
+		
+		<step no="6.3">
+			<desc>
+				portal poing client(sta1)	
+			</desc>
+			<log-file>step6.3_portal_ping_sta.log</log-file>
+			<console target="ap1">
+				-v "ping ${sta1.tif.ip}"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${sta1.tif.ip}: icmp_seq=\d+ ttl=\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>			
+		
+		<step no="6.4">
+			<desc>
+				MP poing client(sta1)	
+			</desc>
+			<log-file>step6.4_mp_ping_sta.log</log-file>
+			<console target="ap2">
+				-v "ping ${sta1.tif.ip}"
+			</console>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "from ${sta1.tif.ip}: icmp_seq=\d+ ttl=\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>				
+	
+
+	</stage>
+
+</testcase>

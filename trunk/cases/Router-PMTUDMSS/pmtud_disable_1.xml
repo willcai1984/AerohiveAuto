@@ -1,0 +1,319 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>UDP Pkt is fragment after pass through vpn with NAT when size is beyond the threshould even if DF is set</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Set up one l3 vpn with NAT
+
+		Test Procedure:
+		1. Create l3 VPN tunnel in BR and CVG
+		2. Connect one laptop to the BR
+		3. Set the user-profile that is assigned to the laptop as Tunnel-all
+		4. Disable ip path-mtu-discovery
+		CLI: no ip path-mtu-discovery enable
+		5. Send the UDP with 1500 ip size and set DF from BR to CVG, result 1
+		6. Send the UDP with 1500 ip size and set DF from CVG to BR, result 1
+		7. Send the UDP with 1358 ip size and set DF from BR to CVG, result 2
+		8. Send the UDP with 1358 ip size and set DF from CVG to BR, result 2
+		9. Send the UDP with 64 ip size and set DF from BR to CVG, result 2
+		10. Send the UDP with 64 ip size and set DF from CVG to BR, result 2
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-1" />
+
+	<stage>
+		<include prefix="1" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+	
+		<step no="2">
+			<desc>
+				config BR with WAN interface, nat enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "no interface mgt0 dhcp client"
+				-v "no interface mgt0 dhcp-server enable"
+				-v "interface mgt0 ip ${br1.br.mgt0.ip}/${cvg1.cvg.wan.netmask}"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "interface eth0 mode wan nat"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				Show interface eth0 dhcp client to check if DNS server be obtained
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show interface eth0 dhcp client"
+			</telnet>
+			<log-match>-i "DNS server" -i "${pub.dns_server.ip}"</log-match>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				config mgt0.1 with dhcp service enable,dns service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask 255.255.255.0"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				Set interface eth0 to wan mode,eth1/eth2 to access mode and enable mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+			    -v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"				
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"						
+			</telnet>
+		</step>
+
+		<step no="3.4">
+			<desc>
+				BR check route
+			</desc>
+			<log-file>step3.4_show_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="3.5">
+			<desc>
+				cvg1 check route
+			</desc>
+			<log-file>step3.5_show_ip_route.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="5">
+				-v "show ip route"
+			</telnet>
+		</step>
+
+		<step no="3.6">
+			<desc>
+				Disable ip path-mtu-discovery on BR
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "no ip path-mtu-discovery enable"
+			</telnet>
+		</step>
+
+
+		<step no="4" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				br1.vpc1 show ip address got from mgt0 dhcp client
+			</desc>
+			<log-file>step4_ifconfig_br1_vpc1.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get br1.vpc1 ip address
+			</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4_ifconfig_br1_vpc1.log -p "inet addr:(\S+)\s+" -t str
+			</setvar>
+		</step>
+
+		<step no="check.ping">
+			<desc>
+				check ping
+			</desc>
+			<ssh target="br1.vpc1" timeout="300">
+				-v "ping ${cvg1.vpc1.tif.ip}-c 5"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="5">
+			<desc>
+				open debug switch
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip}  bidirectional"
+				-v "_ff id 2 src-ip ${cvg1.vpc1.tif.ip}  bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+		
+		<step no="5.1">
+			<desc>
+				no ip path-mtu-discovery enable and open debug on CVG
+			</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="60">
+				-v "no ip path-mtu-discovery enable"
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip}  bidirectional"
+				-v "_ff id 2 src-ip ${cvg1.vpc1.tif.ip}  bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="6" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>
+				Send the UDP with over 1370 size and set DF from BR to CVG,the udp packet will be fragmentation
+			</desc>
+			<ssh target="br1.vpc1" timeout="300">
+				-v "hping3 ${cvg1.vpc1.tif.ip} -d 1371 -y -c 3 -2"
+			</ssh>
+			<log-match> -n -i "100% packet loss"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step6.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+				-v "clear log  buffered"
+			</telnet>
+			<log-match>-i "Path MTU Discovery disable, ignore DF bit check, fragmentation anyway" </log-match>
+			<no-error-check />
+		</step>
+
+
+		<step no="7">
+			<desc>
+				Send the UDP with over 1370  size and set DF from CVG to BR,the udp packet will be fragmentation
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "hping3 ${br1.vpc1.tif.ip}  -d 1371 -y  -c 3 -2"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="7.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step7.1_show_logging_buffered.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="300">
+				-v "show logging buffered"
+				-v "clear log  buffered"
+			</telnet>
+			<log-match>-i "Path MTU Discovery disable, ignore DF bit check, fragmentation anyway" </log-match>
+			<no-error-check />
+		</step>
+
+
+		<step no="8">
+			<desc>
+				Send the UDP with less 1370  size and set DF from BR to cvg,The pkt is not fragment 
+			</desc>
+			<ssh target="br1.vpc1" timeout="300">
+				-v "hping3 ${cvg1.vpc1.tif.ip}  -d 1358 -y -c 3 -2"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="8.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step8.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+				-v "clear log  buffered"
+			</telnet>
+			<log-match>-n -i "Path MTU Discovery disable, ignore DF bit check, fragmentation anyway" </log-match>
+			<log-match>-i "Path MTU Discovery disable, ignore pkt size check for tunnel" </log-match>
+			<no-error-check />
+		</step>
+
+
+		<step no="9">
+			<desc>
+				Send the UDP with 1358 ip size and set DF from CVG to BR,The pkt is not fragment
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "hping3 ${br1.vpc1.tif.ip}  -d 1358 -y -c 3 -2"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="9.1" delay="10">
+			<desc>
+				show logging buffered on CVG
+			</desc>
+			<log-file>step9.1_show_logging_buffered.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="300">
+				-v "show logging buffered"
+				-v "clear log  buffered"	
+			</telnet>
+			<log-match>-n -i "Path MTU Discovery disable, ignore DF bit check, fragmentation anyway" </log-match>
+			<log-match>-i "Path MTU Discovery disable, ignore pkt size check for tunnel" </log-match>
+			<no-error-check />
+		</step>
+
+		<step no="10">
+			<desc>
+				Send the UDP with 64 ip size and set DF from BR to CVG,The pkt is not fragment
+			</desc>
+			<ssh target="br1.vpc1" timeout="300">
+				-v "hping3 ${cvg1.vpc1.tif.ip}  -d 64 -y -c 3 -2"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="10.1" delay="10">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step10.1_show_logging_buffered.log</log-file>
+			<telnet target="${br1.br.wan.ip}" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match>-n -i "Path MTU Discovery disable, ignore DF bit check, fragmentation anyway" </log-match>
+			<log-match>-i "Path MTU Discovery disable, ignore pkt size check for tunnel" </log-match>
+			<no-error-check />
+		</step>
+		<step no="11">
+			<desc>
+				Send the UDP with 64 ip size and set DF from CVG to BR,The pkt is not fragment
+			</desc>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "hping3 ${br1.vpc1.tif.ip}  -d 64 -y -c 3 -2"
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="11.1" delay="10">
+			<desc>
+				show logging buffered on CVG
+			</desc>
+			<log-file>step11.1_show_logging_buffered.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="300">
+				-v "show logging buffered"
+				-v "clear log all"
+			</telnet>
+			<log-match>-n -i "Path MTU Discovery disable, ignore DF bit check, fragmentation anyway" </log-match>
+			<log-match>-i "Path MTU Discovery disable, ignore pkt size check for tunnel" </log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

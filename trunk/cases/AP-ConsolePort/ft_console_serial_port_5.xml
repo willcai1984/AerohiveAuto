@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<priority>Accept</priority>
+	<brief>Console login AP, disable console serial port, then enable console serial via SSH login</brief>
+	<automated>yes</automated>
+	<description>
+		1. telnet to login ap, check eth0 manage telnet is enabled
+		2. console login to check successful
+		3. console login, then disable console serial-port
+		4. check console login failed log with "status:10"
+		4. enable console login via ssh and check console login is permited and can execute cli command
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+	
+	<property name="user.name" value="test" />
+	<property name="user.passwd" value="Aerohive123" />
+
+	<stage>
+		<step no="1">
+			<desc>show run on ap1</desc>
+			<log-file>show_run.log</log-file>
+			<console target="ap1">
+				-v "show run"
+			</console>
+			<log-match>-i "interface eth0 manage telnet"</log-match>
+		</step>
+
+		<step no="2">
+			<desc>telnet login ap1</desc>
+			<log-file>show_console.log</log-file>
+			<console target="ap1">
+				-v "show console"
+			</console>
+			<log-match>-i "Serial port status" -i "Enabled"</log-match>
+		</step>
+		
+		<step no="3">
+			<desc>create read-only user</desc>
+			<log-file>step3.log</log-file>
+			<console target="ap1" prompt="[=0-9A-Za-z]+>|AH-[0-9A-Za-z]*#|save">
+				-v "admin read-only ${user.name} password ${user.passwd}"
+				-v "sa co"
+				-v "exit"; exit 0				 
+			</console>
+		</step>
+
+		<step no="4">
+			<desc>console login with the read-only user</desc>
+			<log-file>step4.log</log-file>
+			<console target="ap1" user="${user.name}" password="${user.passwd}">
+				-v "show console"
+			</console>
+			<log-match>-i "Serial port status" -i "Enabled"</log-match>
+			
+		</step>
+
+		<step no="5">
+			<desc>try to diable console port with the read-only user</desc>
+			<log-file>step5.log</log-file>
+			<console target="ap1" user="${user.name}" password="${user.passwd}">
+				-v "no console serial-port enable"
+			</console>
+			<log-match>-c -i "ERROR: *Invalid command for read only user"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>console login with the read-only user</desc>
+			<log-file>step6.log</log-file>
+			<console target="ap1" user="${user.name}" password="${user.passwd}">
+				-v "show console"
+				-v ""
+				-v "exit"
+			</console>
+			<log-match>-i "Serial port status" -i "Enabled"</log-match>
+			<no-error-check />
+		</step>
+		
+	<step no="7" delay="10">
+			<desc>remove read-only user</desc>
+			<log-file>step7.log</log-file>
+			<console target="ap1">
+				-v "no admin read-only ${user.name}"
+				-v "sa co"
+			</console>
+	</step>
+		
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0">
+				<desc>
+					enable console port on ap1 if step5 not be execute
+				</desc>
+				<telnet target="ap1">
+					-v "console serial-port enable"
+					-v "show console"
+				</telnet>
+			</step>
+		</stage>
+	</post-process>
+	
+	<failed-process>
+	 <stage>
+        <step no="fp_1">
+			<desc>remove read-only user</desc>
+			<console target="ap1">
+				-v "no admin read-only ${user.name}"
+				-v "sa co"
+			</console>
+		</step>
+	</stage>
+    </failed-process>
+	
+</testcase>

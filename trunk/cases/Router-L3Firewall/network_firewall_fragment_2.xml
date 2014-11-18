@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Fragments are sent in order(deny)</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-Configure AP
+		Enable 2 dhcp server（mgt0.1 mgt0.2）
+		Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+		Mgt0.2 vlan20 IPaddr 10.1.20.1 gateway 10.1.20.1
+		Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+		Laptop2 connect to Mgt0.2 IPaddr 10.1.20.2
+
+		Test Procedure:
+		1) Configure network firewall rule
+		"network-firewall name 1001 from network 10.1.10.2 255.255.255.255 action
+		deny logging off"
+		"network-firewall name 1002 from any to any action deny logging off"
+		2) Laptop1 sends fragments to Laptop2 in order
+		3) Check the packets in Laptop2
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>0</numofcvg>
+	<tbtype>winlin</tbtype>
+
+	<property name="br1.vpc.netmask" value="255.255.255.255" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Configure AP
+				Enable 2 dhcp server（mgt0.1 mgt0.2）
+				Mgt0.1 vlan10 IPaddr 10.1.10.1 gateway 10.1.10.1
+				Mgt0.2 vlan20 IPaddr 10.1.20.1 gateway 10.1.20.1
+				Laptop1 connect to Mgt0.1 IPaddr 10.1.10.2
+				Laptop2 connect to Mgt0.2 IPaddr 10.1.20.2
+				Laptop3 connect to Mgt0.1 IPaddr 10.1.10.3
+			</desc>
+			<console target="br1.br">
+				-v "interface eth0 mode wan"
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/24"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.2 vlan ${br1.vpc2.vlan}"
+				-v "interface mgt0.2 ip ${br1.br.mgt0.2.ip}/24"
+				-v "interface mgt0.2 dhcp-server options default-gateway ${br1.br.mgt0.2.ip}"
+				-v "interface mgt0.2 dhcp-server ip-pool ${br1.br.mgt0.2.ip_pool_start} ${br1.br.mgt0.2.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server enable"
+				-v "interface mgt0.2 dhcp-server enable"
+			</console>
+		</step>
+
+		<step no="1">
+			<desc>
+				AP config user-profile
+			</desc>
+			<console target="br1.br">
+				-v "user-profile lan1 qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "user-profile lan2 qos-policy def-user-qos vlan-id ${br1.vpc2.vlan} attribute 2"
+				-v "interface eth2 mode bridge-802.1q"
+				-v "interface eth2 mac-learning enable"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>step1.1_ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.2">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="1.3">
+			<desc>br1.vpc2 get ip addr from dhcp server of mgt0.2</desc>
+			<log-file>step1.3_ifconfig_vpc2_.log</log-file>
+			<ssh target="br1.vpc2" timeout="120">
+				-v "dhclient ${br1.vpc2.tif.name}"
+				-v "ifconfig ${br1.vpc2.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="1.4">
+			<desc>set br1.vpc2.tif.ip var for vpc2 on BR side</desc>
+			<setvar name="br1.vpc2.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc2.mif.ip} -u ${br1.vpc2.user} -p ${br1.vpc2.passwd} -i ${br1.vpc2.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="1.5">
+			<multi-setvar>
+				echo "br1.vpc2.ip.range=$(echo ${br1.vpc2.tif.ip} | cut -d. -f1,2,3).254"
+			</multi-setvar>
+		</step>
+
+		<step no="1.6" delay="10">
+			<desc>show interface eth0 on BR</desc>
+			<log-file>step1.6_show_br1.br_eth0.log</log-file>
+			<console target="br1.br">
+				-v "show interface eth0"
+			</console>
+		</step>
+
+		<step no="1.7">
+			<desc>get eth0 ip of br</desc>
+			<setvar name="br1.br.wan.ip">
+				${bin.dir}/getbyrexp.py -p "IP addr=(\d+\.\d+\.\d+\.\d+);" -f ${log.dir}/step1.6_show_br1.br_eth0.log -t str
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				"_ff id 1 src-ip Laptop's IPaddr bidirectional"
+				"_kdebug fe basic"
+				"_kdebug fe detail"
+				"clear log buffered"
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_ff id 1 src-ip ${br1.vpc1.tif.ip} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3">
+			<desc>br1.vpc1 ping br1.vpc2</desc>
+			<log-file>step3_vpc1_ping_vpc2.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${br1.vpc2.tif.ip} -c 4"
+			</ssh>
+			<log-match>-c -i "from ${br1.vpc2.tif.ip}: " -i "ttl="</log-match>
+		</step>
+
+		<step no="4">
+			<desc>
+				Configure network firewall rule
+				“network-firewall name 1001 from network 10.1.10.2 255.255.255.255 action deny logging on”
+				“network-firewall name 1002 from any to any action deny logging on”
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "clear log all"
+				-v "network-firewall name 1001 from network ${br1.vpc1.tif.ip} ${br1.vpc.netmask} action deny logging on"
+				-v "network-firewall name 1002 from any to any action deny logging on"
+			</telnet>
+		</step>
+
+		<step no="5">
+			<desc>
+				Laptop1 sends fragments to Laptop2 in order
+			</desc>
+			<log-file>step5_sends_fragments.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "hping2 ${br1.vpc2.tif.ip} -d 2500 -c 10 -1"
+			</ssh>
+		</step>
+
+		<include prefix="6" file="subs/save_ap_log.xml" args="show logging buffered, br1.br, step6_show_logging_buffered.log" />
+
+		<step no="7">
+			<desc>
+				check log
+			</desc>
+			<log-file>step6_show_logging_buffered.log</log-file>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)\(!\) mgt0.2 ${br1.vpc1.tif.ip}->${br1.vpc2.tif.ip}\(\d+\) ttl\(\d+\) mtu\(1500\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

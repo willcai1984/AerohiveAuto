@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Self healing test:kill snmpd, telnetd, sshd process, verify if they can recover, verify if they can work normal after process recover</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Enable SNMP TELNET SSH on interface eth0
+		Set trap server, enable trap over snmp, disable trap over capwap
+		Save config
+
+		Test Procedure:
+		1. Kill snmpd, telnetd, sshd process in shell, wait a moment, verify if they can
+		recover, and verify if config exist
+		2. Verify if can get some message from mib browser, verify if can send snmp trap to
+		trap server; verify if can telnet to AP; verify if can ssh to AP
+		3. Reboot, verify procedure 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	
+	<stage>
+		<step no="1">
+			<desc>
+				Enable SNMP TELNET SSH on interface eth0
+				Set trap server, enable trap over snmp, disable trap over capwap
+				Save config
+			</desc>
+			<console target="ap1">
+				-v "interface manage telnet"
+				-v "interface manage ssh"
+				-v "interface manage snmp"
+				-v "logging facility local7"
+				-v "save config"
+			</console>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-show snmp info
+			</desc>
+			<log-file>step1.1_show_snmp_info.log</log-file>
+			<telnet target="ap1">
+				-v "show snmp"
+			</telnet>
+		</step>
+
+		<step no="1.2">
+			<desc>
+				get snmp contact info
+			</desc>
+			<setvar name="ap1.snmp.contact">
+				${bin.dir}/getbyrexp.py -p "Syscontact:\s*(\S+)\s*" -t str -f ${log.dir}/step1.1_show_snmp_info.log
+			</setvar>
+		</step>
+
+		<step no="2">
+			<desc>
+				Kill snmpsd process in shell
+			</desc>
+			<log-file>check_snmpd_process_1.log</log-file>
+			<telnet target="ap1" prompt="AH.*(#|$)">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "killall snmpd"
+				-v "ps"
+				-v "exit"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="3">
+			<desc>
+				Kill telnetd process in shell
+			</desc>
+			<log-file>check_telnetd_process_1.log</log-file>
+			<console target="ap1" prompt="AH.*(#|$)">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "killall telnetd"
+				-v "ps"
+				-v "exit"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="4">
+			<desc>
+				Kill sshd process in shell
+			</desc>
+			<log-file>check_sshd_process_1.log</log-file>
+			<console target="ap1" prompt="AH.*(#|$)">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "killall sshd"
+				-v "ps"
+				-v "exit"
+			</console>
+			<no-error-check />
+		</step>
+
+		<step no="5" delay="120">
+			<desc>
+				wait a moment, verify if snmpd, telnetd, sshd process in shell can recover,
+			</desc>
+			<log-file>check_process_recover.log</log-file>
+			<console target="ap1" prompt="AH.*(#|$)">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "ps"
+				-v "exit"
+			</console>
+			<log-match>-n -i "/opt/ah/sbin/snmpd"</log-match>
+			<log-match>-n -i "/usr/sbin/telnetd"</log-match>
+			<log-match>-n -i "/sbin/sshd"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				verify if config exist
+			</desc>
+			<log-file>check_config_exist.log</log-file>
+			<console target="ap1">
+				-v "show running-config "
+			</console>
+			<log-match>-i "interface manage telnet"</log-match>
+			<log-match>-i "interface manage snmp"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				-open debug mode
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 dst-port 161 bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+			</console>
+		</step>
+
+		<step no="7.1">
+			<desc>
+				-clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="kill.process.1">
+			<desc>
+				Use the computer2 to ssh the portal1 which can get the result 1.
+			</desc>
+			<log-file>kill.process.1_ssh_ap1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="300">
+				-v "ssh admin@${ap1.mgt0.ip}"
+			</ssh>
+			<log-match>-i "connect to host ${ap1.mgt0.ip} port 22: Connection refused"</log-match>
+		</step>
+
+		<step no="kill.process.2">
+			<desc>
+				Use the computer2 to telnet the portal1 which can get the result 1.
+			</desc>
+			<log-file>kill.process.2_telnet_ap1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="300">
+				-v "telnet ${ap1.mgt0.ip}"
+			</ssh>
+			<log-match>-i "telnet: connect to address ${ap1.mgt0.ip}: Connection refused"</log-match>
+		</step>
+
+		<step no="kill.process.3">
+			<desc>
+				Use the computer2 to snmp the portal1 which can get the result 1.
+			</desc>
+			<log-file>kill.process.3_snmp_ap1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4"
+			</ssh>
+			<log-match>-i "Timeout: No Response from ${ap1.mgt0.ip}"</log-match>
+
+		</step>
+
+		<step no="kill.process.4">
+			<desc>
+				verify if can send snmp trap to trap server
+			</desc>
+			<log-file>kill.process.3_snmp_trap.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="300">
+				-v "tail -f /var/log/boot.log" ; exit 0
+			</ssh>
+			<no-error-check />
+		</step>
+
+		<step no="8">
+			<desc>
+				-reboot
+			</desc>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="8.1" delay="60">
+			<desc>
+				-clear log all
+			</desc>
+			<console target="ap1">
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="reboot.1">
+			<desc>
+				Use the computer2 to ssh the portal1 .
+			</desc>
+			<log-file>reboot.1_ssh_ap1.log</log-file>
+			<ssh target="ap1">
+				-v "show admin active"
+			</ssh>
+			<log-match>-i "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="reboot.2">
+			<desc>
+				Use the computer2 to telnet the portal1 .
+			</desc>
+			<log-file>reboot.2_telnet_ap1.log</log-file>
+			<telnet target="ap1">
+				-v "show admin active"
+			</telnet>
+			<log-match>-i "admin" -i "pts"</log-match>
+		</step>
+
+		<step no="reboot.3">
+			<desc>
+				Use the computer2 to snmp the portal1 .
+			</desc>
+			<log-file>reboot.3_snmp_ap1.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="300">
+				-v "snmpwalk -v 2c ${ap1.mgt0.ip} -c hivecommunity .1.3.6.1.2.1.1.4"
+			</ssh>
+			<log-match>-i "SNMPv2-MIB::sysContact.0 = STRING: ${ap1.snmp.contact}"</log-match>
+		</step>
+
+		<step no="reboot.4">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>reboot.3_show_logging_buffered.log</log-file>
+			<ssh host="${mpc.mif.ip}" timeout="300">
+				-v "tail -f /var/log/boot.log" ; exit 0
+			</ssh>
+			<no-error-check />
+		</step>
+	</stage>
+	<post-process>
+		<stage>
+			
+		</stage>
+
+		<include file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

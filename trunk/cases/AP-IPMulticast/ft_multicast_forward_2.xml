@@ -1,0 +1,609 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>
+		For wifi access link, ap forward group's multicast packet to the place(SSID) where client join the group.
+		Do not forward multicast packet to the ssid when any client do not join the group.
+	</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		On portal:
+		Convert multicast to unicast : auto
+		Ssid M1 multicast member-threshold 1
+		Ssid M1 multicast cu-threshold 99
+		Switch connects to portal on eth0
+		Wifi0.1, wifi1.1 are access interface
+		Laptop1 associated to portal’s wifi0.1(ssid M1), and be authenticated, in vlan A
+		Laptop2 associated to portal’s wifi0.2(ssid M2), and be authenticated, in vlan A
+		Laptop3 associated to portal’s wifi1.1(ssid M1), and be authenticated, in vlan A
+		Group’s multicast packet: destination ip of 238.1.1.1, destination mac of 0100:5e01:0101, in vlan A
+		Open debug:
+		_ff xx xx
+		_kdebug fe console
+		Debug console
+
+		Test Procedure:
+		sending group’s multicast packet from portal’s eth0 in vlan A, check packet forwarding on portal, result 1
+		laptop1 reports to join group 238.1.1.1 in vlan A , sending group’s multicast packet from portal’s eth0, check packet forwarding on portal, result 2
+		laptop2 reports to join group 238.1.1.1 in valn A, sending group’s multicast packet from portal’s eth0, check packet forwarding
+		on portal, result 3
+		not trigger AP do multicast to unicast converting , through set member threshold or cu threshold.
+		Repeat step1 to step3, check result.
+	</description>
+	<numofap>1</numofap>
+	<numofsta>3</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<if>"${ap.wifi1.existed}" == "true"</if>
+		<step no="1.1">
+			<desc>shutdown interface eth1</desc>
+			<if>"${ap1.eth1.existed}" == "true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+		<step no="1.2">
+			<desc>
+				On portal:
+				Convert multicast to unicast : auto
+				Ssid M1 multicast member-threshold 1
+				Ssid M1 multicast cu-threshold 99
+				Switch connects to portal on eth0
+				Wifi0.1 wifi0.2are access interface
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 mode access"
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} multicast conversion-to-unicast auto"
+				-v "ssid ${ssid.name} multicast member-threshold 1"
+				-v "ssid ${ssid.name} multicast cu-threshold 99"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi1 radio channel 165"
+				-v "interface wifi1 ssid ${ssid.name}"
+			</telnet>
+		</step>
+		<step no="1.3" delay="5">
+			<desc>show interface after config ssid</desc>
+			<log-file>step1.3_show_int.log</log-file>
+			<telnet target="ap1">
+				-v "show interface"
+			</telnet>
+		</step>
+		<step no="1.4">
+			<desc>get bssid</desc>
+			<multi-setvar>
+				echo "conn1.bssid=`perl ${bin.dir}/getstring.pl \
+				-f ${log.dir}/step1.3_show_int.log -k "wifi0.1" -p 2`"
+				echo "conn2.bssid=`perl ${bin.dir}/getstring.pl \
+				-f ${log.dir}/step1.3_show_int.log -k "wifi1.1" -p 2`"
+			</multi-setvar>
+		</step>
+		
+		<include prefix="2.1" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta1, ap1" />
+		<include prefix="2.2" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn1, sta2, ap1" />
+		<include prefix="2.3" file="subs/sta_wifi_connect_${tb.os}_new.xml" obj-args="conn2, sta3, ap1" />
+		<step no="2.4">
+			<desc>get MACs with five delimiter style</desc>
+			<multi-setvar>
+				echo "sta1.mac=`perl -e '$s="${sta1.tif.mac}";$s=~s/(\w\w):?(?!$)/$1:/g;print $s'`"
+				echo "sta2.mac=`perl -e '$s="${sta2.tif.mac}";$s=~s/(\w\w):?(?!$)/$1:/g;print $s'`"
+				echo "sta3.mac=`perl -e '$s="${sta3.tif.mac}";$s=~s/(\w\w):?(?!$)/$1:/g;print $s'`"
+				echo "pub.mtcast1.group1.5mac=`perl -e '$s="${pub.mtcast1.group1.mac}";$s=~s/(\w\w):?(?!$)/$1:/g;print $s'`"
+			</multi-setvar>
+		</step>
+		
+		<step no="3.1">
+			<desc>show ssid xxx multicast</desc>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} multicast"
+			</telnet>
+			<log-match>-i "Convert multicast to unicast : auto"</log-match>
+		</step>
+		<step no="3.2">
+			<desc>open debug on ap1</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_ff src-ip ${pub.mtcast1.ip}"
+				-v "_kdebug wifi-driver wifi0.1 awemcast"
+				-v "_kdebug wifi-driver wifi1.1 awemcast"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="4.1">
+			<desc>Laptop1 report to join group 238.1.1.1,</desc>
+			<log-file>step4.1_join_group.log</log-file>
+			<ssh target="sta1">
+				-v "nohup /usr/local/auto/bin/join_mcast_group --group ${pub.mtcast1.group1.ip} &amp;"
+			</ssh>
+		</step>
+		
+		<step no="4.2">
+			<desc>capture packet on sta1</desc>
+			<log-file>step4.2_capture_packet.log</log-file>
+			<ssh target="sta1">
+				-v "rm -f /tmp/${job.sid}_sta1_mcast_packet_1.log"
+				-v "rm -f /tmp/${job.sid}_sta1_mcast_packet_2.log"
+				-v "rm -f /tmp/${job.sid}_sta1_mcast_packet_3.log"
+				-v "nohup tshark -i ${sta1.tif.name} dst port ${pub.mtcast1.group1.port} -c 5 -V &gt; /tmp/${job.sid}_sta1_mcast_packet_1.log &amp;"
+			</ssh>
+		</step>
+		<step no="4.3">
+			<desc>capture packet on sta2</desc>
+			<log-file>step4.3_capture_packet.log</log-file>
+			<ssh target="sta2">
+				-v "rm -f /tmp/${job.sid}_sta2_mcast_packet_1.log"
+				-v "rm -f /tmp/${job.sid}_sta2_mcast_packet_2.log"
+				-v "nohup tshark -i ${sta2.tif.name} dst port ${pub.mtcast1.group1.port} -c 5 -V &gt; /tmp/${job.sid}_sta2_mcast_packet_1.log &amp;"
+			</ssh>
+		</step>
+		<step no="4.4">
+			<desc>capture packet on sta3</desc>
+			<log-file>step4.4_capture_packet.log</log-file>
+			<ssh target="sta3">
+				-v "rm -f /tmp/${job.sid}_sta3_mcast_packet_1.log"
+				-v "rm -f /tmp/${job.sid}_sta3_mcast_packet_2.log"
+				-v "nohup tshark -i ${sta3.tif.name} dst port ${pub.mtcast1.group1.port} -c 5 -V &gt; /tmp/${job.sid}_sta3_mcast_packet_1.log &amp;"
+			</ssh>
+		</step>
+		
+		<step no="4.5">
+			<desc>get pids of join and tshark process</desc>
+			<multi-setvar>
+				echo "sta1.join.pid1=`${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/step4.1_join_group.log`"
+				echo "sta1.tshark.pid1=`${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/step4.2_capture_packet.log`"
+				echo "sta2.tshark.pid1=`${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/step4.3_capture_packet.log`"
+				echo "sta3.tshark.pid1=`${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/step4.4_capture_packet.log`"
+			</multi-setvar>
+		</step>
+		
+		<step no="4.6">
+			<desc>capture packet on AP</desc>
+			<telnet target="ap1">
+				-v "no capture interface wifi0"
+				-v "no capture interface wifi1"
+				-v "no filter 1"
+				-v "filter 1 l2 data"
+				-v "filter 1 l3 dst-ip ${pub.mtcast1.group1.ip}"
+				-v "capture save interface wifi0 tftp://${mpc.tif.ip}:fmf2_${job.id}_wifi0_1.dmp"
+				-v "capture interface wifi0 count 10 filter 1"
+			</telnet>
+		</step>
+		<step no="4.7" delay="2">
+			<desc>capture packet on AP</desc>
+			<telnet target="ap1">
+				-v "no capture interface wifi0"
+				-v "capture save interface wifi1 tftp://${mpc.tif.ip}:fmf2_${job.id}_wifi1_1.dmp"
+				-v "capture interface wifi1 count 10 filter 1"
+			</telnet>
+		</step>
+		
+		<step no="4.8">
+			<desc>kill process on sta1</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.tshark.pid1}"
+			</ssh>
+		</step>
+		<step no="4.9">
+			<desc>kill process on sta2</desc>
+			<ssh target="sta2">
+				-v "kill ${sta2.tshark.pid1}"
+			</ssh>
+		</step>
+		<step no="4.10">
+			<desc>kill process on sta3</desc>
+			<ssh target="sta3">
+				-v "kill ${sta3.tshark.pid1}"
+			</ssh>
+		</step>
+		
+		<!--check packet after sta1 join multicast group-->
+		<step no="5.1">
+			<desc>check wifi0 packet</desc>
+			<log-file>step5.1_check_wifi0_result.log</log-file>
+			<script>
+				tshark -r /tftpboot/fmf2_${job.id}_wifi0_1.dmp -V > ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "(?i)Destination address:.*\(${sta1.mac}\)"
+				-ps
+				p1 "Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)"
+				-e "User Datagram Protocol"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match>-n -c -i "Dst:" -i "(${sta2.mac})"</log-match>
+			<log-match>-n -c -i "Destination address:" -i "${pub.mtcast1.group1.5mac}"</log-match>
+		</step>
+
+		<step no="5.2">
+			<desc>check wifi1 packet</desc>
+			<log-file>step5.2_check_wifi1_result.log</log-file>
+			<script>
+				tshark -r /tftpboot/fmf2_${job.id}_wifi1_1.dmp -V > ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+			<log-match>-n -c -i "Destination address:" -i "${pub.mtcast1.group1.5mac}"</log-match>
+			<log-match>-n -i "Src: ${pub.mtcast1.ip}" -i "Dst: ${pub.mtcast1.group1.ip}"</log-match>
+			<log-match>-n -c -i "Dst:" -i "(${sta3.mac})"</log-match>
+		</step>
+
+		<step no="5.3">
+			<desc>check packet on sta1</desc>
+			<log-file>step5.3_check_packet.log</log-file>
+			<ssh target="sta1">
+				-v "cat /tmp/${job.sid}_sta1_mcast_packet_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "Internet Protocol Version 4, Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)"
+				-ps
+				p1 "(?i)Protocol: ${pub.mtcast1.protocol}"
+				-e "User Datagram Protocol.*Dst Port:.*${pub.mtcast1.group1.port}"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match>-n -c -i "Dst:" -i "${pub.mtcast1.group1.5mac}"</log-match>
+			<log-match>-c -i "Dst:" -i "${sta1.mac}"</log-match>
+		</step>
+
+		<step no="5.4">
+			<desc>check packet on sta2</desc>
+			<ssh target="sta2">
+				-v "cat /tmp/${job.sid}_sta2_mcast_packet_1.log"
+			</ssh>
+			<log-match>-n -c -i "Dst:" -i "${pub.mtcast1.group1.5mac}"</log-match>
+			<log-match>-n -c -i "Dst:" -i "${sta2.mac}"</log-match>
+		</step>
+
+		<step no="5.5">
+			<desc>check pakcet on sta3</desc>
+			<ssh target="sta3">
+				-v "cat /tmp/${job.sid}_sta3_mcast_packet_1.log"
+			</ssh>
+			<log-match>-n -i "Internet Protocol Version 4, Src: ${pub.mtcast1.ip}" -i "Dst: ${pub.mtcast1.group1.ip}"</log-match>
+			<log-match>-n -c -i "Dst:" -i "${pub.mtcast1.group1.5mac}"</log-match>
+			<log-match>-n -c -i "Dst:" -i "${sta3.mac}"</log-match>
+		</step>
+
+		
+		<step no="6.1">
+			<desc>Laptop2 report to join group 238.1.1.1,</desc>
+			<log-file>step6.1_join_group.log</log-file>
+			<ssh target="sta2">
+				-v "nohup /usr/local/auto/bin/join_mcast_group --group ${pub.mtcast1.group1.ip} &amp;"
+			</ssh>
+		</step>
+		<step no="6.2">
+			<desc>capture packet on sta1</desc>
+			<log-file>step6.2_capture_packet.log</log-file>
+			<ssh target="sta1">
+				-v "nohup tshark -i ${sta1.tif.name} dst port ${pub.mtcast1.group1.port} -c 5 -V &gt; /tmp/${job.sid}_sta1_mcast_packet_2.log &amp;"
+			</ssh>
+		</step>
+		<step no="6.3">
+			<desc>capture packet on sta2</desc>
+			<log-file>step6.3_capture_packet.log</log-file>
+			<ssh target="sta2">
+				-v "nohup tshark -i ${sta2.tif.name} dst port ${pub.mtcast1.group1.port} -c 5 -V &gt; /tmp/${job.sid}_sta2_mcast_packet_2.log &amp;"
+			</ssh>
+		</step>
+		<step no="6.4">
+			<desc>capture packet on sta3</desc>
+			<log-file>step6.4_capture_packet.log</log-file>
+			<ssh target="sta3">
+				-v "nohup tshark -i ${sta3.tif.name} dst port ${pub.mtcast1.group1.port} -c 5 -V &gt; /tmp/${job.sid}_sta3_mcast_packet_2.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="6.5">
+			<desc>get pids of join and tshark process</desc>
+			<multi-setvar>
+				echo "sta2.join.pid=`${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/step6.1_join_group.log`"
+				echo "sta1.tshark.pid2=`${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/step6.2_capture_packet.log`"
+				echo "sta2.tshark.pid2=`${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/step6.3_capture_packet.log`"
+				echo "sta3.tshark.pid2=`${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/step6.4_capture_packet.log`"
+			</multi-setvar>
+		</step>
+		
+		<step no="6.6">
+			<desc>capture packet on AP</desc>
+			<telnet target="ap1">
+				-v "no capture interface wifi0"
+				-v "no capture interface wifi1"
+				-v "no filter 1"
+				-v "filter 1 l2 data"
+				-v "filter 1 l3 dst-ip ${pub.mtcast1.group1.ip}"
+				-v "capture save interface wifi0 tftp://${mpc.tif.ip}:fmf2_${job.id}_wifi0_2.dmp"
+				-v "capture interface wifi0 count 10 filter 1"
+			</telnet>
+		</step>
+		<step no="6.7" delay="2">
+			<desc>capture packet on AP</desc>
+			<telnet target="ap1">
+				-v "no capture interface wifi0"
+				-v "capture save interface wifi1 tftp://${mpc.tif.ip}:fmf2_${job.id}_wifi1_2.dmp"
+				-v "capture interface wifi1 count 10 filter 1"
+			</telnet>
+		</step>
+		
+		<step no="6.8">
+			<desc>kill process on sta1</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.tshark.pid2}"
+				-v "kill ${sta1.join.pid1}"
+			</ssh>
+		</step>
+		<step no="6.9">
+			<desc>kill process on sta2</desc>
+			<ssh target="sta2">
+				-v "kill ${sta2.tshark.pid2}"
+				-v "kill ${sta2.join.pid}"
+			</ssh>
+		</step>
+		<step no="6.10">
+			<desc>kill process on sta3</desc>
+			<ssh target="sta3">
+				-v "kill ${sta3.tshark.pid2}"
+			</ssh>
+		</step>
+
+		<step no="7.1">
+			<desc>check wifi0 packet</desc>
+			<log-file>step7.1_check_wifi0_result.log</log-file>
+			<script>
+				tshark -r /tftpboot/fmf2_${job.id}_wifi0_2.dmp -V &gt; ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "(?i)Destination address:.*\(${pub.mtcast1.group1.5mac}\)"
+				-ps
+				p1 "Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)"
+				-e "User Datagram Protocol"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match>-n -c -i "Dst:" -i "(${sta1.mac})"</log-match>
+			<log-match>-n -c -i "Dst:" -i "(${sta2.mac})"</log-match>
+		</step>
+
+		<step no="7.2">
+			<desc>check wifi1 packet</desc>
+			<log-file>step7.2_check_wifi1_result.log</log-file>
+			<script>
+				tshark -r /tftpboot/fmf2_${job.id}_wifi1_2.dmp -V &gt; ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+			<log-match>-n -c -i "Destination address:" -i "${pub.mtcast1.group1.5mac}"</log-match>
+			<log-match>-n -i "Src: ${pub.mtcast1.ip}" -i "Dst: ${pub.mtcast1.group1.ip}"</log-match>
+			<log-match>-n -c -i "Dst:" -i "(${sta3.mac})"</log-match>
+		</step>
+
+		<step no="7.3">
+			<desc>check sta1 packet</desc>
+			<log-file>step7.3_check_packet.log</log-file>
+			<ssh target="sta1">
+				-v "cat /tmp/${job.sid}_sta1_mcast_packet_2.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "Internet Protocol Version 4, Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)"
+				-ps p1 "(?i)Protocol: ${pub.mtcast1.protocol}"
+				-e "User Datagram Protocol.*Dst Port:.*${pub.mtcast1.group1.port}"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match>-c -i "Dst:" -i "${pub.mtcast1.group1.5mac}"</log-match>
+			<log-match>-n -c -i "Dst:" -i "${sta1.mac}"</log-match>
+		</step>
+
+		<step no="7.4">
+			<desc>check sta2 packet</desc>
+			<log-file>step7.4_check_packet.log</log-file>
+			<ssh target="sta2">
+				-v "cat /tmp/${job.sid}_sta2_mcast_packet_2.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "Internet Protocol Version 4, Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)"
+				-ps
+				p1 "(?i)Protocol: ${pub.mtcast1.protocol}"
+				-e "User Datagram Protocol.*Dst Port:.*${pub.mtcast1.group1.port}"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match>-c -i "Dst:" -i "${pub.mtcast1.group1.5mac}"</log-match>
+			<log-match>-n -c -i "Dst:" -i "${sta2.mac}"</log-match>
+		</step>
+
+		<step no="7.5">
+			<desc>check sta3 packet</desc>
+			<ssh target="sta3">
+				-v "cat /tmp/${job.sid}_sta3_mcast_packet_2.log"
+			</ssh>
+			<log-match>-n -i "Internet Protocol Version 4, Src: ${pub.mtcast1.ip}" -i "Dst: ${pub.mtcast1.group1.ip}"</log-match>
+			<log-match>-n -c -i "Dst:" -i "${pub.mtcast1.group1.5mac}"</log-match>
+			<log-match>-n -c -i "Dst:" -i "${sta3.mac}"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				not trigger AP do multicast to unicast converting , through set member threshold or cu threshold.
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name} multicast conversion-to-unicast disable"
+			</telnet>
+		</step>
+
+		<step no="8.2" delay="5">
+			<desc>show ssid xxx multicast</desc>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} multicast"
+			</telnet>
+			<log-match>-i "Convert multicast to unicast : disable"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>Laptop1 report to join group 238.1.1.1</desc>
+			<log-file>step9.1_join_group.log</log-file>
+			<ssh target="sta1">
+				-v "nohup /usr/local/auto/bin/join_mcast_group --group ${pub.mtcast1.group1.ip} &amp;"
+			</ssh>
+		</step>
+
+		<step no="9.2">
+			<desc>capture packet on sta1</desc>
+			<log-file>step9.2_capture_packet.log</log-file>
+			<ssh target="sta1">
+				-v "nohup tshark -i ${sta1.tif.name} dst port ${pub.mtcast1.group1.port} -c 5 -V &gt; /tmp/${job.sid}_sta1_mcast_packet_3.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="9.3">
+			<desc>get pid of join group and tshark on sta1</desc>
+			<multi-setvar>
+				echo "sta1.join.pid2=`${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/step9.1_join_group.log`"
+				echo "sta1.tshark.pid3=`${bin.dir}/getbyrexp.py -p "\[\d+\]\s+(\d+)" -t str \
+				-f ${log.dir}/step9.2_capture_packet.log`"
+			</multi-setvar>
+		</step>
+		
+		<step no="9.4">
+			<desc>capture packet on AP</desc>
+			<telnet target="ap1">
+				-v "no capture interface wifi0"
+				-v "no capture interface wifi1"
+				-v "no filter 1"
+				-v "filter 1 l2 data"
+				-v "filter 1 l3 dst-ip ${pub.mtcast1.group1.ip}"
+				-v "capture save interface wifi0 tftp://${mpc.tif.ip}:fmf2_${job.id}_wifi0_3.dmp"
+				-v "capture interface wifi0 count 10 filter 1"
+			</telnet>
+		</step>
+		<step no="9.5" delay="2">
+			<desc>capture packet on AP</desc>
+			<telnet target="ap1">
+				-v "no capture interface wifi0"
+				-v "capture save interface wifi1 tftp://${mpc.tif.ip}:fmf2_${job.id}_wifi1_3.dmp"
+				-v "capture interface wifi1 count 10 filter 1"
+			</telnet>
+		</step>
+		
+		<step no="9.6">
+			<desc>kill process on sta1</desc>
+			<ssh target="sta1">
+				-v "kill ${sta1.tshark.pid3}"
+				-v "kill ${sta1.join.pid2}"
+			</ssh>
+		</step>
+		
+		<step no="10.1">
+			<desc>check wifi0 packet</desc>
+			<log-file>step10.1_check_wifi0_result.log</log-file>
+			<script>
+				tshark -r /tftpboot/fmf2_${job.id}_wifi0_3.dmp -V &gt; ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "(?i)Destination address:.*\(${pub.mtcast1.group1.5mac}\)"
+				-ps
+				p1 "Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)"
+				-e "User Datagram Protocol"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match>-n -c -i "Dst:" -i "(${sta1.mac})"</log-match>
+			<log-match>-n -c -i "Dst:" -i "(${sta2.mac})"</log-match>
+		</step>
+
+		<step no="10.2">
+			<desc>check wifi1 packet</desc>
+			<log-file>step10.2_check_wifi1_result.log</log-file>
+			<script>
+				tshark -r /tftpboot/fmf2_${job.id}_wifi1_3.dmp -V &gt; ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "(?i)Destination address:.*\(${pub.mtcast1.group1.5mac}\)"
+				-ps
+				p1 "Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)"
+				-e "User Datagram Protocol"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match>-n -c -i "Dst:" -i "(${sta3.mac})"</log-match>
+		</step>
+
+		<step no="10.3">
+			<desc>check packet on sta1</desc>
+			<log-file>step10.3_check_packet.log</log-file>
+			<ssh target="sta1">
+				-v "cat /tmp/${job.sid}_sta1_mcast_packet_3.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">
+				-b "Internet Protocol Version 4, Src: ${pub.mtcast1.ip} \(${pub.mtcast1.ip}\), Dst: ${pub.mtcast1.group1.ip} \(${pub.mtcast1.group1.ip}\)"
+				-ps
+				p1 "(?i)Protocol: ${pub.mtcast1.protocol}"
+				-e "User Datagram Protocol.*Dst Port:.*${pub.mtcast1.group1.port}"
+				-f ${log.dir}/${log.file}
+			</log-match>
+			<log-match>-c -i "Dst:" -i "${pub.mtcast1.group1.5mac}"</log-match>
+			<log-match>-n -c -i "Dst:" -i "${sta1.mac}"</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="p1">
+				<desc>kill process and remove temp files</desc>
+				<ssh target="sta1">
+					-v "kill ${sta1.join.pid1}"
+					-v "kill ${sta1.join.pid2}"
+					-v "kill ${sta1.tshark.pid1}"
+					-v "kill ${sta1.tshark.pid2}"
+					-v "kill ${sta1.tshark.pid3}"
+					-v "rm -f /tmp/${job.sid}_sta1_mcast_packet_1.log"
+					-v "rm -f /tmp/${job.sid}_sta1_mcast_packet_2.log"
+					-v "rm -f /tmp/${job.sid}_sta1_mcast_packet_3.log"
+				</ssh>
+			</step>
+			<step no="p2">
+				<desc>kill process and remove temp files</desc>
+				<ssh target="sta1">
+					-v "kill ${sta2.join.pid1}"
+					-v "kill ${sta2.tshark.pid1}"
+					-v "kill ${sta2.tshark.pid2}"
+					-v "rm -f /tmp/${job.sid}_sta2_mcast_packet_1.log"
+					-v "rm -f /tmp/${job.sid}_sta2_mcast_packet_2.log"
+				</ssh>
+			</step>
+			<step no="p3">
+				<desc>kill process and remove temp files</desc>
+				<ssh target="sta1">
+					-v "kill ${sta3.tshark.pid1}"
+					-v "kill ${sta3.tshark.pid2}"
+					-v "rm -f /tmp/${job.sid}_sta3_mcast_packet_1.log"
+					-v "rm -f /tmp/${job.sid}_sta3_mcast_packet_2.log"
+				</ssh>
+			</step>
+
+			<step no="p4">
+				<desc>delete local files on mpc</desc>
+				<script>
+					rm -f /tftpboot/fmf2_${job.id}_wifi0_1.dmp
+					rm -f /tftpboot/fmf2_${job.id}_wifi1_1.dmp
+					rm -f /tftpboot/fmf2_${job.id}_wifi0_2.dmp
+					rm -f /tftpboot/fmf2_${job.id}_wifi1_2.dmp
+					rm -f /tftpboot/fmf2_${job.id}_wifi0_3.dmp
+					rm -f /tftpboot/fmf2_${job.id}_wifi1_3.dmp
+				</script>
+			</step>
+		</stage>
+		
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

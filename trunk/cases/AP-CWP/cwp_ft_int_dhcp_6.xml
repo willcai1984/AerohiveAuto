@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Dhcp acceleration test</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		- Client connects to some other networks and gets a ip like 10.155.30.1 before
+
+		Test Procedure:
+		1:Configure internal CWP on ap
+		2:Client links to ap and passes cwp, result 1
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="url" value="http://www.google.com.hk" />
+	<property name="selenium_path" value="/root/selenium-server-standalone-2.42.2.jar" />
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<step no="0.1">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "export DISPLAY=:1"
+				-v "nohup java -jar ${selenium_path} 1>logfile.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				start selenium server
+			</desc>
+			<ssh target="sta1">
+				-v "printenv"
+			</ssh>
+		</step>
+		<step no="1">
+			<desc>
+				config ssid and bind it to interface
+			</desc>
+			<ssh target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${ssid.name}_test"
+				-v "security-object ${ssid.name}_test"
+				-v "ssid ${ssid.name}_test security-object ${ssid.name}_test"
+				-v "security-object ${ssid.name}_test default-user-profile-attr 2"
+				-v "user-profile ${ssid.name}_test qos-policy def-user-qos vlan-id 1 attribute 2"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}_test"
+			</ssh>
+		</step>
+		<step no="1.1">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}_test"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="2" file="${case.dir}/subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>Show ip</desc>
+			<log-file>step3_show_ip.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig wlan0"
+			</ssh>
+		</step>
+
+		<step no="3.1">
+			<desc>Get laptop1's ip original</desc>
+			<setvar name="sta1.original.ip">
+				python ${bin.dir}/getbyrexp.py -p "inet addr:([0-9-.]+)" -f ${log.dir}/step3_show_ip.log -t str
+			</setvar>
+		</step>
+
+		<step no="4">
+			<desc>
+				1:Configure internal cwp on ap
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal auth-user-profile-attr 1 timer-display"
+				-v "security-object ${ssid.name} security protocol-suite open"
+				-v "security-object ${ssid.name} web-server"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal timer-display alert 10"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal internal-servers"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				config ssid and bind it to interface
+			</desc>
+			<ssh target="ap1">
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "user-profile sss qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface ${ssid_bind_interface} ssid ${ssid.name}"
+				-v "interface ${ssid_bind_interface} radio channel 1"
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				open debug mode and clear log all
+			</desc>
+			<ssh target="ap1">
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "_debug dhcpd all"
+				-v "_ff dst-port 67 bidirectional"
+				-v "clear log all"
+			</ssh>
+		</step>
+		<step no="4.3">
+			<multi-setvar>
+				echo "conn1.ssid=${ssid.name}"
+				echo "conn1.proto=open"
+				echo "conn1.pif=${ssid_bind_interface}"
+			</multi-setvar>
+		</step>
+		<include prefix="5" file="${case.dir}/subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="5.1">
+			<desc>Show ip</desc>
+			<log-file>step5.1_show_ip.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig wlan0"
+			</ssh>
+		</step>
+
+		<step no="5.2">
+			<desc>Get laptop1's ip when laptop1 connection to internal cwp</desc>
+			<setvar name="sta1.internal.ip">
+				python ${bin.dir}/getbyrexp.py -p "inet addr:([0-9-.]+)" -f ${log.dir}/step5.1_show_ip.log -t str
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>cwp_ft_int_dhcp_2_login_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/AerohiveGUI/scripts/cwp/cwp_login.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${url} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -l info -f ${log.dir}/${log.file}
+			</script>
+			<no-error-check />
+		</step>
+		<step no="6">
+			<desc>show the ip after passing auth</desc>
+			<log-file>step5.1_show_ip.log</log-file>
+			<ssh target="sta1">
+				-v "ifconfig wlan0"
+			</ssh>
+		</step>
+
+		<step no="7" delay="20">
+			<desc>Get sta1's ip after passing auth</desc>
+			<setvar name="sta1.internal.ip">
+				python ${bin.dir}/getbyrexp.py -p "inet addr:([0-9-.]+)" -f ${log.dir}/step5.1_show_ip.log -t str
+			</setvar>
+		</step>
+		<step no="8">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step8_show_roam.log</log-file>
+			<ssh target="ap1">
+				-v "show roam cache"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YYNN"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step9_show_logging_buffered.log</log-file>
+			<ssh target="ap1" timeout="500">
+				-v "show logging buffered"
+			</ssh>
+			<no-error-check />
+			<log-match>-c -i "fe delete tv web filter for ${sta1.internal.ip.second}"</log-match>
+			<log-match>-c -i "broadcasting packet to client(${sta1.tif.mac}) (NAK)"</log-match>
+	<!--		<log-match>-c -i "sending broadcast DHCP NAK for ${sta1.tif.mac} RENEW"</log-match>-->
+			<log-match>-c -i "received DHCP REQUEST from client ${sta1.tif.mac} thro wifi0.2"</log-match>
+			<log-match>-c -i "station ${sta1.tif.mac} resent DHCP DISCOVER"</log-match>
+			<log-match>-c -i "station ${sta1.tif.mac} sent DHCP DISCOVER"</log-match>
+		</step>
+		<step no="10" delay="60">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step10_show_auth.log</log-file>
+			<ssh target="ap1">
+				-v "show auth"
+			</ssh>
+			<log-match>-c -i "${sta1.tif.mac} *wifi0.2 *\d*04 *${sta1.internal.ip.second}" -re</log-match>
+		</step>
+	</stage>
+</testcase>

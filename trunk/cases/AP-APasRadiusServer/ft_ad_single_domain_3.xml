@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check the normal auth method with AD</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-a local radius server must be configed first
+		-AP's clock should be sync to the AD server via a ntp server
+		-setup a ssid using cwp or mac auth,so we can use pap and chap for
+		auth,radius server is local
+
+		Test Procedure:
+		-config a minimal AD,AP joined domain successfully
+		-client connect to AP using pap
+		-client connect to AP using chap
+		-client connect to AP using mschapv2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<include prefix="start_selenium_server" file="subs/start_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<step no="1">
+			<desc>
+				set security-object parameters
+				config radius server with db-type ad
+			</desc>
+			<telnet target="ap1">
+				-v "ntp server ${pub.ntp}"
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v ""
+				-v "security-object ${ssid.name}"
+				-v "security-object ${ssid.name} default-user-profile-attr 1"
+				-v "security-object ${ssid.name} security aaa radius primary ${ap1.forwards.ip}"
+				-v "aaa radius-server local db-type active-directory primary server ${pub.ad1.ip}"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} fullname ${pub.ad1.realm} default"
+				-v "aaa radius-server local db-type active-directory primary domain ${pub.ad1.name} binddn ${pub.ad1.binddn} password ${pub.ad1.bindpwd}"
+				-v "aaa radius-server local db-type active-directory primary login admin-user ${pub.ad1.admin} password ${pub.ad1.adminpwd}"
+				-v "aaa radius-server local enable"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config the passthrough cwp auth
+				-create ssid and bind to interface wifi0
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal reg-user-profile-attr 1 auth-user-profile-attr 1 timer-display"
+				-v "security-object ${ssid.name} web-server"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal timer-display alert 10"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal pass-through vlan 1"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal failure-redirect login-page "
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal auth-method pap"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "_debug radiusd excessive"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-show running-config
+			</desc>
+			<log-file>step2.1_show_run.log</log-file>
+			<telnet target="ap1">
+				-v "show running-config"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>show status of radius server on AP1</desc>
+			<log-file>step2.2_show_rad_srv.log</log-file>
+			<telnet target="ap1">
+				-v "show aaa radius-server"
+			</telnet>
+			<log-match>-i "Enabled" -i "Local RADIUS" -p 3</log-match>
+			<log-match>-i "primary active-directory (active)"</log-match>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>method_pap_log_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive.py -r http://${sta1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l info --parameters visit.url=${pub.hm2.ip} visit.pre_url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} --preserve-session &gt; ${log.dir}/pap_session_id.log
+			</script>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="pap.session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/pap_session_id.log
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step5_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *wifi0.1 *04 *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step6_show_roam.log</log-file>
+			<telnet target="ap1">
+				-v "show roam cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YYNN"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				do log out
+			</desc>
+			<log-file>method_pap_log_out.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive.py -r http://${sta1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l info --parameters visit.url=${pub.hm2.ip} visit.pre_url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} --session-id ${pap.session.id}
+			</script>
+		</step>
+
+		<step no="8">
+			<desc>
+				-config auth-method with chap
+			</desc>
+			<telnet target="ap1">
+				-v "no security-object ${ssid.name} security additional-auth-method captive-web-portal auth-method"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal auth-method chap"
+			</telnet>
+		</step>
+
+		<step no="9">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>method_chap_log_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_negative.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} visit.pre_url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd}123 -t ff -f ${log.dir}/${log.file} -l info
+			</script>
+		</step>
+
+		<step no="10" delay="5">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step10_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *wifi0.1 *01 *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step10.1_show_roam.log</log-file>
+			<telnet target="ap1">
+				-v "show roam cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YNNN"</log-match>
+		</step>
+
+		<step no="10.2">
+			<desc>
+				-config auth-method with ms-chap-v2
+			</desc>
+			<telnet target="ap1">
+				-v "no security-object ${ssid.name} security additional-auth-method captive-web-portal auth-method"
+				-v "security-object ${ssid.name} security additional-auth-method captive-web-portal auth-method ms-chap-v2"
+			</telnet>
+		</step>
+
+		<step no="11">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>method_msv2_log_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive.py -r http://${sta1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l info --parameters visit.url=${pub.hm2.ip} visit.pre_url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} --preserve-session &gt; ${log.dir}/msv2_session_id.log
+			</script>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="msv2.session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/msv2_session_id.log
+			</setvar>
+		</step>
+
+		<step no="12">
+			<desc>
+				show auth
+			</desc>
+			<log-file>step12_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *wifi0.1 *04 *${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				show roam cache
+			</desc>
+			<log-file>step13_show_roam.log</log-file>
+			<telnet target="ap1">
+				-v "show roam cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YYNN"</log-match>
+		</step>
+
+		<step no="14">
+			<desc>
+				do log out
+			</desc>
+			<log-file>method_msv2_log_out.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive.py -r http://${sta1.mif.ip}:4444/wd/hub -t ff -f ${log.dir}/${log.file} -l info --parameters visit.url=${pub.hm2.ip} visit.pre_url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} --session-id ${msv2.session.id}
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_workload}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

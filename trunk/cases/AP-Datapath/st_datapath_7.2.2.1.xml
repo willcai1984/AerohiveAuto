@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Broadcast/Multicast between mgt0 and other interfaces</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-laptop1 is connected to portal, pass authentication
+		-laptop2 connects with switch, pc connects ap through wired
+		-all laptops are in same vlan
+
+		Test Procedure:
+		-ap sends broadcast like ARP request etc, result 1
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<if>"${ap.wifi1.existed}" =="true" &amp;&amp; "${ap2.eth1.existed}" =="true"</if>
+
+		<include prefix="pre0.1" file="subs/bpc_init.xml" obj-args="bpc1, ap2" args="none" />
+
+		<step no="0">
+			<desc>
+				-configure hive and bind it to interface
+			</desc>
+			<if>"${ap1.eth1.existed}" =="true"</if>
+			<telnet target="ap1">
+				-v "interface eth1 shutdown"
+			</telnet>
+		</step>
+
+		<step no="pre0">
+			<desc>
+				-configure hive and bind it to interface
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "security-object FWtest"
+				-v "security-object FWtest default-user-profile-attr 1"
+				-v "ssid ${ssid.name} security-object FWtest"
+				-v "user-profile ttt qos-policy def-user-qos vlan-id 1 attribute 1"
+			</telnet>
+		</step>
+
+		<step no="pre0.1">
+			<desc>
+				-configure hive and bind it to interface
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 radio channel 153"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 mac-learning enable"
+			</telnet>
+		</step>
+
+		<step no="pre0.2">
+			<desc>
+				show ap2's interface wifi1 info
+			</desc>
+			<log-file>show_ap2_interface_info.log</log-file>
+			<telnet target="ap2">
+				-v "show interface wifi1"
+			</telnet>
+		</step>
+
+		<step no="pre0.3">
+			<desc>
+				get ap2's wifi1's mac address
+			</desc>
+			<setvar name="ap2.wifi1.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap2_interface_info.log -i wifi1 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="pre0.4">
+			<desc>shutdown interface wifi1 and then up it (it's aimed to clear wifi1's neighbor list)</desc>
+			<telnet target="ap1">
+				-v "interface wifi1 hive ${hive.name} shutdown"
+				-v "no interface wifi1 hive ${hive.name} shutdown"
+				-v "interface wifi1 radio channel 153"
+			</telnet>
+		</step>
+
+		<step no="pre1.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show acsp neighbor to make sure ap1 is ap2's acsp neighbor
+			</desc>
+			<log-file>pre1.1_show_acsp_neighbor_${loop_check.idx}.log</log-file>
+			<telnet target="ap1" timeout="180">
+				-v "show acsp neighbor"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+Backhaul\s+${hive.name}" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="pre1.2">
+			<desc>
+				-shutdown interface eth0
+			</desc>
+			<console target="ap1">
+				-v "interface eth0 shutdown"
+			</console>
+		</step>
+
+		<step no="pre1.3" delay="35" type="loop-check" loop-max-times="10" loop-interval="5">
+			<desc>
+				show amrp neighbor
+			</desc>
+			<log-file>pre1.3_show_amrp_neighbor_${loop_check.idx}.log</log-file>
+			<console target="ap1" timeout="180">
+				-v "show amrp neighbor"
+			</console>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${ap2.wifi1.mac}\s+${ap2.mgt0.ip}\s+TWO-WAY" -c 1 -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="pre1.4">
+			<desc>
+				-show interface in Portal1
+			</desc>
+			<log-file>step_pre1.4_show_interface_portal1.log</log-file>
+			<telnet target="ap2">
+				-v "show interface"
+			</telnet>
+		</step>
+
+		<step no="pre1.4b">
+			<desc>
+				Get mgt0 mac in Portal1
+			</desc>
+			<setvar name="portal1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step_pre1.4_show_interface_portal1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.4c">
+			<desc>
+				Get wifi1 mac in Portal1
+			</desc>
+			<setvar name="portal1.wifi1.mac">
+				${bin.dir}/getbyrexp.py -p "Wifi1.1 *(\S+) *" -f ${log.dir}/step_pre1.4_show_interface_portal1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre1.5">
+			<desc>
+				-show interface in mp1
+			</desc>
+			<log-file>step_pre1.5_show_interface_mp1.log</log-file>
+			<console target="ap1">
+				-v "show interface"
+			</console>
+		</step>
+
+		<step no="pre1.5b">
+			<desc>
+				Get mgt0 mac in mp1
+			</desc>
+			<setvar name="mp1.mgt0.mac">
+				${bin.dir}/getbyrexp.py -p "Mgt0 *(\S+) *" -f ${log.dir}/step_pre1.5_show_interface_mp1.log -t str
+			</setvar>
+		</step>
+
+		<step no="pre2.1" type="loop-check" loop-max-times="15" loop-interval="10">
+			<desc>
+				1. Show route, check route table in Portal1
+			</desc>
+			<log-file>step_pre2.1_show_route_in_portal1_${loop_check.idx}.log</log-file>
+			<console target="ap1">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal1.wifi1.mac} *wifi1.1"</log-match>
+		</step>
+
+		<step no="pre2.2" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>
+				2. Show route, check route table in MP1.
+			</desc>
+			<log-file>step_pre2.2_show_route_on_mp1_${loop_check.idx}.log</log-file>
+			<console target="ap2">
+				-v "show route"
+			</console>
+			<log-match>-i "0000:0000:0000 *${portal1.mgt0.mac} *eth0"</log-match>
+		</step>
+
+		<step no="pre3.1">
+			<desc>ifconfig to show the server add</desc>
+			<log-file>pre3.1_ifconfig.log</log-file>
+			<ssh host="${tb.http_server}">
+				-v "ifconfig ${tb.http_server.name}"
+			</ssh>
+		</step>
+
+		<step no="pre3.2">
+			<desc>Get server's mac</desc>
+			<setvar name="tb.http.mac">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/pre3.1_ifconfig.log -i ${tb.http_server.name} -m -width
+			</setvar>
+		</step>
+
+		<include prefix="1" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<console target="ap1">
+				-v "_ff id 1 src-mac ${tb.http.mac} etype 0806 bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear log all"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				-open debug mode and clear log all
+			</desc>
+			<telnet target="ap2">
+				-v "_ff id 1 src-mac ${tb.http.mac} etype 0806 bidirectional"
+				-v "_kdebug fe detail"
+				-v "_kdebug fe basic"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3.2">
+			<desc>-server ping an unexited ip, result 3</desc>
+			<log-file>step3.2_ping.log</log-file>
+			<ssh host="${tb.http_server}" timeout="120">
+				-v "ping ${tb.unreach.ip1} -c 8"
+			</ssh>
+			<log-match>-n -c -i "from ${tb.unreach.ip1}" -i "ttl="</log-match>
+		</step>
+
+		<step no="3.3" delay="10">
+			<desc>
+				check log info on AP1
+			</desc>
+			<log-file>step3.3_show_log_buff.log</log-file>
+			<console target="ap1" timeout="400">
+				-v "show logging buffered"
+			</console>
+			<log-match>-c -i "(i) wifi1.1 ${tb.http.mac}-&gt;ffff:ffff:ffff arp ${tb.http_server}(${tb.http.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi0.1 ${tb.http.mac}-&gt;ffff:ffff:ffff arp ${tb.http_server}(${tb.http.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) wifi1.1 ${tb.http.mac}-&gt;ffff:ffff:ffff arp ${tb.http_server}(${tb.http.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="3.4" delay="10">
+			<desc>
+				check log info on AP1
+			</desc>
+			<log-file>step3.4_show_log_buff.log</log-file>
+			<telnet target="ap2" timeout="400">
+				-v "show logging buffered"
+			</telnet>
+			<log-match>-c -i "(o) wifi1.1 ${tb.http.mac}-&gt;ffff:ffff:ffff arp ${tb.http_server}(${tb.http.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) eth1 ${tb.http.mac}-&gt;ffff:ffff:ffff arp ${tb.http_server}(${tb.http.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) eth0 ${tb.http.mac}-&gt;ffff:ffff:ffff arp ${tb.http_server}(${tb.http.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) wifi1.1 ${tb.http.mac}-&gt;ffff:ffff:ffff arp ${tb.http_server}(${tb.http.mac})-&gt;${tb.unreach.ip1}(0000:0000:0000)"</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

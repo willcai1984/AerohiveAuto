@@ -1,0 +1,1165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify the function of a recurrent schedule with time range specified only- two time ranges.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Change the system time zone to a non-default one, no DST setting.
+		Configure and bind a PPSK SSID.
+		Configure a user group, password auto generated, without setting the time range.
+		Set the user group to the PPSK SSID.
+
+		Test Procedure:
+		1. Configure a PPSK schedule:
+		Recurrent, without specifying time zone,With 2 time ranges
+		2. Set the PPSK schedule to the user group
+		3. Generate some user accounts by specifying the index range.
+		4. Check the validity of the generated accounts before, in, between, after the schedule range. [result 1]
+		5. Try to connect to the PPSK SSID using the generated accounts before, in, between, after the schedule range. [result 2]
+		6. Check the [result 1] and [result 2] in consecutive 2 days. [result 3]
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="default.psk" value="aerohive" />
+
+	<stage>
+		<step no="0">
+			<desc>
+				-Config ap1's vlan and native-vlan
+			</desc>
+			<console target="ap1">
+				-v "interface mgt0 vlan ${tb.vlan1}"
+				-v "interface mgt0 native-vlan ${tb.vlan1}"
+			</console>
+		</step>
+
+		<step no="0.1" delay="30">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>Get ap1's ip</desc>
+			<setvar name="ap1.mgt0.ip">
+				perl ${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -nomask
+			</setvar>
+		</step>
+
+		<step no="0.3">
+			<desc>
+				show ap1's interface wifi0 info
+			</desc>
+			<log-file>show_ap1_interface_info.log</log-file>
+			<telnet target="ap1">
+				-v "show interface wifi0"
+			</telnet>
+		</step>
+
+		<step no="0.4">
+			<desc>
+				get ap1's wifi0's mac address
+			</desc>
+			<setvar name="ap1.wifi0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/show_ap1_interface_info.log -i wifi0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<step no="1">
+			<desc>
+				Change the system time zone to a non-default one, no DST setting.
+				Configure a user group, password auto generated, without setting the time range.
+				Set the user group to the PPSK SSID.
+			</desc>
+			<telnet target="ap1">
+				-v "_debug auth info"
+				-v "clear log all"
+				-v "clock time-zone 1"
+				-v "no clock time-zone daylight-saving-time"
+				-v "user-group userGroup1"
+				-v "user-group userGroup1 password-generation-method auto"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-Configure and bind a PPSK SSID.
+				-Configure a PPSK schedule:
+				-Recurrent, without specifying time zone,With 2 time ranges
+			</desc>
+			<telnet target="ap1">
+				-v "security-object ppsk"
+				-v "security-object ppsk security protocol-suite wpa-tkip-psk ascii-key ${default.psk}"
+				-v "security-object ppsk default-user-profile-attr 1"
+				-v "security-object ppsk security private-psk"
+				-v "user-profile ttt vlan-id ${tb.vlan1} attribute 1"
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} user-group userGroup1"
+				-v "ssid ${ssid.name} max-client 32"
+				-v "ssid ${ssid.name} security-object ppsk"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "interface wifi0 radio channel 1"
+				-v "clock date-time 2012-10-27 10:00:00"
+				-v "schedule psch01 ppsk recurrent time-range 10:06 to 10:13 time-range 10:21 to 10:27"
+				-v "user-group userGroup1 auto-generation schedule psch01"
+				-v "user-group userGroup1 auto-generation index-range 1"
+			</telnet>
+		</step>
+
+		<step no="1.2" delay="5">
+			<desc>
+				show user-group
+			</desc>
+			<log-file>step1.2_show_user_group.log</log-file>
+			<telnet target="ap1" delay="3">
+				-v "show user-group"
+			</telnet>
+			<log-match>-c -i "userGroup1" -p 6 -i "AP" -i "2012-10-27 *10:06:00 *2012-10-27 *10:13:00" -p 14 -i "psch01"</log-match>
+		</step>
+
+		<include prefix="2" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step2_show_logging_buffered.log" />
+
+		<step no="3">
+			<desc>
+				check logging result
+			</desc>
+			<log-file>step2_show_logging_buffered.log</log-file>
+			<log-match>-c -i "generated *for *user *(userGroup10001)"</log-match>
+		</step>
+
+		<step no="3.a">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value.range1" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step2_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup10001\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				show user
+			</desc>
+			<log-file>step3.1_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup"</log-match>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step3.2_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<step no="pre.conn1.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn1.psk" type="special">
+				echo ${ppsk.auto.value.range1}
+			</setvar>
+		</step>
+
+		<property name="conn1.ssid" value="${ssid.name}" />
+		<property name="conn1.proto" value="wpa-tkip-psk" />
+		<property name="conn1.auth_negative_test" value="true" />
+		<property name="conn1.dhcp_negative_test" value="true" />
+
+		<include prefix="4" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="5">
+			<desc>
+				show logging buffered
+			</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "invalid MIC in msg 2/4 of 4-Way Handshake"</log-match>
+			<log-match>-c -i "sta ${sta1.tif.mac} is disassociated from"</log-match>
+		</step>
+
+		<step no="6" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step6_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes *userGroup1"</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step6.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes"</log-match>
+		</step>
+
+		<step no="pre.conn2.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn2.psk" type="special">
+				echo ${ppsk.auto.value.range1}
+			</setvar>
+		</step>
+
+		<property name="conn2.ssid" value="${ssid.name}" />
+		<property name="conn2.proto" value="wpa-tkip-psk" />
+
+		<include prefix="7" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta1, ap1" />
+
+		<step no="8" delay="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step8_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step8.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="8.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step8.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup10001" -p 7 -i "done"</log-match>
+		</step>
+
+		<step no="8.3">
+			<desc>
+				- clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="9" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step9_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup1"</log-match>
+		</step>
+
+		<step no="9.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step9.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<include prefix="11" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step11_show_logging_buffered.log" />
+
+		<step no="11.1">
+			<desc>
+				- check logging result
+			</desc>
+			<log-file>step11_show_logging_buffered.log</log-file>
+			<log-match>-c -i "Try to disassoc ${sta1.tif.mac} from ${ap1.wifi0.mac}(wifi0.1) for ssid ${ssid.name}"</log-match>
+		</step>
+
+		<include prefix="11.2" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="12">
+			<desc>
+				show user
+			</desc>
+			<log-file>step9_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup1"</log-match>
+		</step>
+
+		<step no="12.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>ste12.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<include prefix="12.2" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step12.2_show_logging_buffered.log" />
+
+		<step no="12.2a">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value.range2" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step12.2_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup10001\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="pre.conn3.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn3.psk" type="special">
+				echo ${ppsk.auto.value.range2}
+			</setvar>
+		</step>
+
+		<property name="conn3.ssid" value="${ssid.name}" />
+		<property name="conn3.proto" value="wpa-tkip-psk" />
+		<property name="conn3.auth_negative_test" value="true" />
+		<property name="conn3.dhcp_negative_test" value="true" />
+
+		<include prefix="13" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn3, sta1, ap1" />
+
+		<include prefix="14" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step14_show_logging_buffered.log" />
+
+		<step no="14.1">
+			<desc>
+				-check logging result
+			</desc>
+			<log-file>step14_show_logging_buffered.log</log-file>
+			<log-match>-c -i "invalid MIC in msg 2/4 of 4-Way Handshake"</log-match>
+			<log-match>-c -i "sta ${sta1.tif.mac} is disassociated from"</log-match>
+		</step>
+
+		<step no="15" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step15_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes *userGroup1"</log-match>
+		</step>
+
+		<step no="15.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step15.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes"</log-match>
+		</step>
+
+		<step no="pre.conn4.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn4.psk" type="special">
+				echo ${ppsk.auto.value.range2}
+			</setvar>
+		</step>
+
+		<property name="conn4.ssid" value="${ssid.name}" />
+		<property name="conn4.proto" value="wpa-tkip-psk" />
+
+		<include prefix="16" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn4, sta1, ap1" />
+
+		<step no="17" delay="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step17_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="17.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step17.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="17.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step17.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup10001" -p 7 -i "done"</log-match>
+		</step>
+
+		<step no="17.3">
+			<desc>
+				- clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="18" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step18_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup1"</log-match>
+		</step>
+
+		<step no="18.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step18.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<include prefix="19" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step19_show_logging_buffered.log" />
+
+		<step no="19.1">
+			<desc>
+				- check logging result
+			</desc>
+			<log-file>step19_show_logging_buffered.log</log-file>
+			<log-match>-c -i "Try to disassoc ${sta1.tif.mac} from ${ap1.wifi0.mac}(wifi0.1) for ssid ${ssid.name}"</log-match>
+		</step>
+
+		<include prefix="20" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="21">
+			<desc>
+				-set clock time
+			</desc>
+			<telnet target="ap1">
+				-v "clock date-time 2012-10-28 10:00:00"
+			</telnet>
+		</step>
+
+		<include prefix="22" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step22_show_logging_buffered.log" />
+
+		<step no="22.a">
+			<desc>
+				check logging result
+			</desc>
+			<log-file>step22_show_logging_buffered.log</log-file>
+			<log-match>-c -i "generated *for *user *(userGroup10001)"</log-match>
+		</step>
+
+		<step no="22.b">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value.range1.second" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step22_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup10001\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="22.c">
+			<desc>
+				show user
+			</desc>
+			<log-file>step22.c_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup"</log-match>
+		</step>
+
+		<step no="22.d">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step22.d_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<step no="pre.conn5.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn5.psk" type="special">
+				echo ${ppsk.auto.value.range1.second}
+			</setvar>
+		</step>
+
+		<property name="conn5.ssid" value="${ssid.name}" />
+		<property name="conn5.proto" value="wpa-tkip-psk" />
+		<property name="conn5.auth_negative_test" value="true" />
+		<property name="conn5.dhcp_negative_test" value="true" />
+
+		<include prefix="23" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn5, sta1, ap1" />
+
+		<include prefix="24" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step24_show_logging_buffered.log" />
+
+		<step no="24.a">
+			<desc>
+				-check logging result
+			</desc>
+			<log-file>step24_show_logging_buffered.log</log-file>
+			<log-match>-c -i "invalid MIC in msg 2/4 of 4-Way Handshake"</log-match>
+			<log-match>-c -i "sta ${sta1.tif.mac} is disassociated from"</log-match>
+		</step>
+
+		<step no="25" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step25_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes *userGroup1"</log-match>
+		</step>
+
+		<step no="25.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step25.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes"</log-match>
+		</step>
+
+		<step no="pre.conn6.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn6.psk" type="special">
+				echo ${ppsk.auto.value.range1.second}
+			</setvar>
+		</step>
+
+		<property name="conn6.ssid" value="${ssid.name}" />
+		<property name="conn6.proto" value="wpa-tkip-psk" />
+
+		<include prefix="26" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn6, sta1, ap1" />
+
+		<step no="27" delay="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step27_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="27.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step27.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="27.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step27.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup10001" -p 7 -i "done"</log-match>
+		</step>
+
+		<step no="27.3">
+			<desc>
+				- clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="28" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step28_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup1"</log-match>
+		</step>
+
+		<step no="28.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step28.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<include prefix="29" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step29_show_logging_buffered.log" />
+
+		<step no="29.1">
+			<desc>
+				- check logging result
+			</desc>
+			<log-file>step29_show_logging_buffered.log</log-file>
+			<log-match>-c -i "Try to disassoc ${sta1.tif.mac} from ${ap1.wifi0.mac}(wifi0.1) for ssid ${ssid.name}"</log-match>
+		</step>
+
+		<include prefix="30" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="31">
+			<desc>
+				show user
+			</desc>
+			<log-file>step31_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup1"</log-match>
+		</step>
+
+		<step no="31.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>ste31.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<include prefix="32" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step32_show_logging_buffered.log" />
+
+		<step no="32.a">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value.range2.second" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step32_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup10001\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="pre.conn7.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn7.psk" type="special">
+				echo ${ppsk.auto.value.range2.second}
+			</setvar>
+		</step>
+
+		<property name="conn7.ssid" value="${ssid.name}" />
+		<property name="conn7.proto" value="wpa-tkip-psk" />
+		<property name="conn7.auth_negative_test" value="true" />
+		<property name="conn7.dhcp_negative_test" value="true" />
+
+		<include prefix="33" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn7, sta1, ap1" />
+
+		<include prefix="34" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step34_show_logging_buffered.log" />
+
+		<step no="34.1">
+			<desc>
+				-check logging result
+			</desc>
+			<log-file>step34_show_logging_buffered.log</log-file>
+			<log-match>-c -i "invalid MIC in msg 2/4 of 4-Way Handshake"</log-match>
+			<log-match>-c -i "sta ${sta1.tif.mac} is disassociated from"</log-match>
+		</step>
+
+		<step no="35" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step35_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes *userGroup1"</log-match>
+		</step>
+
+		<step no="35.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step35.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes"</log-match>
+		</step>
+
+		<step no="pre.conn8.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn8.psk" type="special">
+				echo ${ppsk.auto.value.range2.second}
+			</setvar>
+		</step>
+
+		<property name="conn8.ssid" value="${ssid.name}" />
+		<property name="conn8.proto" value="wpa-tkip-psk" />
+
+		<include prefix="36" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn8, sta1, ap1" />
+
+		<step no="37" delay="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step37_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="37.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step37.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="37.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step37.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup10001" -p 7 -i "done"</log-match>
+		</step>
+
+		<step no="37.3">
+			<desc>
+				- clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="38" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step38_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup1"</log-match>
+		</step>
+
+		<step no="38.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step38.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<include prefix="39" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step39_show_logging_buffered.log" />
+
+		<step no="39.a">
+			<desc>
+				- check logging result
+			</desc>
+			<log-file>step39_show_logging_buffered.log</log-file>
+			<log-match>-c -i "Try to disassoc ${sta1.tif.mac} from ${ap1.wifi0.mac}(wifi0.1) for ssid ${ssid.name}"</log-match>
+		</step>
+
+		<include prefix="40" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="41">
+			<desc>
+				-set clock time
+			</desc>
+			<telnet target="ap1">
+				-v "clock date-time 2012-10-29 10:00:00"
+			</telnet>
+		</step>
+
+		<include prefix="42" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step42_show_logging_buffered.log" />
+
+		<step no="42.a">
+			<desc>
+				check logging result
+			</desc>
+			<log-file>step42_show_logging_buffered.log</log-file>
+			<log-match>-c -i "generated *for *user *(userGroup10001)"</log-match>
+		</step>
+
+		<step no="42.b">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value.range1.third" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step42_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup10001\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="42.c">
+			<desc>
+				show user
+			</desc>
+			<log-file>step42.c_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup"</log-match>
+		</step>
+
+		<step no="42.d">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step42.d_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<step no="pre.conn9.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn9.psk" type="special">
+				echo ${ppsk.auto.value.range1.third}
+			</setvar>
+		</step>
+
+		<property name="conn9.ssid" value="${ssid.name}" />
+		<property name="conn9.proto" value="wpa-tkip-psk" />
+		<property name="conn9.auth_negative_test" value="true" />
+		<property name="conn9.dhcp_negative_test" value="true" />
+
+		<include prefix="43" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn9, sta1, ap1" />
+
+		<include prefix="44" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step44_show_logging_buffered.log" />
+
+		<step no="44.a">
+			<desc>
+				-check logging result
+			</desc>
+			<log-file>step44_show_logging_buffered.log</log-file>
+			<log-match>-c -i "invalid MIC in msg 2/4 of 4-Way Handshake"</log-match>
+			<log-match>-c -i "sta ${sta1.tif.mac} is disassociated from"</log-match>
+		</step>
+
+		<step no="45" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step45_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes *userGroup1"</log-match>
+		</step>
+
+		<step no="45.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step45.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes"</log-match>
+		</step>
+
+		<step no="pre.conn10.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn10.psk" type="special">
+				echo ${ppsk.auto.value.range1.third}
+			</setvar>
+		</step>
+
+		<property name="conn10.ssid" value="${ssid.name}" />
+		<property name="conn10.proto" value="wpa-tkip-psk" />
+
+		<include prefix="46" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn10, sta1, ap1" />
+
+		<step no="47" delay="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step47_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="47.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step47.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="47.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step47.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup10001" -p 7 -i "done"</log-match>
+		</step>
+
+		<step no="47.3">
+			<desc>
+				- clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="48" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step48_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup1"</log-match>
+		</step>
+
+		<step no="48.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step48.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<include prefix="49" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step49_show_logging_buffered.log" />
+
+		<step no="49.1">
+			<desc>
+				- check logging result
+			</desc>
+			<log-file>step49_show_logging_buffered.log</log-file>
+			<log-match>-c -i "Try to disassoc ${sta1.tif.mac} from ${ap1.wifi0.mac}(wifi0.1) for ssid ${ssid.name}"</log-match>
+		</step>
+
+		<include prefix="50" file="subs/release_station_wifi.xml" obj-args="sta1" />
+
+		<step no="51">
+			<desc>
+				show user
+			</desc>
+			<log-file>step51_show_user.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup1"</log-match>
+		</step>
+
+		<step no="51.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>ste51.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<include prefix="52" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step52_show_logging_buffered.log" />
+
+		<step no="52.a">
+			<desc>Get the ppsk value</desc>
+			<setvar name="ppsk.auto.value.range2.third" type="special">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step52_show_logging_buffered.log -p "password \((.*)\) generated for user \(userGroup10001\)" --script "m.group(1)" -s none -g0
+			</setvar>
+		</step>
+
+		<step no="pre.conn11.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn11.psk" type="special">
+				echo ${ppsk.auto.value.range2.third}
+			</setvar>
+		</step>
+
+		<property name="conn11.ssid" value="${ssid.name}" />
+		<property name="conn11.proto" value="wpa-tkip-psk" />
+		<property name="conn11.auth_negative_test" value="true" />
+		<property name="conn11.dhcp_negative_test" value="true" />
+
+		<include prefix="53" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn11, sta1, ap1" />
+
+		<include prefix="54" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step54_show_logging_buffered.log" />
+
+		<step no="54.1">
+			<desc>
+				-check logging result
+			</desc>
+			<log-file>step54_show_logging_buffered.log</log-file>
+			<log-match>-c -i "invalid MIC in msg 2/4 of 4-Way Handshake"</log-match>
+			<log-match>-c -i "sta ${sta1.tif.mac} is disassociated from"</log-match>
+		</step>
+
+		<step no="55" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step55_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes *userGroup1"</log-match>
+		</step>
+
+		<step no="55.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step55.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "Yes"</log-match>
+		</step>
+
+		<step no="pre.conn12.psk" var-type="s1">
+			<desc>set value of psk</desc>
+			<setvar name="conn12.psk" type="special">
+				echo ${ppsk.auto.value.range2.third}
+			</setvar>
+		</step>
+
+		<property name="conn12.ssid" value="${ssid.name}" />
+		<property name="conn12.proto" value="wpa-tkip-psk" />
+
+		<include prefix="56" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn12, sta1, ap1" />
+
+		<step no="57" delay="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step57_show_station.log</log-file>
+			<telnet target="ap1">
+				-v "show ssid ${ssid.name} station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="57.1">
+			<desc>
+				- sh roa ca
+			</desc>
+			<log-file>step57.1_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -p 5 -i "1" -i "0 *YNNN"</log-match>
+		</step>
+
+		<step no="57.2">
+			<desc>
+				- show auth
+			</desc>
+			<log-file>step57.2_show_auth.log</log-file>
+			<telnet target="ap1">
+				-v "show auth"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *1" -i "WPA/TKIP" -i "userGroup10001" -p 7 -i "done"</log-match>
+		</step>
+
+		<step no="57.3">
+			<desc>
+				- clear log all
+			</desc>
+			<telnet target="ap1">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="58" delay="10" type="loop-check" loop-max-times="50" loop-interval="5">
+			<desc>
+				show user
+			</desc>
+			<log-file>step58_show_user_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show user"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No *userGroup1"</log-match>
+		</step>
+
+		<step no="58.1">
+			<desc>
+				-show auth private-psk
+			</desc>
+			<log-file>step58.1_show_auth_private_psk.log</log-file>
+			<telnet target="ap1">
+				-v "show auth private-psk"
+			</telnet>
+			<log-match>-c -i "userGroup10001" -i "No"</log-match>
+		</step>
+
+		<include prefix="59" file="subs/save_ap_log.xml" args="show logging buffered, ap1, step59_show_logging_buffered.log" />
+
+		<step no="59.a">
+			<desc>
+				- check logging result
+			</desc>
+			<log-file>step59_show_logging_buffered.log</log-file>
+			<log-match>-c -i "Try to disassoc ${sta1.tif.mac} from ${ap1.wifi0.mac}(wifi0.1) for ssid ${ssid.name}"</log-match>
+		</step>
+	</stage>
+</testcase>

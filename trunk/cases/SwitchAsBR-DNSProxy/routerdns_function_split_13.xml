@@ -1,0 +1,287 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Enable a DNS server on mgt0, check function</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		Set interface ${br1.br.wan.int1} to wan mode
+		Set interface eth1 to access mode and enable mac-learning
+		${br1.br.wan.int1} can obtain ip address from DHCP server
+		Enable DHCP server on interface mgt0
+		Enable DNS server on interface mgt0
+		Set a internal DNS server dns1
+		Set a external DNS server dns2
+		Set internal domain name pattern test.com
+		Set internal domain name xxx.com with specific DNS server a.b.c.d
+		Set a SSID and bind it to interface wifi0
+		Connect a client to SSID and make client obtain ip address from mgt0
+		Use Wireshark to capture packet on client and DNS server
+		Set filter _ff id 1 dst-port 53 bidirectional
+		Open debug _kdebug fe basic/detail and debug console
+
+		Test Procedure:
+		1. Ping xxx.test.com from client, verify which DNS server be used
+		2. Ping aaa.xxx.com from client, verify which DNS server be used
+		3. Ping xxx.yyy.com from client, verify which DNS server be used
+	</description>
+	<numofbr>1</numofbr>
+	<numofcvg>1</numofcvg>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>winlin</tbtype>
+	<property name="br1.vpc1.mask" value="255.255.255.0" />
+	<stage>
+		<include prefix="1" file="subs/vpn_setup_one_sw.xml" obj-args="cvg1, br1" />
+		<step no="2.2">
+			<desc>
+				config mgt0 with dhcp service enable,dns service enable
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "vlan ${br1.vpc1.vlan}"
+				-v "interface vlan ${br1.vpc1.vlan}"
+				-v "interface vlan${br1.vpc1.vlan} ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options netmask ${br1.vpc1.mask}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server options dns1 ${br1.br.mgt0.1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dhcp-server enable"
+				-v "interface vlan${br1.vpc1.vlan} dns-server int-domain-name ${cvg1.dns1.domain1}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server int-resolve dns1 ${cvg1.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server int-domain-name ${cvg1.dns2.domain1} ${cvg1.dns2.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server ext-resolve dns1 ${pub.dns1.ip}"
+				-v "interface vlan${br1.vpc1.vlan} dns-server enable"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<step no="2.3">
+			<desc>
+				Set interface ${br1.br.wan.int1} to wan mode,eth1 to access mode and enable mac-learning
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface ${br1.br.lan.int1} switchport mode access"
+				-v "interface ${br1.br.lan.int1} switchport access vlan ${br1.vpc1.vlan}"
+			</telnet>
+			<no-error-check />
+		</step>
+
+		<!-- <step no="2.4"> <desc> config BR as l3 VPN client </desc> <console target="br1.br"> -v "save vpn ca-cert tftp://${pub.tftp1.tip}:certs/cacert.pem" -v "vpn client-ipsec-tunnel ${br1.br.name}_client_ipsec_1 vpn-mode layer-3" -v "vpn ipsec-tunnel ${br1.br.name}_client_ipsec_1 gateway ${cvg1.cvg.mip.ip} client-name ${br1.br.name} password aerohive" -v "vpn tunnel-policy vpn_tunnel_policy client ipsec-tunnel ${br1.br.name}_client_ipsec_1 primary" -v "routing route-request enable" -v "routing internal-sub-network ${br1.br.mgt0.ip}/${br.lan.netmask}" -v "routing internal-sub-network ${br1.br.mgt0.1.ip}/${br.lan.netmask}" </console> </step> -->
+
+		<step no="2.5">
+			<desc>br1.vpc1 get ip addr from dhcp server of mgt0.1</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.6">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<!-- <step no="3" delay="20" type="loop-check" loop-max-times="10" loop-interval="15"> <desc> check vpn ike sa on BR1 side </desc> <log-file>step3_ike_sa_br_${loop_check.idx}.log</log-file> <telnet target="${br1.br.wan.ip}"> -v "show vpn ike sa" </telnet> <log-match>-p 3 -i "9" -p 4 -i "I" -i "${cvg1.cvg.mip.ip}\[4500\]"</log-match> <no-error-check /> </step> <step no="3.1" type="loop-check" loop-max-times="10" loop-interval="15"> <desc> check vpn ike sa on CVG side </desc> <log-file>step3.1_ike_sa_cvg_${loop_check.idx}.log</log-file> <telnet target="${cvg1.cvg.tunnel.ip}" timeout="3"> -v "show vpn ike sa" </telnet> <log-match>-p 3 -i "9" -p 4 -i "R" -i "${pub.br_fw.ip}"</log-match> <no-error-check /> </step> <step no="3.2"> <desc> check gre tunnel on br1 side </desc> <log-file>step3.2_show_gre_tunnel_br.log</log-file> <telnet target="${br1.br.wan.ip}"> -v "show vpn layer-3-tunnel" </telnet> <log-match>-p 1 -i "tunnel0" -p 3 -i "${cvg1.cvg.wan.ip}" -p 4 -i "${br1.br.mgt0.ip}" -p 6 -i 
+			"${cvg1.cvg.mip.ip}"</log-match> <no-error-check /> </step> <step no="3.3"> <desc> check gre tunnel on cvg side </desc> <log-file>step3.3_show_gre_tunnel_cvg.log</log-file> <telnet target="${cvg1.cvg.tunnel.ip}" timeout="3"> -v "show vpn layer-3-tunnel" </telnet> <log-match>-p 1 -i "tunnel0" -p 3 -i "any" -p 4 -i "${cvg1.cvg.wan.ip}" -p 6 -i "anonymous"</log-match> <no-error-check /> </step> -->
+		<!-- <step no="3.4"> <desc> check route on br1 </desc> <telnet target="${br1.br.wan.ip}"> -v "show ip route" </telnet> </step> <step no="3.5"> <desc> check route on cvg </desc> <telnet target="${cvg1.cvg.tunnel.ip}" timeout="3"> -v "show ip route" </telnet> </step> -->
+
+		<step no="4.1">
+			<desc>
+				packet capture on internal dns server,cvg1.dns1
+			</desc>
+			<log-file>step4.1_inndns1_packet_capture.log</log-file>
+			<ssh host="${cvg1.dns1.mip}">
+				-v "nohup tshark -l -i ${cvg1.dns1.tif.name} ip proto 17 &gt; ${job.id}intdns_ping_1.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.2">
+			<desc>
+				get cvg1.dns1 tshark process
+			</desc>
+			<setvar name="dns1.tshark.id_1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4.1_inndns1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4.3">
+			<desc>
+				packet capture on internal dns server,cvg1.dns2
+			</desc>
+			<log-file>step4.3_inndns1_packet_capture.log</log-file>
+			<ssh host="${cvg1.dns2.mip}">
+				-v "nohup tshark -l -i ${cvg1.dns1.tif.name} ip proto 17 &gt; ${job.id}intdns_ping_2.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				get cvg1.dns2 tshark process
+			</desc>
+			<setvar name="dns1.tshark.id_2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step4.3_inndns1_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>
+				vpc ping internal domain name
+			</desc>
+			<log-file>step4.4_vpc_ping_internal_domain.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.dns1.domain1} -c 10"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.dns1.domain1}" -i "ttl="</log-match>
+		</step>
+
+		<step no="4.5">
+			<desc>
+				check ping packet on internal dns server
+			</desc>
+			<log-file>step4.5_intdns_check_ping_packet.log</log-file>
+			<ssh host="${cvg1.dns1.mip}">
+				-v "kill -9 ${dns1.tshark.id_1}"
+				-v "cat ${job.id}intdns_ping_1.log"
+				-v "rm -f ${job.id}intdns_ping_1.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.br.mgt0.1.ip} -&gt; ${cvg1.dns1.ip}.+DNS.+Standard query.+A.+${cvg1.dns1.domain1}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="4.6">
+			<desc>
+				vpc ping internal domain name
+			</desc>
+			<log-file>step4.6_vpc_ping_internal_domain.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${cvg1.dns2.domain1} -c 10"
+			</ssh>
+			<log-match>-c -i "from ${cvg1.dns2.domain1}" -i "ttl="</log-match>
+		</step>
+
+		<step no="4.7">
+			<desc>
+				check ping packet on internal dns server
+			</desc>
+			<log-file>step4.7_intdns_check_ping_packet.log</log-file>
+			<ssh host="${cvg1.dns2.mip}">
+				-v "kill -9 ${dns1.tshark.id_2}"
+				-v "cat ${job.id}intdns_ping_2.log"
+				-v "rm -f ${job.id}intdns_ping_2.log"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${br1.br.mgt0.1.ip} -&gt; ${cvg1.dns2.ip}.+DNS.+Standard query.+A.+${cvg1.dns2.domain1}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				packet capture on external dns server
+			</desc>
+			<log-file>step5_dns_server_packet_capture.log</log-file>
+			<ssh host="${pub.dns1.ip}" slow="20">
+				-v "nohup tshark -l -i ${pub.http_server.tif.name} ip proto 17 &gt; ${job.id}ping_2.log &amp;"
+			</ssh>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				get tcpdump process
+			</desc>
+			<setvar name="tcpdump.id_2">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/step5_dns_server_packet_capture.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				vpc ping external domain name
+			</desc>
+			<log-file>step5.2_vpc_ping_external_domain.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "ping ${pub.dns1.domain1} -c 5"
+			</ssh>
+			<log-match>-c -i "from ${pub.dns1.domain1}" -i "ttl="</log-match>
+		</step>
+
+		<step no="5.3">
+			<desc>
+				check ping packet on dns server
+			</desc>
+			<log-file>step5.3_check_ping_packet.log</log-file>
+			<ssh host="${pub.dns1.ip}">
+				-v "kill -9 ${tcpdump.id_2}"
+				-v "cat ${job.id}ping_2.log | grep '${pub.dns1.domain1}'"
+			</ssh>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "(?i)${pub.br_fw.ip}\s+-&gt;\s+${pub.dns1.ip}.*${pub.dns1.domain1}" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				clear file
+			</desc>
+			<ssh host="${pub.dns1.ip}">
+				-v "rm -f ${job.id}ping_2.log"
+			</ssh>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				clear file
+			</desc>
+			<ssh host="${cvg1.dns1.mip}">
+				-v "kill -9 ${dns1.tshark.id_1}"
+				-v "rm -f ${job.id}intdns_ping_1.log"
+			</ssh>
+		</step>
+
+		<step no="6.2">
+			<desc>
+				clear file
+			</desc>
+			<ssh host="${cvg1.dns2.mip}">
+				-v "kill -9 ${dns1.tshark.id_2}"
+				-v "rm -f ${job.id}intdns_ping_2.log"
+			</ssh>
+		</step>
+	</stage>
+
+	<failed-process>
+		<stage>
+			<step no="0">
+				<desc>
+					clear file
+				</desc>
+				<ssh host="${pub.dns1.ip}">
+					-v "kill -9 ${tcpdump.id_2}"
+					-v "rm -f ${job.id}ping_2.log"
+				</ssh>
+				<no-error-check />
+			</step>
+
+			<step no="0.1">
+				<desc>
+					clear file
+				</desc>
+				<ssh host="${cvg1.dns1.mip}">
+					-v "kill -9 ${dns1.tshark.id_1}"
+					-v "rm -f ${job.id}intdns_ping_1.log"
+				</ssh>
+				<no-error-check />
+			</step>
+
+			<step no="0.2">
+				<desc>
+					clear file
+				</desc>
+				<ssh host="${cvg1.dns2.mip}">
+					-v "kill -9 ${dns1.tshark.id_2}"
+					-v "rm -f ${job.id}intdns_ping_2.log"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/br_default_post_process.xml" />
+	</failed-process>
+</testcase>

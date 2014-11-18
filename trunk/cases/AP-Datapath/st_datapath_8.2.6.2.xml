@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Proxy ARP between ethx and mgt0 interfaces in portal topo</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-condition
+		Test procedure
+		- clear arp table on pc
+		- clear arp table on ap
+		- pc ping unknown host result 1
+		- clear arp table on pc
+		- pc ping ap result 2
+		- ap ping pc (ap has arp entry of laptop1, and make sure ap sends arp request packet) result 3
+		Expect result
+		1: can see the arp entry for laptop1, the “interface” flag is eth
+		2: arp request is still delivered to mgt0, proxy-arp doesn’t work
+		3: ap does proxy-arp to reply the request
+		9. Gratuitous ARP Datapath
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<numofbpc>1</numofbpc>
+	<tbtype>winlin</tbtype>
+
+	<stage>
+		<if>"${ap1.eth1.existed}" =="true"</if>
+
+		<include prefix="pre.1" file="subs/bpc_init.xml" obj-args="bpc1, ap1" args="none" />
+
+		<step no="0">
+			<desc>
+				- config ap1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface eth1 mode bridge-access"
+				-v "interface eth1 mac-learning enable"
+				-v "no bonjour-gateway enable"
+			</telnet>
+		</step>
+
+		<step no="0.1">
+			<desc>
+				show interface mgt0 info
+			</desc>
+			<log-file>step0.1_show_interface_mgt0_info.log</log-file>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+		</step>
+
+		<step no="0.2">
+			<desc>
+				get ap2's wifi1's mac address
+			</desc>
+			<setvar name="ap1.mgt0.mac">
+				${bin.dir}/getrmtip.pl -f ${log.dir}/step0.1_show_interface_mgt0_info.log -i mgt0 -o aero -m -width
+			</setvar>
+		</step>
+
+		<include prefix="1" file="subs/bpc_wired_connect_${tb.os}.xml" obj-args="bpc1" />
+
+		<step no="2">
+			<desc>
+				ap1 hasn't arp entry for bpc1
+			</desc>
+			<log-file>step0_show_arp_cache.log</log-file>
+			<telnet target="ap1">
+				-v "clear arp-cache"
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-n -c -i "${bpc1.tif.mac}" -i "ETH" -i "${bpc1.tif.ip}"</log-match>
+		</step>
+
+		<include prefix="3" file="subs/sta_ping.xml" args="bpc1, ${tb.unreach.ip1}, 8, negative" />
+
+		<step no="4">
+			<desc>
+				ap1 has arp entry for bpc1
+			</desc>
+			<log-file>step4_show_arp_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show arp-cache"
+			</telnet>
+			<log-match>-c -i "${bpc1.tif.mac}" -i "ETH" -i "${bpc1.tif.ip}"</log-match>
+		</step>
+
+		<step no="5">
+			<desc>
+				-open debug
+			</desc>
+			<telnet target="ap1">
+				-v "_kdebug fe_arp basic"
+				-v "_ff id 1 protocol 1"
+				-v "_ff id 2 etype 0806"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				-clear arp on windows sta
+			</desc>
+			<if>"${tb.os}" == "windows"</if>
+			<log-file>step5.1_clear_arp.log</log-file>
+			<staf target="bpc1">
+				-v "arp -d ${ap1.mgt0.ip}"
+			</staf>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				-clear arp on linux sta
+			</desc>
+			<if>"${tb.os}" == "linux"</if>
+			<log-file>step5.2_clear_arp.log</log-file>
+			<ssh target="bpc1">
+				-v "ip neigh flush dev ${bpc1.tif.name}"
+			</ssh>
+		</step>
+
+		<include prefix="6" file="subs/sta_ping.xml" args="bpc1, ${ap1.mgt0.ip}, 8" />
+
+		<step no="7" delay="10">
+			<desc>
+				show logging buffered on ap
+			</desc>
+			<log-file>step7_show_logging_bufffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-n -c -i "\[fe\]: proxy-ARP, reinject ARP reply pak back to flow"</log-match>
+			<log-match>-n -c -i "\[fe_arp\]: ARP reply to ${bpc1.tif.ip}: ${ap1.mgt0.ip} is at mac=${ap1.mgt0.mac}"</log-match>
+			<log-match>-n -c -i "\[fe_arp\]: ARP REQ to AP (ARP Reply: IP=${ap1.mgt0.ip} mac=${ap1.mgt0.mac})"</log-match>
+			<log-match>-c -i "(u) mgt0 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp ${bpc1.tif.ip}(${bpc1.tif.mac})-&gt;${ap1.mgt0.ip}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(i) eth1 ${bpc1.tif.mac}-&gt;ffff:ffff:ffff arp ${bpc1.tif.ip}(${bpc1.tif.mac})-&gt;${ap1.mgt0.ip}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(o) eth1 ${ap1.mgt0.mac}-&gt;${bpc1.tif.mac} arp ${ap1.mgt0.ip}(${ap1.mgt0.mac})-&gt;${bpc1.tif.ip}(${bpc1.tif.mac})"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap1.mgt0.mac}-&gt;${bpc1.tif.mac} arp ${ap1.mgt0.ip}(${ap1.mgt0.mac})-&gt;${bpc1.tif.ip}(${bpc1.tif.mac})"</log-match>
+		</step>
+
+		<step no="8">
+			<desc>
+				delete arp entry in shell mode
+			</desc>
+			<log-file>step8_clear_arp_in_shell_mode.log</log-file>
+			<telnet target="ap1" prompt="AH.*$">
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v "arp -d ${bpc1.tif.ip}"
+				-v "exit 0"
+				-v ""
+				-v "clear log all"
+				-v ""
+				-v ""
+				-v "ping ${bpc1.tif.ip} count 5"
+			</telnet>
+			<log-match>-c -i "from ${bpc1.tif.ip}: " -i "ttl="</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="9" delay="10">
+			<desc>
+				show logging buffered on ap
+			</desc>
+			<log-file>step9_show_logging_bufffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "\[fe\]: proxy-ARP, reinject ARP reply pak back to flow"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP reply to ${ap1.mgt0.ip}: ${bpc1.tif.ip} is at mac=${bpc1.tif.mac}"</log-match>
+			<log-match>-c -i "\[fe_arp\]: ARP REQ from AP (ARP Reply: IP=${bpc1.tif.ip} mac=${bpc1.tif.mac})"</log-match>
+			<log-match>-c -i "(i) mgt0 ${ap1.mgt0.mac}-&gt;ffff:ffff:ffff arp ${ap1.mgt0.ip}(${ap1.mgt0.mac})-&gt;${bpc1.tif.ip}(0000:0000:0000)"</log-match>
+			<log-match>-c -i "(r) eth1 ${bpc1.tif.mac}-&gt;${ap1.mgt0.mac} arp ${bpc1.tif.ip}(${bpc1.tif.mac})-&gt;${ap1.mgt0.ip}(${ap1.mgt0.mac})"</log-match>
+			<log-match>-c -i "(u) mgt0 ${bpc1.tif.mac}-&gt;${ap1.mgt0.mac} arp ${bpc1.tif.ip}(${bpc1.tif.mac})-&gt;${ap1.mgt0.ip}(${ap1.mgt0.mac})"</log-match>
+		</step>
+	</stage>
+</testcase>

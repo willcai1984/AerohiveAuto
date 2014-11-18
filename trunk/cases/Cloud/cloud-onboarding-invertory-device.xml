@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>feature test cases</brief>
+	<priority>low</priority>
+	<automated>yes</automated>
+	<description>
+		Verify the client SLA can be correctly enable to user pofile
+	</description>
+	<numofap>1</numofap>
+	<!--<numofbr /> <numberofsw/>-->
+	<tbtype>winlin</tbtype>
+	<!--   client type, win or lin -->
+	
+	<!--Get the devcie info from actual AP after Cloud 3.0 can push configuration to device  -->
+	<desc>
+		user-profile UserProfile10 qos-policy def-user-qos vlan-id 10 attribute 10
+		user-profile UserProfile10 performance-sentinel enable
+		user-profile UserProfile10 performance-sentinel guaranteed-bandwidth 12345
+	</desc>
+	
+	<!-- gloal value -->
+	<property name="owner.id" value="102" />
+	<property name="accept_type" value="application/json" />
+	<property name="accept_host" value="10.155.45.220:8080" />
+	<property name="login_username" value="admin@cust001.com" />
+	<property name="login_passwd" value="aerohive" />
+	<property name="hm_host" value="10.155.45.19:8080" />
+	
+	<stage>
+	    <step no="1">
+	    	<log-file>get_token_login.log</log-file>
+			<script>
+				curl -H Accept:${accept_type} http://${accept_host}/acct-webapp/oauth/cookietoken?grant_type=password\&amp;client_id=browser\&amp;client_secret=secret\&amp;username=${login_username}\&amp;password=${login_passwd} 1&gt; ${log.dir}/${log.file} 2&gt; /dev/null
+				exit 0
+			</script>
+			<failed>next</failed>
+		</step>
+		<step no="2">
+			<desc>get token value</desc>
+			<setvar name="access_token">
+				python ${bin.dir}/parseJson.py -f ${log.dir}/get_token_login.log -k access_token
+			</setvar>
+			<failed>next</failed>
+		</step>
+		<step no="3">
+			<script>
+				echo ${access_token}
+			</script>
+			<failed>next</failed>
+		</step>
+		<step no="4">
+	    	<log-file>get_device_id.log</log-file>
+			<script>
+				curl -H Accept:${accept_type} http://${hm_host}/hm-webapp/services/inventory/devices/all?ownerId=102\&amp;access_token=${access_token} 1&gt; ${log.dir}/${log.file} 2&gt; /dev/null
+				exit 0
+			</script>
+			<failed>next</failed>
+		</step>
+	</stage>
+	<stage loop-values="0..20" var-name="index_id" loop-passed-break="true">
+		<step no="5.a">
+			<desc>get list index by mac addr</desc>
+			<log-file>get_index_by_mac.log</log-file>
+			<setvar name="index_id">
+				python ${bin.dir}/parseJson.py -f ${log.dir}/get_device_id.log -k data:${index_id}:macAddress 1&gt; ${log.dir}/${log.file} 2&gt; /dev/null
+			</setvar>
+			<log-match>-e "${ap1.mgt0.mac}"</log-match>
+		</step>
+		<step no="5.b">
+			<desc>get token value</desc>
+			<setvar name="device_id">
+				python ${bin.dir}/parseJson.py -f ${log.dir}/get_device_id.log -k data:${index_id}:id 
+			</setvar>
+			<failed>next</failed>
+		</step>
+		<step no="5.c">
+			<script>
+				echo ${device_id}
+			</script>
+			<failed>next</failed>
+		</step>
+		<step no="6">
+			<desc>get device version</desc>
+			<setvar name="software_version">
+				python ${bin.dir}/parseJson.py -f ${log.dir}/get_device_id.log -k data:${index_id}:softwareVersion 
+			</setvar>
+			<failed>next</failed>
+		</step>
+		
+		<step no="6.a">
+			<desc>get serial number</desc>
+			<setvar name="serial_number">
+				python ${bin.dir}/parseJson.py -f ${log.dir}/get_device_id.log -k data:${index_id}:serialNumber 
+			</setvar>
+			<failed>next</failed>
+		</step>
+		
+		<step no="6.b">
+			<desc>get ip address</desc>
+			<setvar name="ip_address">
+				python ${bin.dir}/parseJson.py -f ${log.dir}/get_device_id.log -k data:${index_id}:ipAddress 
+			</setvar>
+			<failed>next</failed>
+		</step>
+		<step no="6.c">
+			<desc>get net netmask</desc>
+			<setvar name="netmask">
+				python ${bin.dir}/parseJson.py -f ${log.dir}/get_device_id.log -k data:${index_id}:netMask 
+			</setvar>
+			<failed>next</failed>
+		</step>
+		<step no="6.d">
+			<desc>get default getway</desc>
+			<setvar name="default_gateway">
+				python ${bin.dir}/parseJson.py -f ${log.dir}/get_device_id.log -k data:${index_id}:defaultGateway 
+			</setvar>
+			<failed>next</failed>
+		</step>
+		<step no="6.e">
+			<desc>get primary dns server</desc>
+			<setvar name="primary_dnsserver">
+				python ${bin.dir}/parseJson.py -f ${log.dir}/get_device_id.log -k data:${index_id}:primaryDnsServer 
+			</setvar>
+			<failed>next</failed>
+		</step>
+		
+	</stage>
+	<stage>
+		<step no="7">
+			<desc>
+				Check version
+			</desc>
+			<console target="ap1">
+				-v "show version"
+			</console>
+			<log-match>-i "Version:.* ${software_version}"</log-match>
+		</step>
+		
+		<step no="7.a">
+			<desc>
+				Check serialnumber  
+			</desc>
+			<console target="ap1">
+				-v "show hw"
+			</console>
+			<log-match>-i "Serial number:.* ${serial_number}"</log-match>
+		</step>
+		
+		<step no="7.b">
+			<desc>
+				Check ip address
+				Check netmask
+				 
+				Check default gateway
+			</desc>
+			<console target="ap1">
+				-v "show interface mgt0"
+			</console>
+			<log-match>-i "IP addr=${ip_address}"</log-match>
+			<log-match>-i "Netmask=${netmask}"</log-match>
+			<log-match>-i "Default Gateway:${default_gateway}"</log-match>
+		</step>
+	
+	<step no="7.c">
+			<desc>
+				Check primary dns server	
+			</desc>
+			<console target="ap1">
+				-v "show dns"
+			</console>d
+			<log-match>-i "Primary   : ${primary_dnsserver}"</log-match>
+		</step>
+	</stage>
+	
+	<failed-process />
+	<post-process />
+</testcase>

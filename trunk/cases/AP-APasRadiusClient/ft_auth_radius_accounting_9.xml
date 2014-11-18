@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Acct-Multi-Session-Id support</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a ssid with CWP
+		-config a radius server under this ssid
+		-enable accounting
+		-radius server enable the same acct port
+
+		Test Procedure:
+		-client connects to AP1 success, check the Acct-Multi-Session-Id in debug
+		-check roaming cache for Acct-Multi-Session-Id
+		-client roams to AP2 success, check the acct-multi-session-id in debug
+		-check roaming cache for Acct-Multi-Session-Id
+	</description>
+	<numofap>2</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>windows</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+
+	<stage>
+		<include prefix="start_selenium_server" file="subs/start_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_dir}, ${job_selenium_jar}, ${job_selenium_workload}" />
+
+		<step no="1">
+			<desc>
+				-config e-CWP on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "security-object in_cwp"
+				-v "security-object in_cwp security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal auth-user-profile-attr 1 timer-display"
+				-v "security-object in_cwp default-user-profile-attr 1"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal external-server primary login-page http://${pub.ecwp1.ip}/weblogin.php/7"
+				-v "security-object in_cwp walled-garden ip-address ${pub.ecwp1.ip}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal failure-redirect login-page"
+				-v "security-object in_cwp web-server"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal timer-display alert 10"
+			</telnet>
+		</step>
+
+		<step no="1.1">
+			<desc>
+				-config a ssid
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object in_cwp"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="2">
+			<desc>
+				-config e-CWP on ap2
+			</desc>
+			<telnet target="ap2">
+				-v "hive ${hive.name}123"
+				-v "interface mgt0 hive ${hive.name}123"
+				-v "security-object in_cwp"
+				-v "security-object in_cwp security aaa radius-server primary ${pub.radius1.ip} shared-secret ${pub.radius1.sharesecret} acct-port ${pub.radius1.acctport}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal auth-user-profile-attr 1 timer-display"
+				-v "security-object in_cwp default-user-profile-attr 1"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal external-server primary login-page http://${pub.ecwp1.ip}/weblogin.php/7"
+				-v "security-object in_cwp walled-garden ip-address ${pub.ecwp1.ip}"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal failure-redirect login-page"
+				-v "security-object in_cwp web-server"
+				-v "security-object in_cwp security additional-auth-method captive-web-portal timer-display alert 10"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>
+				-config a ssid
+			</desc>
+			<telnet target="ap2">
+				-v "ssid ${ssid.name}"
+				-v "ssid ${ssid.name} security-object in_cwp"
+				-v "interface wifi0 ssid ${ssid.name}"
+				-v "user-profile auto qos-policy def-user-qos vlan-id 1 attribute 1"
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+				-v "_debug auth all"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<include prefix="3" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="4">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>station_log_in.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -f ${log.dir}/${log.file} -l info --preserve-session &gt; ${log.dir}/session_id.log
+			</script>
+		</step>
+
+		<step no="4.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/session_id.log
+			</setvar>
+		</step>
+
+		<step no="5" delay="20">
+			<desc>show logging buffered on ap1</desc>
+			<log-file>step5_show_logging_buffered.log</log-file>
+			<telnet target="ap1">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "Attribute" -i "Acct-Multi-Session-Id"</log-match>
+			<log-match>-c -i "Acct_multi_session_id" -i "for sta ${sta1.tif.mac} is generated"</log-match>
+		</step>
+
+		<step no="5.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="acct.multi.session.id">
+				${bin.dir}/getbyrexp.py -p "(?i)Acct_multi_session_id\s*(.*?)\s*for sta ${sta1.tif.mac} is generated" -t str -f ${log.dir}/step5_show_logging_buffered.log
+			</setvar>
+		</step>
+
+		<step no="6">
+			<desc>
+				-check roaming cache for Acct-Multi-Session-Id
+			</desc>
+			<log-file>step6_show_roaming_cache.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "YYNN"</log-match>
+		</step>
+
+		<step no="6">
+			<desc>
+				up interface wifi0 on ap2
+			</desc>
+			<telnet target="ap2">
+				-v "no interface wifi0 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				shutdown interface wifi0 on ap1
+			</desc>
+			<telnet target="ap1">
+				-v "interface wifi0 ssid ${ssid.name} shutdown"
+			</telnet>
+		</step>
+
+		<step no="7" delay="10" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show station on ap2
+			</desc>
+			<log-file>step7_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show station"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="7.1" type="loop-check" loop-max-times="25" loop-interval="5">
+			<desc>
+				show station on ap1
+			</desc>
+			<log-file>step7.1_show_station_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show station"
+			</telnet>
+			<log-match>-n -c -i "${sta1.tif.mac}" -i "${sta1.tif.ip}"</log-match>
+		</step>
+
+		<step no="8" delay="30" type="loop-check" loop-max-times="12" loop-interval="5">
+			<desc>
+				Show roaming cache
+			</desc>
+			<log-file>step8_show_roaming_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${ap2.wifi0.mac}" -i " 1 *YYNN"</log-match>
+		</step>
+
+		<step no="8.1" type="loop-check" loop-max-times="12" loop-interval="5">
+			<desc>
+				Show roaming cache
+			</desc>
+			<log-file>step8.1_show_roaming_cache_${loop_check.idx}.log</log-file>
+			<telnet target="ap2">
+				-v "show roaming cache"
+			</telnet>
+			<log-match>-c -i "${sta1.tif.mac} *${ap2.wifi0.mac}" -i " 0 *YYNN"</log-match>
+		</step>
+
+		<step no="9">
+			<desc>show logging buffered</desc>
+			<log-file>step9_show_logging_buffere.log</log-file>
+			<telnet target="ap2" timeout="10">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match bin="${bin.dir}/mlinesearch.pl">-l "Value: '${acct.multi.session.id}'" -i 1 -l "Attribute \d+ \(Acct-Multi-Session-Id\)" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="10">
+			<desc>
+				do log out operate
+			</desc>
+			<log-file>station_log_out.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -f ${log.dir}/${log.file} -l info --session-id ${session.id}
+			</script>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				clear log all
+			</desc>
+			<telnet target="ap2">
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="11">
+			<desc>
+				access public HM through CWP
+			</desc>
+			<log-file>station_log_in_again.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -f ${log.dir}/${log.file} -l info --preserve-session &gt; ${log.dir}/second_session_id.log
+			</script>
+		</step>
+
+		<step no="11.1">
+			<desc>
+				get session id
+			</desc>
+			<setvar name="second.session.id">
+				${bin.dir}/getbyrexp.py -p "- session preserved - (\S+) pic:" -f ${log.dir}/second_session_id.log
+			</setvar>
+		</step>
+
+		<step no="12" delay="20">
+			<desc>show logging buffered on ap1</desc>
+			<log-file>step12_show_logging_buffered.log</log-file>
+			<telnet target="ap2">
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-i "Attribute" -i "Acct-Multi-Session-Id"</log-match>
+			<!--<log-match>-c -i "Acct_multi_session_id" -i "for sta ${sta1.tif.mac} is generated"</log-match>-->
+			<log-match>-n -c -i "Acct_multi_session_id" -i "for sta ${sta1.tif.mac} is generated" -i "${acct.multi.session.id}"</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Value:" -ps p1 "Value: '${acct.multi.session.id}'" p1 "Attribute \d+ \(Acct-Multi-Session-Id\)" -e "Attribute \d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="13">
+			<desc>
+				do log out operate
+			</desc>
+			<log-file>station_log_out_again.html</log-file>
+			<script>
+				export PYTHONPATH=${auto.root.dir}; python ${auto.root.dir}/webui/scripts/cwp/cwp_login_positive_amigoopod.py -r http://${sta1.mif.ip}:4444/wd/hub --parameters visit.url=${pub.hm2.ip} login.username=${pub.radius1.username} login.password=${pub.radius1.passwd} -t ff -f ${log.dir}/${log.file} -l info --session-id ${second.session.id}
+			</script>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+
+			<include prefix="stop_selenium_server" file="subs/stop_selenium_server.xml" args="${sta1.mif.ip}, ${job_selenium_workload}" />
+
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

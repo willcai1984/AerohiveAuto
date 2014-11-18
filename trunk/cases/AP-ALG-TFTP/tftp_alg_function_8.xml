@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>The Data session will be released when see the ACK for the last packet</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		security-object zhhtest
+		security-object zhhtest default-user-profile-attr 1
+		ssid zhhtest
+		ssid zhhtest security-object zhhtest
+		interface wifi0 ssid zhhtest
+		user-profile uu qos-policy def-user-qos vlan-id 1 attribute 1
+		ip-policy xx
+		ip-policy xx id 1 service tftp action permit
+		ip-policy xx id 2 service dhcp-server action permit
+		ip-policy xx id 3 service dhcp-client action permit
+		ip-policy xx id 4 service icmp action permit
+		user-profile uu security ip-policy from-access xx
+		alg tftp enable
+		Laptop connect to SSID and obtain ip address
+		_debug fe alg_tftp_error
+		_debug fe alg_tftp_fsm
+		_debug fe alg_tftp_gate
+		_debug fe alg_tftp_pkt
+		_ff id 1 src-mac xxxx:yyyy:zzzz bidirectional
+		_kdebug fe basic
+		_kdebug fe detail
+		debug console
+		clear forwarding-engine ip-sessions
+
+		Test Procedure:
+		1. Laptop send data to tftp server, verify control session and data session be
+		created
+		2. When see the ACK of the last packet, verify if data session be deleted
+	</description>
+	<numofap>1</numofap>
+	<numofsta>1</numofsta>
+	<tbtype>linux</tbtype>
+
+	<property name="conn1.ssid" value="${job.sid}-1" />
+
+	<stage>
+		<step no="1">
+			<desc>
+				Config ssid and ip-policy
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${conn1.ssid}"
+				-v "security-object ${conn1.ssid}"
+				-v "security-object ${conn1.ssid} default-user-profile-attr 1"
+				-v "ssid ${conn1.ssid} security-object ${conn1.ssid}"
+				-v "interface wifi0 ssid ${conn1.ssid}"
+				-v "user-profile uu attribute 1"
+				-v "ip-policy xx"
+				-v "ip-policy xx id 1 service tftp action permit"
+				-v "ip-policy xx id 2 service dhcp-server action permit"
+				-v "ip-policy xx id 3 service dhcp-client action permit"
+				-v "ip-policy xx id 4 service icmp action permit"
+				-v "user-profile uu security ip-policy from-access xx"
+				-v "alg tftp enable"
+				-v "save config"
+			</telnet>
+		</step>
+
+		<include prefix="2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<step no="3">
+			<desc>
+				Open debug switch
+			</desc>
+			<telnet target="ap1">
+				-v "_debug fe alg_tftp_error"
+				-v "_debug fe alg_tftp_fsm"
+				-v "_debug fe alg_tftp_gate"
+				-v "_debug fe alg_tftp_pkt"
+				-v "_ff id 1 src-mac ${sta1.tif.mac} bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear log all"
+			</telnet>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				Clear file aerohive
+			</desc>
+			<ssh host="${tb.syslog_server}" prompt=">|.*#">
+				-v "echo "" &gt; /var/log/aerohive"
+			</ssh>
+		</step>
+
+		<step no="3.2">
+			<desc>
+				Set logging server
+			</desc>
+			<log-file>step3.2_set_logging_server.log</log-file>
+			<telnet target="ap1">
+				-v "logging server ${tb.syslog_server} level debug"
+			</telnet>
+		</step>
+
+		<step no="4">
+			<desc>
+				Copy a file to directory tftpboot in tftp server
+			</desc>
+			<ssh host="${tb.tftp}" prompt=">|.*#">
+				-v "/bin/cp ${tb.ftp.file2_medium} /var/lib/tftpboot/"
+				-v "chmod 777 /var/lib/tftpboot/${tb.ftp.file2_medium}"
+			</ssh>
+		</step>
+
+		<step no="4.1">
+			<desc>Download a file from tftp server to client</desc>
+			<ssh target="sta1" prompt=".*#">
+				-v "nohup tftp ${tb.tftp} -c get ${tb.ftp.file2_medium} &amp;"
+			</ssh>
+		</step>
+
+		<step no="5">
+			<desc>
+				check log
+			</desc>
+			<log-file>step5_check_log.log</log-file>
+			<ssh host="${tb.syslog_server}" prompt=".*#">
+				-v "head -300 /var/log/aerohive"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "(?i)QoS: first pkt IP session action=\d+ qos=\d+" p "(?i)QoS: first pkt processing:ALG=\d+" p "(?i)create new IP session, id \[\d+\] from-gate ageout \d+ sec" p "(?i)matched gate ${tb.tftp}/\d+ -&gt;${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="6">
+			<desc>
+				Check control session and data session by show forwarding-engine ip-sessions
+			</desc>
+			<log-file>step6_show_session.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.tftp}/69 -&gt; ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+ -&gt; ${tb.tftp}/69" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.tftp}/\d+ -&gt; ${sta1.tif.ip}/\d+" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+ -&gt; ${tb.tftp}/\d+" -f ${log.dir}/${log.file}</log-match>
+		</step>
+
+		<step no="6.1">
+			<desc>
+				Clear file aerohive
+			</desc>
+			<ssh host="${tb.syslog_server}" prompt=">|.*#">
+				-v "echo "" &gt; /var/log/aerohive"
+			</ssh>
+		</step>
+
+		<step no="6.2" delay="60" type="loop-check" loop-max-times="20" loop-interval="10">
+			<desc>
+				check ping process
+			</desc>
+			<log-file>step6.2_check_tftp_process_${loop_check.idx}.log</log-file>
+			<ssh target="sta1">
+				-v "ps aux | grep \"tftp\""
+			</ssh>
+			<log-match>-n -i "${tb.tftp}"</log-match>
+		</step>
+
+		<step no="7">
+			<desc>
+				check log
+			</desc>
+			<log-file>step7_check_log.log</log-file>
+			<ssh host="${tb.syslog_server}">
+				-v "tail -300 /var/log/aerohive"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-ps p "(?i)delete ip-sess id \(\d+\), ${tb.tftp}/\d+ -&gt; ${sta1.tif.ip}/\d+" p "(?i)fe delete gate OR data session" p "(?i)TFTP ALG delete gate src_ip:${tb.tftp},src_port:\d+,dst_ip:${sta1.tif.ip},dst_port:\d+" p "(?i)tftp last data ack pkt, send to application" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="8" delay="20" type="loop-check" loop-max-times="20" loop-interval="5">
+			<desc>
+				verify if data session be deleted
+			</desc>
+			<log-file>step8_show_session_${loop_check.idx}.log</log-file>
+			<telnet target="ap1">
+				-v "show forwarding-engine ip-sessions"
+			</telnet>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${tb.tftp}/\d+ -&gt; ${sta1.tif.ip}/\d+" -c 0 -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchbyrexp.py">-p "${sta1.tif.ip}/\d+ -&gt; ${tb.tftp}/\d+" -c 0 -f ${log.dir}/${log.file}</log-match>
+		</step>
+	</stage>
+
+	<post-process>
+		<stage>
+			<step no="0.1">
+				<desc>
+					clear file
+				</desc>
+				<ssh target="sta1">
+					-v "rm -f ${tb.ftp.file2_medium}"
+				</ssh>
+			</step>
+
+			<step no="0.2">
+				<desc>
+					clear file on tftp
+				</desc>
+				<ssh host="${tb.tftp}">
+					-v "rm -f /var/lib/tftpboot/${tb.ftp.file2_medium}"
+				</ssh>
+			</step>
+		</stage>
+
+		<include file="include/default_post_process.xml" />
+	</post-process>
+</testcase>

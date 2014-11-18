@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Load two images in CLI, after reboot [current|backup], check if image is correct by show version [detail]</brief>
+	<priority>Accept</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		AP with two image : image1 is current image, image2 is backup
+		image
+
+		Test Procedure:
+		1. Reboot, then check current image and backup image
+		2. Reboot backup, then check current image and backup image
+		3. Reboot current [date|offset], then check current image and
+		backup image
+		4. Reboot backup [date|offset], then check current image and
+		backup image
+	</description>
+	<numofap>1</numofap>
+	<numofsta>0</numofsta>
+	<tbtype>linux</tbtype>
+
+	<stage>
+		<if>"${ap1.dual_img_flag}" == "true"</if>
+		<include prefix="get_two_img" file="subs/get_two_image.xml"  obj-args="image_a, image_b"/>
+		
+		<step no="1.1">
+			<desc>remove rsapublickey.pem</desc>
+			<console target="ap1" slow="true" prompt="AH.*#|$">
+				<!---v 'show system command "rm -f /etc/rsapublickey.pem"'-->
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v ""
+				-v "rm -f /etc/rsapublickey.pem"
+				-v ""
+				-v "exit"
+			</console>
+			<log-match>-i "BusyBox"</log-match>
+			<no-error-check />
+		</step>
+		<step no="1.2">
+			<desc>save image b(the older one)</desc>
+			<telnet target="ap1">
+				-v "save image tftp://${mpc.tif.ip}:${image_b.name}"
+			</telnet>
+			<log-match>-n -e "failed"</log-match>
+		</step>
+		<step no="1.3">
+			<desc>reboot ap</desc>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>
+		
+		<step no="2.1">
+			<desc>remove rsapublickey.pem</desc>
+			<console target="ap1" slow="true" prompt="AH.*#|$">
+				<!---v 'show system command "rm -f /etc/rsapublickey.pem"'-->
+				-b -sp "${ap1.shellpwd}"
+				-v "_shell"
+				-v ""
+				-v "rm -f /etc/rsapublickey.pem"
+				-v ""
+				-v "exit"
+			</console>
+			<log-match>-i "BusyBox"</log-match>
+			<no-error-check />
+		</step>
+
+		<step no="2.2">
+			<desc>save image a(the newer one)</desc>
+			<console target="ap1">
+				-v "ping ${mpc.tif.ip}"
+				-v "save image tftp://${mpc.tif.ip}:${image_a.name}"
+			</console>
+			<log-match>-n -e "failed"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>reboot ap</desc>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="3.1">
+			<desc>
+				AP with two image : image1 is current image, image2 is backup
+				image
+				show version detail
+			</desc>
+			<log-file>show_version_detail.log</log-file>
+			<console target="ap1">
+				-v "show version detail"
+			</console>
+		</step>
+
+		<step no="3.2">
+			<desc>get image1 Built time</desc>
+			<setvar name="iamgea_build_time">
+				${bin.dir}/getbyrexp.py -p "(?i)build\s+time:\s+([\s\w\s:]+)" \
+				-t str -g 0 -s none \
+				-f ${log.dir}/show_version_detail.log 
+			</setvar>
+		</step>
+
+		<step no="3.3">
+			<desc>get image2 Build time</desc>
+			<setvar name="iamgeb_build_time">
+				${bin.dir}/getbyrexp.py -p "(?i)build\s+time:\s+([\s\w\s:]+)" \
+				-t str -g 1 -s none \
+				-f ${log.dir}/show_version_detail.log
+			</setvar>
+		</step>
+
+		<step no="4.1">
+			<desc>Reboot, then check current image and backup image</desc>
+			<console target="ap1">
+				-v "reboot"
+			</console>
+		</step>
+
+		<step no="4.2">
+			<desc>show version detail</desc>
+			<log-file>show_version_reboot.log</log-file>
+			<console target="ap1">
+				-v "show version detail"
+			</console>
+		</step>
+
+		<step no="4.3">
+			<desc>get current image</desc>
+			<setvar name="get_current_image_reboot1">
+				${bin.dir}/getbyrexp.py -p "(?i)build\s+time:\s+([\s\w\s:]+)" \
+				-t str -g 0 -s none \
+				-f ${log.dir}/show_version_detail.log
+			</setvar>
+		</step>
+
+		<step no="4.4">
+			<desc>get backup image</desc>
+			<setvar name="get_backup_image_reboot1">
+				${bin.dir}/getbyrexp.py -p "(?i)build\s+time:\s+([\s\w\s:]+)" \
+				-t str -g 1 -s none \
+				-f ${log.dir}/show_version_detail.log
+			</setvar>
+		</step>
+
+		<step no="5">
+			<desc>check current image and backup image</desc>
+			<script>
+				if [ "${iamgea_build_time}" == "${get_current_image_reboot1}" ] \
+				&amp;&amp; [ "${iamgeb_build_time}" == "${get_backup_image_reboot1}" ];
+				then
+					exit 0
+				else
+					exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="6.1">
+			<desc>Reboot backup, then check current image and backup image</desc>
+			<console target="ap1">
+				-v "reboot backup"
+			</console>
+		</step>
+
+		<step no="6.2">
+			<desc>show version detail</desc>
+			<log-file>show_version_backup.log</log-file>
+			<console target="ap1">
+				-v "show version detail"
+			</console>
+		</step>
+
+		<step no="6.3">
+			<desc>get current image</desc>
+			<setvar name="get_current_image_reboot2">
+				${bin.dir}/getbyrexp.py -p "(?i)build\s+time:\s+([\s\w\s:]+)" \
+				-t str -g 0 -s none \
+				-f ${log.dir}/show_version_backup.log
+			</setvar>
+		</step>
+
+		<step no="6.4">
+			<desc>get backup image</desc>
+			<setvar name="get_backup_image_reboot2">
+				${bin.dir}/getbyrexp.py -p "(?i)build\s+time:\s+([\s\w\s:]+)" \
+				-t str -g 1 -s none \
+				-f ${log.dir}/show_version_backup.log
+			</setvar>
+		</step>
+
+		<step no="7">
+			<desc>check current image and backup image</desc>
+			<script>
+				if [ "${iamgeb_build_time}" == "${get_current_image_reboot2}" ] \
+				&amp;&amp; [ "${iamgea_build_time}" == "${get_backup_image_reboot2}" ];
+				then
+					exit 0
+				else
+					exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="8.1">
+			<desc>
+				3. Reboot current [date|offset], then check current image and
+				backup image
+			</desc>
+			<console target="ap1">
+				-v "reboot current"
+			</console>
+		</step>
+
+		<step no="8.2">
+			<desc>show version detail</desc>
+			<log-file>show_version_current_off.log</log-file>
+			<console target="ap1">
+				-v "show version detail"
+			</console>
+		</step>
+
+		<step no="8.3">
+			<desc>get current image</desc>
+			<setvar name="get_current_image_reboot3">
+				${bin.dir}/getbyrexp.py -p "(?i)build\s+time:\s+([\s\w\s:]+)" \
+				-t str -g 0 -s none \
+				-f ${log.dir}/show_version_current_off.log
+			</setvar>
+		</step>
+
+		<step no="8.4">
+			<desc>get backup image</desc>
+			<setvar name="get_backup_image_reboot3">
+				${bin.dir}/getbyrexp.py -p "(?i)build\s+time:\s+([\s\w\s:]+)" \
+				-t str -g 1 -s none \
+				-f ${log.dir}/show_version_current_off.log
+			</setvar>
+		</step>
+
+		<step no="9">
+			<desc>check current image and backup image</desc>
+			<script>
+				if [ "${iamgeb_build_time}" == "${get_current_image_reboot3}" ] \
+				&amp;&amp; [ "${iamgea_build_time}" == "${get_backup_image_reboot3}" ];
+				then
+					exit 0
+				else
+					exit 1
+				fi
+			</script>
+		</step>
+
+		<step no="10.1">
+			<desc>
+				4. Reboot backup [date|offset], then check current image and
+				backup image
+			</desc>
+			<console target="ap1">
+				-v "reboot backup"
+			</console>
+		</step>
+
+		<step no="10.2">
+			<desc>show version detail</desc>
+			<log-file>show_version_backup_off.log</log-file>
+			<console target="ap1">
+				-v "show version detail"
+			</console>
+		</step>
+
+		<step no="10.3">
+			<desc>get current image</desc>
+			<setvar name="get_current_image_reboot4">
+				${bin.dir}/getbyrexp.py -p "(?i)build\s+time:\s+([\s\w\s:]+)" \
+				-t str -g 0 -s none \
+				-f ${log.dir}/show_version_backup_off.log
+			</setvar>
+		</step>
+
+		<step no="10.4">
+			<desc>get backup image</desc>
+			<setvar name="get_backup_image_reboot4">
+				${bin.dir}/getbyrexp.py -p "(?i)build\s+time:\s+([\s\w\s:]+)" \
+				-t str -g 1 -s none \
+				-f ${log.dir}/show_version_backup_off.log
+			</setvar>
+		</step>
+
+		<step no="11">
+			<desc>check current image and backup image</desc>
+			<script>
+				if [ "${iamgea_build_time}" == "${get_current_image_reboot4}" ] \
+				&amp;&amp; [ "${iamgeb_build_time}" == "${get_backup_image_reboot4}" ];
+				then
+					exit 0
+				else
+					exit 1
+				fi
+			</script>
+		</step>
+	</stage>
+</testcase>

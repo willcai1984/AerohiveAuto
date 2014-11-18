@@ -1,0 +1,119 @@
+<testcase>
+	<brief>SW job pre process</brief>
+	<description>
+		SW job pre process
+	</description>
+	<stage>
+		<if>"${tb.name}" != "hzWiredPerfS" &amp;&amp; "${tb.name}" != "hzswtb8"</if>
+		<step no="1.1">
+			<desc>remove known hosts</desc>
+			<script>
+				rm -rf /root/.ssh/known_hosts
+			</script>
+		</step>
+		<step no="1.2">
+			<desc>access sw1 by console </desc>
+			<log-file>sw1_cons_check.log</log-file>
+			<console target="sw1">
+				-v ""
+				-v "show version"
+				-v ""
+				-v "show hw-info"
+				-v ""; exit 0
+			</console>
+			<no-error-check />
+		</step>
+		<step no="1.3">
+			<desc>judge sw1 console is ok or not</desc>
+			<setvar name="cons_check_result" scope="local">
+				grep "show version" ${log.dir}/sw1_cons_check.log >/dev/null; echo $?
+			</setvar>
+		</step>
+		<step no="1.4">
+			<desc>power cycle the sw1 if console access failed</desc>
+			<if>"${cons_check_result}" != "0"</if>
+			<log-file>rmpts_sw1.log</log-file>
+			<script>
+				${bin.dir}/rmtps.pl ${sw1.rmps.ip} ${sw1.rmps.user}:${sw1.rmps.passwd} ${sw1.rmps_port}\pulse >> ${log.dir}/${log.file}
+				echo `date` >> ${log.dir}/${log.file}
+				sleep 195
+			</script>
+			<no-error-check />
+		</step>
+		<step no="1.5.cons_restart">
+			<desc>cons_restart if cons_check_result is not 0 </desc>
+			<if>"${cons_check_result}" != "0"</if>
+			<log-file>cons_restart.log</log-file>
+			<script>
+				/etc/init.d/conserver restart > ${log.dir}/${log.file};sleep 5
+			</script>
+			<no-error-check />
+		</step>
+		<step no="1.6.get_dut_info">
+			<desc>get dut version</desc>
+			<log-file>showsw1ver.log</log-file>
+			<console target="sw1" slow="1">
+				-v ""
+				-v "show version"
+				-v "show version detail"
+				-v "show run"
+				-v ""
+			</console>
+			<no-error-check />
+		</step>
+
+		<!-- <step no="1.1.2.set_platform_variable"> <desc>set_platform_variable according to showsw1ver.log on above step</desc> <multi-setvar> echo "curr_sr2000_plt=`cat ${log.dir}/showsw1ver.log|grep "Platform"|awk '{print $2}'|sed '2,$d'`" </multi-setvar> <no-error-check /> </step> -->
+
+		<step no="1.7.set_platform_var">
+			<desc>set_platform_variable according to showsw1ver.log on above step</desc>
+			<setvar name="sw1.platform">
+				cat ${log.dir}/showsw1ver.log|grep "Platform"|awk '{print $2}'|sed '2,$d'
+			</setvar>
+			<no-error-check />
+		</step>
+		<step no="1.8">
+			<desc>write realDutType to job-property.ini</desc>
+			<script>
+				echo "realDutType=${sw1.platform}" &gt;&gt; ${log.dir}/../job-property.ini
+			</script>
+		</step>
+		<step no="1.9.kill.screen.process">
+			<desc>
+				kill_screen_process
+			</desc>
+			<log-file>kill_screen_process.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" slow="0">
+				-v ""
+				-v "screen -list"
+				-v "python ${bin.dir}/remove_screen.py -p '${job.user}'"
+				-v "python ${bin.dir}/remove_screen.py -p '${job.user}-'"
+				-v "screen -list"
+			</ssh>
+		</step>
+	</stage>
+	<stage>
+		<if>"${tb.name}" == "hzWiredPerfS" || "${tb.name}" == "hzswtb8"</if>
+		<step no="1.8">
+			<desc>
+				As framework will send mail to job end mail group according to pre-process result,
+				and ignore will be treat as fail. so we need pass the pre-process for wired performance.
+			</desc>
+			<script>
+				exit 0
+			</script>
+		</step>
+		<step no="1.9.kill.screen.process">
+			<desc>
+				kill_screen_process
+			</desc>
+			<log-file>kill_screen_process.log</log-file>
+			<ssh target="${pub.tclclient1.ip}" prompt="%.*|root@.*#" timeout="180" slow="0">
+				-v ""
+				-v "screen -list"
+				-v "python ${bin.dir}/remove_screen.py -p '${job.user}'"
+				-v "python ${bin.dir}/remove_screen.py -p '${job.user}-'"
+				-v "screen -list"
+			</ssh>
+		</step>
+	</stage>
+</testcase>

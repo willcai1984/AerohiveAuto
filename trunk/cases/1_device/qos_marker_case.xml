@@ -1,0 +1,268 @@
+<testcase>
+	<brief>fiber_or_copper,port count:2</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<numofsw>1</numofsw>
+	<numofsta>0</numofsta>
+	<tbtype>winlin</tbtype>
+	<description>
+		QOSFORVOIP_Function_dscp_1
+		Test classification base on dscp through one by one
+	</description>
+	<comment>
+		sw1.port1=eth1/21;
+		sw1.port1.phytype=copper;
+		sw1.port1.ixia_port=1/2/1;
+		sw1.port1.ixia_port.phytype=copper;
+		sw1.terminal.port=2044;
+		tb.conserver.ip=localhost
+		ap1.cons_name=tb1-SR2148-5
+		pub.chassis1.ip=10.155.33.216;
+		pub.tclserver1.ip=10.155.30.164;
+		pub.tclclient1.ip=10.155.40.10;
+		sw1.tclclient.ip=10.155.32.228;
+		sw1.mgmtport=eth1/1;
+		sw1.mgmtvlan=121;
+		tb.conserver.ip=10.155.32.228;
+		tb.conserver.user=root;
+		tb.conserver.passwd=aerohive;
+		sw1.cons_name=tb1-SR2148-5;
+		sw1.user=admin;
+		sw1.passwd=aerohive;
+		sw1.prompt="AH-[a-z0-9A-Z_]*#";
+	</comment>
+	<property name="correct_vlan" value="101" />
+	<property name="qos_name" value="qos" />
+	<pre-process>
+		<stage>
+			<!-- self defined steps -->
+		</stage>
+		<include prefix="pre" file="include/sw_default_pre_process.xml" />
+	</pre-process>
+
+	<stage>
+		<step no="1.1">
+			<desc>
+				Set qos class profile to port1, qos marker profile to port2(diffserv), enable qos
+			</desc>
+			<telnet target="sw1">
+				-v 'vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port1} shutdown'
+				-v 'interface ${sw1.port1} switchport mode trunk'
+				-v 'interface ${sw1.port1} switchport trunk allow vlan ${correct_vlan}'
+				-v 'no interface ${sw1.port2} shutdown'
+				-v 'interface ${sw1.port2} switchport mode trunk'
+				-v 'interface ${sw1.port2} switchport trunk allow vlan ${correct_vlan}'
+				-v 'qos enable'
+				-v 'qos marker-profile ${qos_name} diffserv'
+				-v 'interface ${sw1.port2} qos-marker ${qos_name}'
+				-v 'show running-config'
+			</telnet>
+		</step>
+	</stage>
+
+
+	<!--Start loop -->
+	<stage
+		loop-values="0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0,
+		             8:1, 9:1, 10:1, 11:1, 12:1, 13:1, 14:1, 15:1,
+		             16:2, 17:2, 18:2, 19:2, 20:2, 21:2, 22:2, 23:2,
+		             24:3, 32:4, 40:5, 48:6, 56:7"
+		var-name="class_dscp">
+
+		<step no="${class_dscp}.1">
+			<desc>
+				${class_dscp},Get dscp value
+			</desc>
+			<setvar name="dscp">
+				python ${bin.dir}/get_loop_value.py -s '${class_dscp}' -p 1
+			</setvar>
+		</step>
+
+		<step no="${class_dscp}.2">
+			<desc>
+				${class_dscp},Get class value
+			</desc>
+			<setvar name="class">
+				python ${bin.dir}/get_loop_value.py -s '${class_dscp}' -p 2
+			</setvar>
+		</step>
+
+		<step no="${class_dscp}.4.1.1">
+			<desc>
+				${class}, set interface correspond class ${class}
+			</desc>
+			<log-file>step4.1.1_${class}_${dscp}.log</log-file>
+			<telnet target="sw1">
+				-v 'qos classifier-map interface ${sw1.port1} ${class}'
+			</telnet>
+		</step>
+
+		<step no="${class_dscp}.4.1.2">
+			<desc>
+				${class}, show qos interface to confirm
+			</desc>
+			<log-file>step4.1.2_${class}_${dscp}.log</log-file>
+			<telnet target="sw1">
+				-v '_show switch qos classifier-map interface ${sw1.port1}'
+			</telnet>
+			<log-match>-e "Profile=${class}"</log-match>
+			<log-match>-e "TC=${class}"</log-match>
+		</step>
+
+		<step no="${class_dscp}.4.2">
+			<desc>
+				${class_dscp}, set marker-map, class ${class}, dscp ${dscp}
+			</desc>
+			<log-file>step4.2_${class}_${dscp}.log</log-file>
+			<telnet target="sw1">
+				-v "qos marker-map diffserv ${class} ${dscp}"
+			</telnet>
+		</step>
+
+		<step no="${class_dscp}.4.3">
+			<desc>
+				${class_dscp}, show marker map table to confirm; expect class is ${class} dscp is ${dscp}
+			</desc>
+			<log-file>step4.3_${class}_${dscp}.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos marker-map diffserv'
+			</telnet>
+			<no-error-check />
+			<log-match>-e '^\d\s+${class}\s+${dscp}' -re</log-match>
+		</step>
+		
+		<step no="${class_dscp}.4.4">
+			<desc>
+				${class_dscp}, qos classifier-map diffserv 1 ; expect diffserv is ${dscp} qos class is ${class}
+			</desc>
+			<log-file>step4.3_${class}_${dscp}.log</log-file>
+			<telnet target="sw1">
+			    -v 'qos classifier-map diffserv ${dscp} ${class} '
+				-v 'show qos classifier-map diffserv ${dscp} '
+			</telnet>
+			<no-error-check />
+			<log-match>-e '^\d\s+${dscp}\s+${class}' -re</log-match>
+		</step>
+	</stage>
+	<!-- end loop -->
+	
+	<stage>
+	    <step no="5.1">
+			<desc>
+				Set qos classifier map normal ordered(dot1p)
+			</desc>
+			<telnet target="sw1">
+				-v 'qos classifier-map 8021p 0 0'
+				-v 'qos classifier-map 8021p 1 1'
+				-v 'qos classifier-map 8021p 2 2'
+				-v 'qos classifier-map 8021p 3 3'
+				-v 'qos classifier-map 8021p 4 4'
+				-v 'qos classifier-map 8021p 5 5'
+				-v 'qos classifier-map 8021p 6 6'
+				-v 'qos classifier-map 8021p 7 7'
+			</telnet>
+		</step>
+
+		<step no="5.2">
+			<desc>
+				show classifier map table to check(dot1p)
+			</desc>
+			<log-file>step5.2_show_classifier_map.log</log-file>
+			<telnet target="sw1">
+				-v 'show qos classifier-map 8021p'
+			</telnet>
+			<log-match>-e '^\d\s+0\s+0' -re</log-match>
+			<log-match>-e '^\d\s+1\s+1' -re</log-match>
+			<log-match>-e '^\d\s+2\s+2' -re</log-match>
+			<log-match>-e '^\d\s+3\s+3' -re</log-match>
+			<log-match>-e '^\d\s+4\s+4' -re</log-match>
+			<log-match>-e '^\d\s+5\s+5' -re</log-match>
+			<log-match>-e '^\d\s+6\s+6' -re</log-match>
+			<log-match>-e '^\d\s+7\s+7' -re</log-match>
+		</step>
+    </stage>
+    
+    <stage>
+        <step no="6.1">
+			<desc>
+				_show switch qos classifier-map dscp 
+			</desc>
+			<log-file>step6.1_show_classifier_map.log</log-file>
+			<telnet target="sw1">
+				-v '_show switch qos classifier-map dscp '
+			</telnet>
+			<log-match>-e '^\d\s+0\s+0' -re</log-match>
+			<log-match>-e '^\d\s+1\s+0' -re</log-match>
+			<log-match>-e '^\d\s+2\s+0' -re</log-match>
+			<log-match>-e '^\d\s+3\s+0' -re</log-match>
+			<log-match>-e '^\d\s+4\s+0' -re</log-match>
+			<log-match>-e '^\d\s+5\s+0' -re</log-match>
+			<log-match>-e '^\d\s+6\s+0' -re</log-match>
+			<log-match>-e '8 \s+7\s+0' -re</log-match>
+			<log-match>-e '9 \s+8\s+1' -re</log-match>
+			<log-match>-e '10 \s* 9 \s* 1' -re</log-match>
+			<log-match>-e '11 \s* 10\s* 1' -re</log-match>
+			<log-match>-e '12 \s* 11\s* 1' -re</log-match>
+			<log-match>-e '13 \s* 12\s* 1' -re</log-match>
+			<log-match>-e '14 \s* 13\s* 1' -re</log-match>
+			<log-match>-e '15 \s* 14\s* 1' -re</log-match>
+			<log-match>-e '16 \s* 15\s* 1' -re</log-match>
+			<log-match>-e '17 \s* 16\s* 2' -re</log-match>
+			<log-match>-e '18 \s* 17\s* 2' -re</log-match>
+			<log-match>-e '19 \s* 18\s* 2' -re</log-match>
+			<log-match>-e '20 \s* 19\s* 2' -re</log-match>
+			<log-match>-e '21 \s* 20\s* 2' -re</log-match>
+			<log-match>-e '22 \s* 21\s* 2' -re</log-match>
+			<log-match>-e '23 \s* 22\s* 2' -re</log-match>
+			<log-match>-e '24 \s* 23\s* 2' -re</log-match>
+			<log-match>-e '25 \s* 24\s* 3' -re</log-match>
+			<log-match>-e '26 \s* 25\s* 3' -re</log-match>
+			<log-match>-e '27 \s* 26\s* 3' -re</log-match>
+			<log-match>-e '28 \s* 27\s* 3' -re</log-match>
+			<log-match>-e '29 \s* 28\s* 3' -re</log-match>
+			<log-match>-e '30 \s* 29\s* 3' -re</log-match>
+			<log-match>-e '31 \s* 30\s* 3' -re</log-match>
+			<log-match>-e '32 \s* 31\s* 3' -re</log-match>
+			<log-match>-e '33 \s* 32\s* 4' -re</log-match>
+			<log-match>-e '34 \s* 33\s* 4' -re</log-match>
+			<log-match>-e '35 \s* 34\s* 4' -re</log-match>
+			<log-match>-e '36 \s* 35\s* 4' -re</log-match>
+			<log-match>-e '37 \s* 36\s* 4' -re</log-match>
+			<log-match>-e '38 \s* 37\s* 4' -re</log-match>
+			<log-match>-e '39 \s* 38\s* 4' -re</log-match>
+			<log-match>-e '40 \s* 39\s* 4' -re</log-match>
+			<log-match>-e '41 \s* 40\s* 5' -re</log-match>
+			<log-match>-e '42 \s* 41\s* 5' -re</log-match>
+			<log-match>-e '43 \s* 42\s* 5' -re</log-match>
+			<log-match>-e '44 \s* 43\s* 5' -re</log-match>
+			<log-match>-e '45 \s* 44\s* 5' -re</log-match>
+			<log-match>-e '46 \s* 45\s* 5' -re</log-match>
+			<log-match>-e '47 \s* 46\s* 5' -re</log-match>
+			<log-match>-e '48 \s* 47\s* 5' -re</log-match>
+			<log-match>-e '49 \s* 48\s* 6' -re</log-match>
+			<log-match>-e '50 \s* 49\s* 6' -re</log-match>
+			<log-match>-e '51 \s* 50\s* 6' -re</log-match>
+			<log-match>-e '52 \s* 51\s* 6' -re</log-match>
+			<log-match>-e '53 \s* 52\s* 6' -re</log-match>
+			<log-match>-e '54 \s* 53\s* 6' -re</log-match>
+			<log-match>-e '55 \s* 54\s* 6' -re</log-match>
+			<log-match>-e '56 \s* 55\s* 6' -re</log-match>
+			<log-match>-e '57 \s* 56\s* 7' -re</log-match>
+			<log-match>-e '58 \s* 57\s* 7' -re</log-match>
+			<log-match>-e '59 \s* 58\s* 7' -re</log-match>
+			<log-match>-e '60 \s* 59\s* 7' -re</log-match>
+			<log-match>-e '61 \s* 60\s* 7' -re</log-match>
+			<log-match>-e '62 \s* 61\s* 7' -re</log-match>
+			<log-match>-e '63 \s* 62\s* 7' -re</log-match>
+			<log-match>-e '64 \s* 63\s* 7' -re</log-match>
+		</step>
+	</stage>
+    
+	<post-process>
+		<stage>
+			<!-- self defined steps, no need script now -->
+		</stage>
+		<include prefix="post" file="include/sw_default_post_process.xml" />
+	</post-process>
+</testcase>

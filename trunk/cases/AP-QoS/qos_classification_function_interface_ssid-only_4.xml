@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Check Interface/ssid-only function on ssid If testing time enough, need change the classifier-map base on interface/ssid to 0-7, check the mapping class correctly.</brief>
+	<priority>High</priority>
+	<automated>yes</automated>
+	<description>
+
+		Pre-Condition:
+
+		Qos marker-profile diff diffserv
+		Interface eth0 qos-marker diff
+		Qos classifier-profile 11 interface/ssid-only
+		Ssid ekahau
+		Interface wifi0 ssid ekahau
+		ssid ekahau qos-classifier 11
+		qos classifier-map ssid ekahau 4
+		ssid performance-qos security protocol-suite open
+		interface wifi1 ssid performance-qos
+		turn on debug _kdebug qos classifer(eng version valid)
+		_ff id 1 protocol 1
+		_kdebug fe basic
+
+		Test Procedure:
+
+		1. Station1 connected AP with ssid ekahau.station 2 connected
+		AP with ssid performance-qos. Ping from station1 to PC
+		which is on Ethernet line. The class should be 4. Ping from
+		station 2 to PC which is on Ethernet line. The class should be
+		2
+		Turn on debug to see
+		2. Clear IP/MAC session, and ping from PC to station1. The
+		class should be 4. Ping from PC to station2, the class should
+		be 2
+	</description>
+	<numofap>1</numofap>
+	<numofsta>2</numofsta>
+	<tbtype>winlin</tbtype>
+
+	<property name="conn1.ssid" value="${ssid.name}" />
+	<property name="conn2.ssid" value="${ssid.name}_2" />
+	<property name="conn2.pif" value="wifi1" />
+	<property name="conn2.channel" value="44" />
+
+	<stage>
+		<step no="create.ssid">
+			<if>"${ap.wifi1.existed}" == "true"</if>
+			<desc>
+				create ssid
+			</desc>
+			<telnet target="ap1">
+				-v "hive ${hive.name}"
+				-v "interface mgt0 hive ${hive.name}"
+				-v "interface wifi1 mode access"
+				-v "ssid ${ssid.name}_2"
+				-v "interface wifi1 ssid ${ssid.name}_2"
+				-v "interface wifi1 radio channel 44"
+			</telnet>
+		</step>
+
+		<step no="create.ssid_2">
+			<desc>
+				create ssid
+			</desc>
+			<telnet target="ap1">
+				-v "ssid ${ssid.name}"
+				-v "interface wifi0 ssid ${ssid.name}"
+			</telnet>
+		</step>
+
+		<include prefix="pre1" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn1, sta1, ap1" />
+
+		<include prefix="pre2" file="subs/sta_wifi_connect_${tb.os}.xml" obj-args="conn2, sta2, ap1" />
+
+		<step no="1">
+			<desc>
+				Qos marker-profile diff diffserv
+				Interface eth0 qos-marker diff
+				Qos classifier-profile 11 interface/ssid-only
+				Ssid ekahau
+				Interface wifi0 ssid ekahau
+				ssid ekahau qos-classifier 11
+				qos classifier-map ssid ekahau 4
+				ssid performance-qos security protocol-suite open
+				interface wifi1 ssid performance-qos
+				turn on debug _kdebug qos classifer(eng version valid)
+				_ff id 1 protocol 1
+				_kdebug fe basic
+			</desc>
+			<telnet target="ap1">
+				-v "Qos marker-profile diff diffserv"
+				-v "Interface eth0 qos-marker diff"
+				-v "Qos classifier-profile 11 interface/ssid-only"
+				-v "ssid ${ssid.name} qos-classifier 11"
+				-v "qos classifier-map ssid ${ssid.name} 4"
+			</telnet>
+		</step>
+
+		<step no="open.debug">
+			<desc>set debug filter</desc>
+			<telnet target="ap1">
+				-v "clear log buffered"
+				-v "_ff id 1 protocol 1"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "_kdebug qos classify"
+			</telnet>
+		</step>
+
+
+
+		<include prefix="2.1" file="subs/sta_ping.xml" args="sta1, ${tb.dns}, 4" />
+
+		<include prefix="2.2" file="subs/sta_ping.xml" args="sta2, ${tb.dns}, 4" />
+
+		<step no="2.3">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+				-v "clear forwarding-engine ip-sessions"
+				-v "clear forwarding-engine mac-sessions"
+				-v "clear log all"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta2.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(wifi1.1\) profile=\d+ qos=2" p "service:icmp protocol=1 port.*?qos=2" -e "\(i\) wifi1.1 ${sta2.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) eth0 ${sta1.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(wifi0.1\) profile=\d+ qos=4" p "Classifier\(int/ssid ONLY:wifi0.1\) qos=4" -e "\(i\) wifi0.1 ${sta1.tif.ip}-&gt;${tb.dns}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+
+		<include prefix="3.1" file="subs/sta_ping.xml" args="${tb.dns}, ${sta1.tif.ip}, 4" />
+
+		<include prefix="3.2" file="subs/sta_ping.xml" args="${tb.dns}, ${sta2.tif.ip}, 4" />
+
+		<step no="3.3">
+			<desc>show logging buffer to check debug</desc>
+			<log-file>show_log_buffered2.log</log-file>
+			<telnet target="ap1" timeout="300">
+				-v "show logging buffered"
+			</telnet>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi1.1 ${tb.dns}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(eth0\) profile=\d+ qos=2" p "service:icmp protocol=1 port.*?qos=2" -e "\(i\) eth0 ${tb.dns}-&gt;${sta2.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "\(o\) wifi0.1 ${tb.dns}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -ps p "QoS: ingress pkt fwd\(eth0\) profile=\d+ qos=4" p "Classifier\(int/ssid ONLY:eth0\) qos=4" -e "\(i\) eth0 ${tb.dns}-&gt;${sta1.tif.ip}\(\d+\) ttl\(\d+\) icmp-echo-req" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+		</step>
+	</stage>
+</testcase>

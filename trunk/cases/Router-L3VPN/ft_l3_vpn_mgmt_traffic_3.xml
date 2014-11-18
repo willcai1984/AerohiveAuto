@@ -1,0 +1,168 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<testcase>
+	<brief>Verify the SNMP traffic can routing via VPN tunnel successfully</brief>
+	<priority>Middle</priority>
+	<automated>yes</automated>
+	<description>
+		Pre-Condition:
+		-config a remote CVG, there is several LANs behind it
+		-there are some services in CVG's LANs
+		-BR setup VPN connection with the CVG
+		-BR enable SNMP, the trap-host is behind CVG
+
+		Test Procedure:
+		-check the snmp trap msg by fe debug, should go through vpn tunnel
+		-check the server side, msg should be received by trap-host correctly
+	</description>
+	<numofcvg>1</numofcvg>
+	<numofbr>1</numofbr>
+	<cvg-opt-arm>two</cvg-opt-arm>
+	<cvg-opt-fw>yes</cvg-opt-fw>
+	<tbtype>linux</tbtype>
+
+	<property name="br.route.netmask" value="255.255.255.0" />
+	<property name="community1" value="aerohive1" />
+
+	<stage>
+		<include prefix="0" file="subs/vpn_setup_one.xml" obj-args="cvg1, br1" />
+
+		<step no="set_lan_info">
+			<multi-setvar>
+				echo "br1.br.mgt0.1.route=$(echo ${br1.br.mgt0.1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns1.route=$(echo ${cvg1.dns1.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.dns2.route=$(echo ${cvg1.dns2.ip} | cut -d. -f1,2,3).0"
+				echo "cvg1.vpc1.route=$(echo ${cvg1.vpc1.tif.ip} | cut -d. -f1,2,3).0"
+			</multi-setvar>
+		</step>
+
+		<step no="1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>On GW, will add the tunnel routes according to BR's modification </desc>
+			<log-file>step1_show_route_cvg_.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="10">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${br1.br.mgt0.1.route}" -p 8 -i "${cvg1.tunnel.id}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="1.1" type="loop-check" loop-max-times="10" loop-interval="10">
+			<desc>-check the ip route tablelist</desc>
+			<log-file>step1.1_show_l3_ip_route.log</log-file>
+			<telnet target="${br1.br.wan.ip}">
+				-v "show ip route"
+			</telnet>
+			<log-match>-p 1 -i "${cvg1.vpc1.route}" -p 3 -i "${br.route.netmask}" -p 8 -i "${br1.tunnel.id}"</log-match>
+			<failed>next</failed>
+		</step>
+
+		<step no="2">
+			<desc>config mgt0.1 with dhcp service enable</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "interface mgt0.1 vlan ${br1.vpc1.vlan}"
+				-v "interface mgt0.1 ip ${br1.br.mgt0.1.ip}/${br.lan.netmask}"
+				-v "interface mgt0.1 dhcp-server ip-pool ${br1.br.mgt0.1.ip_pool_start} ${br1.br.mgt0.1.ip_pool_end}"
+				-v "interface mgt0.1 dhcp-server options netmask ${br.route.netmask}"
+				-v "interface mgt0.1 dhcp-server options default-gateway ${br1.br.mgt0.1.ip}"
+				-v "interface mgt0.1 dhcp-server options dns1 ${pub.dns1.ip}"
+				-v "interface mgt0.1 dhcp-server enable"
+			</telnet>
+		</step>
+
+		<step no="2.1">
+			<desc>configure vpc1</desc>
+			<telnet target="${br1.br.wan.ip}" slow="yes">
+				-v "user-profile sta qos-policy def-user-qos vlan-id ${br1.vpc1.vlan} attribute 1"
+				-v "interface eth1 mode bridge-access user-profile-attribute 1"
+				-v "interface eth1 mac-learning enable"
+				-v "snmp trap-host v2c ${cvg1.vpc1.tif.ip} community ${community1}"
+				-v "snmp trap-host v2c ${cvg1.vpc1.tif.ip} via-vpn-tunnel"
+				-v "snmp trap-info over-snmp"
+				-v "no snmp trap-info over-capwap"
+			</telnet>
+		</step>
+
+		<step no="2.2">
+			<desc>
+				Laptop1 connect to lan port eth2
+			</desc>
+			<log-file>ifconfig_vpc1_.log</log-file>
+			<ssh target="br1.vpc1" timeout="120">
+				-v "dhclient ${br1.vpc1.tif.name}"
+				-v "ifconfig ${br1.vpc1.tif.name}"
+			</ssh>
+			<log-match>-i "inet addr"</log-match>
+		</step>
+
+		<step no="2.3">
+			<desc>set br1.vpc1.tif.ip var for vpc1 on BR side</desc>
+			<setvar name="br1.vpc1.tif.ip">
+				${bin.dir}/getrmtip.pl -d ${br1.vpc1.mif.ip} -u ${br1.vpc1.user} -p ${br1.vpc1.passwd} -i ${br1.vpc1.tif.name} -nomask
+			</setvar>
+		</step>
+
+		<step no="2.4">
+			<desc>enable vpn debug</desc>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="60">
+				-v "_debug vpn debug"
+				-v "_ff id 1 dst-port 162 bidirectional"
+				-v "_ff id 2 protocol 47 bidirectional"
+				-v "_ff id 3 protocol 50 bidirectional"
+				-v "_kdebug fe basic"
+				-v "_kdebug fe detail"
+				-v "clear log buf"
+			</telnet>
+		</step>
+
+		<step no="2.5">
+			<desc>
+				open tshark on snmp server background,capture the packet on the snmp-server
+			</desc>
+			<log-file>start_tshark1.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}">
+				-v "nohup tshark -i ${cvg1.vpc1.tif.name} -w /tmp/tshark_log.pcap &gt; ${job.sid}_yyy.log 2>&amp;1 &amp;"
+			</ssh>
+		</step>
+
+		<step no="2.6">
+			<desc>
+				get process id
+			</desc>
+			<setvar name="process_id1">
+				${bin.dir}/getbyrexp.py -f ${log.dir}/start_tshark1.log -p "\[\d+\]\s+(\d+)" -t str
+			</setvar>
+		</step>
+
+		<step no="3">
+			<desc>
+				1. Execute CLI "_test trapcase alert { bwsentinel| channelpower|,send the trap info to snmp-server
+			</desc>
+			<telnet target="${br1.br.wan.ip}">
+				-v "_test trap-case alert failure"
+			</telnet>
+		</step>
+
+		<step no="3.1" delay="20" type="loop-check" loop-max-times="5" loop-interval="10">
+			<desc>check log file</desc>
+			<log-file>check_log_file1.log</log-file>
+			<ssh host="${cvg1.vpc1.mif.ip}" timeout="500">
+				-v "tshark -r /tmp/tshark_log.pcap -V -R snmp"
+			</ssh>
+			<log-match bin="${bin.dir}/searchblocks.py">-b "Internet Protocol, Src: ${br1.br.mgt0.ip} \(${br1.br.mgt0.ip}\), Dst: ${cvg1.vpc1.tif.ip} \(${cvg1.vpc1.tif.ip}\)" -ps p "version: v2c" p "community: ${community1}" p "data: sNMPv2-Trap" -f ${log.dir}/${log.file}</log-match>
+			<no-error-check />
+			<failed>next</failed>
+		</step>
+
+		<step no="3.2" delay="10">
+			<desc>show log buf on CVG,check the snmp packet of br from the tunnel</desc>
+			<log-file>step3.2_show_log_buf.log</log-file>
+			<telnet target="${cvg1.cvg.cons_ip}" port="${cvg1.cvg.cons_port}" timeout="500">
+			
+				-v "show logging buffered"
+			</telnet>
+			<no-error-check />
+			<log-match>-c -i "(o) eth.* ${br1.br.mgt0.ip}-&gt;${cvg1.vpc1.tif.ip}" -i "UDP" -i "162"</log-match>
+			<log-match>-c -i " eth0 packet decap done, resend packet to ip stack ${br1.br.mgt0.ip}-&gt;${cvg1.cvg.wan.ip} ttl" -i "proto(47)"</log-match>
+			<failed>next</failed>
+		</step>
+	</stage>
+</testcase>
